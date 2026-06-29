@@ -1220,8 +1220,16 @@ class BalWindow:
             _logger.error(f"download_list failed: {exc_info}")
             if isinstance(exc_info[1], Willexecutors.NoServersForChainError):
                 err = exc_info[1]
-                if err.url:
-                    # Advanced mode: show the actual URL and error reason.
+                if err.url and err.reason == "empty response":
+                    # Server reached but returned no data for this chain.
+                    self.show_warning(_(
+                        f"No active will-executor servers found for the "
+                        f"{err.chain} network.\n\n"
+                        f"The welist server at {err.url} responded but "
+                        f"returned no will-executors for this chain."
+                    ))
+                elif err.url:
+                    # Advanced mode with a non-empty error (network issue).
                     self.show_warning(_(
                         f"Could not reach the configured welist server.\n\n"
                         f"Server: {err.url}\n"
