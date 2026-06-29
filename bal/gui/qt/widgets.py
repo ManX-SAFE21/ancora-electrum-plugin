@@ -908,13 +908,17 @@ class WillSettingsWidget(QWidget):
         if not self.read_only:
             return
 
-        editable_dates = False
-        try:
-            editable_dates = self.bal_window.bal_plugin.EDITABLE_DATES.get()
-        except Exception:
-            # If the setting cannot be read, fall back to the safe default
-            # (dates remain read-only outside the wizard).
-            editable_dates = False
+        basic = self.bal_window.bal_plugin.is_basic_mode()
+        if not basic:
+            # Advanced mode: fields are always editable.
+            editable_dates = True
+        else:
+            try:
+                editable_dates = self.bal_window.bal_plugin.EDITABLE_DATES.get()
+            except Exception:
+                # If the setting cannot be read, fall back to the safe default
+                # (dates remain read-only outside the wizard).
+                editable_dates = False
 
         self.widgets["locktime"].set_read_only(not editable_dates)
         self.widgets["threshold"].set_read_only(not editable_dates)
