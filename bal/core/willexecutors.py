@@ -73,6 +73,10 @@ chainname = BalPlugin.chainname
 
 class Willexecutors:
 
+    class NoServersForChainError(Exception):
+        """Raised when the welist server responds but returns no data for the
+        requested chain, indicating no active servers for that network."""
+
     # Expose the networking constants as class attributes so the GUI layer can
     # reference them (e.g. to show the "Xs / DEADLINEs" countdown) without
     # importing module-level names.  Single source of truth: the module

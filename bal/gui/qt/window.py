@@ -1112,6 +1112,7 @@ class BalWindow:
                 candidates.append(url)
 
         result = {}
+        any_server_reached = False
         net = Network.get_instance()
         _logger.info(f"fetch_will_executors_list: network present = {net is not None}")
         for url in candidates:
@@ -1124,6 +1125,7 @@ class BalWindow:
                 resp = Willexecutors.send_request(
                     "get", url, timeout=10, max_retries=1, retry_sleep=1,
                 )
+                any_server_reached = True
                 _logger.info(
                     f"fetch_will_executors_list: resp type={type(resp).__name__} "
                     f"len={len(resp) if hasattr(resp, '__len__') else 'n/a'}"
@@ -1142,6 +1144,8 @@ class BalWindow:
                 _logger.error(
                     f"fetch_will_executors_list: {url} -> {type(e).__name__}: {e}"
                 )
+        if not result and any_server_reached:
+            raise Willexecutors.NoServersForChainError(chainname)
         return result
 
     # Simple, user-facing message shown when the download fails for any reason
@@ -1205,7 +1209,14 @@ class BalWindow:
 
         def on_failure(exc_info):
             _logger.error(f"download_list failed: {exc_info}")
-            self.show_warning(_(self.DOWNLOAD_FAILED_MESSAGE))
+            if isinstance(exc_info[1], Willexecutors.NoServersForChainError):
+                chainname = BalPlugin.chainname
+                self.show_warning(_(
+                    f"No active will-executor found for the "
+                    f"{chainname} network."
+                ))
+            else:
+                self.show_warning(_(self.DOWNLOAD_FAILED_MESSAGE))
 
         self.waiting_dialog = BalWaitingDialog(
             self, base_msg, task, on_success, on_failure, exe=False
