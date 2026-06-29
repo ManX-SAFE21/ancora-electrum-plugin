@@ -77,6 +77,14 @@ class Willexecutors:
         """Raised when the welist server responds but returns no data for the
         requested chain, indicating no active servers for that network."""
 
+        def __init__(self, chain, url=None, reason=None):
+            self.chain = chain
+            self.url = url
+            self.reason = reason
+            super().__init__(
+                f"NoServersForChainError: chain={chain} url={url} reason={reason}"
+            )
+
     # Expose the networking constants as class attributes so the GUI layer can
     # reference them (e.g. to show the "Xs / DEADLINEs" countdown) without
     # importing module-level names.  Single source of truth: the module

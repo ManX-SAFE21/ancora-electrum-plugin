@@ -462,6 +462,10 @@ class Plugin(BalPlugin):
                     self.update_all()
                     return
             self.USER_TYPE.set("advanced" if idx == 1 else "basic")
+            # Show/hide the welist server row (advanced-only).
+            basic = idx != 1
+            for w in (lbl_welist_server, edit_welist_server, help_welist_server):
+                w.setVisible(not basic)
             self.update_all()
 
         user_type_combo.currentIndexChanged.connect(on_user_type_change)
@@ -474,6 +478,7 @@ class Plugin(BalPlugin):
         # with an external app, so the setting is no longer needed in the dialog.
         edit_event_summary = BalLineEdit(self.EVENT_SUMMARY)
         edit_event_description = BalTextEdit(self.EVENT_DESCRIPTION)
+        edit_welist_server = BalLineEdit(self.WELIST_SERVER)
 
         heir_repush = QPushButton("Rebroadcast transactions")
         heir_repush.clicked.connect(partial(self.broadcast_transactions, True))
@@ -637,12 +642,27 @@ class Plugin(BalPlugin):
                 "field and the Raw/Date selector."
             ),
         )
-        grid.addWidget(heir_repush, 9, 0)
+        # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
+        # factory default is always used and the setting is hidden.
+        lbl_welist_server = QLabel(_("Welist Server URL"))
+        help_welist_server = HelpButton(
+            "URL of the server that provides the will-executor list.  "
+            "Only used in ADVANCED mode."
+        )
+        grid.addWidget(lbl_welist_server, 9, 0)
+        grid.addWidget(edit_welist_server, 9, 1)
+        grid.addWidget(help_welist_server, 9, 2)
+        # Initial visibility: hidden in basic, visible in advanced.
+        basic_init = str(self.USER_TYPE.get()).lower() != "advanced"
+        for w in (lbl_welist_server, edit_welist_server, help_welist_server):
+            w.setVisible(not basic_init)
+
+        grid.addWidget(heir_repush, 10, 0)
         grid.addWidget(
             HelpButton(
                 "Broadcast all transactions to willexecutors including those already pushed"
             ),
-            9,
+            10,
             2,
         )
 
@@ -673,6 +693,7 @@ class Plugin(BalPlugin):
                 (self.NO_WILLEXECUTOR, heir_no_willexecutor, "check"),
                 (self.EVENT_SUMMARY, edit_event_summary, "line"),
                 (self.EVENT_DESCRIPTION, edit_event_description, "text"),
+                (self.WELIST_SERVER, edit_welist_server, "line"),
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.

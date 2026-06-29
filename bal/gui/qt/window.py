@@ -1093,26 +1093,26 @@ class BalWindow:
     def fetch_will_executors_list(self, old_willexecutors):
         """Download the will-executor list (runs inside the TaskThread worker).
 
-        Tries the configured server first, then the original hardcoded endpoint,
-        so a stale/bad config value cannot break the download.  Detailed
-        per-attempt diagnostics are written to the Electrum log only; the user
-        sees a simple message.  No business logic in ``bal.core`` is changed.
+        In BASIC mode the factory-default welist server is used and the setting
+        is hidden.  In ADVANCED mode the user-configured URL is used exclusively
+        (no fallback), and any failure produces a descriptive error.
 
         Returns the downloaded dict (empty ``{}`` on failure).
         """
         chainname = BalPlugin.chainname
-        configured = self.bal_plugin.WELIST_SERVER.get()
-        candidates = []
-        for base in (configured, "https://welist.bitcoin-after.life/"):
-            if not base:
-                continue
-            base = base if base.endswith("/") else base + "/"
-            url = f"{base}data/{chainname}?page=0&limit=100"
-            if url not in candidates:
-                candidates.append(url)
+        basic = self.bal_plugin.is_basic_mode()
+
+        if basic:
+            base = self.bal_plugin.WELIST_SERVER.default
+        else:
+            base = self.bal_plugin.WELIST_SERVER.get()
+        base = base if base.endswith("/") else base + "/"
+        url = f"{base}data/{chainname}?page=0&limit=100"
+        candidates = [url]
 
         result = {}
         any_server_reached = False
+        last_error = None
         net = Network.get_instance()
         _logger.info(f"fetch_will_executors_list: network present = {net is not None}")
         for url in candidates:
@@ -1141,11 +1141,20 @@ class BalWindow:
                     break
                 _logger.warning(f"fetch_will_executors_list: {url} -> empty response")
             except Exception as e:
+                last_error = str(e)
                 _logger.error(
                     f"fetch_will_executors_list: {url} -> {type(e).__name__}: {e}"
                 )
-        if not result and any_server_reached:
-            raise Willexecutors.NoServersForChainError(chainname)
+        if not result:
+            if not basic:
+                # Advanced mode: always raise with full details.
+                raise Willexecutors.NoServersForChainError(
+                    chainname,
+                    url=url,
+                    reason=last_error or "empty response",
+                )
+            if any_server_reached:
+                raise Willexecutors.NoServersForChainError(chainname)
         return result
 
     # Simple, user-facing message shown when the download fails for any reason
@@ -1210,11 +1219,23 @@ class BalWindow:
         def on_failure(exc_info):
             _logger.error(f"download_list failed: {exc_info}")
             if isinstance(exc_info[1], Willexecutors.NoServersForChainError):
-                chainname = BalPlugin.chainname
-                self.show_warning(_(
-                    f"No active will-executor found for the "
-                    f"{chainname} network."
-                ))
+                err = exc_info[1]
+                if err.url:
+                    # Advanced mode: show the actual URL and error reason.
+                    self.show_warning(_(
+                        f"Could not reach the configured welist server.\n\n"
+                        f"Server: {err.url}\n"
+                        f"Error: {err.reason}\n\n"
+                        f"Please verify the welist server URL in the plugin "
+                        f"settings."
+                    ))
+                else:
+                    # Basic mode: the server responded but has no data for this
+                    # chain.
+                    self.show_warning(_(
+                        f"No active will-executor found for the "
+                        f"{err.chain} network."
+                    ))
             else:
                 self.show_warning(_(self.DOWNLOAD_FAILED_MESSAGE))
 
