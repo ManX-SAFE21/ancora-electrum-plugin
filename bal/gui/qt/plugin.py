@@ -634,12 +634,12 @@ class Plugin(BalPlugin):
             8,
             (
                 "Choose how much detail the plugin shows.\n\n"
-                "BASIC (default): a simpler interface. It hides the advanced "
-                "controls (the Raw/Date selector and the 'Check Alive' field) "
-                "and turns off the 'check alive' postpone behaviour, so you "
-                "only set the delivery date.\n\n"
+                "BASIC: simplified interface, safe configuration for most "
+                "users.\n\n"
                 "ADVANCED: shows every control, including the 'Check Alive' "
-                "field and the Raw/Date selector."
+                "field and the Raw/Date selector. Allows configuring the "
+                "welist server URL and keeps all date/fee fields always "
+                "editable."
             ),
         )
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
@@ -647,7 +647,7 @@ class Plugin(BalPlugin):
         lbl_welist_server = QLabel(_("Welist Server URL"))
         help_welist_server = HelpButton(
             "URL of the server that provides the will-executor list.  "
-            "Only used in ADVANCED mode."
+            "Only available in ADVANCED mode."
         )
         grid.addWidget(lbl_welist_server, 9, 0)
         grid.addWidget(edit_welist_server, 9, 1)
