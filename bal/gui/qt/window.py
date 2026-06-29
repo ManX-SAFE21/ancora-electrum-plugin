@@ -1352,6 +1352,9 @@ class BalWindow:
             # value and the invalidated/replaced rows would not appear/disappear
             # until Electrum was restarted.
             self.bal_plugin.sync_hide_filters()
+            _logger.debug(f"NoneType_debug willitems type: {type(self.willitems).__name__} len={len(self.willitems)}")
+            for _wid, _w in list(self.willitems.items())[:3]:
+                _logger.debug(f"NoneType_debug willitems[{_wid}] type={type(_w).__name__}")
             Will.add_willtree(self.willitems)
             all_utxos = self.wallet.get_utxos()
             utxos_list = Will.utxos_strs(all_utxos)

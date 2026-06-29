@@ -1,8 +1,8 @@
 """
-Group E - Mock tests built around a fake wallet named "giovanna7".
+Group E - Mock tests built around a fake wallet named "karen7".
 
 These tests exercise the four behaviour areas requested for Group E using a
-single, self-contained fake wallet (``giovanna7``). No real Electrum wallet
+single, self-contained fake wallet (``karen7``). No real Electrum wallet
 file is needed: everything is driven by lightweight mocks/stubs, exactly like
 the other ``test_group_*`` and ``test_core_*`` suites.
 
@@ -11,21 +11,26 @@ The four sections are:
 * E1 - calendar / .ics:  reminder-offset distribution, separate-VEVENT shape,
   description escaping and temporary .ics file creation.
 * E2 - inheritance / states:  WillItem status transitions and heir-change
-  detection for giovanna7's inheritance.
-* E3 - connectivity:  parallel pinging of giovanna7's will-executor servers
+  detection for karen7's inheritance.
+* E3 - connectivity:  parallel pinging of karen7's will-executor servers
   (concurrency, per-server callback, write-back of results).
 * E4 - will-executor:  selection flag and the filtering rule that decides which
   transactions are pushed to a will-executor.
 
 Run:
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \
-        python3 -m pytest tests/test_group_e_mock_giovanna7.py -q
+        python3 -m pytest tests/test_group_e_mock_karen7.py -q
 """
 
 import copy
+import json
 import os
 import sys
 import time
+import traceback
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Make the plugin package importable when run directly (tests/ is one level
 # below the repo root that contains the ``bal`` package).
@@ -52,7 +57,7 @@ _VALID_TX_HEX = (
 
 
 # ------------------------------------------------------------------ #
-# The fake "giovanna7" wallet
+# The fake "karen7" wallet
 # ------------------------------------------------------------------ #
 
 class FakeDB:
@@ -72,19 +77,19 @@ class FakeDB:
         self._data[key] = value
 
 
-class GiovannaWallet:
-    """A fake wallet named "giovanna7".
+class Karen7Wallet:
+    """A fake wallet named "karen7".
 
     It mimics just enough of an Electrum wallet for the Group E tests:
 
-    * ``str(wallet)`` returns the wallet name ("giovanna7"), which is what the
+    * ``str(wallet)`` returns the wallet name ("karen7"), which is what the
       plugin uses to build calendar UIDs and labels.
     * ``db`` is a :class:`FakeDB` pre-loaded with two heirs so the Heirs model
       can be constructed without a live wallet.
     """
 
     #: Wallet name, exposed via ``str(wallet)``.
-    NAME = "giovanna7"
+    NAME = "karen7"
 
     def __init__(self, heirs=None):
         """Build the wallet with an optional custom heirs mapping.
@@ -105,13 +110,13 @@ class GiovannaWallet:
         return self.NAME
 
 
-def make_giovanna_wallet(heirs=None):
-    """Factory returning a fresh "giovanna7" fake wallet for each test."""
-    return GiovannaWallet(heirs=heirs)
+def make_karen7_wallet(heirs=None):
+    """Factory returning a fresh "karen7" fake wallet for each test."""
+    return Karen7Wallet(heirs=heirs)
 
 
 def _make_willitem(**overrides):
-    """Create a WillItem for giovanna7 from a minimal, valid dict.
+    """Create a WillItem for karen7 from a minimal, valid dict.
 
     The status block is reset to the clean defaults so each test starts from a
     deterministic state (VALID=True, everything else False).
@@ -136,10 +141,10 @@ def _make_willitem(**overrides):
 # E1 - calendar / .ics
 # ================================================================== #
 
-def test_e1_giovanna_wallet_name():
-    """The fake wallet identifies itself as "giovanna7" (used in .ics UIDs)."""
-    wallet = make_giovanna_wallet()
-    assert str(wallet) == "giovanna7"
+def test_e1_karen7_wallet_name():
+    """The fake wallet identifies itself as "karen7" (used in .ics UIDs)."""
+    wallet = make_karen7_wallet()
+    assert str(wallet) == "karen7"
 
 
 def test_e1_reminder_offsets_long_period():
@@ -170,8 +175,8 @@ def test_e1_reminder_offsets_single():
     assert compute_reminder_offsets(10, 1) == [1]
 
 
-def test_e1_build_separate_events_for_giovanna():
-    """Build the SEPARATE reminder VEVENTs for giovanna7 the same way
+def test_e1_build_separate_events_for_karen7():
+    """Build the SEPARATE reminder VEVENTs for karen7 the same way
     open_or_save_calendar does (one VEVENT per offset, each on its own date)
     and verify their shape.
 
@@ -187,7 +192,7 @@ def test_e1_build_separate_events_for_giovanna():
     locktime = datetime(2026, 7, 23, 9, 0, 0, tzinfo=timezone.utc)
     offsets = compute_reminder_offsets(30, 3)
     total = len(offsets)
-    wallet = "giovanna7"
+    wallet = "karen7"
     summary_base = f"BAL - Will execution of {wallet}"
 
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0"]
@@ -220,23 +225,23 @@ def test_e1_build_separate_events_for_giovanna():
 
 
 def test_e1_event_description_escaping():
-    """Special iCalendar characters in giovanna7's event text are escaped so
+    """Special iCalendar characters in karen7's event text are escaped so
     the .ics file stays valid."""
-    raw = "Wallet giovanna7; heirs: alice, bob"
+    raw = "Wallet karen7; heirs: alice, bob"
     escaped = BalCalendar.ical_escape(raw)
     assert "\\;" in escaped       # semicolon escaped
     assert "\\," in escaped       # comma escaped
-    assert "giovanna7" in escaped
+    assert "karen7" in escaped
 
 
-def test_e1_write_temp_ics_for_giovanna():
-    """A minimal VCALENDAR for giovanna7 can be written to a real temp .ics
+def test_e1_write_temp_ics_for_karen7():
+    """A minimal VCALENDAR for karen7 can be written to a real temp .ics
     file and read back byte-for-byte."""
     content = (
         "BEGIN:VCALENDAR\r\n"
         "VERSION:2.0\r\n"
         "BEGIN:VEVENT\r\n"
-        "UID:bal-giovanna7\r\n"
+        "UID:bal-karen7\r\n"
         "SUMMARY:BAL will reminder\r\n"
         "END:VEVENT\r\n"
         "END:VCALENDAR\r\n"
@@ -254,18 +259,18 @@ def test_e1_write_temp_ics_for_giovanna():
 # E2 - inheritance / states
 # ================================================================== #
 
-def test_e2_giovanna_heirs_loaded():
-    """giovanna7's two default heirs are read from the wallet db."""
-    wallet = make_giovanna_wallet()
+def test_e2_karen7_heirs_loaded():
+    """karen7's two default heirs are read from the wallet db."""
+    wallet = make_karen7_wallet()
     heirs = Heirs(wallet)
     assert "alice" in heirs
     assert "bob" in heirs
     assert len(heirs) == 2
 
 
-def test_e2_giovanna_add_remove_heir():
+def test_e2_karen7_add_remove_heir():
     """Adding and removing an heir updates both the model and the wallet db."""
-    wallet = make_giovanna_wallet()
+    wallet = make_karen7_wallet()
     heirs = Heirs(wallet)
 
     heirs["charlie"] = ["addr_charlie", "20000", "30d"]
@@ -278,7 +283,7 @@ def test_e2_giovanna_add_remove_heir():
 
 
 def test_e2_willitem_default_and_complete():
-    """A fresh will-item for giovanna7 starts VALID-but-not-COMPLETE; marking
+    """A fresh will-item for karen7 starts VALID-but-not-COMPLETE; marking
     it COMPLETE flips only that flag."""
     item = _make_willitem()
     assert item.get_status("VALID") is True
@@ -291,7 +296,7 @@ def test_e2_willitem_default_and_complete():
 
 
 def test_e2_invalidated_clears_valid():
-    """Invalidating giovanna7's will clears its VALID flag."""
+    """Invalidating karen7's will clears its VALID flag."""
     item = _make_willitem()
     item.set_status("INVALIDATED", True)
     assert item.get_status("INVALIDATED") is True
@@ -310,7 +315,7 @@ def test_e2_pushed_clears_push_fail():
 
 
 def test_e2_only_valid_filters_invalidated():
-    """Will.only_valid keeps only the still-valid items of giovanna7's will."""
+    """Will.only_valid keeps only the still-valid items of karen7's will."""
     good = _make_willitem()
     bad = _make_willitem()
     bad.set_status("INVALIDATED", True)
@@ -322,7 +327,7 @@ def test_e2_only_valid_filters_invalidated():
 
 
 def test_e2_heir_change_triggers_rebuild():
-    """If giovanna7 removes an heir after signing, the mismatch between the
+    """If karen7 removes an heir after signing, the mismatch between the
     frozen will and the current heirs must raise HeirNotFoundException so the
     inheritance is rebuilt."""
     lt = 1900000000
@@ -362,12 +367,12 @@ def test_e2_heir_change_triggers_rebuild():
 
 # Each simulated will-executor server takes this long to "answer".
 _SLOW = 0.3
-# Number of simulated servers for giovanna7.
+# Number of simulated servers for karen7.
 _N = 6
 
 
 def test_e3_ping_servers_parallel():
-    """giovanna7's will-executor servers are pinged concurrently.
+    """karen7's will-executor servers are pinged concurrently.
 
     We stub ``get_info_task`` with a slow function: half the servers "fail".
     The test asserts that (a) total time is far below the sequential sum
@@ -388,7 +393,7 @@ def test_e3_ping_servers_parallel():
         wes = {}
         for i in range(_N):
             kind = "dead" if i % 2 else "ok"
-            wes[f"https://{kind}-{i}.giovanna7.example"] = {}
+            wes[f"https://{kind}-{i}.karen7.example"] = {}
 
         seen = []
 
@@ -411,7 +416,7 @@ def test_e3_ping_servers_parallel():
         for url, ok in seen:
             assert ok == ("ok" in url), (url, ok)
 
-        # Ping results were written back into giovanna7's server mapping.
+        # Ping results were written back into karen7's server mapping.
         for url, we in wes.items():
             assert we["status"] == (200 if "ok" in url else "KO"), (url, we)
     finally:
@@ -429,16 +434,16 @@ def test_e3_ping_empty_mapping():
 # ================================================================== #
 
 def test_e4_is_selected_default_false():
-    """A brand-new will-executor for giovanna7 is not selected by default, and
+    """A brand-new will-executor for karen7 is not selected by default, and
     is_selected initialises the flag to False."""
-    we = {"url": "https://we.giovanna7.example"}
+    we = {"url": "https://we.karen7.example"}
     assert Willexecutors.is_selected(we) is False
     assert we["selected"] is False
 
 
 def test_e4_is_selected_set_value():
     """is_selected can both set and read the selection flag."""
-    we = {"url": "https://we.giovanna7.example"}
+    we = {"url": "https://we.karen7.example"}
     assert Willexecutors.is_selected(we, True) is True
     assert we["selected"] is True
     assert Willexecutors.is_selected(we) is True
@@ -449,9 +454,9 @@ def test_e4_get_transactions_only_valid_complete_selected():
     *selected* contributes a transaction to be pushed.
 
     This is the core filtering rule of get_willexecutor_transactions, verified
-    here against giovanna7's will.
+    here against karen7's will.
     """
-    url = "https://we.giovanna7.example"
+    url = "https://we.karen7.example"
 
     # 1) The good one: valid, complete, not pushed, selected -> included.
     good = _make_willitem()
@@ -488,9 +493,9 @@ def test_e4_get_transactions_only_valid_complete_selected():
 
 
 def test_e4_get_transactions_force_includes_pushed():
-    """With ``force=True``, an already-PUSHED will is re-included so giovanna7
+    """With ``force=True``, an already-PUSHED will is re-included so karen7
     can re-broadcast it (the "Rebroadcast" button path)."""
-    url = "https://we.giovanna7.example"
+    url = "https://we.karen7.example"
 
     pushed = _make_willitem()
     pushed.set_status("COMPLETE", True)
@@ -506,8 +511,132 @@ def test_e4_get_transactions_force_includes_pushed():
 
 def test_e4_compute_id():
     """compute_id builds a stable identifier from url + chain."""
-    we = {"url": "https://we.giovanna7.example", "chain": "bitcoin"}
-    assert Willexecutors.compute_id(we) == "https://we.giovanna7.example-bitcoin"
+    we = {"url": "https://we.karen7.example", "chain": "bitcoin"}
+    assert Willexecutors.compute_id(we) == "https://we.karen7.example-bitcoin"
+
+
+# ================================================================== #
+# E5 - Build inheritance from the real wallet file
+# ================================================================== #
+
+def test_e5_build_with_real_wallet_heirs_and_utxos():
+    """Read heirs and UTXOs from the real ``tests/karen7`` file, pass them
+    through ``Heirs.buildTransactions`` and report any unhandled error.
+
+    Reproduces the ``NoneType object has no attribute 'get'`` error the
+    user saw when building an inheritance with the same data from the GUI.
+    """
+    wallet_path = os.path.join(os.path.dirname(__file__), "karen7")
+    with open(wallet_path) as f:
+        data = json.load(f)
+
+    assert "heirs" in data, "karen7 wallet has no heirs"
+
+    class FakeUTXO:
+        """Minimal stand-in for PartialTxInput, providing only the fields
+        used by buildTransactions / prepare_transactions."""
+        def __init__(self, txid, out_idx, value_sats):
+            self._value = value_sats
+            self.prevout = MagicMock()
+            self.prevout.txid = txid
+            self.prevout.out_idx = out_idx
+
+        def value_sats(self):
+            return self._value
+
+    # Build UTXOs from unspent txo entries.
+    utxos = []
+    txo = data.get("txo", {})
+    for txid, outputs in txo.items():
+        if not isinstance(outputs, dict):
+            continue
+        for addr, out_map in outputs.items():
+            if not isinstance(out_map, dict):
+                continue
+            for idx, info in out_map.items():
+                if not isinstance(info, list) or len(info) < 2:
+                    continue
+                value, spent = info[0], info[1]
+                if spent is False:
+                    utxos.append(FakeUTXO(txid, int(idx), value))
+
+    assert len(utxos) > 0, "no unspent UTXOs in karen7 wallet"
+
+    # Build the Heirs model from the real wallet data.
+    heirs_data = data["heirs"]
+    h = Heirs.__new__(Heirs)
+    h.update(heirs_data)
+
+    assert len(h) == 4, f"expected 4 heirs, got {len(h)}"
+    assert list(h.keys()) == ["aaaa", "lucia", "mario", "mario2"]
+
+    # Mock the Electrum-heavy parts so the build can run in a test context.
+    wallet = MagicMock()
+    wallet.dust_threshold.return_value = 500
+    wallet.get_change_addresses_for_new_transaction.return_value = [
+        "bcrt1q0000000000000000000000000000000000000"
+    ]
+
+    bal_plugin = MagicMock()
+    bal_plugin.NO_WILLEXECUTOR.get.return_value = True  # bypass will-executors
+    bal_plugin.get_decimal_point.return_value = 8
+
+    # Mock PartialTxOutput.from_address_and_value to return something usable.
+    _fake_outputs = []
+
+    def _fake_from_address_and_value(address, value):
+        out = MagicMock()
+        out.value = value
+        out.address = address
+        out.scriptpubkey = b""
+        out.script_descriptor = ""
+        _fake_outputs.append(out)
+        return out
+
+    # Mock PartialTransaction.from_io to record inputs and return a fake tx.
+    _fake_txs = []
+
+    def _fake_from_io(inputs, outputs, locktime, version):
+        tx = MagicMock()
+        tx.txid.return_value = f"faketx_{len(_fake_txs):04x}"
+        tx.estimated_size.return_value = 100
+        tx.get_fee.return_value = 100
+        tx.input_value.return_value = sum(inp.value_sats() for inp in inputs)
+        tx.output_value.return_value = sum(out.value for out in outputs)
+        tx.get_output_idxs_from_address.return_value = [0]
+        # Attributes set by the caller after construction.
+        tx.description = ""
+        tx.heirsvalue = 0
+        tx.my_locktime = 0
+        tx.willexecutor = None
+        tx.heirs = {}
+        tx.available_utxos = []
+        _fake_txs.append(tx)
+        return tx
+
+    with patch(
+        "bal.core.heirs.bitcoin.is_address", return_value=True
+    ), patch(
+        "bal.core.heirs.PartialTxOutput.from_address_and_value",
+        side_effect=_fake_from_address_and_value,
+    ), patch(
+        "bal.core.heirs.PartialTransaction.from_io",
+        side_effect=_fake_from_io,
+    ):
+        try:
+            result = h.buildTransactions(
+                bal_plugin, wallet, tx_fees=1, utxos=utxos
+            )
+        except Exception as exc:
+            tb = traceback.format_exc()
+            pytest.fail(
+                f"buildTransactions raised {type(exc).__name__}: {exc}\n\n{tb}"
+            )
+
+    assert result, (
+        "buildTransactions returned empty — no transactions were built "
+        "(check whether NO_WILLEXECUTOR needs to be True)"
+    )
 
 
 # ------------------------------------------------------------------ #
@@ -519,4 +648,4 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             globals()[name]()
             print(f"  [OK] {name}")
-    print("[OK] All Group E (giovanna7) tests passed")
+    print("[OK] All Group E (karen7) tests passed")

@@ -860,6 +860,7 @@ class BalBuildWillDialog(BalDialog):
 
             except Exception as e:
                 self.msg_set_building(self.msg_error(e))
+                raise e
                 return False, None
 
         # DUST report (one line PER HEIR, not per will-executor).
@@ -1010,11 +1011,19 @@ class BalBuildWillDialog(BalDialog):
         )
 
     def on_accept(self):
-        self.bal_window.update_all()
+        try:
+            self.bal_window.update_all()
+        except Exception as e:
+            import traceback
+            _logger.error(f"NoneType_catch on_accept: {e}\n{traceback.format_exc()}")
         pass
 
     def on_accept_phase2(self):
-        self.bal_window.update_all()
+        try:
+            self.bal_window.update_all()
+        except Exception as e:
+            import traceback
+            _logger.error(f"NoneType_catch on_accept_phase2: {e}\n{traceback.format_exc()}")
         pass
 
     def on_error_push(self):
@@ -1265,6 +1274,13 @@ class BalBuildWillDialog(BalDialog):
         )
 
     def on_success_phase1(self, result):
+        try:
+            self._on_success_phase1_body(result)
+        except Exception as e:
+            import traceback
+            _logger.error(f"NoneType_catch on_success_phase1: {e}\n{traceback.format_exc()}")
+
+    def _on_success_phase1_body(self, result):
         if self._stopping:
             return
         self.have_to_sign, tx = list(result)
@@ -1574,7 +1590,8 @@ class BalBuildWillDialog(BalDialog):
         self.bal_window.update_all()
         a, b, c = error
         self.msg_edit_row(self.msg_error(f"Error: {b}"))
-        _logger.error(f"error phase1: {b}")
+        import traceback
+        _logger.error(f"error phase1: {b}\n{''.join(traceback.format_exception(a, b, c))}")
         button=QPushButton(_("Close"))
         button.clicked.connect(self.close)
         self.vbox.addWidget(button)

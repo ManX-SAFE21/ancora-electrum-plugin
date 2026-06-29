@@ -95,7 +95,7 @@ QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src python3 -m pytest \
   tests/test_core_*.py tests/test_gui_*.py \
   tests/test_anticipate_past_locktime.py tests/test_anticipate_manual_locktime.py \
   tests/test_group_b_auto_sign.py tests/test_group_c_settings.py \
-  tests/test_group_d_alarms.py tests/test_group_e_mock_giovanna7.py \
+  tests/test_group_d_alarms.py tests/test_group_e_mock_karen7.py \
   tests/test_group_f_heir_change_rebuild.py tests/test_group_g_basic_calendar.py \
   tests/test_group_h_v048.py -q
 ```

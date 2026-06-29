@@ -583,27 +583,27 @@ starting on the Desktop) instead of opening it. (D2 was intentionally skipped.)
 
 **Verification (follow-up):** full suite `217 passed`.
 
-## 9. Group E - Mock tests with fake wallet "giovanna7"
+## 9. Group E - Mock tests with fake wallet "karen7"
 
 **Goal:** add automated, GUI-free mock tests covering four behaviour areas of
 the plugin, all driven by a single self-contained fake wallet named
-"giovanna7" (no real Electrum wallet file is needed).
+"karen7" (no real Electrum wallet file is needed).
 
 **What was added:**
 
-- `tests/test_group_e_mock_giovanna7.py` (new) - 22 tests in four sections:
-  - A fake wallet model (`GiovannaWallet`, `FakeDB`) whose `str(wallet)` is
-    `"giovanna7"`, pre-loaded with two heirs (alice, bob).
+- `tests/test_group_e_mock_karen7.py` (new) - 22 tests in four sections:
+  - A fake wallet model (`Karen7Wallet`, `FakeDB`) whose `str(wallet)` is
+    `"karen7"`, pre-loaded with two heirs (alice, bob).
   - **E1 - calendar / .ics:** reminder-offset distribution rules
     (`compute_reminder_offsets`), VALARM/TRIGGER shape
     (`TRIGGER;RELATED=END:-P{n}D`), iCalendar escaping of the event text, and
     writing a temporary `.ics` file (`BalCalendar.write_temp_ics`).
-  - **E2 - inheritance / states:** loading/adding/removing giovanna7's heirs
+  - **E2 - inheritance / states:** loading/adding/removing karen7's heirs
     (`Heirs`), and `WillItem` status transitions (VALID -> COMPLETE,
     INVALIDATED clears VALID, PUSHED clears PUSH_FAIL), `Will.only_valid`, and
     heir-change detection (`HeirNotFoundException`).
   - **E3 - connectivity:** stubbing `Willexecutors.get_info_task` to prove that
-    `ping_servers_parallel` contacts giovanna7's servers concurrently (total
+    `ping_servers_parallel` contacts karen7's servers concurrently (total
     time far below the sequential sum), fires the per-server `on_each` callback
     once with the correct ok flag, and writes results back into the mapping;
     plus the empty-mapping no-op.
@@ -738,9 +738,9 @@ own visible date, with the **last one one day before the inheritance locktime**.
 - `bal/core/plugin_base.py`
   - Updated the `NUM_REMINDERS` comment to describe the new "separate events"
     behaviour.
-- `tests/test_group_e_mock_giovanna7.py`
+- `tests/test_group_e_mock_karen7.py`
   - Replaced the old VALARM-shape E1 test with
-    `test_e1_build_separate_events_for_giovanna`, which asserts the new
+    `test_e1_build_separate_events_for_karen7`, which asserts the new
     structure: N distinct VEVENTs, no VALARM, unique UIDs, numbered summaries,
     and the last event one day before the locktime.
 

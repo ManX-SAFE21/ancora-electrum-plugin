@@ -176,12 +176,12 @@ class Will:
             if txid != wid:
                 outputs = will[wid].tx.outputs()
                 ow = will[wid]
-                ow.normalize_locktime(others_inputs)
+                ow.normalize_locktime(others_input)
                 will[wid] = WillItem(ow.to_dict())
 
                 for i in range(0, len(outputs)):
                     Will.change_input(
-                        will, wid, i, outputs[i], others_inputs, to_delete, to_add
+                        will, wid, i, outputs[i], others_input, to_delete, to_add
                     )
 
                 to_delete.append(wid)
