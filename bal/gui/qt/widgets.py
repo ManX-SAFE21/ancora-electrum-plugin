@@ -1044,13 +1044,21 @@ class WillSettingsWidget(QWidget):
             f" {heir} - {self.bal_window.heirs[heir][0]}, {self.bal_window.heirs[heir][1]}"
             for heir in self.bal_window.heirs
         )
+        # BASIC mode: use factory defaults (the hidden settings are ignored).
+        # ADVANCED mode: use the user-configured values.
+        if self.bal_window.bal_plugin.is_basic_mode():
+            raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
+            raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
+        else:
+            raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
+            raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()
         event_description = BalCalendar.ical_escape(
-            f"{self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()}"
+            f"{raw_description}"
             .replace("$wallet_name", str(self.bal_window.wallet))
             .replace("$heirs_complete", heirs_details)
         )
         summary_base = (
-            f"{self.bal_window.bal_plugin.EVENT_SUMMARY.get()}"
+            f"{raw_summary}"
             .replace("$wallet_name", str(self.bal_window.wallet))
         )
 

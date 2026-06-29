@@ -22,6 +22,7 @@ from .common import read_QIcon_from_bytes
 from .widgets import BalCheckBox, BalLineEdit, BalSpinBox, BalTextEdit
 from .window import BalWindow
 from .dialogs import BalDialog
+from PyQt6.QtWidgets import QLayout
 
 
 def _window_key(window):
@@ -462,9 +463,12 @@ class Plugin(BalPlugin):
                     self.update_all()
                     return
             self.USER_TYPE.set("advanced" if idx == 1 else "basic")
-            # Show/hide the welist server row (advanced-only).
+            # Show/hide the advanced-only rows.
             basic = idx != 1
-            for w in (lbl_welist_server, edit_welist_server, help_welist_server):
+            for w in (lbl_welist_server, edit_welist_server, help_welist_server,
+                      lbl_num_reminders, heir_num_reminders, help_num_reminders,
+                      lbl_event_summary, edit_event_summary, help_event_summary,
+                      lbl_event_description, edit_event_description, help_event_description):
                 w.setVisible(not basic)
             self.update_all()
 
@@ -477,8 +481,13 @@ class Plugin(BalPlugin):
         # the calendar button now only SAVES the .ics file instead of opening it
         # with an external app, so the setting is no longer needed in the dialog.
         edit_event_summary = BalLineEdit(self.EVENT_SUMMARY)
+        edit_event_summary.setMinimumWidth(360)
         edit_event_description = BalTextEdit(self.EVENT_DESCRIPTION)
+        edit_event_description.setMinimumHeight(
+            edit_event_description.fontMetrics().lineSpacing() * 3 + 10
+        )
         edit_welist_server = BalLineEdit(self.WELIST_SERVER)
+        edit_welist_server.setMinimumWidth(360)
 
         heir_repush = QPushButton("Rebroadcast transactions")
         heir_repush.clicked.connect(partial(self.broadcast_transactions, True))
@@ -501,10 +510,9 @@ class Plugin(BalPlugin):
         # Reset/support button row (bottom). Assigning ``QGridLayout(d)`` would
         # have made the grid the dialog's only layout, leaving no room for them.
         grid = QGridLayout()
-        # NOTE: the "User Type" row used to be the first row (row 0). It was moved
-        # to the BOTTOM of the grid (just above "Rebroadcast transactions") at the
-        # owner's request; see the add_widget call further below. The remaining
-        # rows were renumbered up by one accordingly.
+        grid.setColumnStretch(1, 1)
+        # NOTE: the "User Type" row is placed at row 5, right before the
+        # advanced-only settings, so the user picks basic/advanced first.
         add_widget(
             grid,
             "Hide Replaced",
@@ -564,74 +572,13 @@ class Plugin(BalPlugin):
                 "the heirs."
             ),
         )
-        add_widget(
-            grid,
-            "Number of reminders",
-            heir_num_reminders,
-            5,
-            (
-                "How many reminder alarms the exported calendar (.ics) event "
-                "contains.\n\n"
-                "BASIC MODE:\n"
-                "Calendar reminder 30, 10 and 1 days before.\n\n\n"
-                "ADVANCED MODE:\n"
-                "The reminders are spread across the check-alive period and "
-                "always fall before the delivery deadline.\n"
-                "If the period is shorter than the requested number, at most "
-                "one reminder per day is used. Range: 1 to 5 (default 3)."
-            ),
-        )
-        add_widget(
-            grid,
-            "Event summary",
-            edit_event_summary,
-            6,
-            (
-                "Default message to be used in event summary\n"
-                 "Variables:\n"
-                 "  $wallet_name: name of wallet\n"
-                 "  $heirs_complete: list of heirs name,address,amount\n"
-                 #"  $will_details_complete: will details(id transaction, mining fees, willexecutor, willexecutor fees, locktime)\n"
-             )
-        )
-        add_widget(
-            grid,
-            "Event description",
-            edit_event_description,
-            7,
-            (
-                "Default message to be used in event description\n"
-                 "Variables:\n"
-                 "  $wallet_name: name of wallet\n"
-                 "  $heirs_complete: list of heirs name,address,amount\n"
-                 #"  $will_details_complete: will details(id transaction, mining fees, willexecutor, willexecutor fees, locktime)\n"
-             )
-        )
-        #add_widget(grid, "Bal Mode", bal_mode, 4, "choose bal mode")
-
-        # add_widget(
-        #    grid,
-        #    "Ping Willexecutors",
-        #    heir_ping_willexecutors,
-        #    3,
-        #    "Ping willexecutors to get payment info before compiling will",
-        # )
-        # add_widget(
-        #    grid,
-        #    " - Ask before",
-        #    heir_ask_ping_willexecutors,
-        #    4,
-        #    "Ask before to ping willexecutor",
-        # )
-        # add_widget(grid,"Enable Multiverse(EXPERIMENTAL/BROKEN)",heir_enable_multiverse,6,"enable multiple locktimes, will import.... ")
-        # "User Type" placed here (row 8), at the BOTTOM of the settings just
-        # above "Rebroadcast transactions" (owner request). It used to be the very
-        # first row; the other rows were renumbered up by one when it was moved.
+        # User Type selector placed BEFORE the advanced-only settings so the
+        # user chooses basic/advanced first, then sees the relevant options.
         add_widget(
             grid,
             "User Type",
             user_type_combo,
-            8,
+            5,
             (
                 "Choose how much detail the plugin shows.\n\n"
                 "BASIC: simplified interface, safe configuration for most "
@@ -642,6 +589,41 @@ class Plugin(BalPlugin):
                 "editable."
             ),
         )
+        # Number of reminders, event summary and event description are visible
+        # only in ADVANCED mode.  In BASIC mode the factory defaults are always
+        # used and these settings are hidden.
+        lbl_num_reminders = QLabel(_("Number of reminders"))
+        help_num_reminders = HelpButton(
+            "How many reminder alarms the exported calendar (.ics) event "
+            "contains.  Range: 1 to 5 (default 3).  Only used in ADVANCED mode."
+        )
+        grid.addWidget(lbl_num_reminders, 6, 0)
+        grid.addWidget(heir_num_reminders, 6, 1)
+        grid.addWidget(help_num_reminders, 6, 2)
+
+        lbl_event_summary = QLabel(_("Event summary"))
+        help_event_summary = HelpButton(
+            "Default message to be used in event summary\n"
+            "Variables:\n"
+            "  $wallet_name: name of wallet\n"
+            "  $heirs_complete: list of heirs name,address,amount\n"
+            "Only used in ADVANCED mode."
+        )
+        grid.addWidget(lbl_event_summary, 7, 0)
+        grid.addWidget(edit_event_summary, 7, 1)
+        grid.addWidget(help_event_summary, 7, 2)
+
+        lbl_event_description = QLabel(_("Event description"))
+        help_event_description = HelpButton(
+            "Default message to be used in event description\n"
+            "Variables:\n"
+            "  $wallet_name: name of wallet\n"
+            "  $heirs_complete: list of heirs name,address,amount\n"
+            "Only used in ADVANCED mode."
+        )
+        grid.addWidget(lbl_event_description, 8, 0)
+        grid.addWidget(edit_event_description, 8, 1)
+        grid.addWidget(help_event_description, 8, 2)
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
         # factory default is always used and the setting is hidden.
         lbl_welist_server = QLabel(_("Welist Server URL"))
@@ -654,7 +636,10 @@ class Plugin(BalPlugin):
         grid.addWidget(help_welist_server, 9, 2)
         # Initial visibility: hidden in basic, visible in advanced.
         basic_init = str(self.USER_TYPE.get()).lower() != "advanced"
-        for w in (lbl_welist_server, edit_welist_server, help_welist_server):
+        for w in (lbl_welist_server, edit_welist_server, help_welist_server,
+                  lbl_num_reminders, heir_num_reminders, help_num_reminders,
+                  lbl_event_summary, edit_event_summary, help_event_summary,
+                  lbl_event_description, edit_event_description, help_event_description):
             w.setVisible(not basic_init)
 
         grid.addWidget(heir_repush, 10, 0)
@@ -744,6 +729,7 @@ class Plugin(BalPlugin):
 
         # Outer layout: warning (top) -> settings grid -> bottom button row.
         outer = QVBoxLayout(d)
+        outer.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
         outer.addWidget(lbl_warning)
         # Blank vertical gap below the red warning so it is not glued to the
         # first setting row ("User Type"); requested by the user for readability.
