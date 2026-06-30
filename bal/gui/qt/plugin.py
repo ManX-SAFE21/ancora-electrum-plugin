@@ -469,7 +469,8 @@ class Plugin(BalPlugin):
                       lbl_num_reminders, heir_num_reminders, help_num_reminders,
                       lbl_event_summary, edit_event_summary, help_event_summary,
                       lbl_event_description, edit_event_description, help_event_description,
-                      lbl_calendar_app, edit_calendar_app, help_calendar_app):
+                      lbl_calendar_app, edit_calendar_app, help_calendar_app,
+                      reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10):
                 w.setVisible(not basic)
             self.update_all()
 
@@ -489,6 +490,28 @@ class Plugin(BalPlugin):
 
         edit_calendar_app = BalLineEdit(self.CALENDAR_APP)
         edit_calendar_app.setMinimumWidth(360)
+
+        def _make_reset_btn(cfg, widget, kind):
+            """Return a small ``↺`` button that resets a single setting."""
+            btn = QPushButton("\u21ba")
+            btn.setFixedWidth(24)
+            btn.setToolTip(_("Reset to default"))
+            def reset():
+                cfg.set(cfg.default)
+                if kind == "check":
+                    widget.setChecked(bool(cfg.default))
+                elif kind == "spin":
+                    widget.setValue(int(cfg.default))
+                elif kind == "line":
+                    widget.setText(cfg.default)
+                elif kind == "text":
+                    widget.setPlainText(cfg.default)
+                elif kind == "user_type":
+                    widget.setCurrentIndex(
+                        1 if str(cfg.default).lower() == "advanced" else 0
+                    )
+            btn.clicked.connect(reset)
+            return btn
 
         heir_repush = QPushButton("Rebroadcast transactions")
         heir_repush.clicked.connect(partial(self.broadcast_transactions, True))
@@ -521,6 +544,7 @@ class Plugin(BalPlugin):
             0,
             "Hide replaced transactions from will detail and list",
         )
+        grid.addWidget(_make_reset_btn(self.HIDE_REPLACED, heir_hide_replaced, "check"), 0, 3)
         add_widget(
             grid,
             "Hide Invalidated",
@@ -528,6 +552,7 @@ class Plugin(BalPlugin):
             1,
             "Hide invalidated transactions from will detail and list",
         )
+        grid.addWidget(_make_reset_btn(self.HIDE_INVALIDATED, heir_hide_invalidated, "check"), 1, 3)
         add_widget(
             grid,
             "Auto-sign on Check",
@@ -540,6 +565,7 @@ class Plugin(BalPlugin):
                 "encrypted."
             ),
         )
+        grid.addWidget(_make_reset_btn(self.AUTO_SIGN, heir_auto_sign, "check"), 2, 3)
         add_widget(
             grid,
             "Panel editable Date and Fee",
@@ -552,6 +578,7 @@ class Plugin(BalPlugin):
                 "When disabled, those dates are display-only outside the wizard."
             ),
         )
+        grid.addWidget(_make_reset_btn(self.EDITABLE_DATES, heir_editable_dates, "check"), 3, 3)
         # "Add transaction without will-executor" setting (formerly labelled
         # "No will-executor TX"). When ON the plugin ALSO builds the backup
         # inheritance transaction that does NOT require a will-executor (the
@@ -573,6 +600,7 @@ class Plugin(BalPlugin):
                 "the heirs."
             ),
         )
+        grid.addWidget(_make_reset_btn(self.NO_WILLEXECUTOR, heir_no_willexecutor, "check"), 4, 3)
         # User Type selector placed BEFORE the advanced-only settings so the
         # user chooses basic/advanced first, then sees the relevant options.
         add_widget(
@@ -590,6 +618,7 @@ class Plugin(BalPlugin):
                 "editable."
             ),
         )
+        grid.addWidget(_make_reset_btn(self.USER_TYPE, user_type_combo, "user_type"), 5, 3)
         # Number of reminders, event summary and event description are visible
         # only in ADVANCED mode.  In BASIC mode the factory defaults are always
         # used and these settings are hidden.
@@ -601,6 +630,8 @@ class Plugin(BalPlugin):
         grid.addWidget(lbl_num_reminders, 6, 0)
         grid.addWidget(heir_num_reminders, 6, 1)
         grid.addWidget(help_num_reminders, 6, 2)
+        reset_btn_6 = _make_reset_btn(self.NUM_REMINDERS, heir_num_reminders, "spin")
+        grid.addWidget(reset_btn_6, 6, 3)
 
         lbl_event_summary = QLabel(_("Event summary"))
         help_event_summary = HelpButton(
@@ -613,6 +644,8 @@ class Plugin(BalPlugin):
         grid.addWidget(lbl_event_summary, 7, 0)
         grid.addWidget(edit_event_summary, 7, 1)
         grid.addWidget(help_event_summary, 7, 2)
+        reset_btn_7 = _make_reset_btn(self.EVENT_SUMMARY, edit_event_summary, "line")
+        grid.addWidget(reset_btn_7, 7, 3)
 
         lbl_event_description = QLabel(_("Event description"))
         help_event_description = HelpButton(
@@ -625,6 +658,8 @@ class Plugin(BalPlugin):
         grid.addWidget(lbl_event_description, 8, 0)
         grid.addWidget(edit_event_description, 8, 1)
         grid.addWidget(help_event_description, 8, 2)
+        reset_btn_8 = _make_reset_btn(self.EVENT_DESCRIPTION, edit_event_description, "text")
+        grid.addWidget(reset_btn_8, 8, 3)
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
         # factory default is always used and the setting is hidden.
         lbl_welist_server = QLabel(_("Welist Server URL"))
@@ -635,6 +670,8 @@ class Plugin(BalPlugin):
         grid.addWidget(lbl_welist_server, 9, 0)
         grid.addWidget(edit_welist_server, 9, 1)
         grid.addWidget(help_welist_server, 9, 2)
+        reset_btn_9 = _make_reset_btn(self.WELIST_SERVER, edit_welist_server, "line")
+        grid.addWidget(reset_btn_9, 9, 3)
 
         lbl_calendar_app = QLabel(_("Calendar app command"))
         help_calendar_app = HelpButton(
@@ -645,6 +682,8 @@ class Plugin(BalPlugin):
         grid.addWidget(lbl_calendar_app, 10, 0)
         grid.addWidget(edit_calendar_app, 10, 1)
         grid.addWidget(help_calendar_app, 10, 2)
+        reset_btn_10 = _make_reset_btn(self.CALENDAR_APP, edit_calendar_app, "line")
+        grid.addWidget(reset_btn_10, 10, 3)
 
         # Initial visibility: hidden in basic, visible in advanced.
         basic_init = str(self.USER_TYPE.get()).lower() != "advanced"
@@ -652,7 +691,8 @@ class Plugin(BalPlugin):
                   lbl_num_reminders, heir_num_reminders, help_num_reminders,
                   lbl_event_summary, edit_event_summary, help_event_summary,
                   lbl_event_description, edit_event_description, help_event_description,
-                  lbl_calendar_app, edit_calendar_app, help_calendar_app):
+                  lbl_calendar_app, edit_calendar_app, help_calendar_app,
+                  reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10):
             w.setVisible(not basic_init)
 
         grid.addWidget(heir_repush, 11, 0)
