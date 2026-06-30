@@ -348,7 +348,7 @@ class BalPlugin(BasePlugin):
     @staticmethod
     def default_will_settings():
         """Default will settings: a fee rate plus absolute threshold/locktime."""
-        will_settings = {"baltx_fees": 50}
+        will_settings = {"baltx_fees": 20}
         will_settings.update(BalPlugin.default_will_settings_absolute())
         return will_settings
 
