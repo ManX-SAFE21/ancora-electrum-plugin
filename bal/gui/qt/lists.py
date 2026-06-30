@@ -17,7 +17,8 @@ and ``dialogs``.
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
 from .widgets import BalCheckBox, PercAmountEdit, WillSettingsWidget
-from .dialogs import BalBuildWillDialog
+from PyQt6.QtWidgets import QMessageBox
+from .dialogs import BalBuildWillDialog, BalDialog
 
 
 class HeirListWidget(MyTreeView, MessageBoxMixin):
@@ -759,6 +760,16 @@ class WillExecutorListWidget(MyTreeView):
         self._bal_parent.save_willexecutors()
         self.update()
 
+    def on_activated(self, idx):
+        self.on_double_click(idx)
+
+    def on_double_click(self, idx):
+        edit_key = self.get_edit_key_from_coordinate(
+            idx.row(), self.Columns.URL
+        )
+        if edit_key and edit_key in self._bal_parent.willexecutors_list:
+            self._bal_parent.add(edit_key)
+
     def get_edit_key_from_coordinate(self, row, col):
         role = self.ROLE_HEIR_KEY + col
         a = self.get_role_data_from_coordinate(row, col, role=role)
@@ -951,13 +962,200 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         vbox.addLayout(buttonbox)
         # self.will_executor_list_widget.update()
 
-    def add(self):
-        self.willexecutors_list["http://localhost:8080"] = {
-            "info": "New Will Executor",
-            "base_fee": 0,
-            "status": "-1",
-        }
-        self.will_executor_list_widget.update()
+    def add(self, edit_key=None):
+        executor = None
+        if edit_key:
+            executor = self.willexecutors_list.get(edit_key)
+            title = _("Edit: {}").format(edit_key)
+        else:
+            title = _("New Will Executor")
+        d = BalDialog(
+            self.bal_window.window,
+            self.bal_plugin,
+            self.bal_plugin.get_window_title(title),
+        )
+
+        vbox = QVBoxLayout(d)
+        grid = QGridLayout()
+
+        url_edit = QLineEdit()
+        url_edit.setFixedWidth(32 * char_width_in_lineedit())
+        info_edit = QLineEdit("New Will Executor")
+        info_edit.setFixedWidth(32 * char_width_in_lineedit())
+        base_fee_spin = QSpinBox()
+        base_fee_spin.setRange(0, 1000000)
+        base_fee_spin.setValue(0)
+        address_edit = QLineEdit()
+        address_edit.setFixedWidth(32 * char_width_in_lineedit())
+        sync_btn = QPushButton("\u21BB")
+        sync_btn.setFixedWidth(32)
+        loading_label = QLabel()
+        d._sync_active = False
+
+        if executor:
+            url_edit.setText(edit_key)
+            info_edit.setText(str(executor.get("info", "New Will Executor")))
+            base_fee_spin.setValue(int(executor.get("base_fee", 0)))
+            address_edit.setText(str(executor.get("address", "")))
+
+        def on_sync():
+            url = url_edit.text().strip()
+            if not url:
+                self.show_error(_("URL is required"))
+                return
+            tmp = {}
+            sync_btn.setEnabled(False)
+            loading_label.setText("\u27F3")
+            d._sync_active = True
+
+            def task():
+                return Willexecutors.get_info_task(url, tmp)
+
+            def on_success(result):
+                if not getattr(d, "_sync_active", False):
+                    return
+                if result.get("status") == 200:
+                    info_edit.setText(str(result.get("info", "")))
+                    base_fee_spin.setValue(int(result.get("base_fee", 0)))
+                    address_edit.setText(str(result.get("address", "")))
+                    if edit_key and edit_key in self.willexecutors_list:
+                        self.willexecutors_list[edit_key].update({
+                            "status": 200,
+                            "info": result.get("info", ""),
+                            "base_fee": result.get("base_fee", 0),
+                            "address": result.get("address", ""),
+                            "last_update": result.get(
+                                "last_update", datetime.now().timestamp()
+                            ),
+                        })
+                        self.will_executor_list_widget.update()
+                else:
+                    QMessageBox.warning(
+                        d,
+                        _("Error"),
+                        _("Could not reach server at {}").format(url),
+                    )
+                    url_edit.setFocus()
+                    url_edit.selectAll()
+                sync_btn.setEnabled(True)
+                loading_label.clear()
+                d._sync_active = False
+
+            def on_error(exc_info):
+                if not getattr(d, "_sync_active", False):
+                    return
+                QMessageBox.warning(
+                    d,
+                    _("Error"),
+                    _("Error contacting server: {}").format(
+                        str(exc_info[1])
+                    ),
+                )
+                url_edit.setFocus()
+                url_edit.selectAll()
+                sync_btn.setEnabled(True)
+                loading_label.clear()
+                d._sync_active = False
+
+            def on_done():
+                pass
+
+            sync_thread = TaskThread(d)
+            sync_thread.add(
+                task, on_success=on_success, on_done=on_done, on_error=on_error
+            )
+
+        sync_btn.clicked.connect(on_sync)
+
+        if not edit_key:
+            add_another_btn = QPushButton(_("Add another"))
+            self._add_another = False
+
+            def add_another():
+                self._add_another = True
+                d.accept()
+
+            add_another_btn.clicked.connect(add_another)
+        else:
+            self._add_another = False
+
+        row = 0
+        grid.addWidget(QLabel(_("URL")), row, 0)
+        grid.addWidget(url_edit, row, 1)
+        grid.addWidget(sync_btn, row, 2)
+        grid.addWidget(loading_label, row, 3)
+        grid.addWidget(
+            HelpButton(_("Will executor server URL (e.g. http://192.168.1.100:8080)")),
+            row,
+            4,
+        )
+
+        row += 1
+        grid.addWidget(QLabel(_("Info")), row, 0)
+        grid.addWidget(info_edit, row, 1)
+        grid.addWidget(
+            HelpButton(_("A short description or name for this executor")),
+            row,
+            2,
+        )
+
+        row += 1
+        grid.addWidget(QLabel(_("Base Fee (sats)")), row, 0)
+        grid.addWidget(base_fee_spin, row, 1)
+        grid.addWidget(
+            HelpButton(_("Base fee in satoshis")),
+            row,
+            2,
+        )
+
+        row += 1
+        grid.addWidget(QLabel(_("Address")), row, 0)
+        grid.addWidget(address_edit, row, 1)
+        grid.addWidget(
+            HelpButton(_("Bitcoin address for fee payments (optional)")),
+            row,
+            2,
+        )
+
+        vbox.addLayout(grid)
+        buttons = [CancelButton(d), OkButton(d)]
+        if not edit_key:
+            buttons.append(add_another_btn)
+        vbox.addLayout(Buttons(*buttons))
+
+        while d.exec():
+            url = url_edit.text().strip()
+            if not url:
+                self.show_error(_("URL is required"))
+                continue
+            if edit_key:
+                old_url = edit_key
+                ex = self.willexecutors_list[old_url]
+                ex.update({
+                    "info": info_edit.text().strip() or "New Will Executor",
+                    "base_fee": base_fee_spin.value(),
+                    "address": address_edit.text().strip(),
+                })
+                if url != old_url:
+                    self.willexecutors_list[url] = ex
+                    del self.willexecutors_list[old_url]
+            else:
+                self.willexecutors_list[url] = {
+                    "info": info_edit.text().strip() or "New Will Executor",
+                    "base_fee": base_fee_spin.value(),
+                    "address": address_edit.text().strip(),
+                    "selected": False,
+                    "status": "-1",
+                }
+            self.will_executor_list_widget.update()
+            Willexecutors.save(self.bal_window.bal_plugin, self.willexecutors_list)
+            if not self._add_another:
+                break
+            self._add_another = False
+            url_edit.clear()
+            info_edit.setText("New Will Executor")
+            base_fee_spin.setValue(0)
+            address_edit.clear()
 
     def download_list(self, wes=None):
         # Both this button and the wizard go through the same code path on

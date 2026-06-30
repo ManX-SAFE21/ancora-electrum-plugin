@@ -218,7 +218,6 @@ class BalWindow:
             d.accept()
 
         new_heir_button.clicked.connect(new_heir)
-        new_heir_button.setDefault(True)
 
         grid.addWidget(QLabel(_("Name")), 1, 0)
         grid.addWidget(heir_name, 1, 1)
