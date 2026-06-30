@@ -1427,6 +1427,53 @@ confirms the ZIP works).
 
 ---
 
+## 25. v0.5.0 - Will-executor add/edit dialog with sync, double-click to edit, auto-sign fix
+
+**Date:** 2026-06-30
+
+**Goal:** Complete the will-executor add/edit dialog with sync ping, enable
+double-click to edit, and fix the auto-sign toggle so it actually disables
+signing when OFF and hides in BASIC mode.
+
+**What changed:**
+
+- `bal/gui/qt/lists.py`
+  - `WillExecutorListWidget.on_activated` / `.on_double_click`: double-click or
+    Enter on a will-executor opens the add/edit dialog in edit mode with
+    pre-populated fields (URL, Info, Base Fee, Address).
+  - `WillExecutorWidget.add()` accepts optional `edit_key` param: pre-populates
+    fields, shows "Add another" only in add mode (not edit), renames URL key in
+    `willexecutors_list` if changed, updates status/last_update on sync.
+  - Added sync button (`↻`) with `TaskThread` + `Willexecutors.get_info_task()`;
+    loading label shows `⟳` during async ping; on error shows
+    `QMessageBox.warning(d, …)` then focuses URL input with `selectAll()`.
+
+- `bal/gui/qt/dialogs.py`
+  - `_on_success_phase1_body`: auto-sign guard — skips signing/broadcast when
+    `AUTO_SIGN` is OFF in ADVANCED mode; basic mode always auto-signs.
+  - `_show_next_steps_hint`: suppresses manual hints when auto-sign is
+    effectively active (basic mode or AUTO_SIGN ON).
+
+- `bal/gui/qt/plugin.py`
+  - AUTO_SIGN setting row: named widgets (`lbl_auto_sign`, `heir_auto_sign`,
+    `help_auto_sign`, `reset_btn_auto_sign`) added to both basic/advanced
+    visibility toggle lists (hidden in basic).
+
+- `bal/gui/qt/window.py`
+  - Heir "Add another" button no longer the default (removed `setDefault(True)`).
+
+- Version bumped 0.4.8 -> 0.5.0 (`plugin_base.py`, `__init__.py`, `VERSION`,
+  `manifest.json`).
+
+**Verification:**
+
+- `py_compile`: `lists.py`, `dialogs.py`, `plugin.py`, `window.py` compile OK.
+- `ruff`: no new errors (only pre-existing star-import / F841 noise).
+
+**Outcome:** DONE.
+
+---
+
 ## 24. v0.4.8 - Raw/Date selector on WILL/HEIR tabs, shorter report window, USER TYPE moved + "at My Risk" gate, executed/mempool inheritance note, "balance too low" recoloured, Reset button renamed
 
 **Date:** 2026-06-25
