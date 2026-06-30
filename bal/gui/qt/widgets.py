@@ -20,7 +20,7 @@ Contents:
 
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
-from .calendar import BalCalendar
+from .calendar import BalCalendar, BalCalendarButton
 
 
 def compute_reminder_offsets(days, count):
@@ -713,17 +713,15 @@ class WillSettingsWidget(QWidget):
         self.read_only = read_only
         box = QHBoxLayout(self) if layout_type == "h" else QVBoxLayout(self)
 
-        self.calendar_button = QPushButton()
+        self.calendar_button = BalCalendarButton(self.bal_window, self._ics_provider)
         self.calendar_button.setIcon(
             read_QIcon_from_bytes(
                 self.bal_window.bal_plugin.read_file("icons/calendar.png")
             )
         )
-        # Tooltip so the icon is self-explanatory when hovered (Group C / C5).
         self.calendar_button.setToolTip(
             _("Export reminder dates to your calendar (.ics)")
         )
-        self.calendar_button.clicked.connect(self.open_or_save_calendar)
         self.widgets["locktime"] = LockTimeWidget(bal_window, self)
         self.widgets["threshold"] = ThresholdTimeWidget(bal_window, self)
         self.widgets["locktime"].valueEdited.connect(self.on_locktime_change)
@@ -1144,6 +1142,84 @@ class WillSettingsWidget(QWidget):
         with open(self.temp_path, "rb") as src, open(target, "wb") as dst:
             dst.write(src.read())
         return target
+
+    def _ics_provider(self):
+        """Return the .ics content for the current locktime/threshold values.
+
+        Used by :class:`BalCalendarButton` as its content provider.
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            locktime = self.widgets["locktime"].alarm
+
+            if self.bal_window.bal_plugin.is_basic_mode():
+                days_to_deadline = (locktime - datetime.now()).days
+                offsets = basic_reminder_offsets(days_to_deadline)
+            else:
+                threshold = self.widgets["threshold"].alarm
+                days = (locktime - threshold).days
+                try:
+                    count = int(self.bal_window.bal_plugin.NUM_REMINDERS.get())
+                except Exception:
+                    count = 3
+                offsets = compute_reminder_offsets(days, count)
+
+            now = BalCalendar.format_time(datetime.now())
+
+            heirs_details = "\r\n".join(
+                f" {heir} - {self.bal_window.heirs[heir][0]}, "
+                f"{self.bal_window.heirs[heir][1]}"
+                for heir in self.bal_window.heirs
+            )
+
+            if self.bal_window.bal_plugin.is_basic_mode():
+                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
+            else:
+                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()
+
+            event_description = BalCalendar.ical_escape(
+                f"{raw_description}"
+                .replace("$wallet_name", str(self.bal_window.wallet))
+                .replace("$heirs_complete", heirs_details)
+            )
+            summary_base = (
+                f"{raw_summary}"
+                .replace("$wallet_name", str(self.bal_window.wallet))
+            )
+
+            lines = [
+                "BEGIN:VCALENDAR",
+                "VERSION:2.0",
+                "PRODID:-//Bitcoin After Life//Electrum Plugin/"
+                f"{BalPlugin.__version__}",
+            ]
+
+            total = len(offsets)
+            for idx, offset in enumerate(offsets, start=1):
+                event_dt = BalCalendar.format_time(locktime - timedelta(days=offset))
+                summary = BalCalendar.ical_escape(
+                    f"{summary_base} (reminder {idx}/{total})"
+                )
+                lines.extend([
+                    "BEGIN:VEVENT",
+                    f"UID:bal-{str(self.bal_window.wallet)}-{offset}d",
+                    f"DTSTAMP:{now}",
+                    f"DTSTART:{event_dt}",
+                    f"DTEND:{event_dt}",
+                    f"SUMMARY:{summary}",
+                    f"DESCRIPTION:{event_description}",
+                    "END:VEVENT",
+                ])
+
+            lines.append("END:VCALENDAR")
+            lines = [s.rstrip("\r\n") for s in lines]
+            return "\r\n".join(lines) + "\r\n"
+        except Exception as e:
+            _logger.error(f"failed to generate .ics: {e}")
+            return None
 
     def on_locktime_change(self):
         locktime = self.widgets["locktime"].get_value()

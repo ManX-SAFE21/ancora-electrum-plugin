@@ -11,6 +11,129 @@ into an RFC-5545 .ics file and opens it with the OS default application.
 
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QToolButton
+
+
+class BalCalendarButton(QToolButton):
+    """A QToolButton with a dropdown menu for .ics calendar file actions.
+
+    Provides three actions: Open (with configured app), Open with..., and Save.
+    Accepts an ``ics_provider`` callable that returns the .ics content string.
+    """
+
+    def __init__(self, bal_window, ics_provider, parent=None):
+        super().__init__(parent)
+        self._bal_window = bal_window
+        self._ics_provider = ics_provider
+        self._calendar_temp_path = None
+
+        calendar_menu = QMenu(self)
+        open_action = QAction(_("Open"), self)
+        open_action.triggered.connect(self._on_open)
+        calendar_menu.addAction(open_action)
+        open_with_action = QAction(_("Open with..."), self)
+        open_with_action.triggered.connect(self._on_open_with)
+        calendar_menu.addAction(open_with_action)
+        save_action = QAction(_("Save"), self)
+        save_action.triggered.connect(self._on_save)
+        calendar_menu.addAction(save_action)
+
+        self.setMenu(calendar_menu)
+        self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+    # ------------------------------------------------------------------ #
+    #  ICS generation (lazy: generated on first action)                  #
+    # ------------------------------------------------------------------ #
+
+    def _ensure_ics(self):
+        """Generate the .ics content and cache the temp file path."""
+        try:
+            content = self._ics_provider()
+            if content:
+                self._calendar_temp_path = BalCalendar.write_temp_ics(content)
+            else:
+                self._calendar_temp_path = None
+        except Exception as e:
+            _logger.error(f"failed to generate .ics: {e}")
+            self._calendar_temp_path = None
+        return self._calendar_temp_path
+
+    # ------------------------------------------------------------------ #
+    #  Menu action handlers                                              #
+    # ------------------------------------------------------------------ #
+
+    def _on_open(self):
+        """Open the .ics with the app configured in CALENDAR_APP."""
+        path = self._ensure_ics()
+        if not path:
+            return
+        import shlex, subprocess
+        if self._bal_window.bal_plugin.is_basic_mode():
+            app = self._bal_window.bal_plugin.CALENDAR_APP.default
+        else:
+            app = self._bal_window.bal_plugin.CALENDAR_APP.get()
+        if not app:
+            return
+        try:
+            args = shlex.split(app) + [path]
+            subprocess.check_call(args)
+        except Exception as e:
+            _logger.error(f"opening calendar file failed: {e}")
+            self._bal_window.show_warning(
+                _("Could not open the calendar file: {}").format(e)
+            )
+
+    def _on_open_with(self):
+        """Let the user pick an application and open the .ics with it."""
+        path = self._ensure_ics()
+        if not path:
+            return
+        app, ok = QInputDialog.getText(
+            self,
+            _("Open calendar with..."),
+            _("Enter the application command:"),
+        )
+        if ok and app:
+            app = app.strip()
+            if app:
+                try:
+                    BalCalendar.open_with_default_app(app, path)
+                except Exception as e:
+                    _logger.error(f"opening calendar with custom app failed: {e}")
+                    self._bal_window.show_warning(
+                        _("Could not open the calendar file: {}").format(e)
+                    )
+
+    def _on_save(self):
+        """Show a "Save As" dialog and save the .ics file."""
+        path = self._ensure_ics()
+        if not path:
+            return
+        desktop = BalCalendar.desktop_dir()
+        default_path = os.path.join(desktop, "BAL_will_event.ics")
+        target = getSaveFileName(
+            parent=self._bal_window.window,
+            title=_("Save calendar reminder (.ics)"),
+            filename=default_path,
+            filter="iCalendar (*.ics);;All files (*)",
+            default_extension="ics",
+            config=self._bal_window.window.config,
+        )
+        if not target:
+            return
+        try:
+            with open(path, "rb") as src, open(target, "wb") as dst:
+                dst.write(src.read())
+            self._bal_window.show_message(
+                _("Calendar file saved to:\n{}").format(target)
+            )
+        except Exception as e:
+            _logger.error(f"saving .ics failed: {e}")
+            self._bal_window.show_warning(
+                _("Could not save the calendar file: {}").format(e)
+            )
+
 
 class BalCalendar:
     @staticmethod

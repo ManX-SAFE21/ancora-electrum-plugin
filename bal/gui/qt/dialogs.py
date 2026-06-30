@@ -23,9 +23,7 @@ from .widgets import (BalCheckBox, BalLineEdit, BalTextEdit, BalTxFeesWidget,
                       LockTimeWidget, PercAmountEdit, ThresholdTimeWidget,
                       WillSettingsWidget, WillWidget, basic_reminder_offsets,
                       compute_reminder_offsets)
-from .calendar import BalCalendar
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QToolButton
+from .calendar import BalCalendar, BalCalendarButton
 # NOTE: list views (HeirListWidget, PreviewList, WillExecutorWidget) are
 # imported lazily where needed to avoid a dialogs<->lists import cycle.
 
@@ -1455,24 +1453,8 @@ class BalBuildWillDialog(BalDialog):
         if getattr(self, "_close_button", None) is not None:
             return
 
-        # Generate .ics content once for all calendar actions.
-        self._generate_calendar_ics()
-
-        calendar_menu = QMenu()
-        open_action = QAction(_("Open"), self)
-        open_action.triggered.connect(self._on_calendar_open)
-        calendar_menu.addAction(open_action)
-        open_with_action = QAction(_("Open with..."), self)
-        open_with_action.triggered.connect(self._on_calendar_open_with)
-        calendar_menu.addAction(open_with_action)
-        save_action = QAction(_("Save"), self)
-        save_action.triggered.connect(self._on_calendar_save)
-        calendar_menu.addAction(save_action)
-
-        calendar_button = QToolButton()
+        calendar_button = BalCalendarButton(self.bal_window, self._ics_provider)
         calendar_button.setText(_("Calendar"))
-        calendar_button.setMenu(calendar_menu)
-        calendar_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
 
         self._close_button = QPushButton(_("Close"))
         self._close_button.clicked.connect(self._on_close_clicked)
@@ -1483,15 +1465,10 @@ class BalBuildWillDialog(BalDialog):
         self.vbox.addLayout(button_row)
         self._close_button.setFocus()
 
-    def _generate_calendar_ics(self):
-        """Build the .ics content and write it to a temp file.
-
-        Stores the temp path in ``self._calendar_temp_path`` (or ``None``
-        on failure) so all three calendar actions reuse the same data.
-        """
+    def _ics_provider(self):
+        """Return the .ics content for the current will data."""
         from datetime import datetime, timedelta
 
-        self._calendar_temp_path = None
         try:
             locktime_ts = Util.parse_locktime_string(
                 self.bal_window.will_settings["locktime"]
@@ -1564,79 +1541,10 @@ class BalBuildWillDialog(BalDialog):
 
             lines.append("END:VCALENDAR")
             lines = [s.rstrip("\r\n") for s in lines]
-            ics_content = "\r\n".join(lines) + "\r\n"
-            self._calendar_temp_path = BalCalendar.write_temp_ics(ics_content)
+            return "\r\n".join(lines) + "\r\n"
         except Exception as e:
             _logger.error(f"failed to generate .ics: {e}")
-
-    def _on_calendar_open(self):
-        """Open the .ics calendar file with the configured app."""
-        path = getattr(self, "_calendar_temp_path", None)
-        if not path:
-            return
-        import shlex, subprocess
-        app = self.bal_window.bal_plugin.CALENDAR_APP.get()
-        if not app:
-            return
-        try:
-            args = shlex.split(app) + [path]
-            subprocess.check_call(args)
-        except Exception as e:
-            _logger.error(f"opening calendar file failed: {e}")
-            self.bal_window.show_warning(
-                _("Could not open the calendar file: {}").format(e)
-            )
-
-    def _on_calendar_open_with(self):
-        """Let the user pick an application and open the .ics file with it."""
-        path = getattr(self, "_calendar_temp_path", None)
-        if not path:
-            return
-        from PyQt6.QtWidgets import QInputDialog
-        app, ok = QInputDialog.getText(
-            self,
-            _("Open calendar with..."),
-            _("Enter the application command:"),
-        )
-        if ok and app:
-            app = app.strip()
-            if app:
-                try:
-                    BalCalendar.open_with_default_app(app, path)
-                except Exception as e:
-                    _logger.error(f"opening calendar with custom app failed: {e}")
-                    self.bal_window.show_warning(
-                        _("Could not open the calendar file: {}").format(e)
-                    )
-
-    def _on_calendar_save(self):
-        """Show a "Save As" dialog and save the .ics calendar file."""
-        path = getattr(self, "_calendar_temp_path", None)
-        if not path:
-            return
-        desktop = BalCalendar.desktop_dir()
-        default_path = os.path.join(desktop, "BAL_will_event.ics")
-        target = getSaveFileName(
-            parent=self.bal_window.window,
-            title=_("Save calendar reminder (.ics)"),
-            filename=default_path,
-            filter="iCalendar (*.ics);;All files (*)",
-            default_extension="ics",
-            config=self.bal_window.window.config,
-        )
-        if not target:
-            return
-        try:
-            with open(path, "rb") as src, open(target, "wb") as dst:
-                dst.write(src.read())
-            self.bal_window.show_message(
-                _("Calendar file saved to:\n{}").format(target)
-            )
-        except Exception as e:
-            _logger.error(f"saving .ics failed: {e}")
-            self.bal_window.show_warning(
-                _("Could not save the calendar file: {}").format(e)
-            )
+            return None
 
     def _on_close_clicked(self):
         # Close the dialog first, then show the persistent popup guiding the
