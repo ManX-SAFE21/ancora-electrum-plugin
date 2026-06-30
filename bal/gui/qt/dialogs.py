@@ -1399,31 +1399,39 @@ class BalBuildWillDialog(BalDialog):
             return
 
         elif self.have_to_sign:
-            # If the will was rebuilt with an automatically anticipated delivery
-            # date, explain WHY we are now asking to sign: otherwise the sign
-            # prompt appears with no reason (owner feedback). The note is shown
-            # on the "Building your will" row (orange warning) before the modal
-            # password prompt opens, so the user can read it.
-            if self._date_was_anticipated:
-                # Render this notice in BLACK BOLD (not the yellow warning
-                # colour) and split it onto TWO lines after "...previous one."
-                # for readability (allegato17). The "\n" is converted to a line
-                # break by msg_update (it replaces "\n" with "<br>").
-                self.msg_set_building(
-                    "<b>{}</b>".format(
-                        _(
-                            "The delivery date was automatically moved one day "
-                            "earlier so the updated will can correctly replace "
-                            "the previous one.\n"
-                            "Please sign (and broadcast) to confirm the change."
+            auto_sign = (
+                self.bal_window.bal_plugin.is_basic_mode()
+                or self.bal_window.bal_plugin.AUTO_SIGN.get()
+            )
+            if not auto_sign:
+                self.msg_set_signing(
+                    _("Auto-sign disabled — sign manually")
+                )
+                self.have_to_sign = False
+            else:
+                # If the will was rebuilt with an automatically anticipated
+                # delivery date, explain WHY we are now asking to sign:
+                # otherwise the sign prompt appears with no reason (owner
+                # feedback). The note is shown on the "Building your will"
+                # row (orange warning) before the modal password prompt
+                # opens, so the user can read it.
+                if self._date_was_anticipated:
+                    self.msg_set_building(
+                        "<b>{}</b>".format(
+                            _(
+                                "The delivery date was automatically moved "
+                                "one day earlier so the updated will can "
+                                "correctly replace the previous one.\n"
+                                "Please sign (and broadcast) to confirm "
+                                "the change."
+                            )
                         )
                     )
+                password = self.bal_window.get_wallet_password(
+                    _("Sign your will"), parent=self
                 )
-            password = self.bal_window.get_wallet_password(
-                _("Sign your will"), parent=self
-            )
-            if password is False:
-                self.msg_set_signing(_("Aborted"))
+                if password is False:
+                    self.msg_set_signing(_("Aborted"))
         else:
             self.msg_set_signing(_("Nothing to do"))
         self.thread.add(
@@ -1628,7 +1636,10 @@ class BalBuildWillDialog(BalDialog):
         # them in that case. When AUTO_SIGN is OFF, keep the previous behaviour
         # and guide the user through the remaining manual steps.
         try:
-            if self.bal_window.bal_plugin.AUTO_SIGN.get():
+            if (
+                self.bal_window.bal_plugin.is_basic_mode()
+                or self.bal_window.bal_plugin.AUTO_SIGN.get()
+            ):
                 return
         except Exception:
             # If the setting cannot be read for any reason, fall back to the

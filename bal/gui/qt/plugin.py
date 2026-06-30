@@ -470,7 +470,9 @@ class Plugin(BalPlugin):
                       lbl_event_summary, edit_event_summary, help_event_summary,
                       lbl_event_description, edit_event_description, help_event_description,
                       lbl_calendar_app, edit_calendar_app, help_calendar_app,
-                      reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10):
+                      lbl_auto_sign, heir_auto_sign, help_auto_sign,
+                      reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
+                      reset_btn_auto_sign):
                 w.setVisible(not basic)
             self.update_all()
 
@@ -553,19 +555,20 @@ class Plugin(BalPlugin):
             "Hide invalidated transactions from will detail and list",
         )
         grid.addWidget(_make_reset_btn(self.HIDE_INVALIDATED, heir_hide_invalidated, "check"), 1, 3)
-        add_widget(
-            grid,
-            "Auto-sign on Check",
-            heir_auto_sign,
-            2,
-            (
-                "When checking, automatically sign and broadcast the will "
-                "transactions to their will-executors.\n"
-                "The wallet password is requested only if the wallet is "
-                "encrypted."
-            ),
+        lbl_auto_sign = QLabel(_("Auto-sign on Check"))
+        help_auto_sign = HelpButton(
+            "When checking, automatically sign and broadcast the will "
+            "transactions to their will-executors.\n"
+            "The wallet password is requested only if the wallet is "
+            "encrypted."
         )
-        grid.addWidget(_make_reset_btn(self.AUTO_SIGN, heir_auto_sign, "check"), 2, 3)
+        grid.addWidget(lbl_auto_sign, 2, 0)
+        grid.addWidget(heir_auto_sign, 2, 1)
+        grid.addWidget(help_auto_sign, 2, 2)
+        reset_btn_auto_sign = _make_reset_btn(
+            self.AUTO_SIGN, heir_auto_sign, "check"
+        )
+        grid.addWidget(reset_btn_auto_sign, 2, 3)
         add_widget(
             grid,
             "Panel editable Date and Fee",
@@ -692,7 +695,9 @@ class Plugin(BalPlugin):
                   lbl_event_summary, edit_event_summary, help_event_summary,
                   lbl_event_description, edit_event_description, help_event_description,
                   lbl_calendar_app, edit_calendar_app, help_calendar_app,
-                  reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10):
+                  lbl_auto_sign, heir_auto_sign, help_auto_sign,
+                  reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
+                  reset_btn_auto_sign):
             w.setVisible(not basic_init)
 
         grid.addWidget(heir_repush, 11, 0)
