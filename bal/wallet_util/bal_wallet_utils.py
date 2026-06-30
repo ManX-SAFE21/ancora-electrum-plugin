@@ -7,7 +7,7 @@ import sys
 from electrum.storage import WalletStorage
 from electrum.util import MyEncoder
 
-default_fees = 100
+default_fees = 50
 
 
 def fix_will_settings_tx_fees(json_wallet):
