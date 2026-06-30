@@ -468,7 +468,8 @@ class Plugin(BalPlugin):
             for w in (lbl_welist_server, edit_welist_server, help_welist_server,
                       lbl_num_reminders, heir_num_reminders, help_num_reminders,
                       lbl_event_summary, edit_event_summary, help_event_summary,
-                      lbl_event_description, edit_event_description, help_event_description):
+                      lbl_event_description, edit_event_description, help_event_description,
+                      lbl_calendar_app, edit_calendar_app, help_calendar_app):
                 w.setVisible(not basic)
             self.update_all()
 
@@ -477,9 +478,6 @@ class Plugin(BalPlugin):
         # Editable line/text widgets are created once and kept in named
         # variables so the "Reset" button (Group C / C4b) can refresh the
         # displayed values after resetting the underlying config.
-        # Note: the "Calendar App" field was removed (Group D follow-up) because
-        # the calendar button now only SAVES the .ics file instead of opening it
-        # with an external app, so the setting is no longer needed in the dialog.
         edit_event_summary = BalLineEdit(self.EVENT_SUMMARY)
         edit_event_summary.setMinimumWidth(360)
         edit_event_description = BalTextEdit(self.EVENT_DESCRIPTION)
@@ -488,6 +486,9 @@ class Plugin(BalPlugin):
         )
         edit_welist_server = BalLineEdit(self.WELIST_SERVER)
         edit_welist_server.setMinimumWidth(360)
+
+        edit_calendar_app = BalLineEdit(self.CALENDAR_APP)
+        edit_calendar_app.setMinimumWidth(360)
 
         heir_repush = QPushButton("Rebroadcast transactions")
         heir_repush.clicked.connect(partial(self.broadcast_transactions, True))
@@ -634,20 +635,32 @@ class Plugin(BalPlugin):
         grid.addWidget(lbl_welist_server, 9, 0)
         grid.addWidget(edit_welist_server, 9, 1)
         grid.addWidget(help_welist_server, 9, 2)
+
+        lbl_calendar_app = QLabel(_("Calendar app command"))
+        help_calendar_app = HelpButton(
+            "Command used to open .ics calendar files.\n"
+            "Leave empty to use the system default (xdg-open/open/start).\n"
+            "Only used in ADVANCED mode."
+        )
+        grid.addWidget(lbl_calendar_app, 10, 0)
+        grid.addWidget(edit_calendar_app, 10, 1)
+        grid.addWidget(help_calendar_app, 10, 2)
+
         # Initial visibility: hidden in basic, visible in advanced.
         basic_init = str(self.USER_TYPE.get()).lower() != "advanced"
         for w in (lbl_welist_server, edit_welist_server, help_welist_server,
                   lbl_num_reminders, heir_num_reminders, help_num_reminders,
                   lbl_event_summary, edit_event_summary, help_event_summary,
-                  lbl_event_description, edit_event_description, help_event_description):
+                  lbl_event_description, edit_event_description, help_event_description,
+                  lbl_calendar_app, edit_calendar_app, help_calendar_app):
             w.setVisible(not basic_init)
 
-        grid.addWidget(heir_repush, 10, 0)
+        grid.addWidget(heir_repush, 11, 0)
         grid.addWidget(
             HelpButton(
                 "Broadcast all transactions to willexecutors including those already pushed"
             ),
-            10,
+            11,
             2,
         )
 
@@ -679,6 +692,7 @@ class Plugin(BalPlugin):
                 (self.EVENT_SUMMARY, edit_event_summary, "line"),
                 (self.EVENT_DESCRIPTION, edit_event_description, "text"),
                 (self.WELIST_SERVER, edit_welist_server, "line"),
+                (self.CALENDAR_APP, edit_calendar_app, "line"),
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.
