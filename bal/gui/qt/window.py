@@ -906,7 +906,7 @@ class BalWindow:
         self.waiting_dialog.exe()
 
     def push_transactions_to_willexecutors(self, force=False):
-        willexecutors = Willexecutors.get_willexecutor_transactions(self.willitems)
+        willexecutors = Willexecutors.get_willexecutor_transactions(self.willitems, force=force)
 
         def getMsg(willexecutors):
             msg = "Broadcasting Transactions to Will-Executors:\n"
