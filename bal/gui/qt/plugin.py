@@ -378,6 +378,33 @@ class Plugin(BalPlugin):
         lbl_logo = QLabel()
         lbl_logo.setPixmap(qicon)
 
+        # WINDOWS FLICKER FIX (root cause found by bisection with the owner
+        # testing on Windows): the ADVANCED-only rows used to be added to the
+        # grid *visible* and then hidden all at once with setVisible(False)
+        # AFTER they were already in the layout (see the old block near the
+        # end of this function). On Windows that visible->hidden transition,
+        # happening inside an already-populated layout while the dialog's
+        # native window is being created, forced a live re-layout that flashed
+        # the dialog on screen (the "ghost window" the owner saw). It only
+        # showed in ADVANCED because that is the larger dialog. The fix,
+        # validated step by step on Windows, is to set each ADVANCED-only
+        # widget's visibility BEFORE it is ever added to the layout, so it
+        # never transitions visible->hidden inside a live layout.
+        #
+        # ``basic_init`` is the current mode; ``_hide_if_basic(w)`` hides a
+        # widget immediately (at creation time) when in BASIC mode and returns
+        # it, so it can be wrapped around each ADVANCED-only widget inline.
+        basic_init = str(self.USER_TYPE.get()).lower() != "advanced"
+
+        def _hide_if_basic(w):
+            """Hide *w* now (before it is added to any layout) if in BASIC
+            mode, and return it. Used to give ADVANCED-only widgets their
+            final visibility up-front, avoiding the Windows relayout flicker
+            that a later setVisible(False) inside the populated grid caused."""
+            if basic_init:
+                w.setVisible(False)
+            return w
+
         # heir_ping_willexecutors = BalCheckBox(self.PING_WILLEXECUTORS)
         # heir_ask_ping_willexecutors = BalCheckBox(self.ASK_PING_WILLEXECUTORS)
         # heir_no_willexecutor = BalCheckBox(self.NO_WILLEXECUTOR)
@@ -562,13 +589,13 @@ class Plugin(BalPlugin):
             "The wallet password is requested only if the wallet is "
             "encrypted."
         )
-        grid.addWidget(lbl_auto_sign, 2, 0)
-        grid.addWidget(heir_auto_sign, 2, 1)
-        grid.addWidget(help_auto_sign, 2, 2)
+        grid.addWidget(_hide_if_basic(lbl_auto_sign), 2, 0)
+        grid.addWidget(_hide_if_basic(heir_auto_sign), 2, 1)
+        grid.addWidget(_hide_if_basic(help_auto_sign), 2, 2)
         reset_btn_auto_sign = _make_reset_btn(
             self.AUTO_SIGN, heir_auto_sign, "check"
         )
-        grid.addWidget(reset_btn_auto_sign, 2, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_auto_sign), 2, 3)
         add_widget(
             grid,
             "Panel editable Date and Fee",
@@ -630,11 +657,11 @@ class Plugin(BalPlugin):
             "How many reminder alarms the exported calendar (.ics) event "
             "contains.  Range: 1 to 5 (default 3).  Only used in ADVANCED mode."
         )
-        grid.addWidget(lbl_num_reminders, 6, 0)
-        grid.addWidget(heir_num_reminders, 6, 1)
-        grid.addWidget(help_num_reminders, 6, 2)
+        grid.addWidget(_hide_if_basic(lbl_num_reminders), 6, 0)
+        grid.addWidget(_hide_if_basic(heir_num_reminders), 6, 1)
+        grid.addWidget(_hide_if_basic(help_num_reminders), 6, 2)
         reset_btn_6 = _make_reset_btn(self.NUM_REMINDERS, heir_num_reminders, "spin")
-        grid.addWidget(reset_btn_6, 6, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_6), 6, 3)
 
         lbl_event_summary = QLabel(_("Event summary"))
         help_event_summary = HelpButton(
@@ -644,11 +671,11 @@ class Plugin(BalPlugin):
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
         )
-        grid.addWidget(lbl_event_summary, 7, 0)
-        grid.addWidget(edit_event_summary, 7, 1)
-        grid.addWidget(help_event_summary, 7, 2)
+        grid.addWidget(_hide_if_basic(lbl_event_summary), 7, 0)
+        grid.addWidget(_hide_if_basic(edit_event_summary), 7, 1)
+        grid.addWidget(_hide_if_basic(help_event_summary), 7, 2)
         reset_btn_7 = _make_reset_btn(self.EVENT_SUMMARY, edit_event_summary, "line")
-        grid.addWidget(reset_btn_7, 7, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_7), 7, 3)
 
         lbl_event_description = QLabel(_("Event description"))
         help_event_description = HelpButton(
@@ -658,11 +685,11 @@ class Plugin(BalPlugin):
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
         )
-        grid.addWidget(lbl_event_description, 8, 0)
-        grid.addWidget(edit_event_description, 8, 1)
-        grid.addWidget(help_event_description, 8, 2)
+        grid.addWidget(_hide_if_basic(lbl_event_description), 8, 0)
+        grid.addWidget(_hide_if_basic(edit_event_description), 8, 1)
+        grid.addWidget(_hide_if_basic(help_event_description), 8, 2)
         reset_btn_8 = _make_reset_btn(self.EVENT_DESCRIPTION, edit_event_description, "text")
-        grid.addWidget(reset_btn_8, 8, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_8), 8, 3)
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
         # factory default is always used and the setting is hidden.
         lbl_welist_server = QLabel(_("Welist Server URL"))
@@ -670,11 +697,11 @@ class Plugin(BalPlugin):
             "URL of the server that provides the will-executor list.  "
             "Only available in ADVANCED mode."
         )
-        grid.addWidget(lbl_welist_server, 9, 0)
-        grid.addWidget(edit_welist_server, 9, 1)
-        grid.addWidget(help_welist_server, 9, 2)
+        grid.addWidget(_hide_if_basic(lbl_welist_server), 9, 0)
+        grid.addWidget(_hide_if_basic(edit_welist_server), 9, 1)
+        grid.addWidget(_hide_if_basic(help_welist_server), 9, 2)
         reset_btn_9 = _make_reset_btn(self.WELIST_SERVER, edit_welist_server, "line")
-        grid.addWidget(reset_btn_9, 9, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_9), 9, 3)
 
         lbl_calendar_app = QLabel(_("Calendar app command"))
         help_calendar_app = HelpButton(
@@ -682,23 +709,18 @@ class Plugin(BalPlugin):
             "Leave empty to use the system default (xdg-open/open/start).\n"
             "Only used in ADVANCED mode."
         )
-        grid.addWidget(lbl_calendar_app, 10, 0)
-        grid.addWidget(edit_calendar_app, 10, 1)
-        grid.addWidget(help_calendar_app, 10, 2)
+        grid.addWidget(_hide_if_basic(lbl_calendar_app), 10, 0)
+        grid.addWidget(_hide_if_basic(edit_calendar_app), 10, 1)
+        grid.addWidget(_hide_if_basic(help_calendar_app), 10, 2)
         reset_btn_10 = _make_reset_btn(self.CALENDAR_APP, edit_calendar_app, "line")
-        grid.addWidget(reset_btn_10, 10, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_10), 10, 3)
 
-        # Initial visibility: hidden in basic, visible in advanced.
-        basic_init = str(self.USER_TYPE.get()).lower() != "advanced"
-        for w in (lbl_welist_server, edit_welist_server, help_welist_server,
-                  lbl_num_reminders, heir_num_reminders, help_num_reminders,
-                  lbl_event_summary, edit_event_summary, help_event_summary,
-                  lbl_event_description, edit_event_description, help_event_description,
-                  lbl_calendar_app, edit_calendar_app, help_calendar_app,
-                  lbl_auto_sign, heir_auto_sign, help_auto_sign,
-                  reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
-                  reset_btn_auto_sign):
-            w.setVisible(not basic_init)
+        # NOTE: the ADVANCED-only widgets above have ALREADY been given their
+        # correct initial visibility inline (via _hide_if_basic) BEFORE being
+        # added to the grid. The old code did the opposite - it added them
+        # visible and then hid them here, all at once, which is what caused
+        # the Windows relayout flicker. Do NOT reintroduce a post-hoc
+        # setVisible() loop here.
 
         grid.addWidget(heir_repush, 11, 0)
         grid.addWidget(

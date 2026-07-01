@@ -91,7 +91,7 @@ class BalPlugin(BasePlugin):
     """
 
     _version = None
-    __version__ = "0.5.0"  # AUTOMATICALLY GENERATED DO NOT EDIT
+    __version__ = "0.5.4"  # AUTOMATICALLY GENERATED DO NOT EDIT
 
     # Command used to open an .ics calendar file, per operating system.
     default_app = {

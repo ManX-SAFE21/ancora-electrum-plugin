@@ -1541,3 +1541,259 @@ delivered together in one version.
 
 **Outcome:** DONE (delivered as test ZIP v0.4.8; commit only after the user
 confirms the ZIP works).
+
+---
+
+## 26. v0.5.1 - Dynamic Check Alive in BASIC mode + Windows dialog-flicker fix
+
+**Date:** 2026-07-01
+
+**Goal:** Fix two owner-reported bugs: (1) in BASIC mode, anticipating the
+delivery time (locktime) to a date earlier than the hidden, stale "Check
+Alive" (threshold) default could incorrectly mark the will as expired /
+blocked; (2) on Windows only, BAL dialogs (Settings, waiting dialogs) briefly
+flashed 1-2 blank "ghost" windows before rendering their real content.
+
+**What changed:**
+
+- **Bug 1 - BASIC mode Check Alive now tracks the delivery time.**
+  `bal/gui/qt/window.py`
+  - Added `BalWindow.BASIC_MODE_CHECK_ALIVE_OFFSET_SECONDS` (2 hours,
+    owner-approved) and a new pure `BalWindow.compute_date_to_check(
+    is_basic_mode, locktime_setting, threshold_setting)` static method.
+  - In BASIC mode, `date_to_check` (the "Check Alive" reference timestamp) is
+    now derived LIVE from the current delivery time (`will_settings
+    ["locktime"]`), placed 2 hours before it, instead of reading the hidden,
+    possibly stale stored `threshold`. This guarantees `date_to_check` is
+    always earlier than the delivery time, so anticipating/postponing the
+    delivery date in the wizard never triggers the "locktime is lower than
+    threshold" guard (`build_inheritance_transaction`) nor
+    `Will.check_will_expired`/`WillExpiredException` anymore.
+  - In ADVANCED mode nothing changes: the stored `threshold` is used exactly
+    as before.
+  - Root-cause note: `Util.parse_locktime_string` never raises on invalid
+    input, it silently returns `0`; `compute_date_to_check` now explicitly
+    treats that sentinel as "unparsable" and falls back to the stored
+    threshold, so BASIC mode can never compute a bogus near-epoch value.
+  - `init_class_variables()` now simply calls `compute_date_to_check(...)`.
+
+- **Bug 2 - Windows dialog flicker fixed.**
+  `bal/gui/qt/window_utils.py` (`show_modal`) and `bal/gui/qt/dialogs.py`
+  (`BalWaitingDialog.exe`): `bring_to_front()` (`raise_()` +
+  `activateWindow()`) was being called on dialogs BEFORE `exec()` actually
+  showed them. On Windows this forces Qt to create the dialog's native window
+  handle immediately, empty and unpositioned, causing a brief flash of 1-2
+  blank windows before the real content was drawn (reproduced from a
+  screen recording; Linux does not show this, since native window creation
+  there is lazier). Fixed by scheduling `bring_to_front()` via
+  `QTimer.singleShot(0, ...)` so it runs on the next event-loop iteration,
+  i.e. after the dialog is already visible with its real content - the
+  focus/raise behaviour is unchanged, only the timing of when it fires.
+
+- Added `tests/test_group_i_basic_checkalive.py` with 6 tests calling the
+  real `BalWindow.compute_date_to_check` directly (no GUI/wallet needed):
+  the 2-hour offset constant, a fresh "1y" default, the exact reported
+  "anticipate to 1 month" scenario, a sweep of delivery dates always staying
+  before locktime, ADVANCED mode being unaffected, and the unparsable-input
+  fallback (which caught and fixed a real edge case during development: a
+  0-timestamp sentinel instead of an exception).
+
+- Version bumped 0.5.0 -> 0.5.1 (`plugin_base.py`, `__init__.py`, `VERSION`,
+  `manifest.json`).
+
+**Verification:**
+
+- Full test suite: `272 passed` (266 previous + 6 new), plus the same 2
+  pre-existing, unrelated failures already present before this change
+  (`test_core_plugin_base.py::test_default_will_settings` /
+  `test_validate_will_settings`, expecting the old `baltx_fees=100` default
+  that v0.5.0 already changed to `20`).
+- `ruff`: no new errors (only pre-existing star-import / F841 noise).
+- The Check Alive fix (Bug 1) is fully covered by automated tests. The
+  Windows flicker fix (Bug 2) was diagnosed from a screen recording and
+  reasoned from the Qt/Windows native-window-creation behaviour; it cannot be
+  reproduced or automatically verified on this Linux environment, so the
+  owner needs to confirm on Windows that the flicker is gone.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.1; commit only after the owner
+confirms both fixes work, especially the Windows flicker one).
+
+---
+
+## 27. v0.5.2 - Real fix for the Windows Settings-dialog flicker (root cause found by diffing against v0.4.8)
+
+**Date:** 2026-07-01
+
+**Goal:** The v0.5.1 attempt at fixing the Windows-only "ghost window" flicker
+on the BAL Settings dialog (deferring `bring_to_front()` via
+`QTimer.singleShot`) did NOT fix it, per owner confirmation after testing on
+Windows. This entry documents the corrected root cause and the actual fix.
+
+**Root cause (confirmed by diff, not guesswork):** the owner provided the
+last known-good release (v0.4.8, no flicker) for direct comparison.
+`bal/gui/qt/window_utils.py` (`show_modal`/`bring_to_front`) turned out to be
+byte-identical between v0.4.8 and v0.5.0 (aside from the v0.5.1 attempt),
+proving that code was never the cause. Diffing `bal/gui/qt/plugin.py`
+instead showed that `settings_dialog()` gained, between v0.4.8 and v0.5.0:
+(a) ~17 ADVANCED-only setting rows that are shown/hidden via `setVisible()`
+right at dialog construction time (to reflect the current BASIC/ADVANCED
+mode before the dialog is ever shown), and (b)
+`outer.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)`, which did
+**not** exist anywhere in v0.4.8's GUI code. `SetFixedSize` forces Qt to
+recompute and enforce the dialog's exact size on every layout invalidation -
+including while those ~17 rows are being hidden for the first time, before
+the dialog has ever been shown. On Windows, that live geometry renegotiation
+overlapping with native window creation is what produced the blank "ghost"
+window flash (reproduced from the owner's screen recording).
+
+**What changed:**
+
+- `bal/gui/qt/plugin.py` (`settings_dialog`): removed
+  `outer.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)`, restoring
+  the sizing behaviour v0.4.8 already had (no forced constraint). Added an
+  explicit `d.adjustSize()` right before `show_modal(d)` so the dialog still
+  opens at its natural, correctly laid-out size (now computed once, instead
+  of being continuously re-enforced). The dynamic BASIC/ADVANCED row
+  visibility feature itself is fully preserved - only the size-constraint
+  coupling that caused the flicker was removed.
+  - Removed the now-unused `QLayout` import.
+
+**Verification:**
+
+- Full test suite: `272 passed`, same 2 pre-existing, unrelated failures as
+  before (stale `baltx_fees=100` expectation vs the v0.5.0 default of `20`).
+- `ruff`: no new errors (only pre-existing star-import noise).
+- Diagnosis confirmed by direct code comparison against v0.4.8 (provided by
+  the owner) rather than inference alone. The fix itself still cannot be
+  verified on this Linux environment (Windows-only symptom): the owner needs
+  to confirm on Windows that the flicker is gone.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.2; commit only after the owner
+confirms the flicker is actually gone this time).
+
+---
+
+## 28. v0.5.3 - Windows Settings-dialog flicker: corrected fix (drop bring_to_front before exec(), not just defer it)
+
+**Date:** 2026-07-01
+
+**Goal:** v0.5.2 (removing `SetFixedSize`) did NOT fix the Windows flicker
+either, per owner confirmation ("è come prima" - unchanged). This entry
+documents the corrected fix, based on new evidence from the owner: the
+flicker only ever happens with the Settings dialog in ADVANCED mode (many
+more visible rows, much larger dialog) and never in BASIC mode (few rows,
+small dialog) - always with the same intensity, not intermittent.
+
+**Root cause (corrected):** `show_modal()` (`bal/gui/qt/window_utils.py`)
+called `bring_to_front(dialog)` (`raise_()` + `activateWindow()`) BEFORE
+`dialog.exec()`. The v0.5.1 attempt only *deferred* this call by one event
+loop tick (`QTimer.singleShot(0, ...)`) instead of removing it, which turned
+out to still fire too early relative to Windows finishing the dialog's
+native window layout/paint - reproducing the same flicker. The owner's
+BASIC-vs-ADVANCED observation is the key evidence: `raise_()`/
+`activateWindow()` forcing native window creation before the layout has
+settled produces a flash whose visible severity scales with how different
+the dialog's final size is from its premature/unlaid-out state - which is
+exactly why a much bigger ADVANCED-mode dialog flickers noticeably while the
+small BASIC-mode one does not.
+
+**What changed:**
+
+- `bal/gui/qt/window_utils.py` (`show_modal`): removed the `bring_to_front()`
+  call (deferred or otherwise) entirely. `QDialog.exec()` already shows,
+  raises and activates a **modal** dialog on its own as part of entering its
+  modal event loop, so the call was always redundant for this case - and, on
+  Windows, actively harmful. `bring_to_front()` itself is untouched and is
+  still used (correctly) by `show_on_top()`, for the few genuinely
+  **non-modal** dialogs that use `.show()` instead of `.exec()` and do need
+  an explicit raise/activate.
+  - Removed the now-unused `QTimer` import.
+- `bal/gui/qt/dialogs.py` (`BalWaitingDialog.exe`): applied the same
+  corrected fix for consistency (same redundant-before-exec() pattern, same
+  underlying cause), even though the owner did not report flicker there -
+  removed `bring_to_front()`/`QTimer.singleShot` and kept only `self.exec()`.
+
+**Verification:**
+
+- Full test suite: `272 passed`, same 2 pre-existing, unrelated failures as
+  before.
+- `ruff`: no new errors (only pre-existing star-import / F841 noise).
+- As with v0.5.1/v0.5.2, this is a Windows-only symptom that cannot be
+  reproduced or verified on this Linux environment; the owner needs to
+  confirm on Windows.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.3; commit only after the owner
+confirms the flicker is actually gone).
+
+---
+
+## 29. v0.5.4 - REAL fix for the Windows Settings-dialog flicker (found by Windows-side bisection with the owner)
+
+**Date:** 2026-07-02
+
+**Goal:** v0.5.3 (dropping `bring_to_front()` before `exec()`) did NOT fix the
+flicker either, per owner confirmation ("è come prima" - unchanged). This
+entry documents the actual root cause, found through a structured bisection
+process where the owner tested a series of isolated diagnostic ZIPs directly
+on Windows (since the bug cannot be reproduced on Linux), and the
+corresponding real fix, **confirmed working by the owner on Windows**.
+
+**Bisection process (each step tested live on Windows by the owner):**
+1. A dialog stripped down to almost nothing (2 checkboxes, no ADVANCED-only
+   rows, none of the widgets/layout features added since v0.4.8) did **not**
+   flicker → the cause is in the dialog's content, not in how/where it is
+   opened, nor in `show_modal`/`bring_to_front` (already ruled out in
+   v0.5.1/v0.5.3), nor in `SetFixedSize` (already ruled out in v0.5.2).
+2. Re-adding *only* the "User Type" combo + its dynamic show/hide mechanism
+   flickered (mildly); re-adding *only* the new text/input fields (Event
+   summary/description, Welist Server, Calendar app) did **not** → narrowed
+   to the combo/visibility mechanism.
+3. A plain `QComboBox` alone (no confirmation dialog, no dynamic show/hide)
+   did **not** flicker; the construction-time `setVisible()` toggle alone
+   (no combo at all) **did** flicker → isolated to the visibility mechanism
+   itself.
+4. A version of that same toggle that hides each ADVANCED-only widget
+   **before** adding it to the layout (instead of adding it visible and
+   hiding it afterwards) did **not** flicker → fix validated.
+
+**Root cause:** the ~17 ADVANCED-only rows (Welist Server, Number of
+reminders, Event summary/description, Calendar app, Auto-sign, and their
+per-row reset buttons) were added to the settings grid **visible**, then all
+hidden together with `setVisible(False)` in BASIC mode, in a single loop
+*after* they were already part of the live layout. On Windows, that
+visible→hidden transition inside an already-populated layout - happening
+while the dialog's native window was still being created - forced a
+re-layout that flashed the dialog on screen. It only showed in ADVANCED mode
+because BASIC mode is when the widgets get hidden (so ADVANCED is when they
+stay visible and the dialog is at its largest, making any transient
+mis-layout most noticeable) - consistent with the owner's observation that
+severity tracked dialog size.
+
+**What changed:**
+
+- `bal/gui/qt/plugin.py` (`settings_dialog`): added a `basic_init` flag and a
+  `_hide_if_basic(widget)` helper right after the dialog is created. Every
+  ADVANCED-only widget is now wrapped in `_hide_if_basic(...)` at its
+  `grid.addWidget(...)` call, so its final visibility is set **before** it
+  ever joins the layout - it never transitions visible→hidden inside a live
+  layout. Removed the old post-hoc loop that used to hide all ~17 widgets at
+  once after they were already added. The runtime BASIC/ADVANCED toggle
+  (`on_user_type_change`, used while the dialog is already open and visible)
+  is unaffected and still works exactly as before - only the one-time
+  construction-time visibility set-up changed.
+- Reverted the ineffective v0.5.2 attempt (`SetFixedSize` removal /
+  `adjustSize()`) and the ineffective v0.5.3 attempt (removing
+  `bring_to_front()` from `show_modal()`/`BalWaitingDialog.exe()`) back to
+  their original v0.5.0 behaviour, since bisection proved neither was the
+  cause; keeping them would only have added unnecessary risk/diff.
+
+**Verification:**
+
+- Full test suite: `272 passed`, same 2 pre-existing, unrelated failures as
+  before (stale `baltx_fees=100` expectation vs the v0.5.0 default of `20`).
+- `ruff`: no new errors (only pre-existing star-import noise).
+- **Confirmed fixed by the owner on Windows** (the actual reporting
+  environment), after testing the full real Settings dialog with this fix
+  applied - not just the isolated diagnostic build.
+
+**Outcome:** DONE. Confirmed resolved by the owner on Windows.
