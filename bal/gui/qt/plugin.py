@@ -378,29 +378,28 @@ class Plugin(BalPlugin):
         lbl_logo = QLabel()
         lbl_logo.setPixmap(qicon)
 
-        # WINDOWS FLICKER FIX (root cause found by bisection with the owner
-        # testing on Windows): the ADVANCED-only rows used to be added to the
+        # WINDOWS FLICKER FIX (root cause found by bisection, tested on Windows
+        # by the user): the ADVANCED-only rows below used to be added to the
         # grid *visible* and then hidden all at once with setVisible(False)
-        # AFTER they were already in the layout (see the old block near the
-        # end of this function). On Windows that visible->hidden transition,
-        # happening inside an already-populated layout while the dialog's
-        # native window is being created, forced a live re-layout that flashed
-        # the dialog on screen (the "ghost window" the owner saw). It only
-        # showed in ADVANCED because that is the larger dialog. The fix,
-        # validated step by step on Windows, is to set each ADVANCED-only
+        # AFTER they were already part of the layout. On Windows that
+        # visible->hidden transition, inside an already-populated layout while
+        # the dialog's native window is being created, forced a live re-layout
+        # that flashed the dialog on screen (the "ghost window" flicker). It
+        # only showed in ADVANCED mode because that is the larger dialog. The
+        # fix, validated step by step on Windows, is to set each ADVANCED-only
         # widget's visibility BEFORE it is ever added to the layout, so it
         # never transitions visible->hidden inside a live layout.
         #
         # ``basic_init`` is the current mode; ``_hide_if_basic(w)`` hides a
-        # widget immediately (at creation time) when in BASIC mode and returns
-        # it, so it can be wrapped around each ADVANCED-only widget inline.
+        # widget immediately (at creation/add time) when in BASIC mode and
+        # returns it, so it can be wrapped inline around each ADVANCED-only
+        # widget at its grid.addWidget(...) call.
         basic_init = str(self.USER_TYPE.get()).lower() != "advanced"
 
         def _hide_if_basic(w):
             """Hide *w* now (before it is added to any layout) if in BASIC
-            mode, and return it. Used to give ADVANCED-only widgets their
-            final visibility up-front, avoiding the Windows relayout flicker
-            that a later setVisible(False) inside the populated grid caused."""
+            mode, and return it. Avoids the Windows relayout flicker that a
+            later setVisible(False) inside the populated grid caused."""
             if basic_init:
                 w.setVisible(False)
             return w
