@@ -1601,3 +1601,56 @@ BEFORE adding it to the layout eliminated it (all confirmed on Windows).
 
 **Outcome:** DONE (delivered as test ZIP v0.5.1; commit only after the user
 confirms the ZIP works on Windows).
+
+---
+
+## 26. v0.5.2 - Show Check Alive in the main window in BASIC mode (read-only, Date-only)
+
+**Date:** 2026-07-04
+
+**Goal (owner request):** In BASIC mode the "Check Alive" (threshold) field is
+currently hidden everywhere, so the owner cannot observe how it behaves behind
+the scenes. Make it VISIBLE in the MAIN WINDOW toolbar in BASIC mode, but
+strictly for observation: it must be ALWAYS read-only (never editable, not even
+when "Panel editable Date and Fee" is enabled) and always shown as a Date
+(never Raw). It must remain editable only in ADVANCED mode (as today), and it
+must stay hidden in the "Build your will" wizard in BASIC mode. This is a
+display-only change: no locktime/date/Check-Alive computation or validation
+logic is touched (in particular, none of the discarded v0.5.4 auto-compute
+behaviour is reintroduced).
+
+**What changed (all in `bal/gui/qt/widgets.py`, GUI only):**
+
+- `WillSettingsWidget.__init__`: the BASIC-mode hiding of the Check Alive row
+  is now scoped to the WIZARD only (vertical layout, `layout_type != "h"`). In
+  the main-window toolbar / Heirs tab (horizontal layout, `layout_type == "h"`)
+  the Check Alive is now shown even in BASIC. Also stored `self.layout_type` so
+  the per-update hooks can tell the two layouts apart.
+- `WillSettingsWidget.apply_user_type_visibility`: in the horizontal layout the
+  Check Alive is kept visible regardless of mode; in the wizard it is still
+  hidden in BASIC / shown in ADVANCED as before. This keeps the field visible
+  in the main window even after toggling BASIC<->ADVANCED at runtime.
+- `WillSettingsWidget.apply_editable_dates`: in BASIC mode the Check Alive is
+  now forced ALWAYS read-only, independently of the "Panel editable Date and
+  Fee" (EDITABLE_DATES) setting. That setting still controls the delivery time
+  (locktime) and the fee exactly as before - only the Check Alive is
+  force-locked in BASIC. ADVANCED mode is unchanged.
+- Date-only display needed no change: BASIC mode already forces every time
+  field to the calendar ("Date") editor and hides the Raw/Date selector
+  (`BalTimeEditWidget.__init__`, `self._basic_mode`), so the now-visible Check
+  Alive is automatically shown as a Date with no Raw option.
+
+**Verification:**
+
+- Full test suite: `266 passed` (unchanged), plus the same 2 pre-existing,
+  unrelated failures (stale `baltx_fees=100` expectation vs the v0.5.0 default
+  of `20`).
+- `ruff`: no new errors (only the pre-existing star-import noise and the
+  pre-existing `F841` at widgets.py, both present in clean v0.5.0).
+- Only `bal/gui/qt/widgets.py` (this task) and `bal/gui/qt/plugin.py` (the
+  v0.5.1 flicker fix) differ from clean v0.5.0; all locktime/date/Check-Alive
+  logic files are untouched.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.2; commit only after the owner
+confirms the ZIP works, especially that in BASIC the Check Alive is visible,
+read-only even with "Panel editable Date and Fee" on, and shown as a Date).
