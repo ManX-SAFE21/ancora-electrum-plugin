@@ -1654,3 +1654,360 @@ behaviour is reintroduced).
 **Outcome:** DONE (delivered as test ZIP v0.5.2; commit only after the owner
 confirms the ZIP works, especially that in BASIC the Check Alive is visible,
 read-only even with "Panel editable Date and Fee" on, and shown as a Date).
+
+---
+
+## 27. v0.5.3 - BASIC mode: build the will against "now" (not Check Alive) + clearer "cannot build" message
+
+**Date:** 2026-07-04
+
+**Goal (owner request, two related fixes):**
+
+1. In BASIC mode, pressing Check (or rebuilding after a change) could refuse to
+   (re)build the will and show "Balance is too low, or CheckAlive is in the
+   past. Skipped", even with a healthy balance. Root cause found by tracing the
+   real code with the owner: will construction filters heirs by
+   `delivery_time > from_locktime`, and `from_locktime` is `date_to_check` = the
+   Check Alive. In BASIC the Check Alive is hidden and NOT editable, so when its
+   (fixed) default ends up LATER than the delivery time, every heir is excluded
+   and the will cannot be built. The Check Alive must never govern construction
+   in BASIC.
+2. The "Skipped" message itself was misleading: it claimed the Check Alive was
+   "in the past", whereas the real blocking condition is the opposite - the
+   Check Alive is LATER than the delivery time.
+
+**What changed:**
+
+- `bal/gui/qt/window.py` (`build_will`): the `from_locktime` passed to
+  `get_transactions` is now `datetime.now().timestamp()` when
+  `is_basic_mode()` is true, instead of `self.date_to_check` (the Check Alive).
+  In BASIC an heir is kept as long as its delivery time is in the future,
+  independently of the non-editable Check Alive. ADVANCED mode is unchanged
+  (still uses `date_to_check`). Deliberately scoped to CONSTRUCTION only:
+  `check_will_expired` / `check_amounts` / `is_will_valid` still use
+  `date_to_check` exactly as before, keeping the change targeted and low-risk
+  (the broad `date_to_check` rewrite tried in the discarded v0.5.4 line is NOT
+  reintroduced).
+  - Known, owner-accepted limitation: a delivery time equal to "today" (same
+    instant) may still not build, because `now()` includes the current time of
+    day. The owner will test this edge case separately.
+- `bal/gui/qt/dialogs.py`: replaced the misleading build-failure message with
+  the owner-approved wording: "Could not build the will. Possible reasons: the
+  Check Alive date is later than the delivery time (it must be earlier), the
+  balance is too low, or the heirs' shares are below the minimum. Skipped".
+  Text only; the message still appears under exactly the same condition
+  (`build_will()` returned nothing) as before.
+
+**Verification:**
+
+- Full test suite: `266 passed`, plus the same 2 pre-existing, unrelated
+  failures (stale `baltx_fees=100` expectation vs the v0.5.0 default of `20`).
+- `ruff`: no new errors (only pre-existing star-import noise and the
+  pre-existing `F841` at dialogs.py, both present in clean v0.5.0).
+- Windows behaviour (especially the delivery-time-equals-today edge case) to be
+  confirmed by the owner from the test ZIP.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.3; commit only after the owner
+confirms it works, in particular that in BASIC the will now (re)builds and the
+new message is clear).
+
+---
+
+## 28. v0.5.4 - BASIC mode: Check Alive fully ignored at the root (date_to_check = now())
+
+**Date:** 2026-07-04
+
+**Goal (owner-approved, Option B "fix the root"):** After v0.5.3 fixed only the
+build path, the owner hit "No Heirs" on Check even with heirs present, in BASIC
+AND ADVANCED. A full map of every Check Alive usage (see the analysis
+spreadsheet) showed the Check Alive is read in ~11 places, all through the SAME
+value `self.date_to_check`, and only some were mode-gated. Fixing them one by
+one was whack-a-mole. Option B fixes the single root instead.
+
+**Root cause:** `self.date_to_check` (window.py, init_class_variables) was
+ALWAYS set to the Check Alive (threshold), in BASIC and ADVANCED. Every
+downstream check reads it: the build filter (get_locktimes/get_transactions),
+the heir count in check_willexecutors_and_heirs (source of "No Heirs" when
+delivery < Check Alive), check_will_expired, check_amounts, and the
+"locktime is lower than threshold" guard. In BASIC the Check Alive is hidden
+and not editable, so whenever its fixed value ended up later than the delivery
+time, these checks wrongly blocked the will.
+
+**What changed:**
+
+- `bal/gui/qt/window.py` (`init_class_variables`): in BASIC mode
+  `self.date_to_check` is now set to `datetime.now().timestamp()` instead of
+  the Check Alive. Every downstream check is therefore evaluated against "now"
+  (i.e. the Check Alive effectively does not exist in BASIC), while the
+  delivery time (locktime) is still fully enforced. ADVANCED mode is unchanged
+  and keeps using the user-controlled Check Alive. This single change covers
+  every point in the usage map at once.
+- `bal/gui/qt/window.py` (`build_will`): removed the now-redundant per-mode
+  branch added in v0.5.3 (it computed now() locally for the build filter).
+  Since `date_to_check` is already now() in BASIC from the root fix, build_will
+  simply passes `self.date_to_check` again - one source of truth, no duplicate
+  logic.
+- The CheckAliveError "you are alive -> postpone" guard was already skipped in
+  BASIC and is unchanged.
+
+**Why this differs from the discarded v0.5.4-era experiments:** the earlier
+broken attempt set date_to_check to `locktime - 2h` (odd and fragile). This
+sets it to plain `now()`, which is the natural meaning of "the Check Alive does
+not apply in BASIC".
+
+**Verification:**
+
+- Full test suite: `266 passed`, plus the same 2 pre-existing, unrelated
+  failures (stale `baltx_fees=100` expectation vs the v0.5.0 default of `20`).
+- `ruff`: no new errors (only pre-existing star-import noise).
+- Windows behaviour to be confirmed by the owner from the test ZIP: in BASIC
+  the "No Heirs" / "cannot rebuild" problems should be gone; ADVANCED unchanged.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.4; commit only after the owner
+confirms it works in BASIC and that ADVANCED is unaffected).
+
+---
+
+## 29. v0.5.5 - ADVANCED defaults to RAW (1y/30d); Check Alive hidden again in BASIC
+
+**Date:** 2026-07-04
+
+**Goal (owner request, two GUI changes):**
+
+1. In ADVANCED mode, both the Delivery time and the Check Alive fields should
+   default to the RAW editor (showing "1y" / "30d") instead of the calendar
+   ("Date") editor.
+2. In BASIC mode, hide the Check Alive field again everywhere (revert the
+   v0.5.2 experiment that showed it read-only in the main window).
+
+**What changed (all in `bal/gui/qt/widgets.py`, GUI only):**
+
+- `BalTimeEditWidget.__init__` (default editor selection): in ADVANCED mode the
+  default editor is now forced to RAW (index 0) for both fields (Delivery time
+  and Check Alive both derive from this class). BASIC mode still forces the
+  Date editor (index 1) and hides the Raw/Date selector, as before. Because the
+  relative defaults already exist in plugin_base
+  (`default_will_settings_relative` -> locktime "1y", threshold "30d"), the RAW
+  editor opens showing "1y" / "30d". If the stored value happens to be an
+  absolute timestamp, the forced-RAW path substitutes the relative default so
+  the field never shows a bare timestamp number. The user can still switch to
+  Date manually (the selector is visible in ADVANCED); only the initial choice
+  changed.
+- `WillSettingsWidget.__init__` and `apply_user_type_visibility`: the Check
+  Alive (threshold) row is hidden in BASIC in BOTH layouts again (main window
+  and wizard), reverting the v0.5.2 "visible read-only in the main window"
+  behaviour.
+- `apply_editable_dates`: reverted the v0.5.2 threshold read-only special-case
+  back to the original single line (no longer needed now that the Check Alive
+  is hidden in BASIC).
+
+**Verification:**
+
+- Full test suite: `266 passed`, plus the same 2 pre-existing, unrelated
+  failures (stale `baltx_fees=100` expectation vs the v0.5.0 default of `20`).
+- `ruff`: no new errors (only pre-existing star-import noise).
+- Windows behaviour to be confirmed by the owner: in ADVANCED both fields open
+  in RAW showing 1y/30d; in BASIC the Check Alive is no longer visible anywhere.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.5; commit only after the owner
+confirms it works).
+
+---
+
+## 30. v0.5.6 - Five small UX fixes (tooltips, empty-ics warning, revert forced RAW, message reword, Check Alive red highlight)
+
+**Date:** 2026-07-04
+
+**Goal (owner request, five items in one release):**
+
+1. Add a "Local time (not UTC)" note to the Delivery time AND Check Alive
+   tooltips.
+2. When the calendar export has no reminder events (delivery date too close or
+   already passed), warn the user and do NOT create an empty .ics file.
+3. Revert the v0.5.5 "always RAW in ADVANCED" default back to the 0.5.0
+   behaviour (default editor follows the stored value's format).
+4. Reword "Inheritance already executed (on blockchain)" to "An inheritance of
+   this wallet is already executed (on blockchain)".
+5. Highlight the Check Alive box with a soft red when it is later than the
+   delivery time (ADVANCED only).
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py`:
+  - `ThresholdTimeWidget.help_text` and `LockTimeWidget.help_text`: appended a
+    note that the date/time is in the computer's Local time, not UTC (#1).
+  - `BalTimeEditWidget.__init__`: removed the v0.5.5 forced-RAW-in-ADVANCED
+    block; the default editor again follows the stored value (absolute number
+    -> Date, relative "1y"/"30d" -> Raw). BASIC still forces the Date editor
+    and hides the selector (#3).
+  - `WillSettingsWidget.on_locktime_change`: if the Check Alive timestamp is
+    >= the delivery time, tint the Check Alive box soft red (#FCE4E4, border
+    #E9A8A8) with an explanatory tooltip; clear it when the relationship is
+    valid. ADVANCED only (the field is hidden in BASIC) (#5).
+- `bal/gui/qt/dialogs.py`:
+  - `_ics_provider`: returns None when there are no reminder events (instead of
+    a header-only .ics), so the caller can warn (#2).
+  - Reworded the "inheritance already executed" message (#4).
+- `bal/gui/qt/calendar.py`:
+  - `_ensure_ics`: when the provider returns no content, show the warning
+    "No reminders were saved: the delivery date is too close (or already
+    passed)" and create no file (#2).
+
+**Verification:**
+
+- Full test suite: `266 passed`, plus the same 2 pre-existing, unrelated
+  failures (stale `baltx_fees=100` expectation vs the v0.5.0 default of `20`).
+- `ruff`: no new errors (only pre-existing star-import noise and a pre-existing
+  E401 in calendar.py, present in clean v0.5.0).
+- Manual check: `_ics_provider` returns events for a far delivery date and None
+  for a delivery date of "today" (0 days), confirming the empty-events warning
+  path.
+- Windows/visual confirmation (soft-red tint, tooltips, calendar warning) to be
+  done by the owner from the test ZIP.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.6; commit only after the owner
+confirms it works).
+
+---
+
+## 31. v0.5.7 - Consistent Raw/Date default per mode, including runtime switch
+
+**Date:** 2026-07-04
+
+**Goal (owner request):** Make the Raw/Date editor default simple and
+consistent, both at startup and when toggling BASIC<->ADVANCED at runtime:
+  * BASIC    -> always the Date (calendar) editor, selector hidden.
+  * ADVANCED -> RAW by default (showing "1y"/"30d"), selector visible so the
+               user can switch to Date manually; a manual Date choice must be
+               respected on later runtime mode switches (not forced back to RAW).
+
+**Background:** v0.5.6 (ToDo #3) had reverted to the value-driven default and
+left the runtime switch untouched, so switching ADVANCED->BASIC at runtime could
+leave a field stuck on RAW while the selector was hidden (and BASIC->ADVANCED
+did not restore RAW). This makes the behaviour explicit and symmetric.
+
+**What changed (all in `bal/gui/qt/widgets.py`):**
+
+- `BalTimeEditWidget.__init__`: default editor is now chosen by MODE, not by the
+  stored value's format: BASIC -> Date (index 1); ADVANCED -> RAW (index 0). In
+  ADVANCED, if the stored value is an absolute timestamp, the relative default
+  ("1y"/"30d") is loaded into the RAW editor so it never shows a bare number.
+- Added `self._user_picked_editor` flag plus `_on_user_picked_editor`, connected
+  to the combo's `activated` signal (fires only on real user interaction, not on
+  programmatic index changes). This records a manual Raw/Date choice.
+- `apply_user_type_visibility`: besides showing/hiding the selector, it now sets
+  the active editor on a runtime switch: BASIC -> always Date; ADVANCED -> RAW
+  unless the user had manually picked an editor, in which case their choice is
+  left untouched. Wrapped in try/except so a cosmetic editor switch can never
+  break mode toggling.
+
+**Verification:**
+
+- Full test suite: `266 passed`, plus the same 2 pre-existing, unrelated
+  failures (stale `baltx_fees=100` expectation vs the v0.5.0 default of `20`).
+- `ruff`: no new errors (only pre-existing star-import / E401 noise).
+- Windows/interactive confirmation (startup defaults + runtime BASIC<->ADVANCED
+  switch, including a manual Date choice being respected) to be done by the
+  owner from the test ZIP.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.7; commit only after the owner
+confirms it works).
+
+---
+
+## 32. v0.5.8 - Fix: Check Alive red highlight no longer hides the up/down arrows
+
+**Date:** 2026-07-04
+
+**Problem (owner-reported, screenshot):** the soft-red highlight added in v0.5.6
+(ToDo #5) made the Check Alive box lose its native up/down spin arrows. Cause:
+the stylesheet set a `border` on the whole container; styling the border of a
+QDateTimeEdit / QAbstractSpinBox via stylesheet makes Qt stop drawing its native
+sub-controls (the spin arrows).
+
+**Fix (`bal/gui/qt/widgets.py`, `on_locktime_change`):** the warning styling now
+sets ONLY a `background-color` (no border), and scopes the rule to the inner
+editor widget types (`QDateTimeEdit, QLineEdit, QAbstractSpinBox`) instead of the
+whole container, so the tint still shows but the native up/down arrows are
+preserved.
+
+**Verification:**
+- Full test suite: `266 passed` (same 2 pre-existing unrelated failures).
+- `ruff`: no new errors.
+- Visual confirmation (arrows present + soft-red tint) to be done by the owner
+  from the test ZIP.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.8; commit only after confirmation).
+
+---
+
+## 33. v0.5.9 - Clearer 3-point "could not build the will" message
+
+**Date:** 2026-07-04
+
+**Goal (owner request):** Now that the Check Alive box turns soft red when it is
+later than the delivery time (v0.5.6/v0.5.8), that mistake is hard to make, so
+the build-failure message was rewritten as a clearer, numbered 3-point list.
+
+**What changed (`bal/gui/qt/dialogs.py`, text only):** the message shown when
+`build_will()` returns nothing is now:
+
+    Could not build the will ! Possible reasons:
+    1- the Balance of wallet is too low to cover the fees for miners and will executors,
+    2- the Heirs' shares are below the minimum (Dust UTXO, less than 546 Satoshi),
+    3- the Check Alive Date/Time is later than the delivery time (it must be earlier),
+    Skipped
+
+Line breaks use "\n", which the message panel converts to <br> (see the render
+that joins labels with <br><br> and replaces \n), so the three points appear on
+separate lines. Same trigger condition and warning colour as before; text only.
+
+**Verification:**
+- Full test suite: `266 passed` (same 2 pre-existing unrelated failures).
+- `ruff`: no new errors.
+- Visual confirmation of the multi-line layout to be done by the owner.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.9; commit only after confirmation).
+
+---
+
+## 34. v0.5.10 - Pressing CHECK no longer resets a manual Date/RAW choice (Opzione 2)
+
+**Date:** 2026-07-04
+
+**Problem (owner-reported):** In ADVANCED, manually setting the Check Alive and
+Delivery time boxes to Date and then pressing CHECK snapped them back to RAW.
+
+**Cause:** v0.5.7 put the per-mode editor default (BASIC->Date, ADVANCED->RAW)
+inside `BalTimeEditWidget.apply_user_type_visibility`, which is invoked from
+`BalWindow.update_all()` - and update_all() also runs on every CHECK/refresh, not
+only on a real USER TYPE change. So CHECK re-applied the RAW default.
+
+**Fix (Opzione 2 - separate the two concerns):**
+
+- `bal/gui/qt/widgets.py`:
+  - `BalTimeEditWidget.apply_user_type_visibility`: reverted to flipping ONLY the
+    Raw/Date combo visibility (no editor change), so it is side-effect free on
+    every refresh/CHECK.
+  - New `BalTimeEditWidget.apply_user_type_editor_default`: holds the per-mode
+    editor default (BASIC->Date; ADVANCED->RAW unless the user picked manually).
+  - New `WillSettingsWidget.apply_user_type_editor_default`: applies it to both
+    the locktime and threshold boxes.
+- `bal/gui/qt/plugin.py`:
+  - New `_apply_editor_default_on_toolbars()` helper that reaches the WILL/HEIR
+    toolbars of every open window and applies the editor default.
+  - `on_user_type_change` now calls it ONLY on a real USER TYPE change (both the
+    normal switch and the revert-to-BASIC path), right before `update_all()`.
+
+**Result:** CHECK no longer touches the active editor (the transaction-list
+refresh in update_all() at `will_list_widget.update_will(...)` is untouched, so
+the list still updates on CHECK). The per-mode default is applied only when the
+user actually switches BASIC<->ADVANCED, and a manual Date choice is preserved.
+
+**Verification:**
+- Full test suite: `266 passed` (same 2 pre-existing unrelated failures).
+- `ruff`: no new errors.
+- Interactive confirmation (Date stays on CHECK; switch still applies defaults;
+  transaction list still refreshes) to be done by the owner from the test ZIP.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.10; commit only after confirmation).
