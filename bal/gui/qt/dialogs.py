@@ -723,7 +723,7 @@ class BalBuildWillDialog(BalDialog):
                 self.msg_set_status(
                     _("Checking your will"),
                     None,
-                    _("Inheritance already executed (on blockchain)"),
+                    _("An inheritance of this wallet is already executed (on blockchain)"),
                     self.COLOR_OK,
                 )
             elif executed_status == "MEMPOOL":
@@ -776,8 +776,14 @@ class BalBuildWillDialog(BalDialog):
                 if not txs:
                     self.msg_set_building(
                         _(
-                            "Balance is too low, or CheckAlive is in the "
-                            "past. Skipped"
+                            "Could not build the will ! Possible reasons:\n"
+                            "1- the Balance of wallet is too low to cover the "
+                            "fees for miners and will executors,\n"
+                            "2- the Heirs' shares are below the minimum (Dust "
+                            "UTXO, less than 546 Satoshi),\n"
+                            "3- the Check Alive Date/Time is later than the "
+                            "delivery time (it must be earlier),\n"
+                            "Skipped"
                         ),
                         # Orange (warning) instead of red (error): an empty
                         # wallet after the inheritance was executed is a NORMAL
@@ -1531,6 +1537,12 @@ class BalBuildWillDialog(BalDialog):
             ]
 
             total = len(offsets)
+            # ToDo #2: if no reminder falls in the future (the delivery date is
+            # too close or already passed), there are no events to write.
+            # Return None so the caller shows a clear warning instead of
+            # producing an empty, seemingly-broken .ics file.
+            if total == 0:
+                return None
             for idx, offset in enumerate(offsets, start=1):
                 event_dt = BalCalendar.format_time(locktime - timedelta(days=offset))
                 summary = BalCalendar.ical_escape(

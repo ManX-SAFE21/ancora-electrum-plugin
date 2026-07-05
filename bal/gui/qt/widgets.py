@@ -291,18 +291,39 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         # combo is hidden. We keep a flag so the rest of __init__ can force the
         # Date editor regardless of the stored value's format.
         self._basic_mode = self.bal_window.bal_plugin.is_basic_mode()
+        # Tracks whether the user PICKED an editor by hand from the Raw/Date
+        # selector (set only on the combo's `activated` signal, i.e. real user
+        # interaction). It lets the runtime BASIC<->ADVANCED switch respect a
+        # manual "Date" choice in ADVANCED instead of forcing RAW back. It stays
+        # False for programmatic changes (defaults, switches).
+        self._user_picked_editor = False
         default_index = 0
         if not default_locktime:
             default_locktime = self.bal_window.bal_plugin.WILL_SETTINGS.get()[self.base_field]
-        try:
-            int(default_locktime)
-            default_index = 1
-        except Exception:
-            default_index = 0
-        # Force the calendar ("Date") editor in BASIC mode so the user always
-        # picks a date and never sees the RAW input ("30d"/"1y" style).
+        # Default editor per mode (owner request):
+        #   * BASIC   -> Date editor (index 1); the Raw/Date selector is hidden,
+        #               so the user always picks a date and never sees RAW.
+        #   * ADVANCED -> RAW editor (index 0) by default; the selector stays
+        #               visible so the user can switch to Date manually.
         if self._basic_mode:
             default_index = 1
+        else:
+            default_index = 0
+            # In ADVANCED we default to RAW. If the stored value is an absolute
+            # timestamp (a bare number), showing it in RAW would display that
+            # raw number; substitute the relative default ("1y"/"30d") so the
+            # RAW editor opens with a human-readable duration instead.
+            try:
+                int(default_locktime)
+                is_absolute = True
+            except Exception:
+                is_absolute = False
+            if is_absolute:
+                default_locktime = (
+                    self.bal_window.bal_plugin.default_will_settings_relative()[
+                        self.base_field
+                    ]
+                )
         #hbox.addWidget(QLabel(self.label_text))
         help_button=HelpButton(self.help_text)
         help_button.setText(self.label_text)
@@ -316,6 +337,11 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         # align all rows on a common left edge (see its vertical layout).
         self.prefix_widget = help_button
         self.combo.currentIndexChanged.connect(self.on_current_index_changed)
+        # `activated` fires ONLY on real user interaction with the selector (not
+        # on programmatic setCurrentIndex), so we use it to remember that the
+        # user picked the editor by hand. This is what lets the runtime
+        # BASIC<->ADVANCED switch respect a manual "Date" choice in ADVANCED.
+        self.combo.activated.connect(self._on_user_picked_editor)
 
         for w in self.editors:
             w.setVisible(False)
@@ -359,6 +385,16 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
             update_will_dialog,
             update_heirs_dialog,
         )
+
+    def _on_user_picked_editor(self, i):
+        """Record that the user chose the Raw/Date editor by hand.
+
+        Connected to the combo's ``activated`` signal, which only fires on real
+        user interaction (not on programmatic ``setCurrentIndex``). Used by the
+        runtime BASIC<->ADVANCED switch to respect a manual "Date" choice in
+        ADVANCED instead of forcing RAW back.
+        """
+        self._user_picked_editor = True
 
     def on_current_index_changed(self, i):
         self.current_index = i
@@ -408,9 +444,11 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         (owner request: keep the current value to avoid confusing the delivery
         date with the inheritance). It is called from
         ``WillSettingsWidget.apply_user_type_visibility()`` (triggered by
-        ``BalWindow.update_all()`` on a BASIC<->ADVANCED switch), so toggling the
-        mode takes effect immediately on the already-existing WILL/HEIR toolbars
-        without restarting Electrum.
+        ``BalWindow.update_all()``, which also runs on every CHECK/refresh), so
+        it must be side-effect free on the editor - otherwise pressing CHECK
+        would reset a manual Date/RAW choice back to the default. The actual
+        per-mode editor default lives in ``apply_user_type_editor_default()``,
+        which is called ONLY on a real USER TYPE change.
 
         It is safe to call repeatedly and on either layout (horizontal toolbar or
         vertical wizard): it only flips the visibility of the Raw/Date combo.
@@ -421,9 +459,36 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
             # If the mode cannot be read, show the combo (the safe, most
             # capable default for an existing widget).
             basic = False
-        # Hidden in BASIC, visible in ADVANCED. The current value/editor is left
-        # untouched on purpose (see the docstring).
         self.combo.setVisible(not basic)
+
+    def apply_user_type_editor_default(self):
+        """Set the ACTIVE Raw/Date editor to the per-mode default.
+
+        Split out from ``apply_user_type_visibility`` (Opzione 2) so it runs
+        ONLY on a real BASIC<->ADVANCED USER TYPE change, not on every
+        ``update_all()``/CHECK refresh. That is what stopped pressing CHECK from
+        resetting a manual Date choice back to RAW.
+
+        Behaviour:
+          * BASIC    -> always the Date editor (index 1); the selector is hidden,
+                       so the field must not stay on RAW.
+          * ADVANCED -> RAW by default (index 0), UNLESS the user previously
+                       picked an editor by hand (``_user_picked_editor``), in
+                       which case their choice is left untouched.
+        """
+        try:
+            basic = self.bal_window.bal_plugin.is_basic_mode()
+        except Exception:
+            basic = False
+        try:
+            if basic:
+                self.set_index(1)
+            else:
+                if not self._user_picked_editor:
+                    self.set_index(0)
+        except Exception:
+            # Never let a cosmetic editor switch break mode toggling.
+            pass
 
     def set_value(
         self,
@@ -653,6 +718,8 @@ class ThresholdTimeWidget(BalTimeEditWidget):
         "if you choose Raw, you can insert various options based on suffix:<br>"
         " - d: number of days after current day(ex: 1d means tomorrow)<br>"
         " - y: number of years after current day(ex: 1y means one year from today)<br>"
+        "<br><b>Note:</b> the date/time is expressed in your computer's "
+        "<b>Local time</b> (not UTC time).<br>"
     )
     label_text = "🚨"
     #label_text = "Check Alive"
@@ -682,6 +749,8 @@ class LockTimeWidget(BalTimeEditWidget):
         "if you choose Raw, you can insert various options based on suffix:<br>"
         " - d: number of days after current day(ex: 1d means tomorrow)<br>"
         " - y: number of years after currrent day(ex: 1y means one year from today)<br>"
+        "<br><b>Note:</b> the date/time is expressed in your computer's "
+        "<b>Local time</b> (not UTC time).<br>"
     )
     label_text = "🚛"
     #label_text = "Locktime"
@@ -711,6 +780,12 @@ class WillSettingsWidget(QWidget):
         # alive and fee fields are display-only; they can only be edited from
         # the "Build your will" wizard, which passes read_only=False.
         self.read_only = read_only
+        # Remember which layout this widget was built with, so the per-update
+        # hooks (apply_editable_dates / apply_user_type_visibility) can tell the
+        # main-window toolbar ("h") apart from the wizard (vertical) - needed
+        # for the BASIC-mode Check-Alive "visible but read-only in the main
+        # window only" behaviour.
+        self.layout_type = layout_type
         box = QHBoxLayout(self) if layout_type == "h" else QVBoxLayout(self)
 
         self.calendar_button = BalCalendarButton(self.bal_window, self._ics_provider)
@@ -726,13 +801,13 @@ class WillSettingsWidget(QWidget):
         self.widgets["threshold"] = ThresholdTimeWidget(bal_window, self)
         self.widgets["locktime"].valueEdited.connect(self.on_locktime_change)
         self.widgets["threshold"].valueEdited.connect(self.on_locktime_change)
-        # SIMPLE / ADVANCED: in BASIC mode hide the whole "Check Alive"
-        # (threshold) row, including its leading icon. The widget is still
-        # created and kept in self.widgets so the rest of the code (and the
-        # saved settings) keep working; it is only hidden from view. The
-        # Delivery time (locktime) row stays visible. We hide it after creation
-        # so both the horizontal (toolbar/Heirs) and vertical (wizard) layouts
-        # below add an already-hidden widget.
+        # SIMPLE / ADVANCED: in BASIC mode the "Check Alive" (threshold) row is
+        # hidden EVERYWHERE (both the main-window toolbar and the wizard). The
+        # user must never see or touch the Check Alive in BASIC. The widget is
+        # still created and kept in self.widgets so the rest of the code and the
+        # saved settings keep working; it is only hidden from view. (This
+        # reverts the v0.5.2 experiment that had shown it read-only in the main
+        # window - owner asked to hide it again.)
         if bal_window.bal_plugin.is_basic_mode():
             self.widgets["threshold"].setVisible(False)
         # self.widgets['baltx_fees'].valueChange.connect(self.bal_window.update_setting_widgets)
@@ -954,7 +1029,9 @@ class WillSettingsWidget(QWidget):
             basic = False
         threshold = self.widgets.get("threshold")
         if threshold is not None:
-            # Hidden in BASIC, visible in ADVANCED.
+            # Hidden in BASIC, visible in ADVANCED - in BOTH layouts (main
+            # window toolbar and wizard). Reverts the v0.5.2 experiment that
+            # kept it visible in the main window in BASIC.
             threshold.setVisible(not basic)
 
         # Task #04: also re-apply the Raw/Date selector visibility on BOTH the
@@ -968,6 +1045,19 @@ class WillSettingsWidget(QWidget):
             apply_combo = getattr(widget, "apply_user_type_visibility", None)
             if callable(apply_combo):
                 apply_combo()
+
+    def apply_user_type_editor_default(self):
+        """Apply the per-mode Raw/Date editor default to both time fields.
+
+        Called ONLY on a real BASIC<->ADVANCED USER TYPE change (not on every
+        refresh/CHECK), so a manual Date/RAW choice is preserved when the user
+        just presses CHECK. See BalTimeEditWidget.apply_user_type_editor_default.
+        """
+        for field in ("locktime", "threshold"):
+            widget = self.widgets.get(field)
+            apply_default = getattr(widget, "apply_user_type_editor_default", None)
+            if callable(apply_default):
+                apply_default()
 
     def open_or_save_calendar(self):
         """Build and save an .ics calendar file with SEPARATE reminder events.
@@ -1245,6 +1335,43 @@ class WillSettingsWidget(QWidget):
         self.bal_window.will_settings["real_locktime"]=td.timestamp()
         try:
             self.widgets["locktime"].editor.label.setText(td.strftime("%Y-%m-%d"))
+        except Exception as _e:
+            pass
+
+        # VISUAL WARNING (ToDo #5): the Check Alive must always be EARLIER than
+        # the delivery time. If the user sets a Check Alive that is later than
+        # (or equal to) the delivery time, tint its box with a soft red so the
+        # problem is obvious immediately, instead of only surfacing later as a
+        # build error. Applied only in ADVANCED mode (in BASIC the Check Alive
+        # is hidden and not editable, so there is nothing to warn about). The
+        # tint is cleared again as soon as the relationship becomes valid.
+        try:
+            SOFT_RED = "#FCE4E4"
+            threshold_box = self.widgets["threshold"]
+            if not self.bal_window.bal_plugin.is_basic_mode():
+                if threshold.to_timestamp() >= locktime.to_timestamp():
+                    # Only set a background colour, and DO NOT touch the border:
+                    # styling the border of a QDateTimeEdit/QAbstractSpinBox via
+                    # stylesheet makes Qt stop drawing its native up/down spin
+                    # arrows. Scoping the rule to the inner editor widget types
+                    # (rather than the whole container) keeps the tint on the
+                    # value box while leaving the arrows intact.
+                    threshold_box.setStyleSheet(
+                        "QDateTimeEdit, QLineEdit, QAbstractSpinBox "
+                        "{ background-color: %s; }" % SOFT_RED
+                    )
+                    threshold_box.setToolTip(
+                        _(
+                            "The Check Alive date must be earlier than the "
+                            "delivery time."
+                        )
+                    )
+                else:
+                    threshold_box.setStyleSheet("")
+                    threshold_box.setToolTip("")
+            else:
+                # BASIC: never show the warning styling (field is hidden).
+                threshold_box.setStyleSheet("")
         except Exception as _e:
             pass
 

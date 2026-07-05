@@ -325,6 +325,10 @@ class BalWindow:
                     raise NoWillExecutorNotPresent(
                         "No Will-Executor or backup transaction selected"
                     )
+            # date_to_check already carries the correct reference timestamp for
+            # the current mode (the Check Alive in ADVANCED, or "now" in BASIC -
+            # see init_class_variables). So build the will directly against it;
+            # no per-mode branch is needed here anymore.
             txs = self.heirs.get_transactions(
                 self.bal_plugin,
                 self.window.wallet,
@@ -451,74 +455,33 @@ class BalWindow:
         for heir, value in updates.items():
             self.heirs[heir] = value
 
-    # How long BEFORE the delivery time (locktime) the auto-computed Check
-    # Alive threshold is placed in BASIC mode (see compute_date_to_check).
-    # Owner-approved value: 2 hours. Kept as a named constant so the offset
-    # is documented in one place and easy to tune later if needed.
-    BASIC_MODE_CHECK_ALIVE_OFFSET_SECONDS = 2 * 60 * 60
-
-    @staticmethod
-    def compute_date_to_check(is_basic_mode, locktime_setting, threshold_setting):
-        """Resolve the "Check Alive" reference timestamp (``date_to_check``).
-
-        SIMPLE / ADVANCED: the "Check Alive" (threshold) field is hidden in
-        BASIC mode, so the user can never keep it in sync with the delivery
-        time (locktime) when they anticipate/postpone it from the wizard.
-        Left untouched, the threshold stays at its old/default value (e.g.
-        "today + 11 months") and, if the user later sets a delivery date
-        EARLIER than that, two checks elsewhere (the "locktime is lower than
-        threshold" guard in ``build_inheritance_transaction``, and
-        ``Will.check_will_expired`` via ``date_to_check``) misfire and
-        block/expire the will - even though the postpone/expiry check itself
-        is meant to be inert in BASIC mode (see the ``is_basic_mode()`` guard
-        in ``init_class_variables``).
-
-        FIX: in BASIC mode only, ignore the stored threshold and instead
-        derive ``date_to_check`` LIVE from the current delivery time
-        (``locktime_setting``), placed a small, fixed offset BEFORE it
-        (``BASIC_MODE_CHECK_ALIVE_OFFSET_SECONDS`` = 2 hours). This keeps
-        ``date_to_check`` always < locktime by construction, so anticipating
-        or postponing the delivery date in BASIC mode never triggers a
-        spurious "expired" / "threshold" error. In ADVANCED mode nothing
-        changes: the stored threshold is used as-is, exactly like before.
-
-        Args:
-            is_basic_mode: ``BalPlugin.is_basic_mode()`` result.
-            locktime_setting: the current ``will_settings["locktime"]`` value
-                (relative string like ``"1y"`` or an absolute timestamp).
-            threshold_setting: the current ``will_settings["threshold"]``
-                value, used as-is in ADVANCED mode and as a fallback if the
-                locktime cannot be parsed.
-
-        Returns:
-            float: the resolved ``date_to_check`` UNIX timestamp.
-        """
-        if is_basic_mode:
-            try:
-                locktime_ts = Util.parse_locktime_string(locktime_setting)
-                # Util.parse_locktime_string never raises: on anything it
-                # cannot parse it silently returns 0 (see bal/core/util.py).
-                # Treat that sentinel the same as a parse error, otherwise we
-                # would compute a nonsensical date_to_check near the UNIX
-                # epoch instead of falling back to the stored threshold.
-                if locktime_ts:
-                    return (
-                        locktime_ts
-                        - BalWindow.BASIC_MODE_CHECK_ALIVE_OFFSET_SECONDS
-                    )
-            except Exception:
-                pass
-        return BalTimestamp(threshold_setting).to_timestamp()
-
     def init_class_variables(self):
         if not self.heirs:
             raise NoHeirsException(_("Heirs are not defined"))
         try:
-            self.date_to_check = BalWindow.compute_date_to_check(
-                self.bal_plugin.is_basic_mode(),
-                self.will_settings["locktime"],
-                self.will_settings["threshold"],
-            )
+            # SIMPLE / ADVANCED root behaviour of the "Check Alive" (threshold).
+            #
+            # self.date_to_check is the single reference timestamp that EVERY
+            # downstream validity check reads: the build filter
+            # (get_locktimes/get_transactions), the heir-count in
+            # check_willexecutors_and_heirs ("No Heirs"), check_will_expired,
+            # check_amounts, and the "locktime is lower than threshold" guard.
+            #
+            # In BASIC mode the Check Alive is HIDDEN and NOT editable by the
+            # user, so it must never govern any of those checks. Setting
+            # date_to_check to the Check Alive there caused the will to be
+            # wrongly blocked whenever the (fixed) Check Alive ended up later
+            # than the delivery time (e.g. "No Heirs" even with heirs present,
+            # or a will that refused to (re)build). We therefore set
+            # date_to_check to "now" in BASIC: every check is then evaluated
+            # against the current moment, i.e. the Check Alive effectively does
+            # not exist, while the delivery time (locktime) is still fully
+            # enforced. ADVANCED mode keeps the user-controlled Check Alive
+            # exactly as before.
+            if self.bal_plugin.is_basic_mode():
+                self.date_to_check = datetime.now().timestamp()
+            else:
+                self.date_to_check = BalTimestamp(self.will_settings['threshold']).to_timestamp()
             # found = False
             # NOTE: block-height tracking removed (A1) - locktimes are always
             # UNIX timestamps now, so we no longer read the current block height

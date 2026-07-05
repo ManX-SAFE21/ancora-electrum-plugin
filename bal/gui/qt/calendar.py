@@ -47,13 +47,24 @@ class BalCalendarButton(QToolButton):
     # ------------------------------------------------------------------ #
 
     def _ensure_ics(self):
-        """Generate the .ics content and cache the temp file path."""
+        """Generate the .ics content and cache the temp file path.
+
+        If the provider returns no content because there are no reminder events
+        to save (the delivery date is too close or already passed), warn the
+        user and do NOT create a file (ToDo #2).
+        """
         try:
             content = self._ics_provider()
             if content:
                 self._calendar_temp_path = BalCalendar.write_temp_ics(content)
             else:
                 self._calendar_temp_path = None
+                self._bal_window.show_warning(
+                    _(
+                        "No reminders were saved: the delivery date is too "
+                        "close (or already passed)"
+                    )
+                )
         except Exception as e:
             _logger.error(f"failed to generate .ics: {e}")
             self._calendar_temp_path = None

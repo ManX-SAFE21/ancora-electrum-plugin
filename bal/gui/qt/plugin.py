@@ -486,6 +486,7 @@ class Plugin(BalPlugin):
                     user_type_combo.setCurrentIndex(0)
                     user_type_combo.blockSignals(False)
                     self.USER_TYPE.set("basic")
+                    self._apply_editor_default_on_toolbars()
                     self.update_all()
                     return
             self.USER_TYPE.set("advanced" if idx == 1 else "basic")
@@ -500,6 +501,11 @@ class Plugin(BalPlugin):
                       reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
                       reset_btn_auto_sign):
                 w.setVisible(not basic)
+            # Opzione 2: apply the per-mode Raw/Date editor default ONLY here, on
+            # a real USER TYPE change (not inside update_all/CHECK), so pressing
+            # CHECK never resets a manual Date/RAW choice. update_all() below
+            # still refreshes the transaction list and the combo visibility.
+            self._apply_editor_default_on_toolbars()
             self.update_all()
 
         user_type_combo.currentIndexChanged.connect(on_user_type_change)
@@ -832,6 +838,28 @@ class Plugin(BalPlugin):
     def update_all(self):
         for _k, w in self.bal_windows.items():
             w.update_all()
+
+    def _apply_editor_default_on_toolbars(self):
+        """Apply the per-mode Raw/Date editor default to the WILL/HEIR toolbars.
+
+        Called ONLY on a real USER TYPE (BASIC<->ADVANCED) change - never from
+        update_all()/CHECK - so pressing CHECK does not reset a manual Date/RAW
+        choice (Opzione 2). Guarded so a missing widget never breaks the switch.
+        """
+        for _k, w in self.bal_windows.items():
+            for _list in (getattr(w, "heir_list_widget", None),
+                          getattr(w, "will_list_widget", None)):
+                settings_widget = getattr(_list, "will_settings_widget", None)
+                apply_default = getattr(
+                    settings_widget, "apply_user_type_editor_default", None
+                )
+                if callable(apply_default):
+                    try:
+                        apply_default()
+                    except Exception as _e:
+                        _logger.debug(
+                            f"apply_user_type_editor_default error: {_e}"
+                        )
 
     def get_window_title(self, title):
         return _("BAL - ") + _(title)
