@@ -2011,3 +2011,53 @@ user actually switches BASIC<->ADVANCED, and a manual Date choice is preserved.
   transaction list still refreshes) to be done by the owner from the test ZIP.
 
 **Outcome:** DONE (delivered as test ZIP v0.5.10; commit only after confirmation).
+
+---
+
+## 35. v0.5.11 - Electrum 4.8.0 compatibility (json_db.register_dict removed)
+
+**Date:** 2026-07-05
+
+**Problem (owner-reported):** With Electrum 4.8.0 the plugin fails to load:
+
+    AttributeError: module 'electrum.json_db' has no attribute 'register_dict'
+    Exception: Error loading bal plugin: ...
+
+**Root cause (verified against the official Electrum sources):** Electrum 4.8.0
+REMOVED `json_db.register_dict` and moved the wallet-DB registration API to a new
+module, `electrum.stored_dict`, switching from flat key names to '/'-separated
+paths with a wildcard, and swapping the last two arguments:
+
+    Electrum <= 4.7.2 : json_db.register_dict(NAME, method, _type)
+    Electrum >= 4.8.0 : stored_dict.register_name('/NAME/*', _type, method)
+
+Electrum migrated its own registrations the same way (e.g. `contacts`). The
+conversion semantics are IDENTICAL in both versions (`_type is dict` ->
+`method(**value)`, `_type is tuple` -> `method(*value)`, else `method(value)`);
+only the registration API changed. `electrum.stored_dict` does not exist in
+4.7.2, and `register_dict` no longer exists in 4.8.0, so a plain port would have
+broken users still on 4.7.2.
+
+**Fix (`bal/core/plugin_base.py`) - compatibility shim (owner's choice):** a
+`_register_will_dict()` helper detects which API is available (`try: from
+electrum.stored_dict import register_name` / `except ImportError:` fall back to
+`json_db.register_dict`) and registers `heirs`, `will` and `will_settings`
+through it. The plugin therefore works on BOTH Electrum 4.7.2 and 4.8.0.
+`bal/__init__.py`: module docstring updated accordingly (text only).
+
+**Verification:**
+- Full test suite against **Electrum 4.7.2**: `266 passed` (same 2 pre-existing,
+  unrelated `baltx_fees` failures).
+- Full test suite against **Electrum 4.8.0**: `266 passed` (same 2 pre-existing
+  failures) - previously ALL tests failed at collection with the AttributeError.
+- Direct check: `heirs`, `will`, `will_settings` are confirmed REGISTERED in
+  Electrum 4.7.2 (`json_db.registered_dicts`) and in Electrum 4.8.0
+  (`stored_dict.registered_names`).
+- `ruff`: all checks passed.
+
+**Caveat:** the test suite covers the plugin logic, not the whole Qt GUI. Electrum
+4.8.0 changed other things too, so further incompatibilities may only surface when
+actually running the plugin; owner to confirm on Windows with the test ZIP.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.11; commit only after the owner
+confirms the plugin loads and works on Electrum 4.8.0).
