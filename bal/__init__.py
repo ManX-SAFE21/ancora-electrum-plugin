@@ -30,8 +30,10 @@ Electrum discovers the plugin through ``manifest.json`` and loads the GUI
 entry point from ``qt.py`` (the shim), which imports the real ``Plugin``
 from ``gui.qt.plugin``.
 
-The plugin targets Electrum 4.7.2 (the last stable release exposing
-``json_db.register_dict``) and PyQt6.
+The plugin supports Electrum 4.7.2 and 4.8.0 with PyQt6.  Electrum 4.8.0 removed
+``json_db.register_dict`` and replaced it with the path-based
+``electrum.stored_dict.register_name``; ``core.plugin_base`` detects which API is
+available and adapts, so both releases keep working.
 """
 
-__version__ = "0.5.10"
+__version__ = "0.5.11"
