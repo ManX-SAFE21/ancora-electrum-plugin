@@ -36,11 +36,26 @@ _logger = get_logger(__name__)
 # --------------------------------------------------------------------------- #
 # Wallet-DB registration
 # --------------------------------------------------------------------------- #
-# Electrum needs to know how to (de)serialise the custom dictionaries the
-# plugin stores inside the wallet file.  ``register_dict`` associates a key
-# name with a conversion callable applied to each value when the wallet is
-# loaded.  ``will`` values run through ``get_will`` so the stored transaction
-# hex is turned back into a ``Transaction`` object.
+# Electrum needs to know how to (de)serialise the custom dictionaries the plugin
+# stores inside the wallet file: a key name is associated with a conversion
+# callable applied to each value when the wallet is loaded.  ``will`` values run
+# through ``get_will`` so the stored transaction hex is turned back into a
+# ``Transaction`` object.
+#
+# COMPATIBILITY NOTE (Electrum 4.8.0):
+# Electrum 4.8.0 REMOVED ``json_db.register_dict`` and moved the registration API
+# to the new ``electrum.stored_dict`` module, switching from flat key names to
+# '/'-separated paths with a wildcard for the dict entries, and swapping the last
+# two arguments:
+#
+#     Electrum <= 4.7.2 : json_db.register_dict(NAME, method, _type)
+#     Electrum >= 4.8.0 : stored_dict.register_name('/NAME/*', _type, method)
+#
+# The conversion semantics are identical in both versions (``_type is dict`` ->
+# ``method(**value)``, ``_type is tuple`` -> ``method(*value)``, otherwise
+# ``method(value)``); only the registration API changed.  We therefore detect
+# which API is available and adapt, so the plugin keeps working on BOTH 4.7.2 and
+# 4.8.0 instead of breaking for users who have not upgraded yet.
 def get_will(x):
     """Deserialise a stored will entry, rebuilding its ``tx`` object."""
     try:
@@ -50,9 +65,24 @@ def get_will(x):
     return x
 
 
-json_db.register_dict("heirs", tuple, None)
-json_db.register_dict("will", dict, None)
-json_db.register_dict("will_settings", lambda x: x, None)
+try:
+    # Electrum >= 4.8.0
+    from electrum.stored_dict import register_name as _electrum_register_name
+
+    def _register_will_dict(name, method, _type=None):
+        """Register a plugin dict in the wallet DB (Electrum >= 4.8.0 API)."""
+        _electrum_register_name(f"/{name}/*", _type, method)
+
+except ImportError:
+    # Electrum <= 4.7.2
+    def _register_will_dict(name, method, _type=None):
+        """Register a plugin dict in the wallet DB (Electrum <= 4.7.2 API)."""
+        json_db.register_dict(name, method, _type)
+
+
+_register_will_dict("heirs", tuple)
+_register_will_dict("will", dict)
+_register_will_dict("will_settings", lambda x: x)
 
 
 class BalConfig:
@@ -91,7 +121,7 @@ class BalPlugin(BasePlugin):
     """
 
     _version = None
-    __version__ = "0.5.10"  # AUTOMATICALLY GENERATED DO NOT EDIT
+    __version__ = "0.5.11"  # AUTOMATICALLY GENERATED DO NOT EDIT
 
     # Command used to open an .ics calendar file, per operating system.
     default_app = {
