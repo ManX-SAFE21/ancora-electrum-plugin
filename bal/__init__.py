@@ -36,4 +36,4 @@ The plugin supports Electrum 4.7.2 and 4.8.0 with PyQt6.  Electrum 4.8.0 removed
 available and adapts, so both releases keep working.
 """
 
-__version__ = "0.5.11"
+__version__ = "0.5.13"
