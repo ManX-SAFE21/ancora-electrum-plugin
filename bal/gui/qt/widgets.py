@@ -1321,6 +1321,9 @@ class WillSettingsWidget(QWidget):
                 Will.get_min_locktime(self.bal_window.willitems, NLOCKTIME_MAX),
                 locktime.to_timestamp(),
         )
+        # Resolved Check Alive date. For relative values this counts BACKWARDS
+        # from the delivery time (reverse=True): "90d" means "90 days BEFORE the
+        # delivery", not "90 days from now".
         td = threshold.to_date(min_locktime, True)
         self.widgets["threshold"].alarm=td
         self.bal_window.will_settings["real_threshold"]=td.timestamp()
@@ -1338,42 +1341,6 @@ class WillSettingsWidget(QWidget):
         except Exception as _e:
             pass
 
-        # VISUAL WARNING (ToDo #5): the Check Alive must always be EARLIER than
-        # the delivery time. If the user sets a Check Alive that is later than
-        # (or equal to) the delivery time, tint its box with a soft red so the
-        # problem is obvious immediately, instead of only surfacing later as a
-        # build error. Applied only in ADVANCED mode (in BASIC the Check Alive
-        # is hidden and not editable, so there is nothing to warn about). The
-        # tint is cleared again as soon as the relationship becomes valid.
-        try:
-            SOFT_RED = "#FCE4E4"
-            threshold_box = self.widgets["threshold"]
-            if not self.bal_window.bal_plugin.is_basic_mode():
-                if threshold.to_timestamp() >= locktime.to_timestamp():
-                    # Only set a background colour, and DO NOT touch the border:
-                    # styling the border of a QDateTimeEdit/QAbstractSpinBox via
-                    # stylesheet makes Qt stop drawing its native up/down spin
-                    # arrows. Scoping the rule to the inner editor widget types
-                    # (rather than the whole container) keeps the tint on the
-                    # value box while leaving the arrows intact.
-                    threshold_box.setStyleSheet(
-                        "QDateTimeEdit, QLineEdit, QAbstractSpinBox "
-                        "{ background-color: %s; }" % SOFT_RED
-                    )
-                    threshold_box.setToolTip(
-                        _(
-                            "The Check Alive date must be earlier than the "
-                            "delivery time."
-                        )
-                    )
-                else:
-                    threshold_box.setStyleSheet("")
-                    threshold_box.setToolTip("")
-            else:
-                # BASIC: never show the warning styling (field is hidden).
-                threshold_box.setStyleSheet("")
-        except Exception as _e:
-            pass
 
 
 
