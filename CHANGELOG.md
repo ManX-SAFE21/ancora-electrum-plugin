@@ -2061,3 +2061,91 @@ actually running the plugin; owner to confirm on Windows with the test ZIP.
 
 **Outcome:** DONE (delivered as test ZIP v0.5.11; commit only after the owner
 confirms the plugin loads and works on Electrum 4.8.0).
+
+---
+
+## 36. v0.5.12 - Fix: Check Alive soft-red tint could stay stuck (and used the wrong dates)
+
+**Date:** 2026-07-14
+
+**Problem (owner-reported, screenshot):** In ADVANCED the Check Alive box stayed
+pink permanently even with perfectly valid dates (Check Alive 13/10/2026,
+delivery 14/07/2030), and changing the values did not clear it.
+
+**Two distinct bugs were found:**
+
+1. **Stale tint (the actual cause of the stuck pink).** The tint was only
+   refreshed from `on_locktime_change`, which is connected to `valueEdited` of
+   the fields of THAT WillSettingsWidget copy. The main-window toolbar is
+   read-only, so its fields never emit `valueEdited`: values reach it through
+   `update_setting_widgets` -> `set_value`, and its tint was therefore never
+   re-evaluated. A pink set earlier stayed frozen forever.
+2. **Wrong comparison basis (real bug, wrong tint decisions).** The check used
+   `BalTimestamp.to_timestamp()` with no base, which resolves relative values
+   from *now* ("90d" -> today + 90 days). But the plugin's REAL Check Alive date
+   is computed BACKWARDS from the delivery time
+   (`to_date(min_locktime, reverse=True)`) and stored as
+   `will_settings["real_threshold"]`. So the tint decision was made on values
+   that are neither the ones displayed nor the ones the plugin uses. Example:
+   Check Alive "5y" with delivery "4y" was wrongly tinted, although the real
+   Check Alive (delivery - 5y) is BEFORE the delivery and thus valid.
+
+**Fix (`bal/gui/qt/widgets.py`):**
+
+- `on_locktime_change` now keeps the REAL resolved dates it already computes
+  (`real_threshold_dt`, `real_locktime_dt` - the same values shown to the user
+  and stored as `real_threshold` / `real_locktime`) and passes them to the tint.
+- The tint logic moved into a new `WillSettingsWidget.update_check_alive_warning()`
+  which compares those REAL dates, and can also recompute from
+  `will_settings["real_threshold"/"real_locktime"]` when called without arguments.
+- `WillSettingsWidget.apply_user_type_visibility` (invoked by `update_all()`, i.e.
+  on every refresh) now also calls `update_check_alive_warning()`, so a stale tint
+  can no longer stay stuck on a toolbar copy that never received the edit signal.
+- Unchanged: ADVANCED-only, soft red #FCE4E4 background only (no border, so the
+  native up/down arrows stay visible), tooltip, and cleared as soon as valid.
+
+**Verification:**
+- Full test suite against **Electrum 4.7.2**: `266 passed` (same 2 pre-existing
+  unrelated failures). Against **Electrum 4.8.0**: `266 passed` (same 2).
+- `ruff`: no new errors.
+- Logic check: with the owner's values the tint clears; with Check Alive "5y" vs
+  delivery "4y" the old code wrongly tinted and the new code does not; a Check
+  Alive genuinely later than the delivery is still correctly tinted.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.12; commit only after confirmation).
+
+---
+
+## 37. v0.5.13 - Remove the Check Alive soft-red highlight
+
+**Date:** 2026-07-14
+
+**Goal (owner request):** Remove the soft-red tint on the Check Alive box
+entirely. Introduced in v0.5.6 and patched twice (v0.5.8 for the disappearing
+spin arrows, v0.5.12 for a stuck/incorrect tint), it kept causing problems and
+the owner decided it is not worth keeping. No replacement warning was requested.
+
+**What changed (`bal/gui/qt/widgets.py`):**
+
+- Removed `WillSettingsWidget.update_check_alive_warning()` in full (the tint
+  logic, the soft-red stylesheet and the "The Check Alive date must be earlier
+  than the delivery time." tooltip).
+- Removed its call from `on_locktime_change`, which is back to its pre-v0.5.6
+  form: it still resolves and stores `real_threshold` / `real_locktime` exactly
+  as before (those are used by the rest of the plugin).
+- Removed its call from `apply_user_type_visibility` (the per-refresh
+  re-evaluation added in v0.5.12, which existed only for the tint).
+- No stylesheet is applied to the Check Alive box anymore, so it always renders
+  with the normal Qt look (and its native up/down arrows).
+
+**Kept:** the user is still warned when it matters - the build-failure message
+lists "the Check Alive Date/Time is later than the delivery time (it must be
+earlier)" as one of the three possible reasons (v0.5.9).
+
+**Verification:**
+- No remnants of the tint left in the codebase (grep clean).
+- Full test suite against **Electrum 4.7.2**: `266 passed`; against **Electrum
+  4.8.0**: `266 passed` (same 2 pre-existing, unrelated failures in both).
+- `ruff`: no new errors.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.13; commit only after confirmation).
