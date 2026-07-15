@@ -18,6 +18,7 @@ from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
 from .widgets import BalCheckBox, PercAmountEdit, WillSettingsWidget
 from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QStyledItemDelegate, QLineEdit as _QLineEdit
 from .dialogs import BalBuildWillDialog, BalDialog
 
 
@@ -659,6 +660,34 @@ class PreviewList(MyTreeView, MessageBoxMixin):
 
 
 
+class _FullUrlEditDelegate(QStyledItemDelegate):
+    """Item delegate for the will-executor URL column.
+
+    The URL column may display a SHORTENED form of long .onion addresses. This
+    delegate ensures editing operates on the FULL url: the editor is preloaded
+    from the real key role (which always holds the complete address) rather than
+    from the visible (possibly shortened) cell text.
+    """
+
+    def __init__(self, url_role, parent=None):
+        super().__init__(parent)
+        self._url_role = url_role
+
+    def createEditor(self, parent, option, index):
+        return _QLineEdit(parent)
+
+    def setEditorData(self, editor, index):
+        # Prefer the full URL stored in the key role; fall back to the visible
+        # text if for some reason the role is missing.
+        full = index.data(self._url_role)
+        if not full:
+            full = index.data()
+        editor.setText(full or "")
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.text())
+
+
 class WillExecutorListWidget(MyTreeView):
     class Columns(MyTreeView.BaseColumnsEnum):
         SELECTED = enum.auto()
@@ -706,6 +735,20 @@ class WillExecutorListWidget(MyTreeView):
         self.config = parent.bal_plugin.config
         self.get_decimal_point = parent.bal_plugin.get_decimal_point
 
+        # The URL column may DISPLAY a shortened form of long .onion addresses
+        # (see update()).  Without this, double-clicking to edit would load the
+        # shortened text (with the ellipsis) into the editor and saving it would
+        # corrupt the will-executor key.  This delegate makes the editor load the
+        # FULL url from the real key role instead of the visible (shortened)
+        # text, so edits always operate on the complete address.
+        try:
+            self.setItemDelegateForColumn(
+                self.Columns.URL,
+                _FullUrlEditDelegate(self.ROLE_HEIR_KEY + self.Columns.URL, self),
+            )
+        except Exception:
+            pass
+
         self.update()
 
     def create_menu(self, position):
@@ -714,7 +757,13 @@ class WillExecutorListWidget(MyTreeView):
         column = idx.column() or self.Columns.URL
         selected_keys = []
         for s_idx in self.selected_in_column(self.Columns.URL):
-            sel_key = self.model().itemFromIndex(s_idx).data(0)
+            item = self.model().itemFromIndex(s_idx)
+            # Use the FULL url stored in the key role, NOT item.data(0): the
+            # latter is the (possibly shortened) DISPLAY text, and using it as a
+            # dict key breaks delete/select/deselect/ping for long .onion URLs
+            # (KeyError). Fall back to the display text only if the role is
+            # unexpectedly missing.
+            sel_key = item.data(self.ROLE_HEIR_KEY + self.Columns.URL) or item.data(0)
             selected_keys.append(sel_key)
         if selected_keys and idx.isValid():
             column_title = self.model().horizontalHeaderItem(column).text()
@@ -832,7 +881,13 @@ class WillExecutorListWidget(MyTreeView):
 
             for url, value in self._bal_parent.willexecutors_list.items():
                 labels = [""] * len(self.Columns)
-                labels[self.Columns.URL] = url
+                # Long Tor (.onion) URLs overflow the column; show a shortened
+                # form (first 37 chars + ellipsis, matching the welist site)
+                # while keeping the FULL url as the real key data (setData below)
+                # and in the tooltip, so nothing downstream breaks. Short URLs
+                # are shown unchanged.
+                display_url = url if len(url) <= 40 else url[:37] + "\u2026"
+                labels[self.Columns.URL] = display_url
                 if Willexecutors.is_selected(value):
 
                     labels[self.Columns.SELECTED] = [
@@ -884,6 +939,8 @@ class WillExecutorListWidget(MyTreeView):
                 items[self.Columns.URL].setData(
                     url, self.ROLE_HEIR_KEY + self.Columns.URL
                 )
+                # Full URL on hover (the visible text may be shortened above).
+                items[self.Columns.URL].setToolTip(url)
                 items[self.Columns.BASE_FEE].setData(
                     url, self.ROLE_HEIR_KEY + self.Columns.BASE_FEE
                 )
