@@ -2149,3 +2149,78 @@ earlier)" as one of the three possible reasons (v0.5.9).
 - `ruff`: no new errors.
 
 **Outcome:** DONE (delivered as test ZIP v0.5.13; commit only after confirmation).
+
+---
+
+## 38. v0.5.14 - Shorten long Tor (.onion) will-executor URLs in the list
+
+**Date:** 2026-07-15
+
+**Goal (owner request):** In the will-executor list, a Tor (.onion) URL is very
+long and overflows the URL column. Show it shortened (like the welist site at
+welist.bitcoin-after.life), keeping the full address available.
+
+**What changed (`bal/gui/qt/lists.py`, display only):**
+
+- `WillExecutorListWidget.update()`: the URL column now displays a shortened
+  form for long addresses - the first 37 characters + an ellipsis (matching the
+  welist site) - while the FULL url is still stored as the row's key data and is
+  set as the cell tooltip (so hovering shows the complete address). URLs of 40
+  characters or fewer are shown unchanged.
+- New `_FullUrlEditDelegate` installed on the URL column: when the user
+  double-clicks the URL cell to edit it, the editor is preloaded with the FULL
+  url (from the key role) instead of the shortened display text. Without this,
+  editing a shortened URL would have saved the truncated text and corrupted the
+  will-executor key. Verified against Electrum's edit-commit path
+  (my_treeview on_commitData -> on_edited): the committed text is the editor's
+  text (now the full URL) and the edit key is read from the role, so an
+  unmodified URL round-trips intact.
+- Only the URL column's presentation/editor changed; download, ping and
+  connection logic are untouched.
+
+**Verification:**
+- Full test suite against **Electrum 4.7.2**: `266 passed`; against **Electrum
+  4.8.0**: `266 passed` (same 2 pre-existing, unrelated failures in both).
+- `ruff`: no new errors.
+- Shortening check: the 69-char sample .onion becomes a 38-char display
+  ("http://gxvdgcqdy2s7x5cujmkaqua72r2aqo..."), while short https URLs are shown
+  unchanged.
+
+**Note:** the separate ~5s delay observed when contacting the .onion server is
+inherent to Tor building a circuit to the hidden service, not a plugin bug; it
+was analysed but intentionally NOT changed here.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.14; commit only after confirmation).
+
+---
+
+## 39. v0.5.15 - Fix KeyError on delete/select/ping of shortened .onion will-executors
+
+**Date:** 2026-07-15
+
+**Problem (owner-reported):** After v0.5.14 shortened long .onion URLs in the
+will-executor list, deleting (or selecting/deselecting/pinging) a server raised:
+
+    KeyError: 'http://gxvdgcqdy2s7x5cujmkaqua72r2aqo...'
+
+**Cause:** `WillExecutorListWidget.create_menu` collected the selected key with
+`item.data(0)`, which returns the DISPLAY text - now the SHORTENED URL (with the
+ellipsis). That truncated string was then used as a dict key in
+delete/select/deselect/ping, none of which exist in `willexecutors_list` (keyed
+by the full URL) -> KeyError. This was a regression introduced by v0.5.14.
+
+**Fix (`bal/gui/qt/lists.py`, `create_menu`):** the selected key is now read from
+the real key role (`ROLE_HEIR_KEY + Columns.URL`), which always holds the full
+URL - the same mechanism already used by `get_edit_key_from_coordinate` and
+`on_double_click` - with a fallback to `item.data(0)` only if the role is
+missing. So the context-menu actions operate on the full URL again.
+
+**Verification:**
+- Full test suite against **Electrum 4.7.2**: `266 passed`; against **Electrum
+  4.8.0**: `266 passed` (same 2 pre-existing, unrelated failures in both).
+- `ruff`: no new errors.
+- Checked there are no other `.data(0)` key usages left in the will-executor
+  list (the remaining ones are in the heir/will lists, which do not shorten
+  URLs).
+
+**Outcome:** DONE (delivered as test ZIP v0.5.15; commit only after confirmation).
