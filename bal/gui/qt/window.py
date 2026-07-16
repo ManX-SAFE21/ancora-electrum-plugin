@@ -1156,6 +1156,19 @@ class BalWindow:
                     f"len={len(resp) if hasattr(resp, '__len__') else 'n/a'}"
                 )
                 if resp:
+                    # Robustness: the server is expected to return a dict of
+                    # {url: info}. If it returns anything else (a raw string
+                    # error page, a list, etc. - more likely over Tor when a
+                    # server misbehaves), do NOT use it: that would later crash
+                    # on `self.willexecutors.update(result)`. Treat it as an
+                    # empty/failed response and try the next candidate.
+                    if not isinstance(resp, dict):
+                        _logger.warning(
+                            f"fetch_will_executors_list: {url} -> unexpected "
+                            f"response type {type(resp).__name__}, ignoring"
+                        )
+                        last_error = "invalid response format"
+                        continue
                     result = resp
                     # Tor gating: if Electrum is NOT connected through Tor, drop
                     # the .onion servers entirely - they are unreachable without
@@ -1163,6 +1176,11 @@ class BalWindow:
                     tor_on = is_tor_active()
                     for w in list(result.keys()):
                         if w in ("status", "url"):
+                            continue
+                        # Defensive: each entry must be a dict too; skip anything
+                        # malformed rather than crashing downstream.
+                        if not isinstance(result.get(w), dict):
+                            del result[w]
                             continue
                         if not tor_on and is_onion_url(w):
                             del result[w]
@@ -1197,6 +1215,16 @@ class BalWindow:
         "This is usually caused by your internet connection or a firewall, "
         "not by the plugin. Please check your connection (a VPN often helps) "
         "and try again."
+    )
+
+    # Shown when the download fails while Electrum is connected through Tor:
+    # the most common cause is a slow Tor connection, so guide the user
+    # accordingly instead of the generic message above.
+    DOWNLOAD_FAILED_TOR_MESSAGE = (
+        "Could not download the will-executors list over Tor.\n\n"
+        "Electrum is connected through Tor and the connection is taking too "
+        "long. Your Tor connection may be slow. Please try again, or use a VPN "
+        "(or temporarily disable Tor) for a faster connection."
     )
 
     def download_list(self, willexecutors, fn_on_success, fn_on_failure=None):
@@ -1243,11 +1271,20 @@ class BalWindow:
                 stop_heartbeat.set()
 
         def on_success(result):
-            if result:
+            # Defensive: only merge a proper dict (see fetch_will_executors_list).
+            # A non-dict here would raise "dictionary update sequence element..."
+            if isinstance(result, dict) and result:
                 self.willexecutors.update(result)
                 fn_on_success(result)
             else:
-                self.show_warning(_(self.DOWNLOAD_FAILED_MESSAGE))
+                # Tor-aware failure message: a download failure/timeout while
+                # Electrum is connected through Tor is most often a slow Tor
+                # connection, so point the user to that (try again / VPN /
+                # disable Tor). Otherwise keep the generic connection message.
+                if is_tor_active():
+                    self.show_warning(_(self.DOWNLOAD_FAILED_TOR_MESSAGE))
+                else:
+                    self.show_warning(_(self.DOWNLOAD_FAILED_MESSAGE))
 
         def on_failure(exc_info):
             _logger.error(f"download_list failed: {exc_info}")
@@ -1278,7 +1315,12 @@ class BalWindow:
                         f"{err.chain} network."
                     ))
             else:
-                self.show_warning(_(self.DOWNLOAD_FAILED_MESSAGE))
+                # Tor-aware: a generic failure/timeout while on Tor is most
+                # likely a slow Tor connection.
+                if is_tor_active():
+                    self.show_warning(_(self.DOWNLOAD_FAILED_TOR_MESSAGE))
+                else:
+                    self.show_warning(_(self.DOWNLOAD_FAILED_MESSAGE))
 
         self.waiting_dialog = BalWaitingDialog(
             self, base_msg, task, on_success, on_failure, exe=False
