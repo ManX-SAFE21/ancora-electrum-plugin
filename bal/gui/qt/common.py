@@ -72,6 +72,7 @@ from ...core.will import (AmountException, HeirChangeException,
                           WillexecutorChangeException, WillExecutorNotPresent,
                           WillExpiredException, WillItem, WillPostponedException)
 from ...core.willexecutors import Willexecutors
+from ...core.willexecutors import is_onion_url, is_tor_active  # noqa: F401
 
 # --- Presentation helpers ---
 from .theme import server_status_text, server_status_tooltip, status_color

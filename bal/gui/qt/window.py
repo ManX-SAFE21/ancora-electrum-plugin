@@ -1157,12 +1157,20 @@ class BalWindow:
                 )
                 if resp:
                     result = resp
-                    for w in result:
-                        if w not in ("status", "url"):
-                            Willexecutors.initialize_willexecutor(
-                                result[w], w, None,
-                                old_willexecutors.get(w, None),
-                            )
+                    # Tor gating: if Electrum is NOT connected through Tor, drop
+                    # the .onion servers entirely - they are unreachable without
+                    # Tor and would only waste time. When on Tor, keep them all.
+                    tor_on = is_tor_active()
+                    for w in list(result.keys()):
+                        if w in ("status", "url"):
+                            continue
+                        if not tor_on and is_onion_url(w):
+                            del result[w]
+                            continue
+                        Willexecutors.initialize_willexecutor(
+                            result[w], w, None,
+                            old_willexecutors.get(w, None),
+                        )
                     break
                 _logger.warning(f"fetch_will_executors_list: {url} -> empty response")
             except Exception as e:
