@@ -2224,3 +2224,42 @@ missing. So the context-menu actions operate on the full URL again.
   URLs).
 
 **Outcome:** DONE (delivered as test ZIP v0.5.15; commit only after confirmation).
+
+---
+
+## 40. v0.5.16 - Skip Tor (.onion) will-executors from download when Electrum is not on Tor
+
+**Date:** 2026-07-16
+
+**Goal (owner request):** A .onion will-executor is only reachable through Tor.
+Users connected via Tor should get the .onion servers in the welist download;
+users NOT on Tor should NOT download them at all - contacting them would only
+waste time (they are unreachable). No user-facing option: the behaviour is
+driven solely by whether Electrum is connected through Tor.
+
+**What changed:**
+- `bal/core/willexecutors.py`: new helpers `is_onion_url(url)` (detects .onion
+  hosts) and `is_tor_active()` (True only when `Network.is_proxy_tor is True`;
+  False/None => not on Tor; read defensively for offline mode). Present in both
+  Electrum 4.7.2 and 4.8.0.
+- `bal/gui/qt/window.py` (`fetch_will_executors_list`): when Tor is NOT active,
+  .onion servers are dropped from the downloaded list (not initialised, not
+  shown). When Tor is active, all servers are kept as before.
+- `bal/gui/qt/common.py`: re-export the two helpers for the Qt layer.
+
+**Note:** this replaces an earlier, more complex experiment (a "Force onion"
+setting plus a non-selectable "Tor off" row) that was never committed to Gitea;
+the final behaviour is the simple Tor-driven filter described above.
+
+**Verification:**
+- Full test suite against **Electrum 4.7.2**: `266 passed`; against **Electrum
+  4.8.0**: `266 passed` (same 2 pre-existing, unrelated failures in both).
+- `ruff`: no new errors.
+- Filter check: with Tor off the .onion server is removed from the list and only
+  the https servers remain; with Tor on the .onion server is kept.
+
+**Caveat:** the test suite does not simulate a real Tor connection, so the
+decisive confirmation (with Electrum on Tor = celeste dot vs off = green dot)
+must be done by the owner on Windows.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.16; commit only after confirmation).
