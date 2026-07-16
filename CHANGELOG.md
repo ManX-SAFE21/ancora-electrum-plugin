@@ -2263,3 +2263,69 @@ decisive confirmation (with Electrum on Tor = celeste dot vs off = green dot)
 must be done by the owner on Windows.
 
 **Outcome:** DONE (delivered as test ZIP v0.5.16; commit only after confirmation).
+
+---
+
+## 41. v0.5.17 - Fix crash when the welist server returns a non-dict response
+
+**Date:** 2026-07-16
+
+**Problem (owner-reported, Electrum 4.8.0, Tor active):** pressing Download List
+could crash with:
+
+    ValueError: dictionary update sequence element #0 has length 1; 2 is required
+    at window.py on_success -> self.willexecutors.update(result)
+
+**Root cause:** the will-executor list download assumed the server always
+returns a dict of {url: info}. `handle_response` does `json.loads(...)` and, when
+the body is NOT valid JSON (e.g. an error/HTML/plain-text page - more likely over
+Tor when a server misbehaves), it returns the RAW STRING instead. That string
+then reached `self.willexecutors.update(result)`, and `dict.update("...")`
+iterates the string characterwise, raising the ValueError. The bug was latent
+(not introduced by the onion filter) and surfaced with Tor active.
+
+**Fix (`bal/gui/qt/window.py`):**
+- `fetch_will_executors_list`: only accept the response if it is a `dict`;
+  otherwise log it, record "invalid response format" and try the next candidate
+  (so the normal "download failed" message is shown instead of crashing). Also,
+  each entry is now checked to be a dict before use (malformed entries skipped).
+- `on_success`: second line of defense - only `self.willexecutors.update(result)`
+  when `result` is a non-empty dict; otherwise show the clean download-failed
+  warning. A non-dict can no longer crash the callback.
+
+**Verification:**
+- Anti-crash check: on_success with a string, a list or an empty dict shows the
+  warning without crashing; a valid dict updates normally.
+- Full test suite against **Electrum 4.7.2**: `266 passed`; against **Electrum
+  4.8.0**: `266 passed` (same 2 pre-existing, unrelated failures in both).
+- `ruff`: no new errors.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.17; commit only after confirmation).
+
+---
+
+## 42. v0.5.18 - Clearer message when the list download fails/times out over Tor
+
+**Date:** 2026-07-16
+
+**Context (owner-reported):** With Electrum connected through Tor, "Download
+List" could sit until the timeout and download nothing, while the exact same
+build worked fine without Tor (or when the user's exit IP changed via VPN). This
+is not a plugin bug: it is a slow/obstructed Tor path on the user's connection.
+The request was to make the failure message clearer (no timeout change).
+
+**What changed (`bal/gui/qt/window.py`, text/UX only):**
+- New `DOWNLOAD_FAILED_TOR_MESSAGE`: "Could not download the will-executors list
+  over Tor. ... Your Tor connection may be slow. Please try again, or use a VPN
+  (or temporarily disable Tor) for a faster connection."
+- Both failure paths (`on_success` with an empty/invalid result, and the generic
+  branch of `on_failure`) now show the Tor-specific message when
+  `is_tor_active()` is true, and the existing generic message otherwise.
+- The download timeout itself is unchanged.
+
+**Verification:**
+- Full test suite against **Electrum 4.7.2**: `266 passed`; against **Electrum
+  4.8.0**: `266 passed` (same 2 pre-existing, unrelated failures in both).
+- `ruff`: no new errors.
+
+**Outcome:** DONE (delivered as test ZIP v0.5.18; commit only after confirmation).
