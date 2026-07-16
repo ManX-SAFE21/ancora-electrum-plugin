@@ -68,6 +68,47 @@ CHECK_GLOBAL_DEADLINE = NETWORK_DEADLINE
 _logger = get_logger(__name__)
 
 
+# --------------------------------------------------------------------------- #
+# Tor / .onion helpers
+# --------------------------------------------------------------------------- #
+# A .onion will-executor is only reachable when Electrum routes traffic through
+# Tor. There is no point downloading .onion servers from welist when Electrum is
+# not on Tor: they would only waste time (unreachable). We therefore drop them
+# from the downloaded list unless Tor is confirmed active. Electrum itself gates
+# .onion the same way (`if host.endswith('.onion') and not self.is_proxy_tor`).
+
+
+def is_onion_url(url):
+    """True if the URL points to a Tor hidden service (.onion host)."""
+    if not url:
+        return False
+    try:
+        u = url.lower()
+        if "://" in u:
+            u = u.split("://", 1)[1]
+        host = u.split("/", 1)[0].split(":", 1)[0]
+        return host.endswith(".onion")
+    except Exception:
+        return False
+
+
+def is_tor_active():
+    """True only if Electrum is CONFIRMED connected through Tor.
+
+    Reads Network.is_proxy_tor defensively (network may be None in offline
+    mode). It is TRI-STATE (True / False / None); we require True, so False and
+    None (undetermined) both mean "Tor not active". Available in Electrum 4.7.2
+    and 4.8.0.
+    """
+    try:
+        network = Network.get_instance()
+        if network is None:
+            return False
+        return network.is_proxy_tor is True
+    except Exception:
+        return False
+
+
 chainname = BalPlugin.chainname
 
 
