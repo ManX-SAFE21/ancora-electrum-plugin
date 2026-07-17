@@ -21,6 +21,7 @@ serialised together with the wallet file.
 This module performs **no** GUI work and imports nothing from PyQt / electrum.gui.
 """
 
+import json
 import os
 import platform
 from datetime import date, datetime, timedelta
@@ -31,6 +32,45 @@ from electrum.plugin import BasePlugin
 from electrum.transaction import tx_from_any
 
 _logger = get_logger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Plugin version - single source of truth
+# --------------------------------------------------------------------------- #
+# The version lives ONLY in bal/manifest.json (the file Electrum itself reads).
+# We used to hardcode it in four files and keep them in sync with a pre-commit
+# hook; reading it from the manifest removes that duplication.
+#
+# importlib.resources is used on purpose: it reads a data file bundled inside
+# the ``bal`` package and works identically whether the plugin runs from an
+# extracted directory or from INSIDE a zip (Electrum loads external plugins via
+# zipimport). It never builds a path by hand, so there is no os.path.join
+# backslash issue on Windows inside a zip.
+_VERSION_CACHE = None
+
+
+def get_version():
+    """Return the plugin version from ``bal/manifest.json`` (cached).
+
+    Zip-safe and independent of the current working directory. Falls back to
+    ``"unknown"`` if the manifest cannot be read, so importing the plugin never
+    fails just because of version lookup.
+    """
+    global _VERSION_CACHE
+    if _VERSION_CACHE is None:
+        try:
+            import importlib.resources
+
+            data = (
+                importlib.resources.files("bal")
+                .joinpath("manifest.json")
+                .read_text(encoding="utf-8")
+            )
+            _VERSION_CACHE = json.loads(data)["version"]
+        except Exception as e:  # noqa: BLE001 - never break import over version
+            _logger.error(f"failed to read version from manifest.json: {e}")
+            _VERSION_CACHE = "unknown"
+    return _VERSION_CACHE
 
 
 # --------------------------------------------------------------------------- #
@@ -120,9 +160,6 @@ class BalPlugin(BasePlugin):
     layer (or unit tests) can use the plugin logic without importing Qt.
     """
 
-    _version = None
-    __version__ = "0.5.18"  # AUTOMATICALLY GENERATED DO NOT EDIT
-
     # Command used to open an .ics calendar file, per operating system.
     default_app = {
         "Linux": "xdg-open",
@@ -138,18 +175,11 @@ class BalPlugin(BasePlugin):
     # Default geometry hint for some dialogs (kept from the original code).
     SIZE = (159, 97)
 
+    @property
     def version(self):
-        """Return the plugin version, read once from the ``VERSION`` file."""
-        if not self._version:
-            try:
-                f = ""
-                with open("{}/VERSION".format(self.plugin_dir), "r") as fi:
-                    f = str(fi.read())
-                self._version = f.strip()
-            except Exception as e:
-                _logger.error(f"failed to get version: {e}")
-                self._version = "unknown"
-        return self._version
+        """Plugin version, read from ``bal/manifest.json`` (single source of
+        truth). See :func:`get_version`."""
+        return get_version()
 
     def __init__(self, parent, config, name):
         self.logger = get_logger(__name__)

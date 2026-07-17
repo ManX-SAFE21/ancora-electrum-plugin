@@ -2349,3 +2349,164 @@ bumping `bal/VERSION`, `bal/manifest.json`, `bal/__init__.py` and
 passed / 2 pre-existing unrelated failures as v0.5.18); `ruff` clean.
 
 **Outcome:** DONE.
+
+---
+
+## 44. Repo: inheritance-logic test suite + first BAL CLI (no plugin version change)
+
+**Date:** 2026-07-20
+
+**Scope note:** this entry adds REPOSITORY files only (`tests/`, `bal_cli.py`).
+The plugin package `bal/` is byte-for-byte unchanged, so the plugin version
+stays **0.6.0** on purpose (no zip rebuild, no version bump - avoiding any new
+tag/code mismatch).
+
+**1) New logic test suite - `tests/test_inheritance_scenarios.py` (23 tests):**
+- Multi-heir distribution via `Heirs.prepare_lists`: 50/50 percent split of
+  (balance - fees); percentages normalized to their SUM (30+30 behaves like
+  50/50); fixed heirs paid first with percents sharing the remainder; fixed
+  amounts exceeding the balance scaled down proportionally (`onlyfixed`).
+- Dust rules: below-dust heirs marked `DUST:` while valid heirs keep building;
+  the leftover redistribution can LIFT dust fixed heirs above the threshold
+  (pinned: 100:200 on 1M -> 333333/666666); all-dust wills refused
+  (`HeirAmountIsDustException`); `BalanceTooLowException` when balance < fees.
+- Will-executor fees: one pseudo-heir per distinct locktime; fees larger than
+  the balance raise `WillExecutorFeeException`.
+- Expired-heir exclusion vs `from_locktime`; grouping of heirs by locktime.
+- Heir add/remove/locktime-change all flag the will as changed
+  (`Will._same_heirs`); the `Heirs` mapping persists on add/remove.
+- Will expiry (`Will.check_will_expired`): past locktime raises
+  `WillExpiredException`, future/boundary (== now) does not, non-VALID items
+  are ignored.
+- Locktime parsing: int passthrough, `<n>d` -> future midnight, `1y` == `365d`.
+
+**2) First BAL CLI - `bal_cli.py` (offline iteration):**
+- Reuses `bal.core` directly with Electrum as a library (no Qt, headless).
+- Commands: `heirs list/add/remove/export/import`, `status`.
+- Safety: **testnet by default**, mainnet only with an explicit `--mainnet`
+  flag (active network always printed); encrypted wallets via `--password` or
+  `BAL_WALLET_PASSWORD` env var; address/locktime validation (rejects wrong
+  network and past locktimes); guaranteed process termination (electrum leaves
+  non-daemon threads even offline - the CLI stops the wallet and event loop,
+  then hard-exits with the proper exit code, so machine callers never hang).
+- Planned next iteration: `will build/sign/push/check` with an explicit
+  `--yes` confirmation flag for automation.
+- End-to-end smoke test `tests/test_cli_smoke.py`: creates a REAL testnet
+  wallet via electrum-as-library in a subprocess, then drives
+  add/list/reject-invalid-address/reject-past-locktime/export/remove/status.
+
+**Verification:**
+- Full suite against **Electrum 4.7.2**: `290 passed`; against **4.8.0**:
+  `290 passed` (same 2 pre-existing, unrelated `baltx_fees` failures in both).
+- `ruff`: no new errors on the three new files.
+
+**Outcome:** DONE.
+
+---
+
+## 45. Repo: CLI will commands (build / sign / push / check) - no plugin version change
+
+**Date:** 2026-07-21
+
+**Goal:** complete the headless workflow started in entry #44, so a machine can
+run the whole inheritance cycle without the Qt GUI.
+
+**What was added (`bal_cli.py`):**
+- `will build` - builds the will transactions offline through the same
+  `bal.core` pipeline the GUI uses (`Heirs.get_transactions` -> `WillItem` ->
+  `Will.update_will` / `normalize_will`), storing them as "New".
+- `will sign` - signs the valid, incomplete transactions with the wallet
+  password (`--password` / `BAL_WALLET_PASSWORD`). Prints a summary and asks
+  for confirmation; `--yes` skips it for automation. Chained will inputs
+  (spending a previous will's change) are patched exactly as the GUI does.
+  Watching-only wallets and hardware keystores are rejected with a clear
+  message (hardware devices need physical confirmation).
+- `will push` - sends signed transactions to the selected will-executors via
+  `Willexecutors.push_transactions_parallel`; `--yes` and `--force` supported;
+  updates PUSHED / PUSH_FAIL statuses.
+- `will check` - read-only report with **exit codes for scripts**: 0 valid,
+  complete and pushed; 2 no will stored; 3 EXPIRED; 4 not fully signed;
+  5 signed but not pushed; 6 heirs changed since the will was built.
+- `_CliBalPlugin`: minimal stand-in exposing only what `bal.core` needs
+  headless (`WILLEXECUTORS`, `NO_WILLEXECUTOR`, `get_decimal_point`).
+
+**Three real bugs found and fixed while implementing this:**
+1. `Will.only_valid()` returns a GENERATOR - `len()` on it raised
+   `TypeError`; now wrapped in `list()`.
+2. `copy.deepcopy(tx)` fails on Electrum 4.8 (`cannot pickle '_thread.RLock'`);
+   signing now re-parses the transaction from its serialization instead.
+3. **Silent will loss on save**: values loaded from the wallet DB are
+   `StoredDict`s carrying the DB lock, and `JsonDB.put` deep-copies its value
+   and returns False *silently* when that fails - the will appeared saved but
+   was never written. Persistence now normalizes through a
+   `json.dumps`/`loads` round-trip (which also validates serializability) and
+   exits with an explicit error if anything is non-serializable.
+
+Also added: pre-build validation of the selected executor addresses for the
+active network (refreshed from the server when possible), and a guard that
+catches exception sentinels embedded by `heirs.py` in a heir entry when an
+output cannot be built.
+
+**Verification:**
+- New `test_cli_will_cycle` in `tests/test_cli_smoke.py`: creates a REAL
+  testnet wallet, funds it offline with a handmade transaction, then drives
+  `build -> check(4) -> sign --yes -> check(5) -> push (aborted at the
+  confirmation prompt) -> status`. No network access.
+- Full suite: **291 passed** against **Electrum 4.7.2** and **4.8.0** (same 2
+  pre-existing, unrelated `baltx_fees` failures in both).
+- `ruff`: all checks passed.
+
+**Note:** repository-only change (CLI + tests). The plugin version is
+unchanged; the Qt plugin code is untouched.
+
+**Outcome:** DONE.
+
+---
+
+## 46. v0.6.1 - Version read from manifest.json (single source of truth) - PR #4
+
+**Date:** 2026-07-22
+
+**Goal (Truman):** stop keeping the version in four places (`bal/VERSION`,
+`bal/manifest.json`, `bal/__init__.py`, `bal/core/plugin_base.py`) synced by a
+pre-commit hook. The version must be read at runtime from `manifest.json` only.
+
+**What changed:**
+- `bal/core/plugin_base.py`: new module function `get_version()` reads the
+  `"version"` field from `bal/manifest.json` using `importlib.resources`
+  (zip-safe: works both extracted and from inside a zip, which is how Electrum
+  loads external plugins via `zipimport`; no hand-built paths, so no Windows
+  backslash-in-zip issue). The value is cached. `BalPlugin` now exposes a
+  `version` **property** returning `get_version()`; the hardcoded
+  `__version__` class attribute and the old `version()` method that read the
+  `VERSION` file are removed.
+- The three call sites that printed the version now use the property
+  (`self.bal_window.bal_plugin.version` in `bal/gui/qt/widgets.py` and
+  `bal/gui/qt/dialogs.py`) or `get_version()` where no plugin instance is
+  available (`bal/core/willexecutors.py`, the HTTP user-agent, a static
+  method).
+- **Removed the `bal/VERSION` file** (the plugin package now ships 36 files
+  instead of 37).
+- `HANDOFF.md`: updated the four references that told maintainers to edit
+  `bal/VERSION` / keep four files in sync - now they point to
+  `manifest.json` as the single source of truth. (Historical version
+  references in `CHANGELOG.md` and `.agent_memory_tasks.md` are left intact on
+  purpose - they describe past events.)
+
+**Verification:**
+- New `tests/test_version_source.py` (7 tests): version equals the manifest
+  field; the `version` property matches `get_version()`; no hardcoded
+  `__version__` remains; no `bal/VERSION` file remains; the value is cached;
+  and - the key one - the version is read correctly when `bal` is imported
+  FROM INSIDE A ZIP in a child interpreter (the real Electrum/Windows
+  scenario).
+- Full suite: **298 passed** against **Electrum 4.7.2** and **4.8.0** (same 2
+  pre-existing, unrelated `baltx_fees` failures in both).
+- `ruff`: clean.
+- Also verified the built distribution zip reports the manifest version via
+  `get_version()` (bumped to 0.6.1 in this change).
+
+**Note:** repository change targeting PR #4 (branch
+`bitcoinafterlife-patch-5`). No functional change to inheritance behavior.
+
+**Outcome:** DONE.

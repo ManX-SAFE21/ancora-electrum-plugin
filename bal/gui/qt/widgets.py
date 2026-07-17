@@ -1153,7 +1153,7 @@ class WillSettingsWidget(QWidget):
         lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
-            f"PRODID:-//Bitcoin After Life//Electrum Plugin/{BalPlugin.__version__}",
+            f"PRODID:-//Bitcoin After Life//Electrum Plugin/{self.bal_window.bal_plugin.version}",
         ]
 
         # One separate VEVENT per reminder offset (its own date in the calendar).
@@ -1284,7 +1284,7 @@ class WillSettingsWidget(QWidget):
                 "BEGIN:VCALENDAR",
                 "VERSION:2.0",
                 "PRODID:-//Bitcoin After Life//Electrum Plugin/"
-                f"{BalPlugin.__version__}",
+                f"{self.bal_window.bal_plugin.version}",
             ]
 
             total = len(offsets)
