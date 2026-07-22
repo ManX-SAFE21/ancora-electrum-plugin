@@ -2329,3 +2329,23 @@ The request was to make the failure message clearer (no timeout change).
 - `ruff`: no new errors.
 
 **Outcome:** DONE (delivered as test ZIP v0.5.18; commit only after confirmation).
+
+---
+
+## 43. v0.6.0 - Version bump for the official repository release
+
+**Date:** 2026-07-17
+
+**Context:** the plugin content of this version is IDENTICAL to v0.5.18 - no code
+changes. A release was published on the official repository
+(bitcoinafterlife/bal-electrum-plugin) tagged "v0.6.0", but the internal version
+files still read "0.5.18" (a human oversight: the release tag was not matched by
+a version bump in the code), so Electrum displayed "0.5.18" after installing it.
+This entry aligns the internal version with the intended "0.6.0" release tag by
+bumping `bal/VERSION`, `bal/manifest.json`, `bal/__init__.py` and
+`bal/core/plugin_base.py` from 0.5.18 to 0.6.0. No functional changes.
+
+**Verification:** full test suite against Electrum 4.7.2 and 4.8.0 (same 266
+passed / 2 pre-existing unrelated failures as v0.5.18); `ruff` clean.
+
+**Outcome:** DONE.
