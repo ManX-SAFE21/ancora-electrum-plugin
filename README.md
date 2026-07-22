@@ -38,9 +38,18 @@ tests/                   smoke + external-zip regression tests
 
 ## Requirements
 
-- **Electrum 4.7.2** — the last stable release exposing `json_db.register_dict`,
-  which this plugin relies on. Newer versions removed it.
+- **Electrum 4.7.2 or 4.8.0** — the plugin detects which wallet-DB
+  registration API is available (`json_db.register_dict` on 4.7.2,
+  `stored_dict.register_name` on 4.8.0) and adapts automatically.
 - **PyQt6** (bundled with the Electrum desktop GUI).
+
+## Wallet compatibility
+
+BAL currently supports **standard (single-signature) wallets** and
+**hardware wallets** supported by Electrum. **Multisig wallets** and
+**Electrum TrustedCoin (2FA) wallets** are **not yet supported** — see
+[`COMPATIBILITY.md`](COMPATIBILITY.md) for the full compatibility matrix and
+current status.
 
 ## Installation
 
