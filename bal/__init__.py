@@ -36,4 +36,7 @@ The plugin supports Electrum 4.7.2 and 4.8.0 with PyQt6.  Electrum 4.8.0 removed
 available and adapts, so both releases keep working.
 """
 
-__version__ = "0.5.18"
+# The plugin version is NOT defined here. It lives only in ``bal/manifest.json``
+# (the single source of truth) and is read at runtime via ``get_version()`` in
+# ``bal/core/plugin_base.py`` (exposed as the ``BalPlugin.version`` property).
+# Keeping a hardcoded ``__version__`` here would just be a stale duplicate.

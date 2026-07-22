@@ -23,7 +23,7 @@ from electrum.i18n import _
 from electrum.logging import get_logger
 from electrum.network import Network
 
-from .plugin_base import BalPlugin
+from .plugin_base import BalPlugin, get_version
 
 # Per-request timeout (seconds) for interactive operations (ping / info /
 # list download).  These fail fast (no retries) so a dead server does not
@@ -272,7 +272,7 @@ class Willexecutors:
             raise Exception("You are offline.")
         _logger.debug(f"<-- {method} {url} {data}")
         headers = {}
-        headers["user-agent"] = f"BalPlugin v:{BalPlugin.__version__}"
+        headers["user-agent"] = f"BalPlugin v:{get_version()}"
         headers["Content-Type"] = "text/plain"
         if not handle_response:
             handle_response = Willexecutors.handle_response

@@ -1533,7 +1533,7 @@ class BalBuildWillDialog(BalDialog):
                 "BEGIN:VCALENDAR",
                 "VERSION:2.0",
                 "PRODID:-//Bitcoin After Life//Electrum Plugin/"
-                f"{BalPlugin.__version__}",
+                f"{self.bal_window.bal_plugin.version}",
             ]
 
             total = len(offsets)

@@ -19,7 +19,7 @@
   services) can be paid a fee to broadcast the inheritance when due. The owner
   periodically proves they are alive ("check-alive"); if the deadline passes,
   the inheritance becomes spendable.
-- **Current version:** see `bal/VERSION` (last shipped: **0.4.8**).
+- **Current version:** see the `"version"` field of `bal/manifest.json` (the single source of truth; read at runtime via `get_version()` in `bal/core/plugin_base.py`).
 
 ---
 
@@ -55,11 +55,10 @@ These are non-negotiable. They come from the owner directly.
 
 ```
 bal/                         <- the plugin package (this is what ships in the ZIP)
-  __init__.py                <- __version__ (one of 4 version files)
-  VERSION                    <- plain-text version (one of 4 version files)
-  manifest.json              <- plugin manifest, "version" field (one of 4)
+  __init__.py                <- package docstring (no version here anymore)
+  manifest.json              <- plugin manifest, "version" field (SINGLE SOURCE OF TRUTH for the version)
   core/
-    plugin_base.py           <- __version__ "AUTOMATICALLY GENERATED" (one of 4)
+    plugin_base.py           <- get_version() reads the version from manifest.json (zip-safe)
     heirs.py                 <- HEIRS + transaction building (prepare_lists,
                                 prepare_transactions, buildTransactions). CORE LOGIC.
     will.py                  <- Will/WillItem, validation (check_amounts, check_will),
@@ -115,13 +114,11 @@ find bal -name "__pycache__" -type d -exec rm -rf {} + ; find bal -name "*.pyc" 
 python3 build_zip.py bal-electrum-plugin-vX.Y.Z.zip      # produces 37 files
 ```
 
-**Bump version — there are FOUR files, keep them in sync:**
+**Bump version — ONE file only (single source of truth):**
 ```
-bal/core/plugin_base.py   ->  __version__ = "X.Y.Z"  # AUTOMATICALLY GENERATED DO NOT EDIT
-bal/__init__.py           ->  __version__ = "X.Y.Z"
-bal/VERSION               ->  X.Y.Z
 bal/manifest.json         ->  "version": "X.Y.Z",
 ```
+The code reads this at runtime via `get_version()` in `bal/core/plugin_base.py` (exposed as the `BalPlugin.version` property), so there is nothing else to keep in sync. There is no longer a `bal/VERSION` file nor a hardcoded `__version__`.
 
 **IMPORTANT for the owner when testing:** after installing a ZIP, the owner
 must **fully restart Electrum** (not just reload the plugin) — Electrum's
@@ -292,7 +289,7 @@ must **fully restart Electrum** (not just reload the plugin) — Electrum's
 ## 7. How to resume (checklist for the next AI)
 
 1. Read this file, then `CHANGELOG.md` (last entries) and `.agent_memory_tasks.md`.
-2. Confirm the environment: `git status`, current branch, `bal/VERSION`.
+2. Confirm the environment: `git status`, current branch, and the `"version"` field of `bal/manifest.json`.
 3. Run the full test suite (Section 3) — expect all green (266 as of v0.4.8).
 4. Talk to the owner in **Italian**, write everything else in **English**.
 5. For any change: present a PLAN, wait for "OK" (R4), then implement, test,
