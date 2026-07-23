@@ -19,6 +19,8 @@ import time
 from datetime import datetime
 
 from aiohttp import ClientResponse
+from electrum import bitcoin, constants
+from electrum.bitcoin import COIN, TOTAL_COIN_SUPPLY_LIMIT_IN_BTC
 from electrum.i18n import _
 from electrum.logging import get_logger
 from electrum.network import Network
@@ -276,51 +278,44 @@ class Willexecutors:
         headers["Content-Type"] = "text/plain"
         if not handle_response:
             handle_response = Willexecutors.handle_response
-        try:
-            if method == "get":
-                response = Network.send_http_on_proxy(
-                    method,
-                    url,
-                    params=data,
-                    headers=headers,
-                    on_finish=handle_response,
-                    timeout=timeout,
-                )
-            elif method == "post":
-                response = Network.send_http_on_proxy(
-                    method,
-                    url,
-                    body=data,
-                    headers=headers,
-                    on_finish=handle_response,
-                    timeout=timeout,
-                )
-            else:
-                raise Exception(f"unexpected {method=!r}")
-        except TimeoutError:
-            if count_reply < max_retries:
-                _logger.debug(
-                    f"timeout({count_reply}) error: retry in {retry_sleep} sec..."
-                )
-                if retry_sleep:
-                    time.sleep(retry_sleep)
-                return Willexecutors.send_request(
-                    method,
-                    url,
-                    data,
-                    timeout=timeout,
-                    handle_response=handle_response,
-                    count_reply=count_reply + 1,
-                    max_retries=max_retries,
-                    retry_sleep=retry_sleep,
-                )
-            else:
-                _logger.debug(f"Too many timeouts: {count_reply}")
-        except Exception as e:
-            raise e
-        else:
-            _logger.debug(f"--> {response}")
-            return response
+        attempts = max_retries + 1
+        for attempt in range(attempts):
+            try:
+                if method == "get":
+                    response = Network.send_http_on_proxy(
+                        method,
+                        url,
+                        params=data,
+                        headers=headers,
+                        on_finish=handle_response,
+                        timeout=timeout,
+                    )
+                elif method == "post":
+                    response = Network.send_http_on_proxy(
+                        method,
+                        url,
+                        body=data,
+                        headers=headers,
+                        on_finish=handle_response,
+                        timeout=timeout,
+                    )
+                else:
+                    raise Exception(f"unexpected {method=!r}")
+                _logger.debug(f"--> {response}")
+                return response
+            except TimeoutError:
+                if attempt < max_retries:
+                    _logger.debug(
+                        f"timeout({attempt}) error: "
+                        f"retry in {retry_sleep} sec..."
+                    )
+                    if retry_sleep:
+                        time.sleep(retry_sleep)
+                else:
+                    _logger.debug(f"Too many timeouts: {attempt}")
+            except Exception as e:
+                raise e
+        return None
 
     @staticmethod
     def get_we_url_from_response(resp):
@@ -331,16 +326,12 @@ class Willexecutors:
 
     @staticmethod
     async def handle_response(resp: ClientResponse):
+        resp.raise_for_status()
         r = await resp.text()
         try:
-
             r = json.loads(r)
-            # url = Willexecutors.get_we_url_from_response(resp)
-            # r["url"]= url
-            # r["status"]=resp.status
         except Exception as e:
             _logger.debug(f"error handling response:{e}")
-            pass
         return r
 
     @staticmethod
@@ -368,13 +359,15 @@ class Willexecutors:
                 max_retries=max_retries,
                 retry_sleep=retry_sleep,
             ):
-                willexecutor["broadcast_status"] = _("Success")
                 _logger.debug(f"pushed: {w}")
                 if w != "thx":
                     _logger.debug(f"error: {w}")
                     raise Exception(w)
+                willexecutor["broadcast_status"] = _("Success")
             else:
-                raise Exception("empty reply from:{willexecutor['url']}")
+                raise Exception(
+                    f"empty reply from:{willexecutor['url']}"
+                )
         except Exception as e:
             _logger.debug(f"error:{e}")
             if str(e) == "already present":
@@ -404,11 +397,34 @@ class Willexecutors:
                 timeout=timeout, max_retries=max_retries, retry_sleep=retry_sleep,
             )
             if isinstance(w, dict):
-                willexecutor["url"] = url
-                willexecutor["status"] = 200
-                willexecutor["base_fee"] = w["base_fee"]
-                willexecutor["address"] = w["address"]
-                willexecutor["info"] = w["info"]
+                address = w.get("address")
+                if not isinstance(address, str) or not bitcoin.is_address(
+                    address, net=constants.net
+                ):
+                    _logger.warning(
+                        f"invalid address from {url}: {address!r}"
+                    )
+                    willexecutor["status"] = "KO"
+                else:
+                    base_fee = w.get("base_fee")
+                    try:
+                        base_fee = int(base_fee)
+                        if base_fee < 0:
+                            raise ValueError("negative fee")
+                        if base_fee > TOTAL_COIN_SUPPLY_LIMIT_IN_BTC * COIN:
+                            raise ValueError("fee exceeds total coin supply")
+                    except (TypeError, ValueError) as e:
+                        _logger.warning(
+                            f"invalid base_fee from {url}: "
+                            f"{w.get('base_fee')!r} ({e})"
+                        )
+                        willexecutor["status"] = "KO"
+                    else:
+                        willexecutor["url"] = url
+                        willexecutor["status"] = 200
+                        willexecutor["base_fee"] = base_fee
+                        willexecutor["address"] = address
+                        willexecutor["info"] = w.get("info", "")
             else:
                 # No dict reply (timeout / empty) -> mark as unreachable.
                 willexecutor["status"] = "KO"
@@ -742,7 +758,14 @@ class Willexecutors:
         else:
             willexecutor["status"] = old_willexecutor.get("status",willexecutor.get("status","Ko"))
         willexecutor["selected"]=Willexecutors.is_selected(old_willexecutor) or willexecutor.get("selected",False)
-        willexecutor["address"]=old_willexecutor.get("address",willexecutor.get("address",""))
+        address = old_willexecutor.get("address", willexecutor.get("address", ""))
+        if address and not bitcoin.is_address(address, net=constants.net):
+            _logger.warning(
+                f"invalid address {address!r} for executor {url}, "
+                f"falling back to empty"
+            )
+            address = ""
+        willexecutor["address"] = address
         willexecutor["promo_code"]=old_willexecutor.get("promo_code",willexecutor.get("promo_code"))
 
 
@@ -755,14 +778,23 @@ class Willexecutors:
                 "get",
                 f"{welist_server}data/{chainname}?page=0&limit=100",
             )
-            # del willexecutors["status"]
+            if not isinstance(willexecutors, dict):
+                _logger.warning(
+                    f"unexpected download_list response type: "
+                    f"{type(willexecutors).__name__}"
+                )
+                return {}
             for w in willexecutors:
                 if w not in ("status", "url"):
+                    if not isinstance(willexecutors.get(w), dict):
+                        _logger.warning(
+                            f"malformed entry {w!r} in executor list, "
+                            f"type={type(willexecutors.get(w)).__name__}"
+                        )
+                        continue
                     Willexecutors.initialize_willexecutor(
                         willexecutors[w], w, None, old_willexecutors.get(w,None)
                     )
-            # bal_plugin.WILLEXECUTORS.set(l)
-            # bal_plugin.config.set_key(bal_plugin.WILLEXECUTORS,l,save=True)
             return willexecutors
 
         except Exception as e:
@@ -794,6 +826,12 @@ class Willexecutors:
                 "post", url + "/searchtx", data=txid.encode("ascii"),
                 timeout=timeout, max_retries=max_retries, retry_sleep=retry_sleep,
             )
+            if not isinstance(w, dict):
+                _logger.warning(
+                    f"unexpected check_transaction response type "
+                    f"from {url}: {type(w).__name__}"
+                )
+                return None
             return w
         except Exception as e:
             _logger.error(f"error contacting {url} for checking txs {e}")

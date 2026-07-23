@@ -124,6 +124,10 @@ The code reads this at runtime via `get_version()` in `bal/core/plugin_base.py` 
 must **fully restart Electrum** (not just reload the plugin) — Electrum's
 `zipimport` caches modules, so a partial reload runs stale code.
 
+**Automated release:** use `./make-release.sh` to run the full release flow
+(tests, lint, build, GPG sign, SHA-256, Electrum test pause, Gitea release).
+See Section 5 for details.
+
 ---
 
 ## 4. Key technical knowledge (hard-won — saves you hours)
@@ -231,16 +235,39 @@ must **fully restart Electrum** (not just reload the plugin) — Electrum's
   squash local commits into ONE comprehensive commit, push (force if needed),
   then create/update the PR and SHARE the PR URL with the owner.
 - **ZIPs are NOT committed** (`.gitignore` excludes `*.zip`). They are
-  distributed via **GitHub Releases** (`gh release create vX.Y.Z file.zip ...`).
-  The newest release is the "Latest" and is the owner's convenient download.
-- Deliverable ZIPs are ALSO uploaded with the file-wrapper tool so the owner can
-  download them directly from chat.
-- **Auth note:** if `git push` / `gh` fails with "Invalid username or token",
-  re-run the GitHub environment setup, then retry.
+  distributed via **Gitea Releases** using `make-release.sh`.
+- **Release process** (`make-release.sh`):
+  1. Version bump in `bal/manifest.json` (single source of truth)
+  2. Clean `__pycache__` and `.pyc` files
+  3. Run full test suite
+  4. Lint with ruff (skip if not installed)
+  5. Build ZIP via `build_zip.py` (deterministic order, SHA-256, manifest check)
+  6. GPG sign: `.asc` (armor) + `.sig` (binary) with key `A847D004DB91610711CA6A0DFE756706E833E0D1`
+  7. Export public key as `svatantrya.asc`
+  8. SHA-256 checksum
+  9. Interactive pause for Electrum testing (ZIP-FIRST policy)
+  10. Create Gitea tag, push, create release, upload 5 assets (ZIP + .asc + .sig + .sha256 + svatantrya.asc)
+- **Usage:**
+  ```bash
+  ./make-release.sh           # read version from bal/manifest.json
+  ./make-release.sh v0.6.2    # bump manifest to 0.6.2, then release
+  ```
+- **Release assets** (5 files):
+  - `bal_vX.Y.Z.zip` — the plugin
+  - `bal_vX.Y.Z.zip.asc` — GPG signature (armor)
+  - `bal_vX.Y.Z.zip.sig` — GPG signature (binary)
+  - `bal_vX.Y.Z.zip.sha256` — SHA-256 checksum
+  - `svatantrya.asc` — signing public key
+- **GPG verification instructions** (included in release body):
+  ```bash
+  gpg --fetch-key https://bitcoin-after.life/svatantrya.asc
+  gpg --verify bal_vX.Y.Z.zip.asc bal_vX.Y.Z.zip
+  ```
+- **Auth note:** if `git push` or Gitea API fails with "invalid credentials",
+  update `GITEA_TOKEN` env var or `~/.git-credentials`, then retry.
 - PR history for this line of work: **#13** (v0.4.7), **#14** (docs/DUST section +
   translation), **#15** (v0.4.8). All merged into `main`.
-- Releases: latest is **v0.4.8** (asset `bal-electrum-plugin-v0.4.8.zip`);
-  v0.4.7 kept in history.
+- Releases: latest is **v0.6.1**; v0.4.7, v0.4.8 kept in history.
 
 ---
 
