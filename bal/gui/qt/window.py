@@ -318,7 +318,12 @@ class BalWindow:
 
                 f = False
                 for _u, w in self.willexecutors.items():
-                    if Willexecutors.is_selected(w):
+                    if Willexecutors.is_selected(
+                        w, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get()
+                    ) and Willexecutors.is_valid(
+                        w, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
+                        dust=self.window.wallet.dust_threshold()
+                    ):
                         f = True
                 if not f:
                     _logger.error("No Will-Executor or backup transaction selected")
@@ -532,6 +537,7 @@ class BalWindow:
                     self.window.wallet.get_utxos(),
                     self.date_to_check,
                     self.window.wallet.dust_threshold(),
+                    max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                 )
             except AmountException as e:
                 self.show_warning(
@@ -539,6 +545,11 @@ class BalWindow:
                         f"In the inheritance process, the entire wallet will always be fully emptied. Your settings require an adjustment of the amounts.{e}"
                     )
                 )
+            except WillExecutorFeeTooHighException as e:
+                self.show_error(
+                    _(f"Will-executor fee too high: {e}")
+                )
+                return
             except CheckAliveError:
                 self.show_error(
                     _(
@@ -553,7 +564,12 @@ class BalWindow:
             if not self.no_willexecutor:
                 f = False
                 for _k, we in self.willexecutors.items():
-                    if Willexecutors.is_selected(we):
+                    if Willexecutors.is_selected(
+                        we, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get()
+                    ) and Willexecutors.is_valid(
+                        we, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
+                        dust=self.window.wallet.dust_threshold()
+                    ):
                         f = True
                 if not f:
                     self.show_error(

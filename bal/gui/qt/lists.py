@@ -888,7 +888,7 @@ class WillExecutorListWidget(MyTreeView):
                 # are shown unchanged.
                 display_url = url if len(url) <= 40 else url[:37] + "\u2026"
                 labels[self.Columns.URL] = display_url
-                if Willexecutors.is_selected(value):
+                if Willexecutors.is_selected(value, max_fee=float("inf")):
 
                     labels[self.Columns.SELECTED] = [
                         read_QIcon_from_bytes(
@@ -929,6 +929,17 @@ class WillExecutorListWidget(MyTreeView):
                             pass
                     else:
                         items.append(QStandardItem(e))
+
+                max_fee = self._bal_parent.bal_plugin.MAX_WILLEXECUTOR_FEE.get()
+                dust = self._bal_parent.bal_window.window.wallet.dust_threshold()
+                if not Willexecutors.is_valid(value, max_fee=max_fee, dust=dust):
+                    grey = QColor("#808080")
+                    for item in items:
+                        font = item.font()
+                        font.setItalic(True)
+                        item.setFont(font)
+                        item.setForeground(grey)
+
                 items[self.Columns.SELECTED].setEditable(False)
                 items[self.Columns.URL].setEditable(True)
                 items[self.Columns.ADDRESS].setEditable(True)

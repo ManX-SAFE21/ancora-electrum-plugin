@@ -436,6 +436,13 @@ class Plugin(BalPlugin):
         # persisted NUM_REMINDERS config (default 3), with a range of 1..5.
         heir_num_reminders = BalSpinBox(self.NUM_REMINDERS, minimum=1, maximum=5)
 
+        # Max willexecutor fee spin box. Maximum fee (in satoshi) allowed for
+        # a single will-executor. If a will-executor charges more, the will
+        # will not be built. Default 500,000 satoshi (0.005 BTC).
+        heir_max_willexecutor_fee = BalSpinBox(
+            self.MAX_WILLEXECUTOR_FEE, minimum=0, maximum=10000000
+        )
+
         # "No will-executor TX" checkbox. Bound to the persisted NO_WILLEXECUTOR
         # config (default ON, see plugin_base.py), the SAME config used by the
         # checkbox inside the "Build your will" wizard's will-executor download
@@ -636,13 +643,28 @@ class Plugin(BalPlugin):
             ),
         )
         grid.addWidget(_make_reset_btn(self.NO_WILLEXECUTOR, heir_no_willexecutor, "check"), 4, 3)
+        # Max willexecutor fee: maximum fee (in satoshi) allowed for a single
+        # will-executor. Visible to all users (BASIC and ADVANCED).
+        add_widget(
+            grid,
+            "Max Will-Executor Fee (satoshi)",
+            heir_max_willexecutor_fee,
+            5,
+            (
+                "Maximum fee (in satoshi) allowed to be paid to a single "
+                "will-executor. If a will-executor charges more than this, "
+                "the will will not be built.\n"
+                "Default: 500,000 satoshi (0.005 BTC)."
+            ),
+        )
+        grid.addWidget(_make_reset_btn(self.MAX_WILLEXECUTOR_FEE, heir_max_willexecutor_fee, "spin"), 5, 3)
         # User Type selector placed BEFORE the advanced-only settings so the
         # user chooses basic/advanced first, then sees the relevant options.
         add_widget(
             grid,
             "User Type",
             user_type_combo,
-            5,
+            6,
             (
                 "Choose how much detail the plugin shows.\n\n"
                 "BASIC: simplified interface, safe configuration for most "
@@ -653,7 +675,7 @@ class Plugin(BalPlugin):
                 "editable."
             ),
         )
-        grid.addWidget(_make_reset_btn(self.USER_TYPE, user_type_combo, "user_type"), 5, 3)
+        grid.addWidget(_make_reset_btn(self.USER_TYPE, user_type_combo, "user_type"), 6, 3)
         # Number of reminders, event summary and event description are visible
         # only in ADVANCED mode.  In BASIC mode the factory defaults are always
         # used and these settings are hidden.
@@ -662,11 +684,11 @@ class Plugin(BalPlugin):
             "How many reminder alarms the exported calendar (.ics) event "
             "contains.  Range: 1 to 5 (default 3).  Only used in ADVANCED mode."
         )
-        grid.addWidget(_hide_if_basic(lbl_num_reminders), 6, 0)
-        grid.addWidget(_hide_if_basic(heir_num_reminders), 6, 1)
-        grid.addWidget(_hide_if_basic(help_num_reminders), 6, 2)
+        grid.addWidget(_hide_if_basic(lbl_num_reminders), 7, 0)
+        grid.addWidget(_hide_if_basic(heir_num_reminders), 7, 1)
+        grid.addWidget(_hide_if_basic(help_num_reminders), 7, 2)
         reset_btn_6 = _make_reset_btn(self.NUM_REMINDERS, heir_num_reminders, "spin")
-        grid.addWidget(_hide_if_basic(reset_btn_6), 6, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_6), 7, 3)
 
         lbl_event_summary = QLabel(_("Event summary"))
         help_event_summary = HelpButton(
@@ -676,11 +698,11 @@ class Plugin(BalPlugin):
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
         )
-        grid.addWidget(_hide_if_basic(lbl_event_summary), 7, 0)
-        grid.addWidget(_hide_if_basic(edit_event_summary), 7, 1)
-        grid.addWidget(_hide_if_basic(help_event_summary), 7, 2)
+        grid.addWidget(_hide_if_basic(lbl_event_summary), 8, 0)
+        grid.addWidget(_hide_if_basic(edit_event_summary), 8, 1)
+        grid.addWidget(_hide_if_basic(help_event_summary), 8, 2)
         reset_btn_7 = _make_reset_btn(self.EVENT_SUMMARY, edit_event_summary, "line")
-        grid.addWidget(_hide_if_basic(reset_btn_7), 7, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_7), 8, 3)
 
         lbl_event_description = QLabel(_("Event description"))
         help_event_description = HelpButton(
@@ -690,11 +712,11 @@ class Plugin(BalPlugin):
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
         )
-        grid.addWidget(_hide_if_basic(lbl_event_description), 8, 0)
-        grid.addWidget(_hide_if_basic(edit_event_description), 8, 1)
-        grid.addWidget(_hide_if_basic(help_event_description), 8, 2)
+        grid.addWidget(_hide_if_basic(lbl_event_description), 9, 0)
+        grid.addWidget(_hide_if_basic(edit_event_description), 9, 1)
+        grid.addWidget(_hide_if_basic(help_event_description), 9, 2)
         reset_btn_8 = _make_reset_btn(self.EVENT_DESCRIPTION, edit_event_description, "text")
-        grid.addWidget(_hide_if_basic(reset_btn_8), 8, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_8), 9, 3)
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
         # factory default is always used and the setting is hidden.
         lbl_welist_server = QLabel(_("Welist Server URL"))
@@ -702,11 +724,11 @@ class Plugin(BalPlugin):
             "URL of the server that provides the will-executor list.  "
             "Only available in ADVANCED mode."
         )
-        grid.addWidget(_hide_if_basic(lbl_welist_server), 9, 0)
-        grid.addWidget(_hide_if_basic(edit_welist_server), 9, 1)
-        grid.addWidget(_hide_if_basic(help_welist_server), 9, 2)
+        grid.addWidget(_hide_if_basic(lbl_welist_server), 10, 0)
+        grid.addWidget(_hide_if_basic(edit_welist_server), 10, 1)
+        grid.addWidget(_hide_if_basic(help_welist_server), 10, 2)
         reset_btn_9 = _make_reset_btn(self.WELIST_SERVER, edit_welist_server, "line")
-        grid.addWidget(_hide_if_basic(reset_btn_9), 9, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_9), 10, 3)
 
         lbl_calendar_app = QLabel(_("Calendar app command"))
         help_calendar_app = HelpButton(
@@ -714,11 +736,11 @@ class Plugin(BalPlugin):
             "Leave empty to use the system default (xdg-open/open/start).\n"
             "Only used in ADVANCED mode."
         )
-        grid.addWidget(_hide_if_basic(lbl_calendar_app), 10, 0)
-        grid.addWidget(_hide_if_basic(edit_calendar_app), 10, 1)
-        grid.addWidget(_hide_if_basic(help_calendar_app), 10, 2)
+        grid.addWidget(_hide_if_basic(lbl_calendar_app), 11, 0)
+        grid.addWidget(_hide_if_basic(edit_calendar_app), 11, 1)
+        grid.addWidget(_hide_if_basic(help_calendar_app), 11, 2)
         reset_btn_10 = _make_reset_btn(self.CALENDAR_APP, edit_calendar_app, "line")
-        grid.addWidget(_hide_if_basic(reset_btn_10), 10, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_10), 11, 3)
 
         # NOTE: the ADVANCED-only widgets above have ALREADY been given their
         # correct initial visibility inline (via _hide_if_basic) BEFORE being
@@ -727,12 +749,12 @@ class Plugin(BalPlugin):
         # the Windows relayout flicker. Do NOT reintroduce a post-hoc
         # setVisible() loop here.
 
-        grid.addWidget(heir_repush, 11, 0)
+        grid.addWidget(heir_repush, 12, 0)
         grid.addWidget(
             HelpButton(
                 "Broadcast all transactions to willexecutors including those already pushed"
             ),
-            11,
+            12,
             2,
         )
 
@@ -761,6 +783,7 @@ class Plugin(BalPlugin):
                 (self.EDITABLE_DATES, heir_editable_dates, "check"),
                 (self.NUM_REMINDERS, heir_num_reminders, "spin"),
                 (self.NO_WILLEXECUTOR, heir_no_willexecutor, "check"),
+                (self.MAX_WILLEXECUTOR_FEE, heir_max_willexecutor_fee, "spin"),
                 (self.EVENT_SUMMARY, edit_event_summary, "line"),
                 (self.EVENT_DESCRIPTION, edit_event_description, "text"),
                 (self.WELIST_SERVER, edit_welist_server, "line"),

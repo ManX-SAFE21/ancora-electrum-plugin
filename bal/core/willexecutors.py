@@ -205,16 +205,34 @@ class Willexecutors:
         return w_sorted
 
     @staticmethod
-    def is_selected(willexecutor, value=None):
+    def is_selected(willexecutor, value=None, max_fee=None):
         if not willexecutor:
             return False
         if value is not None:
             willexecutor["selected"] = value
+        if max_fee is not None:
+            base_fee = willexecutor.get("base_fee", 0)
+            if int(base_fee) >= max_fee:
+                return False
         try:
             return willexecutor["selected"]
         except Exception:
             willexecutor["selected"] = False
             return False
+
+    @staticmethod
+    def is_valid(willexecutor, max_fee=None, dust=None):
+        if not willexecutor:
+            return False
+        address = willexecutor.get("address", "")
+        if not address or not bitcoin.is_address(address, net=constants.net):
+            return False
+        base_fee = int(willexecutor.get("base_fee", 0))
+        if dust is not None and base_fee <= dust:
+            return False
+        if max_fee is not None and base_fee >= max_fee:
+            return False
+        return True
 
     @staticmethod
     def get_willexecutor_transactions(will, force=False):

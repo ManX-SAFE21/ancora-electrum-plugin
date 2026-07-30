@@ -230,6 +230,7 @@ def get_utxos_from_inputs(tx_inputs, tx, utxos):
 
 # TODO calculate de minimum inputs to be invalidated
 def invalidate_inheritance_transactions(wallet):
+    print("invalidate tx in heir method")
     # listids = []
     utxos = {}
     dtxs = {}
@@ -478,7 +479,8 @@ class Heirs(dict, Logger):
         )
 
     def prepare_lists(
-        self, balance, total_fees, wallet, willexecutor=False, from_locktime=0
+        self, balance, total_fees, wallet, willexecutor=False, from_locktime=0,
+        max_fee=None,
     ):
         if balance<total_fees or balance < wallet.dust_threshold():
             raise BalanceTooLowException(balance,wallet.dust_threshold(),total_fees)
@@ -493,6 +495,10 @@ class Heirs(dict, Logger):
                 if int(Util.int_locktime(locktime)) > int(from_locktime):
                     try:
                         base_fee = int(willexecutor["base_fee"])
+                        if max_fee is not None and base_fee > max_fee:
+                            raise WillExecutorFeeTooHighException(
+                                willexecutor, max_fee
+                            )
                         willexecutors_amount += base_fee
                         h = [None] * 4
                         h[HEIR_AMOUNT] = base_fee
@@ -629,7 +635,7 @@ class Heirs(dict, Logger):
                 break
             elif 0 <= j:
                 url, willexecutor = willexecutorsitems[j]
-                if not Willexecutors.is_selected(willexecutor) or willexecutor["base_fee"] < wallet.dust_threshold():
+                if not (Willexecutors.is_selected(willexecutor) and Willexecutors.is_valid(willexecutor, max_fee=bal_plugin.MAX_WILLEXECUTOR_FEE.get(), dust=wallet.dust_threshold())):
                     continue
                 else:
                     willexecutor["url"] = url
@@ -651,9 +657,13 @@ class Heirs(dict, Logger):
                 # newbalance = balance
                 try:
                     locktimes, onlyfixed = self.prepare_lists(
-                        balance, total_fees, wallet, willexecutor, from_locktime
+                        balance, total_fees, wallet, willexecutor, from_locktime,
+                        max_fee=bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                     )
                 except WillExecutorFeeException:
+                    i = 10
+                    continue
+                except WillExecutorFeeTooHighException:
                     i = 10
                     continue
                 if locktimes:
@@ -874,6 +884,19 @@ class WillExecutorFeeException(Exception):
         return "WillExecutorFeeException: {} fee:{}".format(
             self.willexecutor["url"], self.willexecutor["base_fee"]
         )
+
+class WillExecutorFeeTooHighException(Exception):
+    def __init__(self, willexecutor, max_fee):
+        self.willexecutor = willexecutor
+        self.max_fee = max_fee
+
+    def __str__(self):
+        return "WillExecutorFeeTooHighException: {} fee:{} > max:{}".format(
+            self.willexecutor["url"],
+            self.willexecutor["base_fee"],
+            self.max_fee,
+        )
+
 class BalanceTooLowException(Exception):
     def __init__(self,balance, dust_threshold, fees):
         self.balance=balance

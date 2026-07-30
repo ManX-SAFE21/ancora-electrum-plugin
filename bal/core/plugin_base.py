@@ -258,6 +258,9 @@ class BalPlugin(BasePlugin):
         # follows what is saved in that wallet (the default only applies when no
         # value has been stored yet, i.e. new wallets).
         self.NO_WILLEXECUTOR = BalConfig(config, "bal_no_willexecutor", False)
+        self.MAX_WILLEXECUTOR_FEE = BalConfig(
+            config, "bal_max_willexecutor_fee", 500000
+        )
         self.HIDE_REPLACED = BalConfig(config, "bal_hide_replaced", True)
         self.HIDE_INVALIDATED = BalConfig(config, "bal_hide_invalidated", True)
         self.ALLOW_REPUSH = BalConfig(config, "bal_allow_repush", True)

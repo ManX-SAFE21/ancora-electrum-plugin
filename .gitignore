@@ -5,3 +5,24 @@ bal-electrum-plugin.zip
 electrum-src/
 preview_*.png
 .env
+
+# Virtual environment
+venv/
+.venv/
+
+# Node modules
+node_modules/
+
+# Editor temp files
+*.swp
+*.swo
+*.bak
+
+# Debug / scratch files
+debug.py
+init.ol
+temp*
+tmp*
+
+# Release artifacts
+bal_v*.zip.*

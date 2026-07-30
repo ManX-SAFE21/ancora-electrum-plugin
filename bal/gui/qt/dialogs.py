@@ -648,6 +648,7 @@ class BalBuildWillDialog(BalDialog):
                 self.bal_window.window.wallet.get_utxos(),
                 self.bal_window.date_to_check,
                 self.bal_window.window.wallet.dust_threshold(),
+                max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
             )
             _logger.debug("variables ok")
             self.msg_set_status("Checking variables", varrow, "Ok", self.COLOR_OK)
@@ -658,6 +659,10 @@ class BalBuildWillDialog(BalDialog):
                     + "the entire wallet will always be fully emptied. \n"
                     + "Your settings require an adjustment of the amounts"
                 )
+            )
+        except WillExecutorFeeTooHighException as e:
+            self.msg_set_checking(
+                self.msg_warning(f"Will-executor fee too high: {e}")
             )
 
         self.msg_set_checking()
@@ -799,6 +804,15 @@ class BalBuildWillDialog(BalDialog):
                 self.msg_set_status(
                     _("Will-Executor excluded"), None, _("Skipped"), self.COLOR_ERROR
                 )
+
+            except NoWillExecutorNotPresent:
+                _logger.debug("no will-executor selected, build interrupted")
+                self.msg_set_status(
+                    _("Will-Executor"), None,
+                    _("Not present - select one or enable backup mode"),
+                    self.COLOR_ERROR,
+                )
+                return "no_willexecutor", None
 
             except WillExpiredException as e:
                 # An expired will is an EXPECTED situation (the locktime has
@@ -1113,7 +1127,14 @@ class BalBuildWillDialog(BalDialog):
             selected = {
                 url: we
                 for url, we in willexecutors.items()
-                if Willexecutors.is_selected(self.bal_window.willexecutors.get(url))
+                if Willexecutors.is_selected(
+                    self.bal_window.willexecutors.get(url),
+                    max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
+                ) and Willexecutors.is_valid(
+                    self.bal_window.willexecutors.get(url),
+                    max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
+                    dust=self.bal_window.window.wallet.dust_threshold(),
+                )
             }
 
             # Servers that report "already present" need their stored tx
@@ -1243,6 +1264,7 @@ class BalBuildWillDialog(BalDialog):
     def invalidate_task(self, password, bal_window, tx):
         if self._stopping:
             return
+        print("invalidate task")
         _logger.debug(f"invalidate tx: {tx}")
         # fee_per_byte = bal_window.will_settings.get("baltx_fees", 1)
         tx = self.bal_window.wallet.sign_transaction(tx, password)
@@ -1344,6 +1366,10 @@ class BalBuildWillDialog(BalDialog):
             # invalidate window opens (keeps it in front, fixes the old
             # "window behind" problem).
             QTimer.singleShot(0, self.bal_window.invalidate_will)
+            return
+
+        if self.have_to_sign == "no_willexecutor":
+            self._add_no_willexecutor_buttons()
             return
 
         _logger.debug("have to sign {}".format(self.have_to_sign))
@@ -1478,6 +1504,73 @@ class BalBuildWillDialog(BalDialog):
         button_row.addWidget(self._close_button)
         self.vbox.addLayout(button_row)
         self._close_button.setFocus()
+
+    # ------------------------------------------------------------------ #
+    # No-willexecutor error handling
+    # ------------------------------------------------------------------ #
+
+    def _add_no_willexecutor_buttons(self):
+        """Add "Will-Executor" and "Close" buttons when no executor is
+        selected and ``no_willexecutor`` is ``False``."""
+        if getattr(self, "_no_we_buttons_added", False):
+            return
+        self._no_we_buttons_added = True
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+
+        we_btn = QPushButton(_("Will-Executor"))
+        we_btn.clicked.connect(self._open_willexecutor_dialog)
+        btn_row.addWidget(we_btn)
+
+        download_btn = QPushButton(_("\U0001f52e Wizard"))
+        download_btn.clicked.connect(self._open_willexecutor_download_widget)
+        btn_row.addWidget(download_btn)
+
+        close_btn = QPushButton(_("Close"))
+        close_btn.clicked.connect(self.close)
+        btn_row.addWidget(close_btn)
+
+        self._no_we_layout = btn_row
+        self.vbox.addLayout(btn_row)
+        self.resize(self.vbox.sizeHint())
+
+    def _open_willexecutor_dialog(self):
+        """Open the will-executor management dialog, then auto-retry
+        the build when it closes."""
+        d = WillExecutorDialog(self.bal_window, parent=self)
+        d.exec()
+        self._retry_build_after_willexecutor()
+
+    def _open_willexecutor_download_widget(self):
+        """Close the build-will dialog and re-open the wizard at the
+        will-executor download step so the user can add one."""
+        self.close()
+        wizard = BalWizardDialog(self.bal_window)
+        wizard.on_next_heir()
+        wizard.on_next_locktimeandfee()
+        wizard.exec()
+
+    def _retry_build_after_willexecutor(self):
+        """Remove the no-willexecutor buttons, reset the message panel,
+        and re-run ``task_phase1`` on the same thread."""
+        self._no_we_buttons_added = False
+        if self._no_we_layout:
+            while self._no_we_layout.count():
+                item = self._no_we_layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.setParent(None)
+                    w.deleteLater()
+            self.vbox.removeItem(self._no_we_layout)
+            self._no_we_layout = None
+        self.labels = []
+        self.msg_update()
+        self.thread.add(
+            self.task_phase1,
+            on_success=self.on_success_phase1,
+            on_done=self.on_accept,
+            on_error=self.on_error_phase1,
+        )
 
     def _ics_provider(self):
         """Return the .ics content for the current will data."""

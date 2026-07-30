@@ -45,6 +45,7 @@ from electrum.util import (
 
 from .util import Util
 from .willexecutors import Willexecutors
+from .heirs import WillExecutorFeeTooHighException
 
 MIN_LOCKTIME = 1
 MIN_BLOCK = 1
@@ -456,6 +457,7 @@ class Will:
 
     @staticmethod
     def invalidate_will(will, wallet, fees_per_byte):
+        print("invalidate tx in will module")
         will_only_valid = Will.only_valid_list(will)
         inputs = Will.get_all_inputs(will_only_valid)
         utxos = wallet.get_utxos()
@@ -472,11 +474,13 @@ class Will:
         utxo_to_spend = []
         for utxo in utxos:
             if utxo.is_coinbase_output() and utxo.block_height < current_height+100:
+                print("is not mature coinbase output")
                 continue
             utxo_str = utxo.prevout.to_str()
             if utxo_str in prevout_to_spend:
                 balance += inputs[utxo_str][0][2].value_sats()
                 utxo_to_spend.append(utxo)
+        print("utxo to spend",utxo_to_spend)
         if len(utxo_to_spend) > 0:
             change_addresses = wallet.get_change_addresses_for_new_transaction()
             out = PartialTxOutput.from_address_and_value(change_addresses[0], balance)
@@ -598,7 +602,8 @@ class Will:
     #                        Will.reflect_to_children(wc)
 
     @staticmethod
-    def check_amounts(heirs, willexecutors, all_utxos, timestamp_to_check, dust):
+    def check_amounts(heirs, willexecutors, all_utxos, timestamp_to_check, dust,
+                      max_fee=None):
         fixed_heirs, fixed_amount, perc_heirs, perc_amount, fixed_amount_with_dust = (
             heirs.fixed_percent_lists_amount(timestamp_to_check, dust, reverse=True)
         )
@@ -614,7 +619,9 @@ class Will:
             raise PercAmountException(f"Perc amount({perc_amount}) =! 100%")
 
         for url, wex in willexecutors.items():
-            if Willexecutors.is_selected(wex):
+            if Willexecutors.is_selected(wex) and Willexecutors.is_valid(wex, max_fee=max_fee, dust=dust):
+                if max_fee is not None and int(wex["base_fee"]) > max_fee:
+                    raise WillExecutorFeeTooHighException(wex, max_fee)
                 temp_balance = wallet_balance - int(wex["base_fee"])
                 if fixed_amount >= temp_balance:
                     raise FixedAmountException(
@@ -937,7 +944,7 @@ class Will:
         if self_willexecutor and no_willexecutor == 0:
             raise NoWillExecutorNotPresent("Backup tx")
         for url, we in willexecutors.items():
-            if Willexecutors.is_selected(we):
+            if Willexecutors.is_selected(we) and Willexecutors.is_valid(we):
                 if url not in willexecutors_found:
                     _logger.debug(f"will-executor: {url} not fount")
                     raise WillExecutorNotPresent(url)
