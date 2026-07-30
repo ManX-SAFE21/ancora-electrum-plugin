@@ -348,8 +348,8 @@ class Willexecutors:
         r = await resp.text()
         try:
             r = json.loads(r)
-        except Exception as e:
-            _logger.debug(f"error handling response:{e}")
+        except json.JSONDecodeError:
+            pass
         return r
 
     @staticmethod

@@ -61,8 +61,9 @@ def get_version():
         try:
             import importlib.resources
 
+            _parent_pkg = __package__.rpartition(".")[0] if __package__ else "bal"
             data = (
-                importlib.resources.files("bal")
+                importlib.resources.files(_parent_pkg)
                 .joinpath("manifest.json")
                 .read_text(encoding="utf-8")
             )
