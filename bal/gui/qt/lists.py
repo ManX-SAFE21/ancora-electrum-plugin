@@ -157,7 +157,17 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
             heir = self.bal_window.heirs[key]
             labels = [""] * len(self.Columns)
             labels[self.Columns.NAME] = key
-            labels[self.Columns.ADDRESS] = heir[0]
+            if is_op_return_address(heir[0]):
+                data_hex = heir[0][len(OP_RETURN_PREFIX):]
+                try:
+                    decoded = bytes.fromhex(data_hex).decode("utf-8", errors="replace")
+                    if len(decoded) > 40:
+                        decoded = decoded[:40] + "\u2026"
+                    labels[self.Columns.ADDRESS] = decoded
+                except Exception:
+                    labels[self.Columns.ADDRESS] = "OP_RETURN"
+            else:
+                labels[self.Columns.ADDRESS] = heir[0]
             labels[self.Columns.AMOUNT] = Util.decode_amount(
                 heir[1], self.decimal_point
             )

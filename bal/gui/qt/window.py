@@ -200,15 +200,61 @@ class BalWindow:
         heir_address.setFixedWidth(32 * char_width_in_lineedit())
         heir_amount = PercAmountEdit(self.window.get_decimal_point)
 
+        # OP_RETURN message field (hidden by default)
+        op_return_message = QLineEdit()
+        op_return_message.setFixedWidth(32 * char_width_in_lineedit())
+        op_return_message.setVisible(False)
+        op_return_amount_label = QLabel(_("Amount"))
+        op_return_message_label = QLabel(_("OP_RETURN Message"))
+
         if heir:
             heir_name.setText(str(heir_key))
-            heir_address.setText(str(heir[0]))
-            heir_amount.setText(
-                str(Util.decode_amount(heir[1], self.window.get_decimal_point()))
-            )
+            addr = str(heir[0])
+            heir_address.setText(addr)
+            if not is_op_return_address(addr):
+                heir_amount.setText(
+                    str(Util.decode_amount(heir[1], self.window.get_decimal_point()))
+                )
             self.heir_locktime = LockTimeWidget(self, self.window, heir[2])
+        else:
+            heir_address.setText("")
+            self.heir_locktime = LockTimeWidget(self, self.window, self.will_settings["locktime"])
 
-        # heir_is_xpub = QCheckBox()
+        def _update_op_return_from_message():
+            msg = op_return_message.text()
+            data_hex = msg.encode("utf-8").hex()
+            heir_address.setText(OP_RETURN_PREFIX + data_hex)
+
+        def _update_op_return_from_address():
+            addr = heir_address.text()
+            if is_op_return_address(addr):
+                data_hex = addr[len(OP_RETURN_PREFIX):]
+                try:
+                    decoded = bytes.fromhex(data_hex).decode("utf-8", errors="replace")
+                    op_return_message.setText(decoded)
+                except Exception:
+                    op_return_message.setText("")
+
+        def _on_address_changed():
+            addr = heir_address.text()
+            if is_op_return_address(addr):
+                if not op_return_message.isVisible():
+                    op_return_message.setVisible(True)
+                    heir_amount.setVisible(False)
+                    op_return_amount_label.setVisible(False)
+                    op_return_message_label.setVisible(True)
+                op_return_message.blockSignals(True)
+                _update_op_return_from_address()
+                op_return_message.blockSignals(False)
+            else:
+                op_return_message.setVisible(False)
+                heir_amount.setVisible(True)
+                op_return_amount_label.setVisible(True)
+                op_return_message_label.setVisible(False)
+
+        _on_address_changed()
+        heir_address.textChanged.connect(_on_address_changed)
+        op_return_message.textChanged.connect(_update_op_return_from_message)
 
         new_heir_button = QPushButton(_("Add another heir"))
         self.add_another_heir = False
@@ -225,11 +271,14 @@ class BalWindow:
 
         grid.addWidget(QLabel(_("Address")), 2, 0)
         grid.addWidget(heir_address, 2, 1)
-        grid.addWidget(HelpButton(_("heir bitcoin address")), 2, 2)
+        grid.addWidget(HelpButton(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
 
-        grid.addWidget(QLabel(_("Amount")), 3, 0)
+        grid.addWidget(op_return_amount_label, 3, 0)
         grid.addWidget(heir_amount, 3, 1)
         grid.addWidget(HelpButton(_("Fixed or Percentage amount if end with %")), 3, 2)
+
+        grid.addWidget(op_return_message_label, 3, 0)
+        grid.addWidget(op_return_message, 3, 1)
 
         locktime_label = QLabel(_("Locktime"))
         enable_multiverse = self.bal_plugin.ENABLE_MULTIVERSE.get()
@@ -244,11 +293,15 @@ class BalWindow:
             buttons.append(new_heir_button)
         vbox.addLayout(Buttons(*buttons))
         while d.exec():
-            # TODO SAVE HEIR
+            raw_address = heir_address.text()
+            if is_op_return_address(raw_address):
+                amount = "0"
+            else:
+                amount = Util.encode_amount(heir_amount.text(), self.window.get_decimal_point())
             heir = [
                 heir_name.text(),
-                heir_address.text(),
-                Util.encode_amount(heir_amount.text(), self.window.get_decimal_point()),
+                raw_address,
+                amount,
                 str(self.will_settings["locktime"]),
             ]
             try:
@@ -261,6 +314,8 @@ class BalWindow:
 
     def set_heir(self, heir):
         heir = list(heir)
+        if is_op_return_address(heir[1]):
+            heir[2] = "0"
         if not self.bal_plugin.ENABLE_MULTIVERSE.get():
             heir[3] = self.will_settings["locktime"]
 
