@@ -26,30 +26,28 @@ def main():
     from PyQt6.QtWidgets import QApplication  # noqa
     _app = QApplication.instance() or QApplication([])
 
-    results = {}
-
     # 1) Core modules import (these must be GUI-free).
     bal = imp_core("bal", "core.plugin_base")
     util = imp_core("util", "core.util")
     heirs = imp_core("heirs", "core.heirs")
     will = imp_core("will", "core.will")
-    we = imp_core("willexecutors", "core.willexecutors")
+    _we = imp_core("willexecutors", "core.willexecutors")
 
     # 2) GUI module imports.
     qt = imp_gui()
 
     # 3) Behaviour checks (pure logic, must be identical across versions).
-    BalTimestamp = bal.BalTimestamp
-    assert BalTimestamp("30d").duration_to_days() == 30, "BalTimestamp 30d"
-    assert BalTimestamp("1y").duration_to_days() == 365, "BalTimestamp 1y"
-    assert str(BalTimestamp("7d")) == "7d", "BalTimestamp str"
+    bal_timestamp = bal.BalTimestamp
+    assert bal_timestamp("30d").duration_to_days() == 30, "BalTimestamp 30d"
+    assert bal_timestamp("1y").duration_to_days() == 365, "BalTimestamp 1y"
+    assert str(bal_timestamp("7d")) == "7d", "BalTimestamp str"
 
-    Util = util.Util
-    assert Util.is_perc("50%") is True
-    assert Util.is_perc("100") is False
-    assert Util.text_to_hex("BAL") == "42414c"
-    assert Util.hex_to_text("42414c") == "BAL"
-    assert Util.int_locktime(days=1) == 86400
+    util_cls = util.Util
+    assert util_cls.is_perc("50%") is True
+    assert util_cls.is_perc("100") is False
+    assert util_cls.text_to_hex("BAL") == "42414c"
+    assert util_cls.hex_to_text("42414c") == "BAL"
+    assert util_cls.int_locktime(days=1) == 86400
 
     # heirs constants must keep the same column layout (very delicate!)
     assert heirs.HEIR_ADDRESS == 0

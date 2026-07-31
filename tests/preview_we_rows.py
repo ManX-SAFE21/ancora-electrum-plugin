@@ -21,8 +21,8 @@ import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 COLOR_ERROR = "#ff0000"
 COLOR_OK = "#05ad05"

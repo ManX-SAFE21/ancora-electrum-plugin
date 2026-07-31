@@ -27,65 +27,129 @@ from decimal import Decimal
 from functools import partial
 from typing import Any, Callable, Mapping, Optional, Union
 
-from electrum.bitcoin import (NLOCKTIME_BLOCKHEIGHT_MAX, NLOCKTIME_MAX,
-                              NLOCKTIME_MIN)
+from electrum.bitcoin import NLOCKTIME_BLOCKHEIGHT_MAX, NLOCKTIME_MAX, NLOCKTIME_MIN
 from electrum.gui.qt.amountedit import BTCAmountEdit
 from electrum.gui.qt.main_window import ElectrumWindow, StatusBarButton
 from electrum.gui.qt.my_treeview import MyTreeView
 from electrum.gui.qt.password_dialog import PasswordDialog
 from electrum.gui.qt.transaction_dialog import TxDialog
-from electrum.gui.qt.util import (Buttons, CancelButton, ColorScheme,
-                                  EnterButton, HelpButton, MessageBoxMixin,
-                                  OkButton, TaskThread, WindowModalDialog,
-                                  char_width_in_lineedit, getSaveFileName,
-                                  import_meta_gui, read_QIcon_from_bytes,
-                                  read_QPixmap_from_bytes, webopen)
+from electrum.gui.qt.util import (
+    Buttons,
+    CancelButton,
+    ColorScheme,
+    EnterButton,
+    HelpButton,
+    MessageBoxMixin,
+    OkButton,
+    TaskThread,
+    WindowModalDialog,
+    char_width_in_lineedit,
+    getSaveFileName,
+    import_meta_gui,
+    read_QIcon_from_bytes,
+    read_QPixmap_from_bytes,
+    webopen,
+)
 from electrum.i18n import _
 from electrum.logging import get_logger
 from electrum.network import BestEffortRequestFailed, Network, TxBroadcastError
 from electrum.payment_identifier import PaymentIdentifier
 from electrum.plugin import hook
 from electrum.transaction import SerializationError, Transaction, tx_from_any
-from electrum.util import (DECIMAL_POINT, FileExportFailed, UserCancelled,
-                           decimal_point_to_base_unit_name, read_json_file,
-                           write_json_file)
-from PyQt6.QtCore import (QDateTime, QModelIndex, QPersistentModelIndex, QSize,
-                          Qt, QTimer, pyqtSignal)
-from PyQt6.QtGui import (QColor, QPainter, QPalette, QStandardItem,
-                         QStandardItemModel)
-from PyQt6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QCheckBox,
-                             QComboBox, QDateTimeEdit, QGridLayout, QHBoxLayout,
-                             QInputDialog, QLabel, QLineEdit, QTextEdit, QMenu,
-                             QMenuBar, QPushButton, QScrollArea, QSizePolicy,
-                             QSpinBox, QStackedWidget, QStyle, QStyleOptionFrame,
-                             QVBoxLayout, QWidget, QDialog)
+from electrum.util import (
+    DECIMAL_POINT,
+    FileExportFailed,
+    UserCancelled,
+    decimal_point_to_base_unit_name,
+    read_json_file,
+    write_json_file,
+)
+from PyQt6.QtCore import (
+    QDateTime,
+    QModelIndex,
+    QPersistentModelIndex,
+    QSize,
+    Qt,
+    QTimer,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QColor, QPainter, QPalette, QStandardItem, QStandardItemModel
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QAbstractSpinBox,
+    QCheckBox,
+    QComboBox,
+    QDateTimeEdit,
+    QDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMenuBar,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSpinBox,
+    QStackedWidget,
+    QStyle,
+    QStyleOptionFrame,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ...core.heirs import (
+    HEIR_DUST_AMOUNT,
+    HEIR_REAL_AMOUNT,
+    OP_RETURN_PREFIX,
+    HeirAmountIsDustException,
+    Heirs,
+    WillExecutorFeeTooHighException,
+    get_op_return_hex,
+    is_op_return_address,
+    validate_op_return_hex,
+)
 
 # --- Core (GUI-free) logic layer ---
 from ...core.plugin_base import BalPlugin, BalTimestamp
-from ...core.heirs import (HEIR_DUST_AMOUNT, HEIR_REAL_AMOUNT,
-                           HeirAmountIsDustException, Heirs,
-                           OP_RETURN_PREFIX, is_op_return_address,
-                           get_op_return_hex, validate_op_return_hex,
-                           WillExecutorFeeTooHighException)
 from ...core.util import Util
-from ...core.will import (AmountException, HeirChangeException,
-                          HeirNotFoundException, NoHeirsException,
-                          NotCompleteWillException, NoWillExecutorNotPresent,
-                          TxFeesChangedException, Will,
-                          WillexecutorChangeException, WillExecutorNotPresent,
-                          WillExpiredException, WillItem, WillPostponedException)
-from ...core.willexecutors import Willexecutors
-from ...core.willexecutors import is_onion_url, is_tor_active  # noqa: F401
+from ...core.will import (
+    AmountException,
+    HeirChangeException,
+    HeirNotFoundException,
+    NoHeirsException,
+    NotCompleteWillException,
+    NoWillExecutorNotPresent,
+    TxFeesChangedException,
+    Will,
+    WillexecutorChangeException,
+    WillExecutorNotPresent,
+    WillExpiredException,
+    WillItem,
+    WillPostponedException,
+)
+from ...core.willexecutors import (  # noqa: F401
+    Willexecutors,
+    is_onion_url,
+    is_tor_active,
+)
 
 # --- Presentation helpers ---
 from .theme import server_status_text, server_status_tooltip, status_color
-from .window_utils import (bring_to_front, show_modal, show_on_top,
-                           stop_thread, top_level_of)
+from .window_utils import (
+    bring_to_front,
+    show_modal,
+    show_on_top,
+    stop_thread,
+    top_level_of,
+)
 
 _logger = get_logger(__name__)
 
 
-class shown_cv:
+class shown_cv:  # noqa: N801  (intentionally lowercase: mirrors Qt signal naming)
     _type = bool
 
     def __init__(self, value):

@@ -477,14 +477,14 @@ class BalTimestamp:
         We clamp out-of-range timestamps to INT32_MAX, mirroring Electrum's own
         ``get_max_allowed_timestamp`` workaround (see Electrum issue #6170).
         """
-        INT32_MAX = 2 ** 31 - 1
+        int32_max = 2 ** 31 - 1
         try:
             return datetime.fromtimestamp(ts)
         except (OSError, OverflowError, ValueError):
             try:
-                return datetime.fromtimestamp(min(int(ts), INT32_MAX))
+                return datetime.fromtimestamp(min(int(ts), int32_max))
             except (OSError, OverflowError, ValueError):
-                return datetime.fromtimestamp(INT32_MAX)
+                return datetime.fromtimestamp(int32_max)
 
     def to_date(self, from_date=None, reverse=False):
         """Resolve to a ``datetime``.

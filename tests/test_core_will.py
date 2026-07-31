@@ -8,13 +8,13 @@ Run:
     python3 tests/test_core_will.py
 """
 
-import sys
-import os
 import copy
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from bal.core.will import WillItem, Will
-from bal.core.willexecutors import Willexecutors
+from bal.core.will import Will, WillItem
 
 # A valid serialized Bitcoin transaction hex (1 input + 1 P2PKH output, version 2)
 _VALID_TX_HEX = (
@@ -332,11 +332,19 @@ def test_will_check_tx_height():
 
 def test_exceptions():
     from bal.core.will import (
-        WillException, WillExpiredException, NotCompleteWillException,
-        HeirChangeException, TxFeesChangedException, HeirNotFoundException,
-        WillexecutorChangeException, NoWillExecutorNotPresent,
-        WillExecutorNotPresent, NoHeirsException,
-        AmountException, PercAmountException, FixedAmountException,
+        AmountException,
+        FixedAmountException,
+        HeirChangeException,
+        HeirNotFoundException,
+        NoHeirsException,
+        NotCompleteWillException,
+        NoWillExecutorNotPresent,
+        PercAmountException,
+        TxFeesChangedException,
+        WillException,
+        WillexecutorChangeException,
+        WillExecutorNotPresent,
+        WillExpiredException,
         WillPostponedException,
     )
 
@@ -375,4 +383,4 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             globals()[name]()
             print(f"  [OK] {name}")
-    print(f"[OK] All Will tests passed")
+    print("[OK] All Will tests passed")

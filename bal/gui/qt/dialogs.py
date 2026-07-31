@@ -17,13 +17,16 @@ the few list classes they reference are imported lazily inside the methods that
 use them (see ``lists`` imports below).
 """
 
+from .calendar import BalCalendar, BalCalendarButton
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
-from .widgets import (BalCheckBox, BalLineEdit, BalTextEdit, BalTxFeesWidget,
-                      LockTimeWidget, PercAmountEdit, ThresholdTimeWidget,
-                      WillSettingsWidget, WillWidget, basic_reminder_offsets,
-                      compute_reminder_offsets)
-from .calendar import BalCalendar, BalCalendarButton
+from .widgets import (
+    WillSettingsWidget,
+    WillWidget,
+    basic_reminder_offsets,
+    compute_reminder_offsets,
+)
+
 # NOTE: list views (HeirListWidget, PreviewList, WillExecutorWidget) are
 # imported lazily where needed to avoid a dialogs<->lists import cycle.
 
@@ -31,9 +34,7 @@ from .calendar import BalCalendar, BalCalendarButton
 class BalDialog(QDialog,MessageBoxMixin):
     _stopping = False
     def __init__(self, parent, bal_plugin, title=None, icon="icons/bal16x16.png"):
-        import signal
         from PyQt6.QtCore import QMetaObject, Qt
-        from PyQt6.QtWidgets import QApplication
         def handler(signum, frame):
             QMetaObject.invokeMethod(self, "close", Qt.ConnectionType.QueuedConnection)
 
@@ -49,7 +50,7 @@ class BalDialog(QDialog,MessageBoxMixin):
             self.setWindowTitle(title)
         # WindowModalDialog.__init__(self,parent)
         self.setWindowIcon(read_QIcon_from_bytes(bal_plugin.read_file(icon)))
-        
+
     def closeEvent(self, event):
         self._stopping = True
         # NOTE: we deliberately do NOT stop ``self.thread`` here.
@@ -701,7 +702,7 @@ class BalBuildWillDialog(BalDialog):
             return None, Will.invalidate_will(
                 self.bal_window.willitems, self.bal_window.wallet, fee_per_byte
             )
-        except NoHeirsException as e:
+        except NoHeirsException:
             _logger.debug("no heirs")
             self.msg_set_checking("No Heirs")
         except NotCompleteWillException as e:

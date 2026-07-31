@@ -23,9 +23,15 @@ if os.path.isdir(ELECTRUM_DIR):
     sys.path.insert(0, ELECTRUM_DIR)
 
 from bal.core.heirs import Heirs
-from bal.core.willexecutors import Willexecutors
-from bal.core.will import Will, WillItem, NotCompleteWillException, NoHeirsException, NoWillExecutorNotPresent
 from bal.core.plugin_base import BalPlugin, BalTimestamp
+from bal.core.will import (
+    NoHeirsException,
+    NotCompleteWillException,
+    NoWillExecutorNotPresent,
+    Will,
+    WillItem,
+)
+from bal.core.willexecutors import Willexecutors
 
 # ------------------------------------------------------------------ #
 # Load karen7 wallet data
@@ -53,7 +59,7 @@ def build_utxos(data):
     for txid, outputs in txo.items():
         if not isinstance(outputs, dict):
             continue
-        for addr, out_map in outputs.items():
+        for _, out_map in outputs.items():
             if not isinstance(out_map, dict):
                 continue
             for idx, info in out_map.items():
@@ -85,7 +91,6 @@ class FakeBalWindow:
     def init_class_variables(self):
         if not self.heirs:
             raise NoHeirsException("Heirs are not defined")
-        from bal.core.plugin_base import BalTimestamp
         from datetime import datetime
         self.date_to_check = BalTimestamp(self.will_settings['threshold']).to_timestamp()
         self.no_willexecutor = self.bal_plugin.NO_WILLEXECUTOR.get()

@@ -25,7 +25,6 @@ import copy
 import json
 import os
 import sys
-import warnings
 
 import pytest
 
@@ -42,15 +41,12 @@ from electrum import bitcoin
 from electrum.transaction import (
     PartialTransaction,
     PartialTxInput,
-    PartialTxOutput,
     TxOutpoint,
 )
 from electrum.util import bfh
 
 from bal.core.heirs import Heirs
 from bal.core.will import Will, WillItem
-from bal.core.willexecutors import Willexecutors
-
 
 # ------------------------------------------------------------------ #
 # Load karen7 wallet data
@@ -166,7 +162,7 @@ def _build_utxo_value_map(data):
     for txid, outputs in txo.items():
         if not isinstance(outputs, dict):
             continue
-        for addr, out_map in outputs.items():
+        for _, out_map in outputs.items():
             if not isinstance(out_map, dict):
                 continue
             for idx, info in out_map.items():
@@ -188,7 +184,7 @@ def _populate_input_values(will, utxo_value_map):
     This is the equivalent of what ``add_info_from_wallet`` does in the
     real flow: looking up the UTXO value and attaching it to the input.
     """
-    for wid, wi in will.items():
+    for _, wi in will.items():
         for txin in wi.tx.inputs():
             prevout_str = txin.prevout.to_str()
             if txin._trusted_value_sats is None and prevout_str in utxo_value_map:

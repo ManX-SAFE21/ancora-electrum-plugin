@@ -8,13 +8,18 @@ Run:
 """
 
 import sys
+
 sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QDialog, QWidget
 
 from bal.gui.qt.window_utils import (
-    bring_to_front, show_modal, show_on_top, stop_thread, top_level_of,
+    bring_to_front,
+    show_modal,
+    show_on_top,
+    stop_thread,
+    top_level_of,
 )
 
 _app = QApplication.instance() or QApplication(sys.argv)

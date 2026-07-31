@@ -9,13 +9,14 @@ Run:
     python3 tests/test_core_util.py
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 import pytest
 
-from bal.core.util import Util, LOCKTIME_THRESHOLD
+from bal.core.util import Util
 
 
 def test_locktime_to_str():
@@ -40,7 +41,7 @@ def test_str_to_locktime():
 
     # the block-height suffix "b" was removed (A1): "144b" is no longer a valid
     # relative locktime, so it is NOT passed through unchanged.
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         Util.str_to_locktime("144b")
 
     # integer string -> int
@@ -347,44 +348,44 @@ def test_in_utxo():
 
 
 def test_cmp_output():
-    class O:
+    class Obj:
         def __init__(self, addr, val):
             self.address = addr
             self.value = val
-    assert Util.cmp_output(O("a", 100), O("a", 100)) is True
-    assert Util.cmp_output(O("a", 100), O("b", 100)) is False
-    assert Util.cmp_output(O("a", 100), O("a", 200)) is False
+    assert Util.cmp_output(Obj("a", 100), Obj("a", 100)) is True
+    assert Util.cmp_output(Obj("a", 100), Obj("b", 100)) is False
+    assert Util.cmp_output(Obj("a", 100), Obj("a", 200)) is False
 
 
 def test_in_output():
-    class O:
+    class Obj:
         def __init__(self, addr, val):
             self.address = addr
             self.value = val
-    outputs = [O("a", 100), O("b", 200)]
-    assert Util.in_output(O("a", 100), outputs) is True
-    assert Util.in_output(O("z", 999), outputs) is False
-    assert Util.in_output(O("a", 100), []) is False
+    outputs = [Obj("a", 100), Obj("b", 200)]
+    assert Util.in_output(Obj("a", 100), outputs) is True
+    assert Util.in_output(Obj("z", 999), outputs) is False
+    assert Util.in_output(Obj("a", 100), []) is False
 
 
 def test_din_output():
-    class O:
+    class Obj:
         def __init__(self, addr, val):
             self.address = addr
             self.value = val
 
-    outputs = [O("a", 100), O("b", 200)]
+    outputs = [Obj("a", 100), Obj("b", 200)]
 
     # same amount AND same address
-    same_amt, same_addr = Util.din_output(O("a", 100), outputs)
+    same_amt, same_addr = Util.din_output(Obj("a", 100), outputs)
     assert same_amt is True and same_addr is True
 
     # same amount but different address
-    same_amt, same_addr = Util.din_output(O("c", 100), outputs)
+    same_amt, same_addr = Util.din_output(Obj("c", 100), outputs)
     assert same_amt is True and same_addr is False
 
     # different amount
-    same_amt, same_addr = Util.din_output(O("z", 999), outputs)
+    same_amt, same_addr = Util.din_output(Obj("z", 999), outputs)
     assert same_amt is False and same_addr is False
 
 

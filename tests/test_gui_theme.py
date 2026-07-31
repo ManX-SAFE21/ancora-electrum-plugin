@@ -8,10 +8,10 @@ Run:
 """
 
 import sys
+
 sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
 from bal.gui.qt.theme import status_color
-
 
 # ------------------------------------------------------------------ #
 # Helpers

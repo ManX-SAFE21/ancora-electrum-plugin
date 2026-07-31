@@ -45,10 +45,10 @@ class _WindowsLikeDatetime(_real_datetime):
 
 def main():
     plugin_base = importlib.import_module(f"{PKG}.core.plugin_base")
-    BalTimestamp = plugin_base.BalTimestamp
+    bt_class = plugin_base.BalTimestamp
 
     # 1) Sanity: with the real (Linux 64-bit) datetime, large ts works already.
-    bt = BalTimestamp(NLOCKTIME_MAX)
+    bt = bt_class(NLOCKTIME_MAX)
     d = bt.to_date()
     assert isinstance(d, _real_datetime), d
     print("[OK] BalTimestamp(NLOCKTIME_MAX).to_date() works on this platform")
@@ -59,7 +59,7 @@ def main():
     plugin_base.datetime = _WindowsLikeDatetime
     try:
         # 2a) Absolute sentinel timestamp (the exact crash path from the log).
-        bt = BalTimestamp(NLOCKTIME_MAX)
+        bt = bt_class(NLOCKTIME_MAX)
         d = bt.to_date()  # must NOT raise OverflowError anymore
         assert d.year <= 2038, f"expected clamp to <=2038, got {d!r}"
         print("[OK] to_date(NLOCKTIME_MAX) no longer raises (clamped to INT32_MAX)")
@@ -75,13 +75,13 @@ def main():
         print("[OK] str()/repr() on out-of-range timestamp are safe")
 
         # 2d) Relative durations that overflow when added (e.g. huge 'd').
-        bt_rel = BalTimestamp(f"{10 ** 9}d")  # ~2.7M years -> overflow
+        bt_rel = bt_class(f"{10 ** 9}d")  # ~2.7M years -> overflow
         d2 = bt_rel.to_date()
         assert d2 is not None
         print("[OK] huge relative duration no longer raises")
 
         # 2e) Normal values are unchanged (behaviour-preserving check).
-        bt_norm = BalTimestamp("90d")
+        bt_norm = bt_class("90d")
         d3 = bt_norm.to_date()
         # 90 days from now, normalised to midnight
         assert d3.hour == 0 and d3.minute == 0 and d3.second == 0

@@ -32,7 +32,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from bal.gui.qt.window import BalWindow  # noqa: E402  (path insert above)
 
-
 OFFSET = BalWindow.BASIC_MODE_CHECK_ALIVE_OFFSET_SECONDS
 
 

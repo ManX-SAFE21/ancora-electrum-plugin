@@ -36,12 +36,11 @@ import pytest
 # below the repo root that contains the ``bal`` package).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from bal.core.will import WillItem, Will, HeirNotFoundException
 from bal.core.heirs import Heirs
+from bal.core.will import HeirNotFoundException, Will, WillItem
 from bal.core.willexecutors import Willexecutors
 from bal.gui.qt.calendar import BalCalendar
 from bal.gui.qt.widgets import compute_reminder_offsets
-
 
 # A valid serialized Bitcoin transaction hex (1 input + 1 P2PKH output,
 # version 2).  Reused from test_core_will.py so WillItem can parse a real tx.
@@ -550,7 +549,7 @@ def test_e5_build_with_real_wallet_heirs_and_utxos():
     for txid, outputs in txo.items():
         if not isinstance(outputs, dict):
             continue
-        for addr, out_map in outputs.items():
+        for _, out_map in outputs.items():
             if not isinstance(out_map, dict):
                 continue
             for idx, info in out_map.items():

@@ -43,9 +43,9 @@ from electrum.util import (
     bfh,
 )
 
+from .heirs import WillExecutorFeeTooHighException
 from .util import Util
 from .willexecutors import Willexecutors
-from .heirs import WillExecutorFeeTooHighException
 
 MIN_LOCKTIME = 1
 MIN_BLOCK = 1
@@ -220,13 +220,8 @@ class Will:
                     if ow.we["url"] == nw.we["url"]:
                         if int(ow.we["base_fee"]) > int(nw.we["base_fee"]):
                             return anticipate
-                        else:
-                            if int(ow.tx_fees) != int(nw.tx_fees):
-                                return anticipate
-                            else:
-                                ow.tx.locktime
-                    else:
-                        ow.tx.locktime
+                        elif int(ow.tx_fees) != int(nw.tx_fees):
+                            return anticipate
                 else:
                     if nw.we == ow.we:
                         if not Util.cmp_heirs_by_values(ow.heirs, nw.heirs, [0, 3]):
@@ -512,7 +507,7 @@ class Will:
 
     @staticmethod
     def is_new(will):
-        for wid, w in will.items():
+        for _wid, w in will.items():
             if w.get_status("VALID") and not w.get_status("COMPLETE"):
                 return True
 
@@ -784,7 +779,7 @@ class Will:
             timestamp_to_check: Reference UNIX timestamp (usually "now").
         """
         _logger.info("check if some transaction is expired")
-        for prevout_str, wid in all_inputs_min_locktime.items():
+        for _inputs, wid in all_inputs_min_locktime.items():
             for w in wid:
                 if w[1].get_status("VALID"):
                     locktime = int(wid[0][1].tx.locktime)

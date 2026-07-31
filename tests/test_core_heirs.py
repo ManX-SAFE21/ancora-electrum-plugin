@@ -9,24 +9,33 @@ Run:
     python3 tests/test_core_heirs.py
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from bal.core.heirs import (
-    HEIR_ADDRESS, HEIR_AMOUNT, HEIR_LOCKTIME, HEIR_REAL_AMOUNT,
-    HEIR_DUST_AMOUNT, TRANSACTION_LABEL,
+    HEIR_ADDRESS,
+    HEIR_AMOUNT,
+    HEIR_DUST_AMOUNT,
+    HEIR_LOCKTIME,
+    HEIR_REAL_AMOUNT,
     OP_RETURN_PREFIX,
-    create_op_return_script,
-    is_op_return_address, get_op_return_hex, validate_op_return_hex,
+    TRANSACTION_LABEL,
     AliasNotFoundException,
-    NotAnAddress, AmountNotValid, LocktimeNotValid,
-    HeirExpiredException, HeirAmountIsDustException,
-    NoHeirsException, WillExecutorFeeException,
+    AmountNotValid,
     BalanceTooLowException,
+    HeirAmountIsDustException,
     Heirs,
+    LocktimeNotValid,
+    NoHeirsException,
+    NotAnAddress,
+    WillExecutorFeeException,
+    create_op_return_script,
+    get_op_return_hex,
+    is_op_return_address,
+    validate_op_return_hex,
 )
-
 
 # ------------------------------------------------------------------ #
 # Constants
@@ -70,7 +79,7 @@ def test_op_return_empty():
 def test_op_return_too_big():
     try:
         create_op_return_script("ab" * 81)  # 81 bytes > max 80
-        assert False, "expected ValueError"
+        raise AssertionError("expected ValueError")
     except ValueError:
         pass
 
@@ -179,13 +188,13 @@ def test_validate_amount():
     # Invalid
     try:
         Heirs.validate_amount("0.000000001")
-        assert False, "expected AmountNotValid"
+        raise AssertionError("expected AmountNotValid")
     except AmountNotValid:
         pass
 
     try:
         Heirs.validate_amount("-1")
-        assert False, "expected AmountNotValid"
+        raise AssertionError("expected AmountNotValid")
     except AmountNotValid:
         pass
 
@@ -209,7 +218,7 @@ def test_validate_locktime_expired():
     past = int(time.time()) - 86400  # yesterday
     try:
         Heirs.validate_locktime(str(past), timestamp_to_check=past + 1)
-        assert False, "expected LocktimeNotValid"
+        raise AssertionError("expected LocktimeNotValid")
     except LocktimeNotValid:
         pass
 
@@ -289,7 +298,7 @@ def test_validate_op_return_hex_valid():
 def test_validate_op_return_hex_invalid():
     try:
         validate_op_return_hex("nothex!!")
-        assert False, "expected NotAnAddress"
+        raise AssertionError("expected NotAnAddress")
     except NotAnAddress:
         pass
 
@@ -297,7 +306,7 @@ def test_validate_op_return_hex_invalid():
 def test_validate_op_return_hex_too_long():
     try:
         validate_op_return_hex("ab" * 81)
-        assert False, "expected NotAnAddress"
+        raise AssertionError("expected NotAnAddress")
     except NotAnAddress:
         pass
 
@@ -355,4 +364,4 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             globals()[name]()
             print(f"  [OK] {name}")
-    print(f"[OK] All heirs tests passed")
+    print("[OK] All heirs tests passed")

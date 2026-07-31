@@ -33,10 +33,9 @@ import logging
 import os
 import sys
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
 from electrum import constants
 
 constants.net = constants.BitcoinRegtest
@@ -48,9 +47,13 @@ from electrum.transaction import PartialTxInput, TxOutpoint
 from electrum.util import bfh
 
 from bal.core.heirs import Heirs
-from bal.core.will import Will, WillItem, NoWillExecutorNotPresent, NotCompleteWillException
+from bal.core.will import (
+    NotCompleteWillException,
+    NoWillExecutorNotPresent,
+    Will,
+    WillItem,
+)
 from bal.core.willexecutors import Willexecutors
-
 
 # ------------------------------------------------------------------ #
 # Load karen7 wallet data
@@ -479,11 +482,11 @@ class TestNoWillexecutorKaren7:
         dialog = FakeBuildWillDialog(self.bal_window)
         dialog.task_phase1()
         assert any(
-            "Not present - select one or enable backup mode" in l
-            for l in dialog.labels
+            "Not present - select one or enable backup mode" in label
+            for label in dialog.labels
         ), "dialog labels must contain the 'not present' message"
         assert any(
-            "#ff0000" in l for l in dialog.labels
+            "#ff0000" in label for label in dialog.labels
         ), "dialog labels must use red (COLOR_ERROR)"
 
     def test_task_phase1_adds_action_buttons(self):

@@ -15,14 +15,17 @@ and cached in ``self.bal_windows``.
 """
 
 from electrum.gui.qt.main_window import StatusBarButton
+from PyQt6.QtWidgets import QLayout
 
 from .common import *
-from .common import _, _logger  # underscore names are not re-exported by "import *"
-from .common import read_QIcon_from_bytes
+from .common import (  # underscore names are not re-exported by "import *"
+    _,
+    _logger,
+    read_QIcon_from_bytes,
+)
+from .dialogs import BalDialog
 from .widgets import BalCheckBox, BalLineEdit, BalSpinBox, BalTextEdit
 from .window import BalWindow
-from .dialogs import BalDialog
-from PyQt6.QtWidgets import QLayout
 
 
 def _window_key(window):
@@ -88,9 +91,11 @@ class Plugin(BalPlugin):
         except Exception:
             return []
         try:
-            from electrum.gui.qt.plugins_dialog import PluginsDialog
+            from electrum.gui.qt.plugins_dialog import (
+                PluginsDialog as plugins_dialog,  # noqa: N813
+            )
         except Exception:
-            PluginsDialog = None
+            plugins_dialog = None
         app = QApplication.instance()
         if app is None:
             return []
@@ -106,7 +111,7 @@ class Plugin(BalPlugin):
         for w in app.topLevelWidgets():
             try:
                 is_match = False
-                if PluginsDialog is not None and isinstance(w, PluginsDialog):
+                if plugins_dialog is not None and isinstance(w, plugins_dialog):
                     is_match = True
                 elif type(w).__name__ == "PluginsDialog":
                     is_match = True
@@ -142,17 +147,17 @@ class Plugin(BalPlugin):
         each is guarded independently.
         """
         try:
-            from PyQt6.QtWidgets import QDialog
+            from PyQt6.QtWidgets import QDialog as qdialog  # noqa: N813
         except Exception:
-            QDialog = None
+            qdialog = None
         # 1) reject() / done(): the reliable way to end an exec() modal loop.
-        if QDialog is not None and isinstance(d, QDialog):
+        if qdialog is not None and isinstance(d, qdialog):
             try:
                 d.reject()
             except Exception as e:
                 _logger.debug("reject() failed: {}".format(e))
             try:
-                d.done(QDialog.DialogCode.Rejected)
+                d.done(qdialog.DialogCode.Rejected)
             except Exception as e:
                 _logger.debug("done() failed: {}".format(e))
         # 2) close(): covers non-QDialog top-levels and is a harmless extra.
@@ -172,9 +177,9 @@ class Plugin(BalPlugin):
         it and closes it themselves (it must not linger in the background).
         """
         try:
-            from PyQt6.QtCore import QTimer
+            from PyQt6.QtCore import QTimer as qtimer  # noqa: N813
         except Exception:
-            QTimer = None
+            qtimer = None
         # Schedule of retry delays (ms) measured from each call.
         retry_delays = [400, 800, 1500]
         dialogs = Plugin._find_plugins_manager_dialogs()
@@ -190,8 +195,8 @@ class Plugin(BalPlugin):
         if not still_open:
             _logger.info("plugins dialog closed successfully")
             return
-        if attempt < len(retry_delays) and QTimer is not None:
-            QTimer.singleShot(
+        if attempt < len(retry_delays) and qtimer is not None:
+            qtimer.singleShot(
                 retry_delays[attempt],
                 lambda: Plugin._handle_plugins_manager_dialog(attempt + 1),
             )

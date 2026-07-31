@@ -14,12 +14,13 @@ construction) for all business actions, so the heavy logic stays in ``window``
 and ``dialogs``.
 """
 
+from PyQt6.QtWidgets import QLineEdit as _QLineEdit
+from PyQt6.QtWidgets import QMessageBox, QStyledItemDelegate
+
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
-from .widgets import BalCheckBox, PercAmountEdit, WillSettingsWidget
-from PyQt6.QtWidgets import QMessageBox
-from PyQt6.QtWidgets import QStyledItemDelegate, QLineEdit as _QLineEdit
 from .dialogs import BalBuildWillDialog, BalDialog
+from .widgets import BalCheckBox, WillSettingsWidget
 
 
 class HeirListWidget(MyTreeView, MessageBoxMixin):
@@ -194,7 +195,7 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
                 set_current = QPersistentModelIndex(idx)
         try:
             self.will_settings_widget.on_locktime_change()
-        except Exception as e:
+        except Exception:
             pass
         self.set_current_idx(set_current)
         # FIXME refresh loses sort order; so set "default" here:
@@ -214,15 +215,15 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Import"), self.bal_window.import_heirs)
         menu.addAction(_("Export"), lambda: self.bal_window.export_heirs())
 
-        newHeirButton = QPushButton(_("New Heir"))
-        newHeirButton.clicked.connect(self.bal_window.new_heir_dialog)
+        new_heir_button = QPushButton(_("New Heir"))
+        new_heir_button.clicked.connect(self.bal_window.new_heir_dialog)
 
         widget = QWidget(self)
         layout = QHBoxLayout(widget)
         self.will_settings_widget = WillSettingsWidget(self.bal_window, self)
 
         layout.addWidget(self.will_settings_widget)
-        layout.addWidget(newHeirButton)
+        layout.addWidget(new_heir_button)
 
         toolbar.insertWidget(2, widget)
 
@@ -281,7 +282,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             self.setModel(QStandardItemModel(self))
             self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
             self.sortByColumn(self.Columns.NAME, Qt.SortOrder.AscendingOrder)
-        except Exception as e:
+        except Exception:
             pass
 
         self.setSortingEnabled(True)

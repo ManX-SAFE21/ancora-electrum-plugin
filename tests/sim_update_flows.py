@@ -21,18 +21,21 @@ Run:
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src python3 tests/sim_update_flows.py
 """
 
-import sys
-import os
 import copy
+import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from bal.core.will import (
-    WillItem, Will,
-    NotCompleteWillException, HeirNotFoundException, NoHeirsException,
-    TxFeesChangedException, WillExpiredException,
+    HeirNotFoundException,
+    NoHeirsException,
+    NotCompleteWillException,
+    TxFeesChangedException,
+    Will,
+    WillExpiredException,
+    WillItem,
 )
-from bal.core.util import Util
 
 # A valid serialized tx (1 input + 1 output, version 2). Its nLockTime is 0.
 _VALID_TX_HEX = (

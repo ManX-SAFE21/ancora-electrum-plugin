@@ -5,3 +5,15 @@ target-version = "py312"
 [tool.ruff.lint]
 select =["E", "W", "F", "I", "N", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"bal/gui/qt/*.py" = ["F403", "F405"]   # intentional `from .common import *` hub
+"bal/gui/qt/common.py" = ["F401"]       # re-exports consumed via `import *`
+"bal/gui/qt/dialogs.py" = ["N802"]      # Qt overrides: closeEvent/hideEvent/getText
+"bal/gui/qt/lists.py" = ["N802"]        # Qt overrides: createEditor/setEditorData/setModelData
+"bal/gui/qt/widgets.py" = ["N802", "N815"]  # Qt overrides + Qt signal attrs (valueChanged, ...)
+"bal/gui/qt/window.py" = ["N802"]       # getMsg
+"bal/core/heirs.py" = ["N818", "N802"]  # public exception names + buildTransactions API
+"bal/core/will.py" = ["N818"]           # public exception names
+"bal/core/willexecutors.py" = ["N818"]  # public exception names
+"tests/*.py" = ["N802", "E402"]         # deliberate UPPER_CASE helpers + sys.path-before-import

@@ -400,14 +400,14 @@ class Util:
     def get_lowest_valid_tx(available_utxos, will):
         """Placeholder kept from the original code (sorts the will by locktime)."""
         will = sorted(will.items(), key=lambda x: x[1]["tx"].locktime)
-        for txid, willitem in will.items():
+        for _txid, _willitem in will.items():
             pass
 
     @staticmethod
     def get_locktimes(will):
         """Return the distinct locktimes used by the transactions in ``will``."""
         locktimes = {}
-        for txid, willitem in will.items():
+        for _, willitem in will.items():
             locktimes[willitem["tx"].locktime] = True
         return locktimes.keys()
 
@@ -446,7 +446,7 @@ class Util:
     def get_will_spent_utxos(will):
         """Collect every input spent by any transaction in ``will``."""
         utxos = []
-        for txid, willitem in will.items():
+        for _, willitem in will.items():
             utxos += willitem["tx"].inputs()
 
         return utxos

@@ -18,9 +18,9 @@ Contents:
     * WillWidget                                            - single will-tx box
 """
 
+from .calendar import BalCalendar, BalCalendarButton
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
-from .calendar import BalCalendar, BalCalendarButton
 
 
 def compute_reminder_offsets(days, count):
@@ -690,7 +690,7 @@ class LockTimeDateEdit(QDateTimeEdit, _LockTimeEditor):
             return
         try:
             x = int(x)
-        except Exception as e:
+        except Exception:
             x = QDateTime.currentDateTime().timestamp()
         finally:
             # Use the overflow-safe converter: on Windows datetime.fromtimestamp
@@ -1395,15 +1395,15 @@ class PercAmountEdit(BTCAmountEdit):
         if self.base_unit:
             panel = QStyleOptionFrame()
             self.initStyleOption(panel)
-            textRect = self.style().subElementRect(
+            text_rect = self.style().subElementRect(
                 QStyle.SubElement.SE_LineEditContents, panel, self
             )
-            textRect.adjust(2, 0, -10, 0)
+            text_rect.adjust(2, 0, -10, 0)
             painter = QPainter(self)
             painter.setPen(ColorScheme.GRAY.as_color())
             if len(self.text()) == 0:
                 painter.drawText(
-                    textRect,
+                    text_rect,
                     int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
                     self.base_unit() + " or perc value",
                 )

@@ -389,7 +389,7 @@ class Willexecutors:
         except Exception as e:
             _logger.debug(f"error:{e}")
             if str(e) == "already present":
-                raise Willexecutors.AlreadyPresentException()
+                raise Willexecutors.AlreadyPresentException() from None
             out = False
             willexecutor["broadcast_status"] = _("Failed")
 
@@ -485,8 +485,7 @@ class Willexecutors:
         Returns:
             The same ``willexecutors`` mapping, updated in place.
         """
-        from concurrent.futures import ThreadPoolExecutor, wait
-        from concurrent.futures import FIRST_COMPLETED
+        from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
         items = list(willexecutors.items())
         if not items:
@@ -566,8 +565,7 @@ class Willexecutors:
         Returns ``{url: (ok, exception_or_None)}`` for the servers that
         answered in time (timed-out servers are reported via ``on_timeout``).
         """
-        from concurrent.futures import ThreadPoolExecutor, wait
-        from concurrent.futures import FIRST_COMPLETED
+        from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
         targets = [(url, we) for url, we in willexecutors.items() if "txs" in we]
         results = {}
@@ -684,8 +682,7 @@ class Willexecutors:
         Returns ``{wid: (result_or_None, exception_or_None)}`` for the servers
         that answered in time.
         """
-        from concurrent.futures import ThreadPoolExecutor, wait
-        from concurrent.futures import FIRST_COMPLETED
+        from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
         targets = [(wid, url) for wid, url in items if url]
         results = {}

@@ -16,8 +16,9 @@ Run:
     python3 tests/test_group_f_heir_change_rebuild.py
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from bal.core.will import Will

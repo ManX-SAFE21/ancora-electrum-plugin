@@ -102,7 +102,7 @@ def validate_op_return_hex(data_hex: str) -> None:
     try:
         data = bytes.fromhex(data_hex)
     except ValueError:
-        raise NotAnAddress(f"OP_RETURN data is not valid hex: {data_hex}")
+        raise NotAnAddress(f"OP_RETURN data is not valid hex: {data_hex}") from None
     if len(data) > 80:
         raise NotAnAddress(
             f"OP_RETURN data too long ({len(data)} bytes, max 80)"
@@ -205,7 +205,7 @@ def prepare_transactions(locktimes, available_utxos, fees, wallet):
         change = get_change_output(wallet, in_amount, out_amount, fee)
         if change:
             outputs.append(change)
-        for i in range(0, 100):
+        for _ in range(0, 100):
             random.shuffle(outputs)
 
         #op_return_text = "Hello Bal!"
@@ -281,7 +281,7 @@ def invalidate_inheritance_transactions(wallet):
                 del dtxs[txid]
 
     utxos = {}
-    for txid, tx in dtxs.items():
+    for _, tx in dtxs.items():
         get_utxos_from_inputs(tx.inputs(), tx, utxos)
 
     utxos = sorted(utxos.items(), key=lambda item: len(item[1]))
@@ -727,7 +727,7 @@ class Heirs(dict, Logger):
                                 )
                                 break
                         except Exception:
-                            raise e
+                            raise
                     total_fees = 0
                     total_fees_real = 0
                     total_in = 0
@@ -853,6 +853,7 @@ class Heirs(dict, Logger):
         except AttributeError:
             return None
 
+    @staticmethod
     def validate_address(address):
         if is_op_return_address(address):
             data_hex = address[len(OP_RETURN_PREFIX):]
@@ -862,24 +863,27 @@ class Heirs(dict, Logger):
             raise NotAnAddress(f"not an address,{address}")
         return address
 
+    @staticmethod
     def validate_amount(amount):
         try:
             famount = float(amount[:-1]) if Util.is_perc(amount) else float(amount)
             if famount <= 0.00000001:
                 raise AmountNotValid(f"amount have to be positive {famount} < 0")
         except Exception as e:
-            raise AmountNotValid(f"amount not properly formatted, {e}")
+            raise AmountNotValid(f"amount not properly formatted, {e}") from e
         return amount
 
+    @staticmethod
     def validate_locktime(locktime, timestamp_to_check=False):
         try:
             if timestamp_to_check:
                 if Util.parse_locktime_string(locktime, None) < timestamp_to_check:
                     raise HeirExpiredException()
         except Exception as e:
-            raise LocktimeNotValid(f"locktime string not properly formatted, {e}")
+            raise LocktimeNotValid(f"locktime string not properly formatted, {e}") from e
         return locktime
 
+    @staticmethod
     def validate_heir(k, v, timestamp_to_check=False):
         address = Heirs.validate_address(v[HEIR_ADDRESS])
         if is_op_return_address(v[HEIR_ADDRESS]):
@@ -889,6 +893,7 @@ class Heirs(dict, Logger):
         locktime = Heirs.validate_locktime(v[HEIR_LOCKTIME], timestamp_to_check)
         return (address, amount, locktime)
 
+    @staticmethod
     def _validate(data, timestamp_to_check=False):
 
         for k, v in list(data.items()):

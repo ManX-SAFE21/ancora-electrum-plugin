@@ -24,8 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from bal.gui.qt.widgets import (BASIC_REMINDER_OFFSETS,
-                                 basic_reminder_offsets)
+from bal.gui.qt.widgets import BASIC_REMINDER_OFFSETS, basic_reminder_offsets
 
 
 def test_basic_offsets_all_future():

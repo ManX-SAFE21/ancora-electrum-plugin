@@ -22,15 +22,14 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
-
-from bal.core.will import Will, WillItem
 
 # Patch Transaction.add_info_from_wallet so WillItem can parse the tx hex
 # without a live Electrum wallet connection.
 from electrum.transaction import Transaction
+
+from bal.core.will import Will, WillItem
+
 _patcher = patch.object(Transaction, "add_info_from_wallet")
 _patcher.start()
 

@@ -10,13 +10,11 @@ Run:
 
 import os
 import sys
-import tempfile
 from datetime import datetime, timezone
 
 sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
 from bal.gui.qt.calendar import BalCalendar
-
 
 # ------------------------------------------------------------------ #
 # format_time

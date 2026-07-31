@@ -20,12 +20,17 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import (  # noqa: E402
-    QApplication, QWidget, QHBoxLayout, QPushButton, QComboBox, QLineEdit,
-    QLabel,
-)
+from PyQt6.QtCore import QSize  # noqa: E402
 from PyQt6.QtGui import QIcon, QPixmap  # noqa: E402
-from PyQt6.QtCore import QSize, Qt  # noqa: E402
+from PyQt6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QWidget,
+)
 
 ICON_PATH = os.path.join(os.path.dirname(__file__), "..", "bal", "icons",
                         "wizard.png")

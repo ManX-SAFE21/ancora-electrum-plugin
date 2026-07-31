@@ -18,11 +18,16 @@ import threading
 
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
-from .widgets import LockTimeWidget, PercAmountEdit, WillSettingsWidget
-from .dialogs import (BalBlockingWaitingDialog, BalBuildWillDialog, BalDialog,
-                      BalWaitingDialog, BalWizardDialog, WillDetailDialog,
-                      WillExecutorDialog)
-from .lists import HeirListWidget, PreviewList, WillExecutorWidget
+from .dialogs import (
+    BalBuildWillDialog,
+    BalDialog,
+    BalWaitingDialog,
+    BalWizardDialog,
+    WillDetailDialog,
+    WillExecutorDialog,
+)
+from .lists import HeirListWidget, PreviewList
+from .widgets import LockTimeWidget, PercAmountEdit
 
 
 class BalWindow:

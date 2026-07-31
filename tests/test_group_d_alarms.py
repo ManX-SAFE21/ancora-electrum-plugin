@@ -27,7 +27,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 from bal.core.plugin_base import BalConfig
 from bal.gui.qt.widgets import compute_reminder_offsets
 
-
 # ------------------------------------------------------------------ #
 # Mocks
 # ------------------------------------------------------------------ #

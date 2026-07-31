@@ -33,7 +33,8 @@ def _active_source_without_strings(module) -> str:
             if isinstance(node.value, str) and hasattr(node, "end_lineno"):
                 self.spans.append((node.lineno, node.end_lineno))
             self.generic_visit(node)
-    s = _S(); s.visit(tree)
+    s = _S()
+    s.visit(tree)
     drop = set()
     for a, b in s.spans:
         drop.update(range(a, b + 1))
@@ -45,12 +46,13 @@ def _active_source_without_strings(module) -> str:
 
 def main(pkg: str) -> int:
     from PyQt6.QtWidgets import QApplication, QDialog, QWidget
-    app = QApplication.instance() or QApplication(sys.argv)
+    _app = QApplication.instance() or QApplication(sys.argv)
 
     wu = importlib.import_module(pkg + ".gui.qt.window_utils")
 
     # top_level_of: returns the top-level container of a child widget
-    w = QWidget(); child = QWidget(w)
+    w = QWidget()
+    child = QWidget(w)
     assert wu.top_level_of(child) is w
     assert wu.top_level_of(None) is None
     print("[OK] top_level_of")

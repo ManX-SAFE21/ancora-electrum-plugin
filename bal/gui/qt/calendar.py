@@ -9,10 +9,11 @@ to "check in" before the locktime expires.  This module turns the event data
 into an RFC-5545 .ics file and opens it with the OS default application.
 """
 
-from .common import *
-from .common import _, _logger  # underscore names are not re-exported by "import *"
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QToolButton
+
+from .common import *
+from .common import _, _logger  # underscore names are not re-exported by "import *"
 
 
 class BalCalendarButton(QToolButton):
@@ -79,7 +80,8 @@ class BalCalendarButton(QToolButton):
         path = self._ensure_ics()
         if not path:
             return
-        import shlex, subprocess
+        import shlex
+        import subprocess
         if self._bal_window.bal_plugin.is_basic_mode():
             app = self._bal_window.bal_plugin.CALENDAR_APP.default
         else:

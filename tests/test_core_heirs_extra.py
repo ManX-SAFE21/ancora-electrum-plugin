@@ -8,18 +8,19 @@ Run:
     QT_QPA_PLATFORM=offscreen python3 tests/test_core_heirs_extra.py
 """
 
-import sys
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from bal.core.heirs import (
-    Heirs, create_op_return_script, reduce_outputs,
-    HEIR_ADDRESS, HEIR_AMOUNT, HEIR_LOCKTIME, HEIR_REAL_AMOUNT,
+    HEIR_AMOUNT,
+    Heirs,
+    create_op_return_script,
+    reduce_outputs,
 )
 from bal.core.willexecutors import Willexecutors
-
 
 # ------------------------------------------------------------------ #
 # Heirs db-dependent methods
@@ -188,7 +189,7 @@ def test_validate_address_invalid():
         from bal.core.heirs import NotAnAddress
         try:
             Heirs.validate_address("bad")
-            assert False, "should have raised"
+            raise AssertionError("should have raised")
         except NotAnAddress:
             pass
 

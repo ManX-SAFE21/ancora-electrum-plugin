@@ -31,7 +31,7 @@ N = 8       # number of servers
 
 def main():
     we_mod = importlib.import_module(f"{PKG}.core.willexecutors")
-    W = we_mod.Willexecutors
+    we_cls = we_mod.Willexecutors
 
     # ---- 1) ping_servers_parallel: time ~= slowest, not sum ----
     def slow_get_info(url, we, **kwargs):
@@ -43,8 +43,8 @@ def main():
             we["status"] = 200
         return we
 
-    orig_get_info = W.get_info_task
-    W.get_info_task = staticmethod(slow_get_info)
+    orig_get_info = we_cls.get_info_task
+    we_cls.get_info_task = staticmethod(slow_get_info)
     try:
         wes = {}
         for i in range(N):
@@ -57,7 +57,7 @@ def main():
             seen.append((url, ok))
 
         start = time.time()
-        W.ping_servers_parallel(wes, on_each=on_each, max_workers=N)
+        we_cls.ping_servers_parallel(wes, on_each=on_each, max_workers=N)
         elapsed = time.time() - start
 
         # Sequential would take ~ N * SLOW.  Parallel must be far less.
@@ -81,15 +81,15 @@ def main():
                 assert we["status"] == "KO", (url, we)
         print("[OK] ping results written back into the willexecutors mapping")
     finally:
-        W.get_info_task = orig_get_info
+        we_cls.get_info_task = orig_get_info
 
     # ---- 2) push_transactions_parallel: time ~= slowest, not sum ----
     def slow_push(we, **kwargs):
         time.sleep(SLOW)
         return "fail" not in we["url"]
 
-    orig_push = W.push_transactions_to_willexecutor
-    W.push_transactions_to_willexecutor = staticmethod(slow_push)
+    orig_push = we_cls.push_transactions_to_willexecutor
+    we_cls.push_transactions_to_willexecutor = staticmethod(slow_push)
     try:
         wes = {}
         for i in range(N):
@@ -106,7 +106,7 @@ def main():
             pushed.append((url, ok))
 
         start = time.time()
-        results = W.push_transactions_parallel(wes, on_each=on_each_push,
+        results = we_cls.push_transactions_parallel(wes, on_each=on_each_push,
                                                max_workers=N)
         elapsed = time.time() - start
 
@@ -117,11 +117,11 @@ def main():
               f"(sequential would be ~{sequential:.2f}s)")
 
         assert len(results) == N, results
-        for url, (ok, exc) in results.items():
+        for url, (ok, _exc) in results.items():
             assert ok == ("good" in url), (url, ok)
         print("[OK] push results correct for every server")
     finally:
-        W.push_transactions_to_willexecutor = orig_push
+        we_cls.push_transactions_to_willexecutor = orig_push
 
     # ---- 2b) global deadline: a hung server must not block past `deadline` ----
     def hanging_push(we, **kwargs):
@@ -129,8 +129,8 @@ def main():
         time.sleep(10)
         return True
 
-    orig_push2 = W.push_transactions_to_willexecutor
-    W.push_transactions_to_willexecutor = staticmethod(hanging_push)
+    orig_push2 = we_cls.push_transactions_to_willexecutor
+    we_cls.push_transactions_to_willexecutor = staticmethod(hanging_push)
     try:
         wes = {
             "https://fast.example": {
@@ -146,7 +146,7 @@ def main():
                 return True
             time.sleep(10)
             return True
-        W.push_transactions_to_willexecutor = staticmethod(fast_or_hang)
+        we_cls.push_transactions_to_willexecutor = staticmethod(fast_or_hang)
 
         timed_out = []
 
@@ -154,7 +154,7 @@ def main():
             timed_out.append(url)
 
         start = time.time()
-        W.push_transactions_parallel(
+        we_cls.push_transactions_parallel(
             wes, max_workers=2, deadline=1.0, on_timeout=on_timeout
         )
         elapsed = time.time() - start
@@ -163,7 +163,7 @@ def main():
         print(f"[OK] global deadline enforced: returned in {elapsed:.1f}s, "
               f"hung server reported via on_timeout")
     finally:
-        W.push_transactions_to_willexecutor = orig_push2
+        we_cls.push_transactions_to_willexecutor = orig_push2
 
     # ---- 2c) on_tick is fired periodically from the CALLING thread ----
     # The elapsed-time counter is driven by an on_tick callback called from the
@@ -175,8 +175,8 @@ def main():
         time.sleep(SLOW * 6)  # ~3s, long enough for several ticks
         return True
 
-    orig_push3 = W.push_transactions_to_willexecutor
-    W.push_transactions_to_willexecutor = staticmethod(slow_push2)
+    orig_push3 = we_cls.push_transactions_to_willexecutor
+    we_cls.push_transactions_to_willexecutor = staticmethod(slow_push2)
     try:
         wes = {
             "https://tick.example": {
@@ -191,7 +191,7 @@ def main():
             ticks.append(time.time())
             tick_threads.add(threading.current_thread())
 
-        W.push_transactions_parallel(
+        we_cls.push_transactions_parallel(
             wes, max_workers=1, on_tick=on_tick, tick_interval=0.5
         )
         # ~3s push with 0.5s ticks => at least a few ticks.
@@ -202,7 +202,7 @@ def main():
         )
         print(f"[OK] on_tick fired {len(ticks)} times from the calling thread")
     finally:
-        W.push_transactions_to_willexecutor = orig_push3
+        we_cls.push_transactions_to_willexecutor = orig_push3
 
     # ---- 2d) check_transactions_parallel: parallel + deadline + on_tick ----
     # Pressing "Check" verifies each will-executor still holds its tx.  This used
@@ -214,8 +214,8 @@ def main():
         time.sleep(SLOW)
         return {"tx": "ok"} if "good" in url else None
 
-    orig_check = W.check_transaction
-    W.check_transaction = staticmethod(slow_check)
+    orig_check = we_cls.check_transaction
+    we_cls.check_transaction = staticmethod(slow_check)
     try:
         targets = []
         for i in range(N):
@@ -228,7 +228,7 @@ def main():
             checked.append((wid, res))
 
         start = time.time()
-        results = W.check_transactions_parallel(
+        results = we_cls.check_transactions_parallel(
             targets, on_each=on_each_check, max_workers=N
         )
         elapsed = time.time() - start
@@ -239,7 +239,7 @@ def main():
         print(f"[OK] check parallel: {elapsed:.2f}s for {N} servers "
               f"(sequential would be ~{sequential:.2f}s)")
     finally:
-        W.check_transaction = orig_check
+        we_cls.check_transaction = orig_check
 
     # 2d-bis) global deadline + on_tick from the calling thread
     def hanging_check(txid, url, **kwargs):
@@ -248,8 +248,8 @@ def main():
         time.sleep(10)
         return {"tx": "ok"}
 
-    orig_check2 = W.check_transaction
-    W.check_transaction = staticmethod(hanging_check)
+    orig_check2 = we_cls.check_transaction
+    we_cls.check_transaction = staticmethod(hanging_check)
     try:
         targets = [
             ("idf", "https://fast.example"),
@@ -268,7 +268,7 @@ def main():
             tick_threads.add(threading.current_thread())
 
         start = time.time()
-        W.check_transactions_parallel(
+        we_cls.check_transactions_parallel(
             targets, max_workers=2, deadline=2.0,
             on_timeout=on_timeout_check, on_tick=on_tick_check,
             tick_interval=0.5,
@@ -282,7 +282,7 @@ def main():
         print(f"[OK] check global deadline enforced ({elapsed:.1f}s), on_tick "
               f"fired {len(ticks)}x from the calling thread")
     finally:
-        W.check_transaction = orig_check2
+        we_cls.check_transaction = orig_check2
 
     # ---- 3) the wizard's loop_push must use the parallel helper ----
     # The "Building Will" wizard broadcasts via BalBuildWillDialog.loop_push.

@@ -13,12 +13,10 @@ Run:
 """
 
 import sys
+
 sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
-from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QWidget
-
-from electrum.util import DECIMAL_POINT, decimal_point_to_base_unit_name
 
 _app = QApplication.instance() or QApplication(sys.argv)
 

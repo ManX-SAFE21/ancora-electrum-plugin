@@ -8,14 +8,15 @@ Run:
     QT_QPA_PLATFORM=offscreen python3 tests/test_core_will_extra.py
 """
 
-import sys
 import os
-from unittest.mock import MagicMock, patch, PropertyMock, call
+import sys
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from bal.core.will import Will, WillItem
 from electrum.transaction import Transaction
+
+from bal.core.will import Will, WillItem
 
 _VALID_TX_HEX = (
     "01000000012a5c9a94fcde98f5581cd00162c60a13936ceb75389ea65b"

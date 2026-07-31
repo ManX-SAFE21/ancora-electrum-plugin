@@ -8,14 +8,15 @@ Run:
     python3 tests/test_core_plugin_base.py
 """
 
-import sys
 import os
+import sys
 import time
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from datetime import datetime, date, timedelta
-from bal.core.plugin_base import BalTimestamp, BalPlugin, BalConfig
+from datetime import date, datetime, timedelta
 
+from bal.core.plugin_base import BalConfig, BalPlugin, BalTimestamp
 
 # ------------------------------------------------------------------ #
 # BalTimestamp

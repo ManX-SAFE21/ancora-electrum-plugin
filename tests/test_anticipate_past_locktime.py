@@ -22,13 +22,13 @@ whether a fix is needed.  Run:
         python3 -m pytest tests/test_anticipate_past_locktime.py -q
 """
 
-import sys
 import os
+import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from bal.core.util import Util, LOCKTIME_THRESHOLD
+from bal.core.util import LOCKTIME_THRESHOLD, Util
 
 
 # ---------------------------------------------------------------------------
