@@ -321,13 +321,6 @@ class PreviewList(MyTreeView, MessageBoxMixin):
                 _("check ").format(column_title),
                 lambda: self.check_transactions(selected_keys),
             )
-            if self.bal_window.bal_plugin.ENABLE_MULTIVERSE.get():
-                try:
-                    self.importaction = self.menu.addAction(
-                        _("Import"), self.import_will
-                    )
-                except Exception:
-                    pass
 
             menu.addSeparator()
             menu.addAction(
@@ -396,8 +389,8 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         if bal_tx.we:
             we = bal_tx.we["url"]
         labels[self.Columns.WILLEXECUTOR] = we
-        status = bal_tx.status
-        if len(bal_tx.status) > 53:
+        status = bal_tx.status + signature_suffix(bal_tx)
+        if len(status) > 53:
             status = "...{}".format(status[-50:])
         labels[self.Columns.STATUS] = status
         # Dedicated, always-readable label describing whether the inheritance
@@ -474,8 +467,8 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Display"), self.bal_window.preview_modal_dialog)
         menu.addAction(_("Sign"), self.ask_password_and_sign_transactions)
         menu.addAction(_("Export"), self.export_will)
-        if self.bal_window.bal_plugin.ENABLE_MULTIVERSE.get():
-            self.importaction = menu.addAction(_("Import"), self.import_will)
+        menu.addAction(_("Import"), self.import_will_into_details)
+        menu.addAction(_("Merge"), self.merge_will)
         menu.addAction(_("Broadcast"), self.broadcast)
         menu.addAction(_("Check"), self.check)
         menu.addAction(_("Invalidate"), self.invalidate_will)
@@ -547,8 +540,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         self.bal_window.export_will()
         self.update()
 
-    def import_will(self):
-        self.bal_window.import_will()
+    def import_will_into_details(self):
+        self.bal_window.import_will_into_details()
+
+    def merge_will(self):
+        self.bal_window.merge_will_ui()
 
     def ask_password_and_sign_transactions(self):
         self.bal_window.ask_password_and_sign_transactions(callback=self.update)

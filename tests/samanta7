@@ -65,7 +65,8 @@
         "bcrt1qw3m44vlmx08xzpnus22yfa8k5exnq9wk9uncrl": [],
         "bcrt1qwhjyltkpkyqj2k8zd6zjq2uu49tpu03f4sm7j0": [],
         "bcrt1qygktltj8sjkus96k0atzgr8srcy658axnpj82x": [],
-        "bcrt1qyjpmlr7qehqedzhkzsx6xrvr9ey6455yur2pqx": []
+        "bcrt1qyjpmlr7qehqedzhkzsx6xrvr9ey6455yur2pqx": [],
+        "bcrt1qyx3e4qwguyr70g9wdva4dgpp2pdpauj9dht5ga": []
     },
     "addresses": {
         "change": [
@@ -80,7 +81,8 @@
             "bcrt1q59nyxchtw4eajltn97sds6whdj4p2rg6uaygfq",
             "bcrt1qw3ljqdscx64qk9lxke3evz8scukj4zf8l5mptt",
             "bcrt1qrkwdul9mws0hu298hvtd5usce9haypwmt8zhts",
-            "bcrt1qw3m44vlmx08xzpnus22yfa8k5exnq9wk9uncrl"
+            "bcrt1qw3m44vlmx08xzpnus22yfa8k5exnq9wk9uncrl",
+            "bcrt1qyx3e4qwguyr70g9wdva4dgpp2pdpauj9dht5ga"
         ],
         "receiving": [
             "bcrt1qkxnsj8xymkk4mahea5ry8lgpau0w5dqgs0ezxc",
@@ -121,22 +123,22 @@
         "aaaa": [
             "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
             "34%",
-            "5y"
+            1813204800
         ],
         "lucia": [
             "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
             "32%",
-            "5y"
+            1813204800
         ],
         "mario": [
             "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
             "35%",
-            "5y"
+            1813204800
         ],
         "mario2": [
             "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
             40000,
-            "5y"
+            1813204800
         ]
     },
     "imported_channel_backups": {},
@@ -152,6 +154,7 @@
         "xpub": "vpub5VpWCxVNP1qcP3aDcBMryrhaCECvFte8T3eT8BAUSGW4LuHoVEUNaKKPGsuN8H2MFTMmtZHnokVMB6c46MFiCzyYHwmsgAfr5B9DtFAEtjo"
     },
     "labels": {
+        "11a0107ec7ffb703ca32d1f558007dc64539eb9d8287e77f81fd7380f258dddd": "BAL Inheritance transaction",
         "4c955222d31ed19318841b7f3dd0e95edd6198ebddc0dbea1c249c38c609aeac": "BAL Invalidate transaction",
         "5833dd0e77cc9e22d981b92e71e5f5804deb5294dfa4dc666cfe4fa015afee8d": "BAL Inheritance transaction",
         "5ca07e947509bea249d18591358c13a9c55e02b897390bab7ce0d2c6b2b394ec": "BAL Inheritance transaction",
@@ -161,6 +164,7 @@
         "a45935c22968fe56dfdc329420336682cebfce0691ed764ab5891199ed91a158": "BAL Inheritance transaction",
         "a526a6c1a74951df5bf5845f64dc97c3c9410935e2d05f6622a8f4ba31ec6811": "BAL Inheritance transaction",
         "b45102630bd6f7b8774dff3ed39b393097e7eb6ae4714716f6e925497db4d6d9": "BAL Inheritance transaction",
+        "dee1233628873d01de73cf0d8eabc19375f9a1713408ec9d5ef0661bd03a7519": "BAL Inheritance transaction",
         "e89b2329d4fe2b9349739b54720404f22d6b49ce94c297ce793f5e4e1f51672a": "BAL Invalidate transaction",
         "f54f6c6a4bf6820b428ca5f6b7200545dacfd5e671e001c524888e502d007eaa": "BAL Invalidate transaction"
     },
@@ -282,7 +286,7 @@
             "0": "7cb49f910a6db5d95436943456293aefbcccf0bbcc78b1dfe0adec430997fe07"
         }
     },
-    "stored_height": 2249,
+    "stored_height": 2336,
     "submarine_swaps": {},
     "transactions": {
         "4c955222d31ed19318841b7f3dd0e95edd6198ebddc0dbea1c249c38c609aeac": "0200000000010108d37b8e201da3203b47c7cc33fdf21a55b9cf776fdf5d1a028cd250e953d9d20000000000fdffffff01ef56e44130000000160014f0df9afc9fdd8ec20c46eb6af56d3c4934063343024730440220625a4a9944af68bd2b4c4146ae9db95f052725b8ca4fc8e8fca541d1c863d37a022004a705b8974e5fea3707acd0d8cc5f9a9c898a508fd0ae348b81043c4a86ad0b0121021e753044de0b2d3894751fae6e62c0627d379752809e522a5d0d4e3689e4ba9fa9080000",
@@ -393,6 +397,91 @@
     },
     "wallet_type": "standard",
     "will": {
+        "11a0107ec7ffb703ca32d1f558007dc64539eb9d8287e77f81fd7380f258dddd": {
+            "ANTICIPATED": false,
+            "BROADCASTED": false,
+            "CHECKED": true,
+            "CHECK_FAIL": false,
+            "COMPLETE": true,
+            "CONFIRMED": false,
+            "ERROR": false,
+            "EXPIRED": false,
+            "EXPORTED": false,
+            "IMPORTED": false,
+            "INVALIDATED": false,
+            "MEMPOOL": false,
+            "PUSHED": true,
+            "PUSH_FAIL": false,
+            "REPLACED": false,
+            "RESTORED": false,
+            "UPDATED": false,
+            "VALID": true,
+            "_id": "11a0107ec7ffb703ca32d1f558007dc64539eb9d8287e77f81fd7380f258dddd",
+            "baltx_fees": 1,
+            "change": null,
+            "description": "w!ll3x3c\"http://localhost:9133\"1813204800\nmario2\naaaa\nlucia\nmario",
+            "heirs": {
+                "aaaa": [
+                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
+                    "34%",
+                    1813204800,
+                    69771996601
+                ],
+                "lucia": [
+                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
+                    "32%",
+                    1813204800,
+                    65667761507
+                ],
+                "mario": [
+                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
+                    "35%",
+                    1813204800,
+                    71824114148
+                ],
+                "mario2": [
+                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
+                    40000,
+                    1813204800,
+                    40001,
+                    40000
+                ],
+                "w!ll3x3c\"http://localhost:9133\"1813204800": [
+                    "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
+                    1000,
+                    1813204800,
+                    1000
+                ]
+            },
+            "status": "New.Firmato.Pushed.Checked",
+            "time": 1785536273.0165532,
+            "tx": "0200000000010107fe970943ecade0dfb178ccbbf0ccbcef3a295634943654d9b56d0a919fb47c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc63851a4a0f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db92dbc3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbce4010db9100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402201ce57302608a734f3de1b0d3b0eca08efb78f0d886180e7adf4897bfe4b4a49302202120e6f4308cef294094fa347ae7369eb0b0bb9b1bb64c8f03f50b349f01d7e1012102c5e7ef3fc3902156154cd1a2238e80bc15f1bb253f3c973b3b87f9ed6fe1c7b7404f136c",
+            "willexecutor": {
+                "address": "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
+                "balance": 90000,
+                "base_fee": 1000,
+                "broadcast_status": "Riuscito",
+                "chain": "regtest",
+                "count_win": 0,
+                "id": 66,
+                "info": "BAL devel willexecutor server",
+                "last_block": 0,
+                "last_update": 1785463888.38115,
+                "onion_url": null,
+                "points": 0,
+                "promo_code": null,
+                "selected": true,
+                "status": 200,
+                "tld": "localhost",
+                "txs": "0200000000010107fe970943ecade0dfb178ccbbf0ccbcef3a295634943654d9b56d0a919fb47c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc63851a4a0f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db92dbc3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbce4010db9100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402201ce57302608a734f3de1b0d3b0eca08efb78f0d886180e7adf4897bfe4b4a49302202120e6f4308cef294094fa347ae7369eb0b0bb9b1bb64c8f03f50b349f01d7e1012102c5e7ef3fc3902156154cd1a2238e80bc15f1bb253f3c973b3b87f9ed6fe1c7b7404f136c\n",
+                "txsids": [
+                    "11a0107ec7ffb703ca32d1f558007dc64539eb9d8287e77f81fd7380f258dddd"
+                ],
+                "unconfirmed_balance": 0,
+                "url": "http://localhost:9133",
+                "version": "0.3.2"
+            }
+        },
         "6ad1383bb5d358c4b7bcebbf009d642e7a78b923cf3b764b196904c68ffa116d": {
             "ANTICIPATED": false,
             "BROADCASTED": false,
@@ -493,10 +582,10 @@
             "MEMPOOL": false,
             "PUSHED": true,
             "PUSH_FAIL": false,
-            "REPLACED": false,
+            "REPLACED": true,
             "RESTORED": false,
             "UPDATED": false,
-            "VALID": true,
+            "VALID": false,
             "_id": "a45935c22968fe56dfdc329420336682cebfce0691ed764ab5891199ed91a158",
             "baltx_fees": 1,
             "change": null,
@@ -534,7 +623,7 @@
                     1000
                 ]
             },
-            "status": "New.Firmato.Pushed.Checked",
+            "status": "New.Firmato.Pushed.Checked.Replaced",
             "time": 1785449918.3222272,
             "tx": "0200000000010107fe970943ecade0dfb178ccbbf0ccbcef3a295634943654d9b56d0a919fb47c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc63851a4a0f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db92dbc3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbce4010db9100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402200b71f679baef994767c58cea234f2a2baa83cc029f64dae4ff6fe451aaffc369022051b2a70fd5c33fcc175d6dca4b052b4a7bc168c761434139560bee66ed965b18012102c5e7ef3fc3902156154cd1a2238e80bc15f1bb253f3c973b3b87f9ed6fe1c7b7c0cdd073",
             "willexecutor": {
@@ -557,6 +646,91 @@
                 "txs": "0200000000010107fe970943ecade0dfb178ccbbf0ccbcef3a295634943654d9b56d0a919fb47c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc63851a4a0f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db92dbc3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbce4010db9100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402200b71f679baef994767c58cea234f2a2baa83cc029f64dae4ff6fe451aaffc369022051b2a70fd5c33fcc175d6dca4b052b4a7bc168c761434139560bee66ed965b18012102c5e7ef3fc3902156154cd1a2238e80bc15f1bb253f3c973b3b87f9ed6fe1c7b7c0cdd073\n",
                 "txsids": [
                     "a45935c22968fe56dfdc329420336682cebfce0691ed764ab5891199ed91a158"
+                ],
+                "unconfirmed_balance": 0,
+                "url": "http://localhost:9133",
+                "version": "0.3.2"
+            }
+        },
+        "dee1233628873d01de73cf0d8eabc19375f9a1713408ec9d5ef0661bd03a7519": {
+            "ANTICIPATED": false,
+            "BROADCASTED": false,
+            "CHECKED": true,
+            "CHECK_FAIL": false,
+            "COMPLETE": true,
+            "CONFIRMED": false,
+            "ERROR": false,
+            "EXPIRED": false,
+            "EXPORTED": false,
+            "IMPORTED": false,
+            "INVALIDATED": false,
+            "MEMPOOL": false,
+            "PUSHED": true,
+            "PUSH_FAIL": false,
+            "REPLACED": true,
+            "RESTORED": false,
+            "UPDATED": false,
+            "VALID": false,
+            "_id": "dee1233628873d01de73cf0d8eabc19375f9a1713408ec9d5ef0661bd03a7519",
+            "baltx_fees": 1,
+            "change": null,
+            "description": "w!ll3x3c\"http://localhost:9133\"1817006400\nmario2\naaaa\nlucia\nmario",
+            "heirs": {
+                "aaaa": [
+                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
+                    "34%",
+                    "1y",
+                    69771996601
+                ],
+                "lucia": [
+                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
+                    "32%",
+                    "1y",
+                    65667761507
+                ],
+                "mario": [
+                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
+                    "35%",
+                    "1y",
+                    71824114148
+                ],
+                "mario2": [
+                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
+                    40000,
+                    "1y",
+                    40001,
+                    40000
+                ],
+                "w!ll3x3c\"http://localhost:9133\"1817006400": [
+                    "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
+                    1000,
+                    1817006400,
+                    1000
+                ]
+            },
+            "status": "New.Firmato.Pushed.Checked.Replaced",
+            "time": 1785529939.6807153,
+            "tx": "0200000000010107fe970943ecade0dfb178ccbbf0ccbcef3a295634943654d9b56d0a919fb47c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc63851a4a0f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db92dbc3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbce4010db9100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402203e830a47f218826e2d1e4b708fdf4dc4a8826ac5c8a37a79fec5fbf1c6aa287002205df204067685f8874211ad092b0dad17a725f82a51e16f5c52db778135ecfbab012102c5e7ef3fc3902156154cd1a2238e80bc15f1bb253f3c973b3b87f9ed6fe1c7b740514d6c",
+            "willexecutor": {
+                "address": "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
+                "balance": 90000,
+                "base_fee": 1000,
+                "broadcast_status": "Riuscito",
+                "chain": "regtest",
+                "count_win": 0,
+                "id": 66,
+                "info": "BAL devel willexecutor server",
+                "last_block": 0,
+                "last_update": 1785463888.38115,
+                "onion_url": null,
+                "points": 0,
+                "promo_code": null,
+                "selected": true,
+                "status": 200,
+                "tld": "localhost",
+                "txs": "0200000000010107fe970943ecade0dfb178ccbbf0ccbcef3a295634943654d9b56d0a919fb47c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc63851a4a0f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db92dbc3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbce4010db9100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402203e830a47f218826e2d1e4b708fdf4dc4a8826ac5c8a37a79fec5fbf1c6aa287002205df204067685f8874211ad092b0dad17a725f82a51e16f5c52db778135ecfbab012102c5e7ef3fc3902156154cd1a2238e80bc15f1bb253f3c973b3b87f9ed6fe1c7b740514d6c\n",
+                "txsids": [
+                    "dee1233628873d01de73cf0d8eabc19375f9a1713408ec9d5ef0661bd03a7519"
                 ],
                 "unconfirmed_balance": 0,
                 "url": "http://localhost:9133",

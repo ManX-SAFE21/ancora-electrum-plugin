@@ -11,13 +11,16 @@ import sys
 
 sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
-from bal.gui.qt.theme import status_color
+from bal.gui.qt.theme import signature_suffix, status_color
 
 # ------------------------------------------------------------------ #
 # Helpers
 # ------------------------------------------------------------------ #
 
 class FakeWillItem:
+    sigs_required = 0
+    sigs_have = 0
+
     def __init__(self, **status_flags):
         self._status = dict(status_flags)
     def get_status(self, name):
@@ -95,6 +98,54 @@ def test_color_default():
 def test_color_check_fail_overrides_push_fail():
     item = FakeWillItem(CHECK_FAIL=True, PUSH_FAIL=True)
     assert status_color(item) == "#e83845"
+
+
+# ------------------------------------------------------------------ #
+# PARTIALLY_SIGNED
+# ------------------------------------------------------------------ #
+
+def test_color_partially_signed():
+    assert status_color(FakeWillItem(PARTIALLY_SIGNED=True)) == "#ffb347"
+
+
+def test_color_partially_signed_overridden_by_higher_priority():
+    item = FakeWillItem(PARTIALLY_SIGNED=True, PUSHED=True)
+    assert status_color(item) == "#73f3c8"
+
+
+# ------------------------------------------------------------------ #
+# signature_suffix
+# ------------------------------------------------------------------ #
+
+def test_signature_suffix_partial():
+    item = FakeWillItem(PARTIALLY_SIGNED=True)
+    item.sigs_required = 2
+    item.sigs_have = 1
+    assert signature_suffix(item) == " (1/2)"
+
+
+def test_signature_suffix_new():
+    item = FakeWillItem()
+    item.sigs_required = 2
+    item.sigs_have = 0
+    assert signature_suffix(item) == " (0/2)"
+
+
+def test_signature_suffix_complete_empty():
+    item = FakeWillItem(COMPLETE=True)
+    item.sigs_required = 2
+    item.sigs_have = 1
+    assert signature_suffix(item) == ""
+
+
+def test_signature_suffix_unknown_required_empty():
+    item = FakeWillItem()
+    item.sigs_have = 1
+    assert signature_suffix(item) == ""
+
+
+def test_signature_suffix_missing_fields_empty():
+    assert signature_suffix(FakeWillItem()) == ""
 
 
 # ------------------------------------------------------------------ #

@@ -228,6 +228,21 @@ class BalPlugin(BasePlugin):
         self.PREVIEW = BalConfig(config, "bal_preview", True)
         self.SAVE_TXS = BalConfig(config, "bal_save_txs", True)
 
+        # SAVE_HISTORY (history persistence): when enabled, the valid will
+        # transactions are saved into the wallet's LOCAL history (the History
+        # tab) after every check, each with a configurable label. Default ON.
+        self.SAVE_HISTORY = BalConfig(config, "bal_save_history", True)
+
+        # HISTORY_LABEL: label text applied to the will transactions saved into
+        # the wallet's local history. May contain the "{willexecutor}" token,
+        # which is replaced with the will-executor URL of each will item at
+        # save time.
+        self.HISTORY_LABEL = BalConfig(
+            config,
+            "bal_history_label",
+            "BitcoinAfterLife inheritance transaction - {willexecutor}",
+        )
+
         # AUTO_SIGN (Group B / B2): when enabled, pressing "Check" will, after
         # querying the will-executor servers, automatically sign the will
         # transactions and broadcast them to their will-executors, without the

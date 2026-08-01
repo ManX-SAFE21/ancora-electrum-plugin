@@ -54,10 +54,29 @@ def status_color(will_item) -> str:
         return "#e83845"  # red - failed to push to will-executor
     elif will_item.get_status("PUSHED"):
         return "#73f3c8"  # teal - pushed to will-executor
+    elif will_item.get_status("PARTIALLY_SIGNED"):
+        return "#ffb347"  # amber - some signatures present, more needed
     elif will_item.get_status("COMPLETE"):
         return "#2bc8ed"  # blue - signed
     else:
         return _DEFAULT_COLOR
+
+
+def signature_suffix(will_item) -> str:
+    """Return the ``" (added/required)"`` suffix for a non-signed will item.
+
+    Used by the transaction list and the detail view to show how many of the
+    required signatures have already been added, e.g. ``"(1/2)"`` for a 2-of-3
+    transaction carrying one signature. Returns ``""`` for signed transactions
+    or when the required count is unknown (no descriptor available yet).
+    """
+    if will_item.get_status("COMPLETE"):
+        return ""
+    required = int(getattr(will_item, "sigs_required", 0) or 0)
+    added = int(getattr(will_item, "sigs_have", 0) or 0)
+    if not required:
+        return ""
+    return " ({}/{})".format(added, required)
 
 
 def server_status_text(will_item) -> str:

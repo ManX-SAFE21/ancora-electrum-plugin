@@ -20,6 +20,7 @@ original implementation.
 import bisect
 from datetime import datetime, timedelta
 
+from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
 from electrum.transaction import PartialTxOutput
 
 # Bitcoin consensus rule: an nLockTime value strictly below this threshold is
@@ -492,6 +493,106 @@ class Util:
             if s_u.prevout.txid == txid:
                 return True
         return False
+
+    @staticmethod
+    def get_available_utxos(wallet, history_label, will_locktime=None):
+        """Return the wallet's UTXOs as seen by the plugin's flows.
+
+        ``wallet.get_utxos()`` drops any output that a wallet-LOCAL transaction
+        marks as spent. The plugin itself creates such local spenders when it
+        saves an incomplete will transaction into the local history; a *later*
+        will transaction stored there (a replacement/future will with a locktime
+        strictly after ``will_locktime``) must not hide the coins from the will
+        being checked or rebuilt. This view therefore restores those coins.
+
+        A local spender is ignored (the coin is kept available) only when ALL of
+        these hold:
+
+        * it is a wallet-local or future transaction (not broadcast),
+        * its wallet label matches the BAL history label template (after the
+          "{willexecutor}" substitution),
+        * the stored spender's locktime is strictly LATER than ``will_locktime``.
+
+        Real (broadcast/confirmed) spenders are never ignored. With a falsy
+        ``will_locktime`` this returns ``wallet.get_utxos()`` unchanged.
+
+        Args:
+            wallet: The Electrum wallet object.
+            history_label: The BAL history label template (may contain
+                "{willexecutor}").
+            will_locktime: Reference locktime of the will being operated on.
+        """
+        if not wallet or not will_locktime:
+            return list(wallet.get_utxos()) if wallet else []
+        adb = getattr(wallet, "adb", None)
+        if adb is None or not hasattr(adb, "get_addr_outputs"):
+            return list(wallet.get_utxos())
+        addresses = (
+            wallet.get_addresses() if hasattr(wallet, "get_addresses") else []
+        )
+        utxos = []
+        for addr in addresses:
+            try:
+                outputs = adb.get_addr_outputs(addr)
+            except Exception:
+                continue
+            for utxo in outputs.values():
+                if utxo.spent_height is None:
+                    utxos.append(utxo)
+                    continue
+                spender = getattr(utxo, "spent_txid", None)
+                if spender and Util._is_ignorable_local_spender(
+                    wallet, spender, history_label, will_locktime
+                ):
+                    utxos.append(utxo)
+        return utxos
+
+    @staticmethod
+    def _is_ignorable_local_spender(wallet, spender, history_label, will_locktime):
+        """True when the local ``spender`` tx is a later BAL history will tx.
+
+        See ``get_available_utxos`` for the exact conditions. Defensive: any
+        lookup failure makes this return False, so a spender is never ignored
+        on uncertain data.
+        """
+        adb = wallet.adb
+        try:
+            height = int(adb.get_tx_height(spender).height())
+        except Exception:
+            return False
+        if height not in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
+            return False
+        try:
+            label = wallet.get_label_for_txid(spender)
+        except Exception:
+            label = None
+        if not label or not Util._label_matches_history(label, history_label):
+            return False
+        try:
+            stored = adb.db.get_transaction(spender)
+        except Exception:
+            return False
+        if stored is None:
+            return False
+        try:
+            return int(stored.locktime) > int(will_locktime)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _label_matches_history(label, history_label):
+        """True when ``label`` is the ``history_label`` template with the
+        "{willexecutor}" token substituted by some (possibly empty) executor URL.
+        """
+        token = "{willexecutor}"
+        if token in history_label:
+            prefix, suffix = history_label.split(token, 1)
+            return (
+                label.startswith(prefix)
+                and label.endswith(suffix)
+                and len(label) >= len(prefix) + len(suffix)
+            )
+        return label == history_label
 
     @staticmethod
     def cmp_output(outputa, outputb):

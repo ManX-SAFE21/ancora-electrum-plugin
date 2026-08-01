@@ -59,6 +59,7 @@ from electrum.transaction import SerializationError, Transaction, tx_from_any
 from electrum.util import (
     DECIMAL_POINT,
     FileExportFailed,
+    FileImportFailed,
     UserCancelled,
     decimal_point_to_base_unit_name,
     read_json_file,
@@ -137,7 +138,12 @@ from ...core.willexecutors import (  # noqa: F401
 )
 
 # --- Presentation helpers ---
-from .theme import server_status_text, server_status_tooltip, status_color
+from .theme import (
+    server_status_text,
+    server_status_tooltip,
+    signature_suffix,
+    status_color,
+)
 from .window_utils import (
     bring_to_front,
     show_modal,

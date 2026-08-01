@@ -40,6 +40,7 @@ from electrum.transaction import (
     tx_from_any,
 )
 from electrum.util import (
+    UnrelatedTransactionException,
     bfh,
 )
 
@@ -451,11 +452,15 @@ class Will:
         return out
 
     @staticmethod
-    def invalidate_will(will, wallet, fees_per_byte):
+    def invalidate_will(will, wallet, fees_per_byte, history_label=None,
+                        will_locktime=None):
         print("invalidate tx in will module")
         will_only_valid = Will.only_valid_list(will)
         inputs = Will.get_all_inputs(will_only_valid)
-        utxos = wallet.get_utxos()
+        if history_label is not None and will_locktime is not None:
+            utxos = Util.get_available_utxos(wallet, history_label, will_locktime)
+        else:
+            utxos = wallet.get_utxos()
         filtered_inputs = []
         prevout_to_spend = []
         current_height = Util.get_current_height(wallet.network)
@@ -533,10 +538,26 @@ class Will:
                                 wi.set_status("INVALIDATED", True)
 
                         else:
-                            if wallet.db.get_transaction(wi._id):
-                                wi.set_status("CONFIRMED", True)
-                            else:
+                            # The funding outpoint is not part of the will tree:
+                            # decide from whether a broadcast transaction really
+                            # spends it (a wallet-local history copy of the same
+                            # will tx must neither turn the item CONFIRMED nor
+                            # INVALIDATED - it is just a persistence artifact).
+                            stored = None
+                            if wallet and getattr(wallet, "db", None):
+                                try:
+                                    stored = wallet.db.get_transaction(wi._id)
+                                except Exception:
+                                    stored = None
+                            spender_height = Will._funding_spender_height(wallet, inp)
+                            if spender_height is None:
+                                if stored:
+                                    continue
                                 wi.set_status("INVALIDATED", True)
+                            elif spender_height == 0:
+                                wi.set_status("MEMPOOL", True)
+                            else:
+                                wi.set_status("CONFIRMED", True)
 
                     for child in wi.search(all_inputs):
                         if child.tx.locktime < wi.tx.locktime:
@@ -574,14 +595,22 @@ class Will:
                 for inp in w.tx.inputs():
                     inp_str = Util.utxo_to_str(inp)
                     if inp_str not in utxos_list:
-                        if wallet:
-                            height = Will.check_tx_height(w.tx, wallet)
-                            if height < 0:
+                        if not wallet or not getattr(wallet, "adb", None):
+                            continue
+                        height = Will.check_tx_height(w.tx, wallet)
+                        if height < 0:
+                            # The will tx itself is not on-chain. A missing
+                            # funding UTXO is only a real problem when a
+                            # broadcast transaction actually spends it; a
+                            # wallet-local (history) copy of the same will tx
+                            # marks the funding spent locally and must not
+                            # invalidate the will.
+                            if Will._funding_really_spent(wallet, inp_str):
                                 Will.set_invalidate(wid, willtree)
-                            elif height == 0:
-                                w.set_status("MEMPOOL", True)
-                            else:
-                                w.set_status("CONFIRMED", True)
+                        elif height == 0:
+                            w.set_status("MEMPOOL", True)
+                        else:
+                            w.set_status("CONFIRMED", True)
 
     # def reflect_to_children(treeitem):
     #    if not treeitem.get_status("VALID"):
@@ -624,6 +653,83 @@ class Will:
                     )
 
     @staticmethod
+    def _funding_really_spent(wallet, inp_str):
+        """True when a broadcast transaction really spends the ``txid:n`` outpoint.
+
+        ``wallet.adb.get_spender`` discards wallet-local spenders (the stored
+        will tx from the local history) and future transactions, so this is True
+        only when the funding was consumed by a real on-chain/mempool tx.
+        """
+        if not wallet or not getattr(wallet, "adb", None):
+            return False
+        try:
+            return wallet.adb.get_spender(inp_str) is not None
+        except Exception as e:
+            _logger.error(f"get_spender failed for {inp_str}: {e}")
+            return False
+
+    @staticmethod
+    def _funding_spender_height(wallet, inp_str):
+        """Mined height of the broadcast tx spending ``inp_str``, or None.
+
+        Returns ``None`` when no broadcast transaction spends the outpoint (a
+        wallet-local history spender or a future tx are ignored by
+        ``adb.get_spender``). The height is 0 for a mempool spender and positive
+        for a confirmed one.
+        """
+        if not wallet or not getattr(wallet, "adb", None):
+            return None
+        try:
+            spender = wallet.adb.get_spender(inp_str)
+        except Exception as e:
+            _logger.error(f"get_spender failed for {inp_str}: {e}")
+            return None
+        if spender is None:
+            return None
+        try:
+            return int(wallet.adb.get_tx_height(spender).height())
+        except Exception as e:
+            _logger.error(f"get_tx_height failed for {spender}: {e}")
+            return 0
+
+    @staticmethod
+    def _absorb_history_signatures(will, wallet):
+        """Merge signatures from the wallet's stored local copy of each will tx.
+
+        An incomplete will transaction saved into the local history (see
+        ``save_valid_transactions_to_history``) may later accumulate signatures
+        (e.g. after a manual merge from a more complete copy). The in-memory
+        will item would otherwise miss those signatures on the next check. For
+        every item whose stored wallet copy is the same partial transaction the
+        signatures are merged into the in-memory one and, if it becomes fully
+        signed, the item is marked COMPLETE.
+
+        This method must never raise: history absorption is a convenience on top
+        of the will check, so any failure is logged and ignored.
+        """
+        if not wallet or not getattr(wallet, "db", None):
+            return
+        for wi in will.values():
+            try:
+                if (
+                    wi.tx is None
+                    or not isinstance(wi.tx, PartialTransaction)
+                    or wi.tx.is_complete()
+                ):
+                    continue
+                stored = wallet.db.get_transaction(wi._id)
+                if (
+                    not isinstance(stored, Transaction)
+                    or stored.txid() != wi.tx.txid()
+                ):
+                    continue
+                wi.tx.combine_with_other_psbt(stored)
+                if wi.tx.is_complete():
+                    wi.set_status("COMPLETE", True)
+            except Exception as e:
+                _logger.error(f"absorb history signatures failed for item {wi._id}: {e}")
+
+    @staticmethod
     def check_will(will, all_utxos, wallet, timestamp_to_check):
         """Validate a will against the current wallet state.
 
@@ -638,6 +744,7 @@ class Will:
             timestamp_to_check: The reference UNIX timestamp (usually "now")
                 used to decide whether any transaction has expired.
         """
+        Will._absorb_history_signatures(will, wallet)
         Will.add_willtree(will)
         utxos_list = Will.utxos_strs(all_utxos)
 
@@ -650,6 +757,186 @@ class Will:
         all_inputs = Will.get_all_inputs(will, only_valid=True)
 
         Will.search_rai(all_inputs, all_utxos, will, wallet)
+
+        Will.check_signatures(will, wallet)
+
+    @staticmethod
+    def save_valid_transactions_to_history(will, wallet, history_label):
+        """Keep the wallet's LOCAL history in sync with the current will state.
+
+        Called after the will has been built/signed/checked (see the
+        SAVE_HISTORY / HISTORY_LABEL settings). A will transaction belongs in the
+        local history while it is still "New" (not yet fully signed - i.e. an
+        incomplete partial transaction), and must be removed once it becomes
+        "Complete" (fully signed), because at that point it is ready to be
+        broadcast and will appear in the history on its own.
+
+        For every will item that is valid and whose transaction has a txid it:
+
+        1. decodes the label template, replacing "{willexecutor}" with the
+           will-executor URL of the item,
+        2. if the transaction is NOT complete, stores it via
+           ``wallet.adb.add_transaction`` (merging signatures when an
+           already-stored partial transaction is upgraded by a more complete
+           one) and tags it with the decoded label,
+        3. if the transaction IS complete, does not store it: its matching
+           local-history entry is removed by the cleanup below.
+
+        Finally it deletes every wallet-local transaction whose label exactly
+        matches the decoded label of a current valid item but that is no longer
+        among the just-saved transactions, so fully-signed, rebuilt or replaced
+        wills do not pile up stale entries.
+
+        This method must never raise: history persistence is a convenience on
+        top of the will check, so any failure is logged and ignored.
+
+        Args:
+            will: The will dictionary (WillItem entries keyed by txid).
+            wallet: The Electrum wallet object (may be falsy for offline
+                checks, in which case this is a no-op).
+            history_label: The label template to apply (may contain
+                "{willexecutor}").
+        """
+        if not wallet or not getattr(wallet, "adb", None):
+            return
+        saved_txids = []
+        try:
+            current_labels = {
+                history_label.replace(
+                    "{willexecutor}", (wi.we or {}).get("url", "")
+                )
+                for wi in will.values()
+                if wi.get_status("VALID")
+                and wi.tx is not None
+                and wi.tx.txid() is not None
+            }
+            for wi in will.values():
+                if not wi.get_status("VALID"):
+                    continue
+                if wi.tx is None or wi.tx.txid() is None:
+                    continue
+                # Fully-signed (complete) transactions must NOT be saved: they
+                # are removed from the local history so the list does not show a
+                # placeholder for a transaction that will appear on its own once
+                # broadcast/confirmed. Only the not-yet-complete "New" items are
+                # stored. Note that fully-segwit partial txs have a txid even
+                # when incomplete, so the txid() check alone is not enough.
+                if wi.tx.is_complete():
+                    continue
+                try:
+                    txid = wi.tx.txid()
+                    label = history_label.replace(
+                        "{willexecutor}", (wi.we or {}).get("url", "")
+                    )
+                    Will._add_transaction_to_history(wallet, wi.tx, txid)
+                    try:
+                        wallet.set_label(txid, label)
+                    except Exception as e:
+                        _logger.error(f"set_label failed for {txid}: {e}")
+                    saved_txids.append(txid)
+                except Exception as e:
+                    _logger.error(f"save to history failed for item {wi._id}: {e}")
+            # Delete stale wallet-local txs whose label matches a current valid
+            # item but that are no longer among the saved ones. This removes
+            # entries for fully-signed (complete) items and for rebuilt/replaced
+            # wills with the same executor.
+            for txid, label in Will._wallet_labels(wallet):
+                if txid in saved_txids:
+                    continue
+                if label not in current_labels:
+                    continue
+                try:
+                    wallet.adb.remove_transaction(txid)
+                    try:
+                        wallet.set_label(txid, None)
+                    except Exception:
+                        pass
+                except Exception as e:
+                    _logger.error(f"remove from history failed for {txid}: {e}")
+            try:
+                wallet.save_db()
+            except Exception as e:
+                _logger.error(f"save_db failed after history update: {e}")
+        except Exception as e:
+            _logger.error(f"save_valid_transactions_to_history failed: {e}")
+
+    @staticmethod
+    def _add_transaction_to_history(wallet, tx, txid):
+        """Store *tx* into the wallet's local history via ``adb``.
+
+        If a partial transaction with the same txid is already stored and *tx*
+        carries additional signatures, the signatures are merged into the stored
+        one before saving. ``allow_unrelated`` is retried as a fallback so that
+        self-created txs (which are not yet part of the wallet's UTXO set) are
+        still accepted.
+        """
+        adb = wallet.adb
+        existing = None
+        try:
+            existing = wallet.db.get_transaction(txid)
+        except Exception:
+            existing = None
+        try:
+            if (
+                isinstance(existing, PartialTransaction)
+                and not existing.is_complete()
+                and isinstance(tx, PartialTransaction)
+            ):
+                existing.combine_with_other_psbt(tx)
+                adb.add_transaction(existing)
+            else:
+                try:
+                    adb.add_transaction(tx)
+                except UnrelatedTransactionException:
+                    adb.add_transaction(tx, allow_unrelated=True)
+        except Exception as e:
+            raise RuntimeError(f"add_transaction failed for {txid}: {e}") from e
+
+    @staticmethod
+    def _wallet_labels(wallet):
+        """Return the wallet's ``(txid, label)`` pairs in a defensive way."""
+        try:
+            get_all_labels = wallet.get_all_labels
+        except AttributeError:
+            return []
+        try:
+            return list(get_all_labels().items())
+        except Exception as e:
+            _logger.error(f"get_all_labels failed: {e}")
+            return []
+
+    @staticmethod
+    def check_signatures(will, wallet=None):
+        """Refresh the per-item signature counts and the PARTIALLY_SIGNED status.
+
+        The signature counts are derived from the transaction itself via
+        Electrum's ``signature_count()``, which needs a script descriptor on
+        each input (attached from the wallet when available). Items that already
+        carry their own descriptors (e.g. imported/merged partial transactions)
+        are counted even without a wallet.
+
+        An item with at least one signature present but fewer than required is
+        marked PARTIALLY_SIGNED. Items that are already signed (COMPLETE) or
+        whose transaction is complete always clear the flag.
+        """
+        for wi in will.values():
+            try:
+                if wi.get_status("COMPLETE") or wi.tx is None or wi.tx.is_complete():
+                    wi.set_status("PARTIALLY_SIGNED", False)
+                    continue
+                if wallet:
+                    wi.tx.add_info_from_wallet(wallet)
+                if not hasattr(wi.tx, "signature_count"):
+                    continue
+                have, required = wi.tx.signature_count()
+                wi.sigs_have = int(have)
+                wi.sigs_required = int(required)
+                if required > 1 and 0 < have < required:
+                    wi.set_status("PARTIALLY_SIGNED", True)
+                else:
+                    wi.set_status("PARTIALLY_SIGNED", False)
+            except Exception as e:
+                _logger.error(f"check_signatures failed for item {wi._id}: {e}")
 
     @staticmethod
     def get_min_locktime(will,default_value=None):
@@ -976,6 +1263,7 @@ class WillItem(Logger):
         "MEMPOOL": ["Mempool", False],
         "PUSH_FAIL": ["Push failed", False],
         "PUSHED": ["Pushed", False],
+        "PARTIALLY_SIGNED": ["Partially Signed", False],
         "REPLACED": ["Replaced", False],
         "RESTORED": ["Restored", False],
         "UPDATED": ["Updated", False],
@@ -1034,6 +1322,9 @@ class WillItem(Logger):
                 self.STATUS["PUSHED"][1] = True
                 self.STATUS["PUSH_FAIL"][1] = False
 
+            if status in ["COMPLETE"]:
+                self.STATUS["PARTIALLY_SIGNED"][1] = False
+
         return value
 
     def get_status(self, status):
@@ -1054,6 +1345,8 @@ class WillItem(Logger):
             self.time = w.get("time", None)
             self.change = w.get("change", None)
             self.tx_fees = w.get("baltx_fees", 0)
+            self.sigs_required = int(w.get("sigs_required", 0))
+            self.sigs_have = int(w.get("sigs_have", 0))
             self.father = w.get("Father", None)
             self.children = w.get("Children", None)
             self.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
@@ -1090,6 +1383,8 @@ class WillItem(Logger):
             "time": self.time,
             "change": self.change,
             "baltx_fees": self.tx_fees,
+            "sigs_required": self.sigs_required,
+            "sigs_have": self.sigs_have,
         }
         for key in self.STATUS:
             try:

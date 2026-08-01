@@ -65,6 +65,47 @@ def test_editable_dates_can_be_enabled():
 
 
 # ------------------------------------------------------------------ #
+# History persistence settings (SAVE_HISTORY / HISTORY_LABEL)
+# ------------------------------------------------------------------ #
+
+def test_save_history_defaults_on():
+    """History persistence is opt-out: the flag defaults to ON."""
+    cfg = FakeConfig()
+    save_history = BalConfig(cfg, "bal_save_history", True)
+    assert save_history.get() is True
+
+
+def test_save_history_can_be_disabled_and_read_back():
+    cfg = FakeConfig()
+    save_history = BalConfig(cfg, "bal_save_history", True)
+    save_history.set(False)
+    assert BalConfig(cfg, "bal_save_history", True).get() is False
+
+
+def test_history_label_default_template():
+    """The default label contains the {willexecutor} variable."""
+    cfg = FakeConfig()
+    history_label = BalConfig(
+        cfg, "bal_history_label", "BitcoinAfterLife inheritance transaction - {willexecutor}"
+    )
+    assert history_label.get() == (
+        "BitcoinAfterLife inheritance transaction - {willexecutor}"
+    )
+    assert "{willexecutor}" in history_label.get()
+
+
+def test_history_label_can_be_changed_and_read_back():
+    cfg = FakeConfig()
+    history_label = BalConfig(
+        cfg, "bal_history_label", "BitcoinAfterLife inheritance transaction - {willexecutor}"
+    )
+    history_label.set("My custom label for {willexecutor}")
+    assert BalConfig(
+        cfg, "bal_history_label", "BitcoinAfterLife inheritance transaction - {willexecutor}"
+    ).get() == "My custom label for {willexecutor}"
+
+
+# ------------------------------------------------------------------ #
 # C4b - Reset to defaults
 # ------------------------------------------------------------------ #
 
@@ -82,9 +123,10 @@ def _reset_to_defaults(configs):
 def test_reset_restores_all_dialog_settings():
     """C4b: Reset restores every dialog setting to its factory default.
 
-    The dialog exposes seven settings: the original six plus the Group C
-    "Editable dates" checkbox, which the Reset button must also restore (this
-    was a follow-up fix after the first test round).
+    The dialog exposes nine settings: the original six, the Group C
+    "Editable dates" checkbox, and the Group H "Save inheritance transactions
+    in history" checkbox + "History label" field, which the Reset button must
+    also restore.
     """
     cfg = FakeConfig()
 
@@ -102,6 +144,10 @@ def test_reset_restores_all_dialog_settings():
         "bal_event_description",
         "BAL will execution of $wallet_name\r\n heirs list:  \r\n$heirs_complete",
     )
+    save_history = BalConfig(cfg, "bal_save_history", True)
+    history_label = BalConfig(
+        cfg, "bal_history_label", "BitcoinAfterLife inheritance transaction - {willexecutor}"
+    )
     settings = [
         hide_replaced,
         hide_invalidated,
@@ -110,6 +156,8 @@ def test_reset_restores_all_dialog_settings():
         calendar_app,
         event_summary,
         event_description,
+        save_history,
+        history_label,
     ]
 
     # Mutate every setting away from its default.
@@ -120,11 +168,15 @@ def test_reset_restores_all_dialog_settings():
     calendar_app.set("/custom/app")
     event_summary.set("custom summary")
     event_description.set("custom description")
+    save_history.set(False)
+    history_label.set("custom label")
 
     # Sanity: the values really changed.
     assert hide_replaced.get() is False
     assert editable_dates.get() is True
     assert calendar_app.get() == "/custom/app"
+    assert save_history.get() is False
+    assert history_label.get() == "custom label"
 
     # Reset and verify each one is back to its declared default.
     _reset_to_defaults(settings)
@@ -132,6 +184,11 @@ def test_reset_restores_all_dialog_settings():
         assert s.get() == s.default
     # In particular the "Editable dates" flag is back OFF.
     assert editable_dates.get() is False
+    # And the history persistence flag is back ON with the default template.
+    assert save_history.get() is True
+    assert history_label.get() == (
+        "BitcoinAfterLife inheritance transaction - {willexecutor}"
+    )
 
 
 def test_reset_does_not_touch_unrelated_settings():

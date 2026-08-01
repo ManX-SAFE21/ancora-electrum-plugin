@@ -1482,11 +1482,11 @@ class BalSpinBox(QSpinBox):
 
 
 class WillWidget(QWidget):
-    def __init__(self, father=None, parent=None):
+    def __init__(self, father=None, parent=None, will=None):
         super().__init__()
         vlayout = QVBoxLayout()
         self.setLayout(vlayout)
-        self.will = parent.bal_window.willitems
+        self.will = will if will is not None else parent.bal_window.willitems
         self._bal_parent = parent
         for w in self.will:
             if (
@@ -1513,7 +1513,10 @@ class WillWidget(QWidget):
                 willpushbutton = QPushButton(w)
 
                 willpushbutton.clicked.connect(
-                    partial(self._bal_parent.bal_window.show_transaction, txid=w)
+                    partial(
+                        self._bal_parent.bal_window.show_transaction,
+                        tx=self.will[w].tx,
+                    )
                 )
                 detaillayout.addWidget(willpushbutton)
                 locktime = str(BalTimestamp(self.will[w].tx.locktime))
@@ -1535,7 +1538,9 @@ class WillWidget(QWidget):
                 fee_per_byte = round(total_fees / self.will[w].tx.estimated_size(), 3)
                 fees_str = str(decoded_fees) + " (" + str(fee_per_byte) + " sats/vbyte)"
                 detaillayout.addWidget(qlabel("Transaction fees:", fees_str))
-                detaillayout.addWidget(qlabel("Status:", self.will[w].status))
+                detaillayout.addWidget(
+                    qlabel("Status:", self.will[w].status + signature_suffix(self.will[w]))
+                )
                 detaillayout.addWidget(QLabel(""))
                 detaillayout.addWidget(QLabel("<b>Heirs:</b>"))
                 for heir in self.will[w].heirs:
@@ -1570,6 +1575,6 @@ class WillWidget(QWidget):
                 detailw.setPalette(pal)
 
                 hlayout.addWidget(detailw)
-                hlayout.addWidget(WillWidget(w, parent=parent))
+                hlayout.addWidget(WillWidget(w, parent=parent, will=self.will))
 
 

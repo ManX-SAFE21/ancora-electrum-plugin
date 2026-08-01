@@ -510,8 +510,10 @@ class Plugin(BalPlugin):
                       lbl_event_description, edit_event_description, help_event_description,
                       lbl_calendar_app, edit_calendar_app, help_calendar_app,
                       lbl_auto_sign, heir_auto_sign, help_auto_sign,
+                      lbl_save_history, heir_save_history, help_save_history,
+                      lbl_history_label, edit_history_label, help_history_label,
                       reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
-                      reset_btn_auto_sign):
+                      reset_btn_11, reset_btn_12, reset_btn_auto_sign):
                 w.setVisible(not basic)
             # Opzione 2: apply the per-mode Raw/Date editor default ONLY here, on
             # a real USER TYPE change (not inside update_all/CHECK), so pressing
@@ -536,6 +538,20 @@ class Plugin(BalPlugin):
 
         edit_calendar_app = BalLineEdit(self.CALENDAR_APP)
         edit_calendar_app.setMinimumWidth(360)
+
+        # "Save inheritance transactions in wallet history" checkbox + label
+        # field (History persistence). When the checkbox is ON, the valid will
+        # transactions are saved into the wallet's LOCAL history (the History
+        # tab) after each check, each tagged with the label below. The label
+        # field is disabled while the checkbox is off, so the user cannot set a
+        # label for a feature that is not active.
+        def on_save_history_change():
+            edit_history_label.setEnabled(bool(self.SAVE_HISTORY.get()))
+
+        heir_save_history = BalCheckBox(self.SAVE_HISTORY, on_click=on_save_history_change)
+        edit_history_label = BalLineEdit(self.HISTORY_LABEL)
+        edit_history_label.setMinimumWidth(360)
+        edit_history_label.setEnabled(bool(self.SAVE_HISTORY.get()))
 
         def _make_reset_btn(cfg, widget, kind):
             """Return a small ``↺`` button that resets a single setting."""
@@ -747,6 +763,37 @@ class Plugin(BalPlugin):
         reset_btn_10 = _make_reset_btn(self.CALENDAR_APP, edit_calendar_app, "line")
         grid.addWidget(_hide_if_basic(reset_btn_10), 11, 3)
 
+        # Save-in-history toggle and history label: advanced-only rows. The
+        # label field is disabled while the checkbox is off (see
+        # on_save_history_change above).
+        lbl_save_history = QLabel(_("Save inheritance transactions in history"))
+        help_save_history = HelpButton(
+            "After each check, save the valid will transactions into the "
+            "wallet's local history (the History tab), each with a label.\n"
+            "The label may contain the variable:\n"
+            "  {willexecutor}: replaced with the will-executor URL of the item\n"
+            "Only used in ADVANCED mode."
+        )
+        grid.addWidget(_hide_if_basic(lbl_save_history), 12, 0)
+        grid.addWidget(_hide_if_basic(heir_save_history), 12, 1)
+        grid.addWidget(_hide_if_basic(help_save_history), 12, 2)
+        reset_btn_11 = _make_reset_btn(self.SAVE_HISTORY, heir_save_history, "check")
+        grid.addWidget(_hide_if_basic(reset_btn_11), 12, 3)
+
+        lbl_history_label = QLabel(_("History label"))
+        help_history_label = HelpButton(
+            "Label applied to the will transactions saved into the wallet's "
+            "local history.\n"
+            "Variables:\n"
+            "  {willexecutor}: replaced with the will-executor URL of the item\n"
+            "Only used in ADVANCED mode."
+        )
+        grid.addWidget(_hide_if_basic(lbl_history_label), 13, 0)
+        grid.addWidget(_hide_if_basic(edit_history_label), 13, 1)
+        grid.addWidget(_hide_if_basic(help_history_label), 13, 2)
+        reset_btn_12 = _make_reset_btn(self.HISTORY_LABEL, edit_history_label, "line")
+        grid.addWidget(_hide_if_basic(reset_btn_12), 13, 3)
+
         # NOTE: the ADVANCED-only widgets above have ALREADY been given their
         # correct initial visibility inline (via _hide_if_basic) BEFORE being
         # added to the grid. The old code did the opposite - it added them
@@ -754,12 +801,12 @@ class Plugin(BalPlugin):
         # the Windows relayout flicker. Do NOT reintroduce a post-hoc
         # setVisible() loop here.
 
-        grid.addWidget(heir_repush, 12, 0)
+        grid.addWidget(heir_repush, 14, 0)
         grid.addWidget(
             HelpButton(
                 "Broadcast all transactions to willexecutors including those already pushed"
             ),
-            12,
+            14,
             2,
         )
 
@@ -793,6 +840,8 @@ class Plugin(BalPlugin):
                 (self.EVENT_DESCRIPTION, edit_event_description, "text"),
                 (self.WELIST_SERVER, edit_welist_server, "line"),
                 (self.CALENDAR_APP, edit_calendar_app, "line"),
+                (self.SAVE_HISTORY, heir_save_history, "check"),
+                (self.HISTORY_LABEL, edit_history_label, "line"),
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.
@@ -813,6 +862,10 @@ class Plugin(BalPlugin):
                     widget.setCurrentIndex(
                         1 if str(cfg.default).lower() == "advanced" else 0
                     )
+            # Re-sync the history-label field's enabled state after a reset: the
+            # reset restores SAVE_HISTORY to its default, so the field must
+            # follow the (default) checkbox state again.
+            edit_history_label.setEnabled(bool(self.SAVE_HISTORY.get()))
             # Refresh the open BAL windows so any dependent view (e.g. the
             # editable-dates state is not in this list, but hide filters are)
             # reflects the reset values.

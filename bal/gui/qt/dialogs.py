@@ -625,7 +625,12 @@ class BalBuildWillDialog(BalDialog):
         except CheckAliveError as cae:
             fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
             tx = Will.invalidate_will(
-                self.bal_window.willitems, self.bal_window.wallet, fee_per_byte
+                self.bal_window.willitems, self.bal_window.wallet, fee_per_byte,
+                history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
+                will_locktime=Will.get_min_locktime(
+                    self.bal_window.willitems,
+                    default_value=self.bal_window.date_to_check,
+                ),
             )
             if tx:
                 _logger.debug(
@@ -646,7 +651,14 @@ class BalBuildWillDialog(BalDialog):
             Will.check_amounts(
                 self.bal_window.heirs,
                 self.bal_window.willexecutors,
-                self.bal_window.window.wallet.get_utxos(),
+                Util.get_available_utxos(
+                    self.bal_window.window.wallet,
+                    self.bal_window.bal_plugin.HISTORY_LABEL.get(),
+                    Will.get_min_locktime(
+                        self.bal_window.willitems,
+                        default_value=self.bal_window.date_to_check,
+                    ),
+                ),
                 self.bal_window.date_to_check,
                 self.bal_window.window.wallet.dust_threshold(),
                 max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
@@ -700,7 +712,12 @@ class BalBuildWillDialog(BalDialog):
             self.msg_set_checking(_("Postponed: invalidating old will"))
             fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
             return None, Will.invalidate_will(
-                self.bal_window.willitems, self.bal_window.wallet, fee_per_byte
+                self.bal_window.willitems, self.bal_window.wallet, fee_per_byte,
+                history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
+                will_locktime=Will.get_min_locktime(
+                    self.bal_window.willitems,
+                    default_value=self.bal_window.date_to_check,
+                ),
             )
         except NoHeirsException:
             _logger.debug("no heirs")
@@ -1478,6 +1495,13 @@ class BalBuildWillDialog(BalDialog):
     def on_success_phase2(self, arg=False):
         self.thread.stop()
         self.bal_window.save_willitems()
+        # After the whole check/sign/broadcast cycle, keep the wallet's local
+        # history in sync with the current will state (save the still "New"
+        # incomplete txs, remove the now-complete ones).
+        try:
+            self.bal_window._save_will_to_history()
+        except Exception as e:
+            _logger.error(f"save_will_to_history after phase2 failed: {e}")
         self.msg_edit_row(_("Finished"))
         # Instead of auto-closing after a countdown, let the user decide when to
         # dismiss the dialog: they can read the full "Building Will" report at
@@ -1970,10 +1994,18 @@ class BalBuildWillDialog(BalDialog):
 
 
 class WillDetailDialog(BalDialog):
-    def __init__(self, bal_window):
-
-        self.will = bal_window.willitems
-        self.threshold = bal_window.will_settings["real_threshold"]
+    def __init__(self, bal_window, will=None, threshold=None):
+        # ``will``/``threshold`` are passed when showing an IMPORTED (read-only)
+        # will. In that case every action button below operates on the imported
+        # will, never on the live wallet state.
+        self._external_will = will is not None
+        self.will = will if self._external_will else bal_window.willitems
+        if threshold is not None:
+            self.threshold = threshold
+        elif self._external_will:
+            self.threshold = max(wi.tx.locktime for wi in self.will.values())
+        else:
+            self.threshold = bal_window.will_settings["real_threshold"]
 
         self.bal_window = bal_window
         Will.add_willtree(self.will)
@@ -2005,8 +2037,14 @@ class WillDetailDialog(BalDialog):
         b.clicked.connect(self.export_will)
         hlayout.addWidget(b)
         b = QPushButton(_("Invalidate"))
-        b.clicked.connect(bal_window.invalidate_will)
+        b.clicked.connect(self.invalidate_will)
         hlayout.addWidget(b)
+        self.merge_button = None
+        if self._external_will:
+            b = QPushButton(_("Merge"))
+            b.clicked.connect(self.merge_will)
+            hlayout.addWidget(b)
+            self.merge_button = b
         self.vlayout.addWidget(w)
 
         self.paint_scroll_area()
@@ -2027,22 +2065,48 @@ class WillDetailDialog(BalDialog):
         self.scrollbox = QScrollArea()
         viewport = QWidget(self.scrollbox)
         self.willlayout = QVBoxLayout(viewport)
-        self.detailsWidget = WillWidget(parent=self)
+        self.detailsWidget = WillWidget(parent=self, will=self.will)
         self.willlayout.addWidget(self.detailsWidget)
 
         self.scrollbox.setWidget(viewport)
         viewport.setLayout(self.willlayout)
 
     def ask_password_and_sign_transactions(self):
-        self.bal_window.ask_password_and_sign_transactions(callback=self.update)
+        self.bal_window.ask_password_and_sign_transactions(
+            callback=self.update, will=self.will if self._external_will else None
+        )
         self.update()
 
     def broadcast_transactions(self):
-        self.bal_window.broadcast_transactions()
+        self.bal_window.broadcast_transactions(
+            will=self.will if self._external_will else None
+        )
         self.update()
 
     def export_will(self):
-        self.bal_window.export_will()
+        self.bal_window.export_will(will=self.will if self._external_will else None)
+
+    def invalidate_will(self):
+        self.bal_window.invalidate_will(
+            will=self.will if self._external_will else None
+        )
+
+    def merge_will(self):
+        """Merge the imported will into the live will and switch to it.
+
+        The merge is performed by :meth:`BalWindow.merge_will` (the same
+        common method used by the tools-menu "Merge" action). Afterwards the
+        dialog stops showing the read-only imported will and operates on the
+        live wallet willitems directly, so any further Sign/Broadcast/Export/
+        Invalidate action targets the saved will items.
+        """
+        self.bal_window.merge_will(self.will)
+        self._external_will = False
+        self.will = self.bal_window.willitems
+        self.threshold = self.bal_window.will_settings["real_threshold"]
+        if self.merge_button:
+            self.merge_button.hide()
+        self.update()
 
     def toggle_replaced(self):
         self.bal_window.bal_plugin.hide_replaced()
@@ -2061,7 +2125,8 @@ class WillDetailDialog(BalDialog):
         self.update()
 
     def update(self):
-        self.will = self.bal_window.willitems
+        if not self._external_will:
+            self.will = self.bal_window.willitems
         pos = self.vlayout.indexOf(self.scrollbox)
         self.vlayout.removeWidget(self.scrollbox)
         self.paint_scroll_area()

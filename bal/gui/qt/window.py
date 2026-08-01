@@ -355,6 +355,12 @@ class BalWindow:
         will = self.build_inheritance_transaction(
             ignore_duplicate=ignore_duplicate, keep_original=keep_original
         )
+        # Persist the freshly prepared transactions into the wallet's local
+        # history (when SAVE_HISTORY is enabled). This runs on every successful
+        # prepare -- including the "Prepare" menu action -- so the New txs show
+        # up in History immediately. Abort paths return None and are skipped.
+        if will:
+            self._save_will_to_history()
         return will
 
     def delete_not_valid(self, txid, s_utxo):
@@ -393,12 +399,20 @@ class BalWindow:
             # date_to_check already carries the correct reference timestamp for
             # the current mode (the Check Alive in ADVANCED, or "now" in BASIC -
             # see init_class_variables). So build the will directly against it;
-            # no per-mode branch is needed here anymore.
+            # no per-mode branch is needed here anymore. The available-UTXO view
+            # restores coins that a newer, wallet-local will tx (stored in the
+            # history with a later locktime) nominally spent.
             txs = self.heirs.get_transactions(
                 self.bal_plugin,
                 self.window.wallet,
                 self.will_settings["baltx_fees"],
-                None,
+                Util.get_available_utxos(
+                    self.window.wallet,
+                    self.bal_plugin.HISTORY_LABEL.get(),
+                    Will.get_min_locktime(
+                        self.willitems, default_value=self.date_to_check
+                    ),
+                ),
                 self.date_to_check,
             )
 
@@ -434,17 +448,75 @@ class BalWindow:
         return self.willitems
 
     def check_will(self):
-        return Will.is_will_valid(
+        result = Will.is_will_valid(
             self.willitems,
             self.date_to_check,
             self.will_settings["baltx_fees"],
-            self.window.wallet.get_utxos(),
+            Util.get_available_utxos(
+                self.window.wallet,
+                self.bal_plugin.HISTORY_LABEL.get(),
+                Will.get_min_locktime(
+                    self.willitems, default_value=self.date_to_check
+                ),
+            ),
             heirs=self.heirs,
             willexecutors=self.willexecutors,
             self_willexecutor=self.no_willexecutor,
             wallet=self.wallet,
             callback_not_valid_tx=self.delete_not_valid,
         )
+        return result
+
+    def _save_will_to_history(self):
+        """Persist the current will state into the wallet's LOCAL history.
+
+        Runs after the will has been prepared/built/signed/checked (the
+        "Prepare" action, the check dialog's phase 2 and the manual Sign
+        action). When the SAVE_HISTORY setting is enabled,
+        ``Will.save_valid_transactions_to_history`` stores the still "New" (not
+        fully-signed) transactions under the configured label and removes
+        entries for fully-signed ("Complete") and stale ones. The wallet tabs
+        are then re-rendered through ``_refresh_after_history_save``.
+
+        This must never raise: history persistence is a convenience on top of
+        the will flows, so any failure is logged and ignored.
+        """
+        try:
+            if not bool(self.bal_plugin.SAVE_HISTORY.get()):
+                return
+            Will.save_valid_transactions_to_history(
+                self.willitems,
+                self.wallet,
+                self.bal_plugin.HISTORY_LABEL.get(),
+            )
+        except Exception as e:
+            _logger.error(f"save_will_to_history failed: {e}")
+        self._schedule_history_refresh()
+
+    def _schedule_history_refresh(self):
+        """Re-render the wallet tabs after the local history has changed.
+
+        The actual refresh must run on the GUI thread (``HistoryModel.refresh``
+        asserts that), so the call is marshalled through ``QTimer.singleShot``.
+        Used after saving/removing will transactions in the local history and
+        after a will rebuild, regardless of the calling thread.
+        """
+        QTimer.singleShot(0, self._refresh_after_history_save)
+
+    def _refresh_after_history_save(self):
+        """Re-render the wallet tabs after saving txs to the local history.
+
+        ``update_tabs`` refreshes history plus the receive/send/address/coins
+        lists; ``update_status`` refreshes the status-bar balance, which
+        ``update_tabs`` does not touch. When ``update_tabs`` is not available we
+        fall back to refreshing just the History tab.
+        """
+        if hasattr(self.window, "update_tabs"):
+            self.window.update_tabs()
+        elif hasattr(self.window, "history_list"):
+            self.window.history_list.update()
+        if hasattr(self.window, "update_status"):
+            self.window.update_status()
 
     def show_message(self, text):
         self.window.show_message(text)
@@ -594,7 +666,13 @@ class BalWindow:
                 Will.check_amounts(
                     self.heirs,
                     self.willexecutors,
-                    self.window.wallet.get_utxos(),
+                    Util.get_available_utxos(
+                        self.window.wallet,
+                        self.bal_plugin.HISTORY_LABEL.get(),
+                        Will.get_min_locktime(
+                            self.willitems, default_value=self.date_to_check
+                        ),
+                    ),
                     self.date_to_check,
                     self.window.wallet.dust_threshold(),
                     max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
@@ -740,8 +818,7 @@ class BalWindow:
                         )
                     )
 
-                self.window.history_list.update()
-                self.window.utxo_list.update()
+                self._schedule_history_refresh()
 
                 # Guide the user: the inheritance was just (re)built and is now
                 # in the "New" state, so it must be SIGNED and then BROADCAST
@@ -811,7 +888,7 @@ class BalWindow:
             raise Exception(_("no tx"))
         return self.show_transaction_real(tx, parent=parent)
 
-    def invalidate_will(self):
+    def invalidate_will(self, will=None):
         def on_success(result):
             if result:
                 self.show_message(
@@ -828,16 +905,27 @@ class BalWindow:
         def on_failure(exec_info):
             log_error(exec_info, self.bal_window)
 
+        willitems = will if will is not None else self.willitems
         fee_per_byte = self.will_settings.get("baltx_fees", 1)
-        task = partial(Will.invalidate_will, self.willitems, self.wallet, fee_per_byte)
+        task = partial(
+            Will.invalidate_will,
+            willitems,
+            self.wallet,
+            fee_per_byte,
+            history_label=self.bal_plugin.HISTORY_LABEL.get(),
+            will_locktime=Will.get_min_locktime(
+                willitems, default_value=self.date_to_check
+            ),
+        )
         msg = _("Calculating Transactions")
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
         )
         self.waiting_dialog.exe()
 
-    def sign_transactions(self, password):
+    def sign_transactions(self, password, will=None):
         try:
+            willitems = will if will is not None else self.willitems
             txs = {}
             signed = None
             tosign = None
@@ -848,8 +936,8 @@ class BalWindow:
                     msg = _(f"signed: {signed}\n")
                 return msg + _(f"signing: {tosign}")
 
-            for txid in Will.only_valid(self.willitems):
-                wi = self.willitems[txid]
+            for txid in Will.only_valid(willitems):
+                wi = willitems[txid]
                 tx = copy.deepcopy(wi.tx)
                 if wi.get_status("COMPLETE"):
                     txs[txid] = tx
@@ -861,8 +949,8 @@ class BalWindow:
                     pass
                 for txin in tx.inputs():
                     prevout = txin.prevout.to_json()
-                    if prevout[0] in self.willitems:
-                        change = self.willitems[prevout[0]].tx.outputs()[prevout[1]]
+                    if prevout[0] in willitems:
+                        change = willitems[prevout[0]].tx.outputs()[prevout[1]]
                         txin._trusted_value_sats = change.value
                         try:
                             txin.script_descriptor = change.script_descriptor
@@ -879,6 +967,16 @@ class BalWindow:
                 if tx.is_complete():
                     # is_complete = True
                     wi.set_status("COMPLETE", True)
+                # Refresh the per-item signature counts from the freshly signed
+                # partial tx: at this point the signatures are still present
+                # (before any finalization), so the will list can show the real
+                # "added/required" count (e.g. "1/2" for a multisig).
+                try:
+                    have, required = tx.signature_count()
+                    wi.sigs_have = int(have)
+                    wi.sigs_required = int(required)
+                except Exception as e:
+                    _logger.debug(f"signature_count after signing failed: {e}")
                 txs[txid] = tx
         except Exception:
             return None
@@ -945,16 +1043,29 @@ class BalWindow:
         # re-wire them if this same window is reused for another wallet.
         self._menubar_initialized = False
 
-    def ask_password_and_sign_transactions(self, callback=None):
+    def ask_password_and_sign_transactions(self, callback=None, will=None):
+        external = will is not None
+        willitems = will if external else self.willitems
+
         def on_success(txs):
             if txs:
                 for txid, tx in txs.items():
-                    self.willitems[txid].tx = copy.deepcopy(tx)
-                    self.will[txid] = self.willitems[txid].to_dict()
+                    willitems[txid].tx = copy.deepcopy(tx)
+                    if not external:
+                        self.will[txid] = willitems[txid].to_dict()
                 try:
-                    self.will_list_widget.update()
-                except Exception:
-                    pass
+                    Will.check_signatures(willitems, self.wallet)
+                except Exception as e:
+                    _logger.error(f"check_signatures after signing failed: {e}")
+                if not external:
+                    try:
+                        self.will_list_widget.update()
+                    except Exception:
+                        pass
+                # After signing, keep the local history in sync (save the still
+                # incomplete "New" txs, remove the now-complete ones).
+                if not external:
+                    self._save_will_to_history()
                 if callback:
                     try:
                         callback()
@@ -965,16 +1076,19 @@ class BalWindow:
             log_error(exec_info, self.bal_window)
 
         password = self.get_wallet_password()
-        task = partial(self.sign_transactions, password)
+        task = partial(self.sign_transactions, password, will=will)
         msg = _("Signing transactions...")
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
         )
         self.waiting_dialog.exe()
 
-    def broadcast_transactions(self, force=False):
+    def broadcast_transactions(self, force=False, will=None):
+        external = will is not None
+
         def on_success(sulcess):
-            self.will_list_widget.update()
+            if not external:
+                self.will_list_widget.update()
             if sulcess:
                 _logger.info("error, some transaction was not sent")
                 self.show_warning(_("Some transaction was not broadcasted"))
@@ -999,15 +1113,16 @@ class BalWindow:
             #    _logger.error("lasti:", tb.tb_lasti)
             #    tb = tb.tb_next
 
-        task = partial(self.push_transactions_to_willexecutors, force)
+        task = partial(self.push_transactions_to_willexecutors, force, will=will)
         msg = _("Selecting Will-Executors")
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
         )
         self.waiting_dialog.exe()
 
-    def push_transactions_to_willexecutors(self, force=False):
-        willexecutors = Willexecutors.get_willexecutor_transactions(self.willitems, force=force)
+    def push_transactions_to_willexecutors(self, force=False, will=None):
+        willitems = will if will is not None else self.willitems
+        willexecutors = Willexecutors.get_willexecutor_transactions(willitems, force=force)
 
         def getMsg(willexecutors):
             msg = "Broadcasting Transactions to Will-Executors:\n"
@@ -1036,11 +1151,11 @@ class BalWindow:
                 willexecutor["broadcast_status"] = _("checking...")
             elif ok:
                 for wid in willexecutor.get("txsids", []):
-                    self.willitems[wid].set_status("PUSHED", True)
+                    willitems[wid].set_status("PUSHED", True)
                 willexecutor["broadcast_status"] = _("Success")
             else:
                 for wid in willexecutor.get("txsids", []):
-                    self.willitems[wid].set_status("PUSH_FAIL", True)
+                    willitems[wid].set_status("PUSH_FAIL", True)
                 error["flag"] = True
                 willexecutor["broadcast_status"] = _("Failed")
             willexecutor.pop("txs", None)
@@ -1065,54 +1180,171 @@ class BalWindow:
                     return
                 self.waiting_dialog.update(
                     "checking {} - {} : {}".format(
-                        self.willitems[wid].we["url"], wid, "Waiting"
+                        willitems[wid].we["url"], wid, "Waiting"
                     )
                 )
-                w = self.willitems[wid]
+                w = willitems[wid]
                 w.set_check_willexecutor(
                     Willexecutors.check_transaction(wid, w.we["url"])
                 )
                 self.waiting_dialog.update(
                     "checked {} - {} : {}".format(
-                        self.willitems[wid].we["url"],
+                        willitems[wid].we["url"],
                         wid,
-                        self.willitems[wid].get_status("CHECKED"),
+                        willitems[wid].get_status("CHECKED"),
                     )
                 )
 
         if error["flag"]:
             return True
 
-    def export_json_file(self, path):
-        for wid in self.willitems:
-            self.willitems[wid].set_status("EXPORTED", True)
-            self.will[wid] = self.willitems[wid].to_dict()
-        write_json_file(path, self.will)
+    def export_json_file(self, path, will=None):
+        if will is None:
+            for wid in self.willitems:
+                self.willitems[wid].set_status("EXPORTED", True)
+                self.will[wid] = self.willitems[wid].to_dict()
+            write_json_file(path, self.will)
+        else:
+            write_json_file(path, {wid: wi.to_dict() for wid, wi in will.items()})
 
-    def export_will(self):
+    def export_will(self, will=None):
         try:
-            export_meta_gui(self.window, "will.json", self.export_json_file)
+            export_meta_gui(
+                self.window, "will.json", partial(self.export_json_file, will=will)
+            )
         except Exception as e:
             self.show_error(str(e))
             raise e
 
-    def import_will(self):
-        def sulcess():
+    def merge_will(self, imported):
+        """Merge imported will items into the live will.
+
+        Both the tools-menu "Merge" action and the details-dialog "Merge"
+        button go through this single method.
+
+        For a transaction that already exists in the live will the live
+        WillItem is kept (never replaced): only the operational statuses
+        (signed/pushed/checked/mempool/confirmed) that are True in the
+        imported item are carried over. When the live transaction is not
+        yet signed the imported transaction is merged into it (signatures
+        are combined when both are the same unsigned tx, otherwise the
+        transaction is substituted); an already-signed live transaction is
+        left untouched. Transactions that are new are added wholesale.
+
+        After the merge a local validity check recomputes the
+        valid/invalidated/replaced statuses (no server contact, no expiry
+        raise).
+        """
+        for wid, wi in imported.items():
+            if wid in self.willitems:
+                live = self.willitems[wid]
+                was_complete = live.get_status("COMPLETE")
+                for status in (
+                    "COMPLETE",
+                    "PUSHED",
+                    "CHECKED",
+                    "MEMPOOL",
+                    "CONFIRMED",
+                ):
+                    if wi.get_status(status):
+                        live.set_status(status, True)
+                if not was_complete:
+                    try:
+                        if live.tx.txid() == wi.tx.txid():
+                            live.tx.combine_with_other_psbt(wi.tx)
+                        else:
+                            live.tx = wi.tx
+                    except Exception:
+                        live.tx = wi.tx
+                    if live.tx.is_complete():
+                        live.set_status("COMPLETE", True)
+            else:
+                self.willitems[wid] = wi
+        Will.normalize_will(self.willitems, self.wallet)
+        self.save_willitems()
+        # Local validity check: recompute valid/invalidated/replaced statuses.
+        try:
+            Will.add_willtree(self.willitems)
+            bal_plugin = getattr(self, "bal_plugin", None)
+            history_label = (
+                bal_plugin.HISTORY_LABEL.get() if bal_plugin is not None else None
+            )
+            all_utxos = Util.get_available_utxos(
+                self.wallet,
+                history_label,
+                Will.get_min_locktime(
+                    self.willitems, default_value=self.date_to_check
+                ),
+            )
+            Will.check_invalidated(
+                self.willitems, Will.utxos_strs(all_utxos), self.wallet
+            )
+            Will.search_rai(
+                Will.get_all_inputs(self.willitems, only_valid=True),
+                all_utxos,
+                self.willitems,
+                self.wallet,
+            )
+            Will.check_signatures(self.willitems, self.wallet)
+        except Exception as e:
+            log_error(e, self.bal_window)
+        self.save_willitems()
+        self.update_all()
+
+    def merge_will_from_file(self, path):
+        try:
+            willitems = self._load_will_file(path)
+        except Exception as e:
+            raise FileImportFailed(_("Invalid will file: {}").format(e)) from None
+        Will.normalize_will(willitems, self.wallet)
+        self.merge_will(willitems)
+
+    def merge_will_ui(self):
+        def on_success():
             self.will_list_widget.update_will(self.willitems)
 
-        import_meta_gui(self.window, _("will"), self.import_json_file, sulcess)
+        import_meta_gui(self.window, _("will"), self.merge_will_from_file, on_success)
 
-    def import_json_file(self, path):
-        try:
-            data = read_json_file(path)
-            willitems = {}
-            for k, v in data.items():
-                data[k]["tx"] = tx_from_any(v["tx"])
-                willitems[k] = WillItem(data[k], _id=k)
-            self.update_will(willitems)
-        except Exception as e:
-            raise e
-            # raise FileImportFailed(_("Invalid will file"))
+    def import_will_into_details(self):
+        """Import a will file and show it in a WillDetails window.
+
+        Unlike the "Merge" actions (which merge the file into the active
+        will), this is a read-only preview: the parsed will is shown in a
+        :class:`WillDetailDialog` and the live wallet state is never touched.
+        The dialog's Sign/Broadcast/Export/Invalidate buttons operate on the
+        imported will only, and its Merge button merges the imported will
+        into the live one.
+        """
+        imported = {}
+
+        def on_file(path):
+            try:
+                willitems = self._load_will_file(path)
+            except Exception as e:
+                self.show_error(_("Invalid will file: {}").format(e))
+                return
+            # Attach wallet/input info so the imported txs can be signed and
+            # broadcast (mirrors what merge_will_from_file does).
+            Will.normalize_will(willitems, self.wallet)
+            for wi in willitems.values():
+                wi.set_status("IMPORTED", True)
+            imported.update(willitems)
+
+        def on_success():
+            if not imported:
+                return
+            d = WillDetailDialog(self, will=imported)
+            show_on_top(d)
+
+        import_meta_gui(self.window, _("will"), on_file, on_success)
+
+    def _load_will_file(self, path):
+        data = read_json_file(path)
+        willitems = {}
+        for k, v in data.items():
+            data[k]["tx"] = tx_from_any(v["tx"])
+            willitems[k] = WillItem(data[k], _id=k)
+        return willitems
 
     def check_transactions_task(self, will):
         start = time.time()
@@ -1507,7 +1739,13 @@ class BalWindow:
             for _wid, _w in list(self.willitems.items())[:3]:
                 _logger.debug(f"NoneType_debug willitems[{_wid}] type={type(_w).__name__}")
             Will.add_willtree(self.willitems)
-            all_utxos = self.wallet.get_utxos()
+            all_utxos = Util.get_available_utxos(
+                self.wallet,
+                self.bal_plugin.HISTORY_LABEL.get(),
+                Will.get_min_locktime(
+                    self.willitems, default_value=self.date_to_check
+                ),
+            )
             utxos_list = Will.utxos_strs(all_utxos)
             Will.check_invalidated(self.willitems, utxos_list, self.wallet)
 
