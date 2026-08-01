@@ -612,7 +612,10 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Prepare"), self.build_transactions)
         menu.addAction(_("Display"), self.bal_window.preview_modal_dialog)
         menu.addAction(_("Sign"), self.ask_password_and_sign_transactions)
-        menu.addAction(_("Export"), self.export_will)
+        export_menu = menu.addMenu(_("Export"))
+        export_menu.addAction(_("All"), self.export_will)
+        export_menu.addAction(_("Valid"), self.export_will_valid)
+        export_menu.addAction(_("Valid NC"), self.export_will_valid_incomplete)
         menu.addAction(_("Import"), self.import_will_into_details)
         menu.addAction(_("Merge"), self.merge_will)
         menu.addAction(_("Broadcast"), self.broadcast)
@@ -684,6 +687,32 @@ class PreviewList(MyTreeView, MessageBoxMixin):
 
     def export_will(self):
         self.bal_window.export_will()
+        self.update()
+
+    def export_will_valid(self):
+        """Export only the will items that are valid."""
+        subset = {
+            wid: wi
+            for wid, wi in self.will.items()
+            if wi.get_status("VALID")
+        }
+        if not subset:
+            self.show_message(_("No valid will item to export"))
+            return
+        self.bal_window.export_will(will=subset)
+        self.update()
+
+    def export_will_valid_incomplete(self):
+        """Export only the will items that are valid but not yet fully signed (V-NC)."""
+        subset = {
+            wid: wi
+            for wid, wi in self.will.items()
+            if wi.get_status("VALID") and not wi.get_status("COMPLETE")
+        }
+        if not subset:
+            self.show_message(_("No valid, incomplete will item to export"))
+            return
+        self.bal_window.export_will(will=subset)
         self.update()
 
     def import_will_into_details(self):
