@@ -923,7 +923,7 @@ class BalWindow:
         )
         self.waiting_dialog.exe()
 
-    def sign_transactions(self, password, will=None):
+    def sign_transactions(self, password, will=None, txids=None):
         try:
             willitems = will if will is not None else self.willitems
             txs = {}
@@ -936,7 +936,14 @@ class BalWindow:
                     msg = _(f"signed: {signed}\n")
                 return msg + _(f"signing: {tosign}")
 
-            for txid in Will.only_valid(willitems):
+            if txids is not None:
+                targets = [
+                    t for t in txids
+                    if t in willitems and willitems[t].get_status("VALID")
+                ]
+            else:
+                targets = Will.only_valid(willitems)
+            for txid in targets:
                 wi = willitems[txid]
                 tx = copy.deepcopy(wi.tx)
                 if wi.get_status("COMPLETE"):
@@ -1043,7 +1050,7 @@ class BalWindow:
         # re-wire them if this same window is reused for another wallet.
         self._menubar_initialized = False
 
-    def ask_password_and_sign_transactions(self, callback=None, will=None):
+    def ask_password_and_sign_transactions(self, callback=None, will=None, txids=None):
         external = will is not None
         willitems = will if external else self.willitems
 
@@ -1076,14 +1083,14 @@ class BalWindow:
             log_error(exec_info, self.bal_window)
 
         password = self.get_wallet_password()
-        task = partial(self.sign_transactions, password, will=will)
+        task = partial(self.sign_transactions, password, will=will, txids=txids)
         msg = _("Signing transactions...")
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
         )
         self.waiting_dialog.exe()
 
-    def broadcast_transactions(self, force=False, will=None):
+    def broadcast_transactions(self, force=False, will=None, txids=None):
         external = will is not None
 
         def on_success(sulcess):
@@ -1113,15 +1120,19 @@ class BalWindow:
             #    _logger.error("lasti:", tb.tb_lasti)
             #    tb = tb.tb_next
 
-        task = partial(self.push_transactions_to_willexecutors, force, will=will)
+        task = partial(self.push_transactions_to_willexecutors, force, will=will, txids=txids)
         msg = _("Selecting Will-Executors")
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
         )
         self.waiting_dialog.exe()
 
-    def push_transactions_to_willexecutors(self, force=False, will=None):
+    def push_transactions_to_willexecutors(self, force=False, will=None, txids=None):
         willitems = will if will is not None else self.willitems
+        if txids is not None:
+            willitems = {
+                t: willitems[t] for t in txids if t in willitems
+            }
         willexecutors = Willexecutors.get_willexecutor_transactions(willitems, force=force)
 
         def getMsg(willexecutors):
@@ -1298,6 +1309,17 @@ class BalWindow:
             raise FileImportFailed(_("Invalid will file: {}").format(e)) from None
         Will.normalize_will(willitems, self.wallet)
         self.merge_will(willitems)
+
+    def merge_single_transaction(self, tx):
+        """Merge a single raw transaction (e.g. from the clipboard or a file)
+        into the live will.
+
+        The transaction is wrapped in a fresh :class:`WillItem` and merged
+        through :meth:`merge_will`, so existing items are combined/updated and
+        new transactions are added wholesale, exactly like a will-file merge.
+        """
+        wi = WillItem({"tx": str(tx)}, _id=tx.txid(), wallet=self.wallet)
+        self.merge_will({wi._id: wi})
 
     def merge_will_ui(self):
         def on_success():

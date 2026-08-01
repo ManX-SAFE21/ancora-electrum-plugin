@@ -44,6 +44,7 @@ from electrum.gui.qt.util import (
     TaskThread,
     WindowModalDialog,
     char_width_in_lineedit,
+    getOpenFileName,
     getSaveFileName,
     import_meta_gui,
     read_QIcon_from_bytes,
@@ -78,6 +79,7 @@ from PyQt6.QtGui import QColor, QPainter, QPalette, QStandardItem, QStandardItem
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDateTimeEdit,
@@ -97,6 +99,7 @@ from PyQt6.QtWidgets import (
     QStyle,
     QStyleOptionFrame,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
