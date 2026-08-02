@@ -455,7 +455,7 @@ class Will:
     @staticmethod
     def invalidate_will(will, wallet, fees_per_byte, history_label=None,
                         will_locktime=None):
-        print("invalidate tx in will module")
+        _logger.debug("invalidate tx in will module")
         will_only_valid = Will.only_valid_list(will)
         inputs = Will.get_all_inputs(will_only_valid)
         if history_label is not None and will_locktime is not None:
@@ -475,13 +475,13 @@ class Will:
         utxo_to_spend = []
         for utxo in utxos:
             if utxo.is_coinbase_output() and utxo.block_height < current_height+100:
-                print("is not mature coinbase output")
+                _logger.debug("is not mature coinbase output")
                 continue
             utxo_str = utxo.prevout.to_str()
             if utxo_str in prevout_to_spend:
                 balance += inputs[utxo_str][0][2].value_sats()
                 utxo_to_spend.append(utxo)
-        print("utxo to spend",utxo_to_spend)
+        _logger.debug("utxo to spend: {}".format(utxo_to_spend))
         if len(utxo_to_spend) > 0:
             change_addresses = wallet.get_change_addresses_for_new_transaction()
             out = PartialTxOutput.from_address_and_value(change_addresses[0], balance)

@@ -1282,7 +1282,6 @@ class BalBuildWillDialog(BalDialog):
     def invalidate_task(self, password, bal_window, tx):
         if self._stopping:
             return
-        print("invalidate task")
         _logger.debug(f"invalidate tx: {tx}")
         # fee_per_byte = bal_window.will_settings.get("baltx_fees", 1)
         tx = self.bal_window.wallet.sign_transaction(tx, password)

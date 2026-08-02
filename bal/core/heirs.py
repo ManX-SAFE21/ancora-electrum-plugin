@@ -277,7 +277,7 @@ def get_utxos_from_inputs(tx_inputs, tx, utxos):
 
 # TODO calculate de minimum inputs to be invalidated
 def invalidate_inheritance_transactions(wallet):
-    print("invalidate tx in heir method")
+    _logger.debug("invalidate tx in heir method")
     # listids = []
     utxos = {}
     dtxs = {}
@@ -310,40 +310,6 @@ def invalidate_inheritance_transactions(wallet):
             if txid not in invalidated:
                 invalidated.append(tx.txid())
                 remaining[key] = value
-
-
-def print_transaction(heirs, tx, locktimes, tx_fees):
-    jtx = tx.to_json()
-    print(f"TX: {tx.txid()}\t-\tLocktime: {jtx['locktime']}")
-    print("---")
-    for inp in jtx["inputs"]:
-        print(f"{inp['address']}: {inp['value_sats']}")
-    print("---")
-    for out in jtx["outputs"]:
-        heirname = ""
-        for key in heirs.keys():
-            heir = heirs[key]
-            out_address = out.get("address", "OP_RETURN")
-            if heir[HEIR_ADDRESS] == out_address and str(heir[HEIR_LOCKTIME]) == str(
-                jtx["locktime"]
-            ):
-                heirname = key
-        print(f"{heirname}\t{out.get('address', 'OP_RETURN')}: {out['value_sats']}")
-
-    print()
-    size = tx.estimated_size()
-    print(
-        "fee: {}\texpected: {}\tsize: {}".format(
-            tx.input_value() - tx.output_value(), size * tx_fees, size
-        )
-    )
-
-    print()
-    try:
-        print(tx.serialize_to_network())
-    except Exception:
-        print("impossible to serialize")
-    print()
 
 
 def get_change_output(wallet, in_amount, out_amount, fee):
