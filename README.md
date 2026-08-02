@@ -31,7 +31,7 @@ bal/                     the installable Electrum plugin package
 │   ├── lists.py         tree/list views
 │   ├── window.py        per-wallet GUI controller
 │   └── plugin.py        Plugin (Electrum @hooks → GUI)
-├── icons/  wallet_util/  LICENSE  VERSION  README.md
+├── icons/  wallet_util/  LICENSE  README.md
 build_zip.py             builds a clean, zipimport-friendly distribution zip
 tests/                   smoke + external-zip regression tests
 ```
@@ -85,12 +85,17 @@ to broadcast it (they collect fees). Because the locktime is baked into the
 signed transaction, simply changing the delivery time later is **not enough**:
 the old, already-signed transaction keeps living on the will-executors.
 
-The plugin handles the two cases as follows (triggered when you press
-**Tools → Prepare**):
+The plugin handles the cases as follows (triggered when you press
+**Prepare** on the **WILL** tab):
 
-* **Anticipate** (new delivery time *earlier* than the signed locktime): the
-  will is treated as expired and you are asked to **invalidate** the old
-  transaction on-chain, then rebuild.
+* **Anticipate** (new delivery time *earlier* than the signed locktime, still
+  in the future): a plain **rebuild** — the transactions are re-created with
+  the new, earlier locktime. **No on-chain invalidation and no Bitcoin fee**,
+  even if the will was already signed/sent: moving the date earlier only makes
+  the inheritance available *sooner*, so there is no early-execution risk.
+* **Expire** (new delivery time now in the **past**): the will is genuinely
+  expired and you are asked to **invalidate** the old transaction on-chain,
+  then rebuild.
 * **Postpone** (new delivery time *later* than the signed locktime) on a will
   that was already **signed and/or pushed**: the previously committed coins
   must be invalidated on-chain **first**, otherwise a will-executor could
@@ -121,14 +126,15 @@ state.
 
 ## Testing
 
+Run the tests with the **runtime environment** active (see `HANDOFF.md` §3 for
+the two venvs and how to activate them):
+
 ```bash
 # imports + behavior
-QT_QPA_PLATFORM=offscreen PYTHONPATH=<electrum-src> \
-    python3 tests/smoke_test.py electrum.plugins.bal
+QT_QPA_PLATFORM=offscreen python3 tests/smoke_test.py electrum.plugins.bal
 
-# external-zip loading regression
-QT_QPA_PLATFORM=offscreen PYTHONPATH=<electrum-src> \
-    python3 tests/external_zip_test.py bal-electrum-plugin.zip
+# external-zip loading regression (run after build_zip.py)
+QT_QPA_PLATFORM=offscreen python3 tests/external_zip_test.py bal-electrum-plugin.zip
 ```
 
 ## ⚠️ Safety

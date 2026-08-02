@@ -76,6 +76,22 @@ inheritance cases.
 *Figure 2 — the parameters on the HEIRS tab: (1) Delivery Time, (2) Check Alive,
 (3) Fees.*
 
+### User type: BASIC / ADVANCED
+
+The plugin has two usage modes, chosen from the plugin settings
+(**Tools → Plugins → BAL**, *User Type* selector):
+
+- **BASIC** (default) — hides the advanced controls: the **Delivery Time** is
+  entered only as a precise **Date** (the relative **RAW** durations and the
+  Raw/Date selector are hidden), the **Check Alive** field is hidden, and the
+  postpone-on-open behaviour is disabled.
+- **ADVANCED** — reveals the **Raw/Date selector** (relative durations such as
+  `1y` or `30d`) and the **Check Alive** field, and enables the postpone
+  behaviour described below. Switching to ADVANCED requires typing the
+  confirmation phrase **"at My Risk"**.
+
+The rest of this section describes the full (ADVANCED) parameter set.
+
 ### 1 — Delivery Time (Locktime)
 
 Indicates the date on which the inheritance of your wallet on the blockchain
@@ -93,6 +109,11 @@ If you choose **Raw**, you can insert various options based on a suffix:
 ### 2 — Check Alive (Threshold)
 
 *(i.e. check whether you are still alive, and then postpone the inheritance.)*
+
+> **NB:** the **Check Alive** parameter is available only in **ADVANCED** mode.
+> In **BASIC** (default) it is hidden and the plugin re-evaluates the will
+> against "now" every time you open Electrum, so the postpone behaviour
+> described here does not apply.
 
 This parameter — settable as relative (`RAW`) or absolute (`DATE`) — indicates
 the time by which the inheritance will **not** be changed by postponing it.
@@ -223,6 +244,9 @@ plugin will notify you that you need to update the inheritance.
 
 ## RAW settings
 
+> **NB:** relative (**RAW**) durations are available only in **ADVANCED** mode;
+> in **BASIC** the Delivery Time is entered only as a precise date.
+
 If you set, for example, `RAW‑1d` and it is, say, 5 p.m., the plugin will not
 execute the inheritance precisely 24 hours later (5 p.m. the next day) but will
 roughly estimate the blockchain block number corresponding to that time — so
@@ -239,7 +263,8 @@ with a tolerance of a few hours.
 If you want a quick test run, enter an upcoming legacy date/time (e.g. 18 hours
 later). For such short intervals the **Check Alive** could create problems, so
 set the Check Alive parameter **in the past** (a date before today) — e.g. a
-previous month.
+previous month. *(The Check Alive only exists in **ADVANCED** mode; in
+**BASIC** this is not needed.)*
 
 ---
 
@@ -335,7 +360,7 @@ inheritance:
 
 ## Will‑Executor service list
 
-This window opens from the Electrum menu, **Tools → Will‑executor**, and shows
+This window opens from the Electrum menu, **Tools → Will‑Executors**, and shows
 the official list of will‑executor servers.
 
 If you want to make changes — such as adding an additional will‑executor server —
@@ -409,14 +434,16 @@ transactions can have in the WILL tab, on each will‑executor that is online.
 | # | Status | Meaning | Colour | HEX |
 |---|--------|---------|--------|-----|
 | 1 | **New** | TX new inheritance | White (transparent) | `#FFFFFF` |
-| 2 | **Signed** | TX inheritance signed into the wallet | Azure | `#2BC8ED` |
-| 3 | **Pushed** | TX sent to will‑executor | Azure‑green | `#73F3C8` |
-| 4 | **Checked** | TX actually present in the will‑executor | Bright green | `#8AFA6C` |
-| 5 | **Confirmed** | TX confirmed in the blockchain | Gray | `#BFBFBF` |
-| 6 | **Pending** | TX awaiting confirmation on blockchain | Yellow | `#FFCE30` |
-| 7 | **Failed** | Communication failure with will‑executor | Red | `#E83845` |
-| 8 | **Invalidated** | UTXO input is no longer available | Orange | `#F87838` |
-| 9 | **Replaced** | A backdated‑locktime transaction spends the same input | Violet | `#FF97E9` |
+| 2 | **Partially signed** | TX has some, but not all, of the required signatures | Amber | `#FFB347` |
+| 3 | **Signed** | TX inheritance signed into the wallet | Azure | `#2BC8ED` |
+| 4 | **Pushed** | TX sent to will‑executor | Azure‑green | `#73F3C8` |
+| 5 | **Checked** | TX actually present in the will‑executor | Bright green | `#8AFA6C` |
+| 6 | **Confirmed** | TX confirmed in the blockchain | Gray | `#BFBFBF` |
+| 7 | **Pending** | TX awaiting confirmation on blockchain | Yellow | `#FFCE30` |
+| 8 | **Failed** | Communication failure with will‑executor | Red | `#E83845` |
+| 9 | **Invalidated** | UTXO input is no longer available | Orange | `#F87838` |
+| 10 | **Replaced** | A backdated‑locktime transaction spends the same input | Violet | `#FF97E9` |
+| 11 | **Updated** | TX re‑issued keeping the same locktime and heirs | Light violet | `#B266B2` |
 
 ---
 

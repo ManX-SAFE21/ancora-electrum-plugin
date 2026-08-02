@@ -43,6 +43,7 @@ important ones:
 |---|---|---|
 | `VALID` | The item is the current, usable plan | default `True`; cleared by INVALIDATED/REPLACED/CONFIRMED/MEMPOOL |
 | `COMPLETE` (*Signed*) | The transaction has been **signed** | after you press **Sign** |
+| `PARTIALLY_SIGNED` | Only **some** of the required signatures are present | a multisig will after a partial sign (cleared by `COMPLETE`) |
 | `PUSHED` | The signed tx was **sent to the will‑executor(s)** | after **Broadcast** to executors |
 | `CHECKED` | The will‑executor **confirmed** it holds the tx | after a successful server **Check** (implies `PUSHED`) |
 | `CHECK_FAIL` | The server **check failed** | a queried executor did not return the tx |
@@ -65,6 +66,7 @@ Flag transitions enforced by `set_status` (the safety rules baked in the code):
 - Setting `CONFIRMED` / `MEMPOOL` → clears `INVALIDATED`.
 - Setting `PUSHED` → clears `PUSH_FAIL` **and** `CHECK_FAIL`.
 - Setting `CHECKED` → implies `PUSHED` (and clears `PUSH_FAIL`).
+- Setting `COMPLETE` → clears `PARTIALLY_SIGNED`.
 
 ### How states map to row colour in the list
 
@@ -83,7 +85,8 @@ wins:
 | 7 | `CHECKED` | green | `#8afa6c` |
 | 8 | `PUSH_FAIL` | red | `#e83845` |
 | 9 | `PUSHED` | teal | `#73f3c8` |
-| 10 | `COMPLETE` (signed, **not** yet pushed) | blue | `#2bc8ed` |
+| 10 | `PARTIALLY_SIGNED` | amber | `#ffb347` |
+| 11 | `COMPLETE` (signed, **not** yet pushed) | blue | `#2bc8ed` |
 | — | none of the above (e.g. plain `VALID`, prepared) | default white | `#ffffff` |
 
 > **Note (v0.3.3 fix):** a will that is *signed but not yet broadcast*
@@ -354,5 +357,5 @@ that limit.
 
 ---
 
-*This document reflects BAL plugin v0.4.7. Behaviour is derived directly from
-`core/will.py`, `core/heirs.py` and `gui/qt/window.py`.*
+*This document reflects the current BAL plugin (v0.6.1). Behaviour is derived
+directly from `core/will.py`, `core/heirs.py` and `gui/qt/window.py`.*

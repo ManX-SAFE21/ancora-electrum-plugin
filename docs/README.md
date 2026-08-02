@@ -6,11 +6,12 @@
 
 Documentation for the **BAL** open‑source Electrum plugin for Bitcoin digital
 inheritance. Everything here is plain Markdown + images (and optional styled
-HTML), so it renders directly on GitHub and via GitHub Pages — **no PDF needed**.
+HTML), so it renders directly on any forge (Gitea/GitHub) and in any browser —
+**no PDF needed**.
 
 ## Contents
 
-| Document | Markdown (GitHub) | Styled HTML |
+| Document | Markdown | Styled HTML |
 |---|---|---|
 | **User Manual (revB)** — full plugin manual with screenshots | [`manual/README.md`](./manual/README.md) | [`manual/manual.html`](./manual/manual.html) |
 | **Inheritance Options Guide** — every change (date earlier/later, add/remove heir, change %, fees, executors) + decision flow chart + transaction states & server effects | [`inheritance-options.md`](./inheritance-options.md) | [`inheritance-options.html`](./inheritance-options.html) |
@@ -23,9 +24,8 @@ HTML), so it renders directly on GitHub and via GitHub Pages — **no PDF needed
 
 ## Viewing the HTML versions
 
-- On GitHub Pages: enable Pages for this repository (Settings → Pages → deploy
-  from branch, folder `/docs`), then open
-  `https://<owner>.github.io/<repo>/manual/manual.html`.
+- Online: serve the `docs/` folder as static files (e.g. Pages on Gitea or
+  GitHub) and open `manual/manual.html`.
 - Offline: download the `docs/` folder and open the `.html` files in any browser
   (the styled manual works fully offline; the inheritance‑options page loads
   Mermaid from a CDN for the live diagram, and also ships a static SVG fallback).

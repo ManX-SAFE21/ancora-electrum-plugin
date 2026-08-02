@@ -12,8 +12,8 @@ servers.
   already-signed will is handled safely. Postponing a signed/sent will first
   asks you to invalidate the old transaction on-chain (so a will-executor can
   never broadcast the earlier-locktime transaction and execute the inheritance
-  too early), then lets you rebuild and re-send the new one via
-  **Tools → Prepare**.
+  too early), then lets you rebuild and re-send the new one via the
+  **Prepare** button on the **WILL** tab.
 - **"Server" column**: the will transaction list shows whether each transaction
   is actually stored on the will-executor servers
   (`Confirmed on server`, `Sent (not checked)`, `Send failed`,

@@ -2510,3 +2510,61 @@ pre-commit hook. The version must be read at runtime from `manifest.json` only.
 `bitcoinafterlife-patch-5`). No functional change to inheritance behavior.
 
 **Outcome:** DONE.
+
+---
+
+## 47. Willexecutors: fee-bound `is_valid` (extremes allowed), `is_selected` flag-only
+
+**Date:** 2026-08-01
+
+**Goal:** separate the "is this executor selected" question from the "is its fee
+acceptable" question, and let the fee bounds be inclusive at both extremes so an
+executor whose fee is *exactly* dust or *exactly* the max fee is valid.
+
+**What changed (`bal/core/willexecutors.py`):**
+- `is_selected()` no longer takes a `max_fee` parameter - it only reads/sets the
+  `"selected"` flag. The previous max-fee cut-off inside `is_selected` rejected
+  executors with `base_fee >= max_fee` even when they were otherwise valid.
+- `is_valid()` bounds changed from strict (`<=`) to inclusive (`<` / `>`):
+  - `base_fee < dust` is invalid (was `<= dust`), so a fee exactly equal to
+    dust is now valid.
+  - `base_fee > max_fee` is invalid (was `>= max_fee`), so a fee exactly equal
+    to the max fee is now valid.
+- Defensive `int(base_fee or 0)` in the fee-range import validation so a missing
+  or empty `base_fee` no longer raises.
+
+**Verification:**
+- New tests in `tests/test_no_willexecutor_karen7.py` (class
+  `TestNoWillexecutorKaren7`): `is_selected` only reads/sets the flag (setter,
+  default-False); `is_valid` accepts fee == max and fee == dust, rejects
+  fee > max and fee < dust, and requires a valid address.
+- Existing `build_will` test confirms a fee above max still raises.
+
+**Outcome:** DONE.
+
+---
+
+## 48. Fix `merge_will` crash on missing `date_to_check`
+
+**Date:** 2026-08-01
+
+**Goal:** allow *Will → Merge → Import file* to work as the very first action
+of a session, without requiring the normal wizard flow to have run first.
+
+**What changed (`bal/gui/qt/window.py`):**
+- `merge_will()` crashed with `AttributeError` when `self.date_to_check` was not
+  yet set (merge-from-file can run before `init_class_variables()`). It now
+  falls back to `datetime.now().timestamp()` when the attribute is missing or
+  `None`, so the local validity check and the trailing `update_all()` always
+  have a reference timestamp.
+- Several `log_error(exec_info, self.bal_window)` calls inside `BalWindow`
+  methods (broadcast failure, will-building failure) pointed at a wrong object
+  (`self.bal_window` does not exist on a `BalWindow`); corrected to
+  `log_error(exec_info, self)` so the error-reporting path itself cannot fail.
+
+**Verification:**
+- New tests in `tests/test_import_will_details.py`:
+  `test_merge_will_missing_date_to_check_defaults_to_now` and
+  `test_merge_will_validity_error_logs_without_crashing`.
+
+**Outcome:** DONE.

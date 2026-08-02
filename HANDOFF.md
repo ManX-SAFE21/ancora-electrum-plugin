@@ -10,7 +10,7 @@
 ## 0. TL;DR — what this project is
 
 - **Product:** BAL ("Bitcoin After Life") — an inheritance plugin for the
-  **Electrum 4.7.2** Bitcoin wallet (Qt / **PyQt6**).
+  **Electrum 4.7.2 and 4.8.0** Bitcoin wallet (Qt / **PyQt6**).
 - **Form:** external **ZIP plugin** (not bundled in Electrum). The user
   installs the ZIP from Electrum's plugin manager.
 - **What it does:** lets a wallet owner pre-build, sign and (later) broadcast
@@ -57,13 +57,15 @@ These are non-negotiable. They come from the owner directly.
 bal/                         <- the plugin package (this is what ships in the ZIP)
   __init__.py                <- package docstring (no version here anymore)
   manifest.json              <- plugin manifest, "version" field (SINGLE SOURCE OF TRUTH for the version)
+  qt.py                      <- zipimport shim used when loaded as an external ZIP plugin
   core/
     plugin_base.py           <- get_version() reads the version from manifest.json (zip-safe)
     heirs.py                 <- HEIRS + transaction building (prepare_lists,
                                 prepare_transactions, buildTransactions). CORE LOGIC.
     will.py                  <- Will/WillItem, validation (check_amounts, check_will),
                                 exceptions (AmountException, WillExpiredException, ...).
-    willexecutors.py         <- remote will-executor services handling.
+    willexecutors.py         <- remote will-executor services handling (is_selected / is_valid,
+                                parallel push/check).
     util.py                  <- locktime parsing/most helpers (timestamps only).
   gui/qt/
     common.py                <- shared imports; every gui module does
@@ -71,12 +73,15 @@ bal/                         <- the plugin package (this is what ships in the ZI
     dialogs.py               <- the big build/sign/broadcast dialog
                                 (BalBuildWillDialog, task_phase1/2), wizard glue.
     widgets.py               <- WillSettingsWidget + wizard widgets/labels.
-    window.py                <- BalWalletWindow (build_will, check_will, get_transactions).
-    lists.py, calendar.py, theme.py, window_utils.py, ...
-tests/                       <- pytest suite (see run command below).
-electrum-src/                <- a copy of Electrum source, used ONLY for tests
-                                (PYTHONPATH=electrum-src). NOT shipped in the ZIP.
-build_zip.py                 <- builds the shippable ZIP (37 files).
+    window.py                <- BalWindow, the per-wallet controller (build_will, check_will,
+                                get_transactions, merge_will, on_close, menubar wiring).
+    plugin.py                <- Electrum @hooks entry point (init_qt, tools menu, settings dialog).
+    lists.py, calendar.py, theme.py (status colours), window_utils.py
+  wallet_util/               <- standalone wallet-inspection helpers, no Qt
+tests/                       <- standalone test scripts (see Section 3).
+docs/                        <- user manual + inheritance-options guide (.md sources).
+bal_cli.py                   <- headless CLI (heirs/will build/sign/push/check), no Qt.
+build_zip.py                 <- builds the shippable ZIP (36 files).
 CHANGELOG.md                 <- numbered task log (English).
 .agent_memory_tasks.md       <- terse internal memory notes per task batch.
 HANDOFF.md                   <- this file.
@@ -86,32 +91,56 @@ HANDOFF.md                   <- this file.
 
 ## 3. How to build, test and lint
 
-Run everything from `/home/user/webapp`.
+Two separate venvs — using the wrong one is the #1 mistake:
 
-**Full test suite (expected: 266 passed as of v0.4.8):**
+- **Runtime env** (Electrum + PyQt6, has `electrum` importable):
+  `source "$BAL_HOME/electrum/env/bin/activate"` — an editable
+  install of the Electrum **4.8.0** checkout at
+  `$BAL_HOME/electrum`. Use it for anything that imports
+  `electrum`, runs GUI code, or runs tests. The plugin's `bal/` directory is
+  symlinked into `electrum/electrum/plugins/bal` (internal-plugin install used
+  during dev).
+- **Lint venv** (repo-local `venv/`): ruff, black, flake8 only. It cannot
+  import `electrum` or `PyQt6`. Do NOT use it to run tests.
+
+Run everything from the repo root.
+
+**Tests are standalone scripts (not pytest):** each `tests/test_*.py` runs its
+`test_*` functions from `if __name__ == "__main__"`. Run a file directly:
+
 ```bash
-QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src python3 -m pytest \
-  tests/test_core_*.py tests/test_gui_*.py \
-  tests/test_anticipate_past_locktime.py tests/test_anticipate_manual_locktime.py \
-  tests/test_group_b_auto_sign.py tests/test_group_c_settings.py \
-  tests/test_group_d_alarms.py tests/test_group_e_mock_karen7.py \
-  tests/test_group_f_heir_change_rebuild.py tests/test_group_g_basic_calendar.py \
-  tests/test_group_h_v048.py -q
+source "$BAL_HOME/electrum/env/bin/activate"
+python3 tests/test_core_heirs.py        # core, no Qt needed
+QT_QPA_PLATFORM=offscreen python3 tests/test_gui_common.py   # GUI tests need offscreen
 ```
+
+Most core tests run offline (no wallet/network). Some files
+(`tests/test_group_*.py`, `tests/test_no_willexecutor_karen7.py`,
+`parallel_ping_test.py`) exercise will-executor/network flows and need the live
+servers — don't rely on them for quick verification.
+
+**Current state of the suite: 427 tests collected.** The offline subset passes
+(414 passed) apart from pre-existing failures that are NOT yours to fix without
+asking: 13 failures in `tests/test_core_will_invalidate.py` (a `None` fee when a
+UTXO has no fee value, `bal/core/will.py:482`) and 1 collection error in
+`tests/test_group_i_basic_checkalive.py` (missing
+`BalWindow.BASIC_MODE_CHECK_ALIVE_OFFSET_SECONDS`).
 
 **Lint (only NEW errors matter; ignore pre-existing noise):**
 ```bash
-ruff check <files> | grep -oE "^[^ ]+\.py:[0-9]+:[0-9]+: [A-Z][0-9]+" \
-  | grep -vE "F401|F403|F405|F841"
+./venv/bin/ruff check <files> \
+  | grep -oE "^[^ ]+\.py:[0-9]+:[0-9]+: [A-Z][0-9]+" | grep -vE "F401|F403|F405|F841"
 ```
-Pre-existing, KNOWN-OK ruff noise: `F401/F403/F405` (star-imports via
+Ruff is NOT clean repo-wide (hundreds of pre-existing errors in `bal/` and
+`tests/`); do NOT run `--fix` wholesale — just avoid adding new violations.
+Pre-existing, KNOWN-OK noise: `F401/F403/F405` (star-imports via
 `from .common import *`) and 2× `F841` (an unused `e` in two `except` blocks).
 Do NOT "fix" these unless asked — they are intentional / out of scope.
 
 **Build the ZIP (always clear caches first so zipimport doesn't ship stale .pyc):**
 ```bash
 find bal -name "__pycache__" -type d -exec rm -rf {} + ; find bal -name "*.pyc" -delete
-python3 build_zip.py bal-electrum-plugin-vX.Y.Z.zip      # produces 37 files
+python3 build_zip.py        # -> bal-electrum-plugin.zip (deterministic, prints sha256; 36 files)
 ```
 
 **Bump version — ONE file only (single source of truth):**
@@ -226,14 +255,13 @@ See Section 5 for details.
 
 ## 5. Git / delivery workflow
 
-- **Branch:** work on `genspark_ai_developer`. Open PRs into `main`.
+- **Branch:** work directly on `main` (no PR flow anymore). Push straight to
+  `origin/main` (Gitea).
 - **Commit policy:** ZIP-FIRST — build a test ZIP, let the owner confirm it
   works, THEN commit. (This differs from "commit after every change"; the owner
   explicitly prefers ZIP-first because they manually test each build.)
-- Before opening/updating a PR: `git fetch origin main`, rebase, resolve
-  conflicts preferring remote `main` unless a local change is essential,
-  squash local commits into ONE comprehensive commit, push (force if needed),
-  then create/update the PR and SHARE the PR URL with the owner.
+- Before pushing: check `git status`/`git diff`, stage only the intended files
+  (never secrets), commit with a concise message, then push to `origin/main`.
 - **ZIPs are NOT committed** (`.gitignore` excludes `*.zip`). They are
   distributed via **Gitea Releases** using `make-release.sh`.
 - **Release process** (`make-release.sh`):
@@ -265,9 +293,11 @@ See Section 5 for details.
   ```
 - **Auth note:** if `git push` or Gitea API fails with "invalid credentials",
   update `GITEA_TOKEN` env var or `~/.git-credentials`, then retry.
-- PR history for this line of work: **#13** (v0.4.7), **#14** (docs/DUST section +
-  translation), **#15** (v0.4.8). All merged into `main`.
-- Releases: latest is **v0.6.1**; v0.4.7, v0.4.8 kept in history.
+- Older PR history (pre-`main` direct workflow): **#13** (v0.4.7), **#14**
+  (docs/DUST section + translation), **#15** (v0.4.8), **#4** (v0.6.1 —
+  manifest.json version). All merged into `main`.
+- Releases: latest is **v0.6.1**; v0.6.0 and v0.5.18 before it; the older
+  v0.2.x line is kept in history.
 
 ---
 
@@ -296,6 +326,26 @@ See Section 5 for details.
   (#7b) "Balance is too low… Skipped" recoloured ORANGE + space fix; Reset button
   renamed "Reset to Default Setting". 8 new tests (`test_group_h_v048.py`).
   266 tests pass.
+- **v0.5.1 — v0.5.10** — BASIC/ADVANCED ("user type") mode work: Windows
+  settings-dialog flicker fix; Check Alive shown read-only in BASIC; BASIC
+  builds the will against "now" (`date_to_check = now()`, Check Alive fully
+  ignored); ADVANCED defaults to RAW (1y/30d); consistent Raw/Date default per
+  mode; Check Alive red-highlight fixes; clearer "could not build the will"
+  message; CHECK no longer resets a manual Date/RAW choice.
+- **v0.5.11** — Electrum **4.8.0** compatibility (the `json_db.register_dict`
+  DB-registration API was removed in 4.8; the plugin now supports 4.7.2 and
+  4.8.0).
+- **v0.5.12 — v0.5.18** — Check Alive soft-red highlight removed; short Tor
+  (.onion) will-executor URLs; KeyError fix on .onion executor actions; skip
+  .onion executors from download when Electrum is not on Tor; crash fix on a
+  non-dict welist response; clearer message when the list download
+  fails/times out over Tor.
+- **v0.6.0** — version bump for the official repository release.
+- **v0.6.1** — version read from `bal/manifest.json` (single source of truth);
+  `bal/VERSION` file removed.
+- **#47 / #48 (post-v0.6.1)** — `is_selected`/`is_valid` fee bounds (extremes
+  allowed) and the `merge_will` missing-`date_to_check` crash fix (see
+  CHANGELOG).
 
 ### Open / suspended / backlog items (see `.agent_memory_tasks.md` for detail)
 - **SUSPENDED — "(UTC)" label in the wizard.** The owner asked to show an
@@ -317,12 +367,15 @@ See Section 5 for details.
 
 1. Read this file, then `CHANGELOG.md` (last entries) and `.agent_memory_tasks.md`.
 2. Confirm the environment: `git status`, current branch, and the `"version"` field of `bal/manifest.json`.
-3. Run the full test suite (Section 3) — expect all green (266 as of v0.4.8).
+3. Run the offline test files (Section 3) — expect the offline subset to pass
+   (414 passed; the 13 pre-existing failures in `test_core_will_invalidate.py`
+   and the 1 collection error in `test_group_i_basic_checkalive.py` are NOT
+   yours to fix without asking).
 4. Talk to the owner in **Italian**, write everything else in **English**.
 5. For any change: present a PLAN, wait for "OK" (R4), then implement, test,
    build a ZIP, let the owner test, and only commit after explicit confirmation.
 6. Keep credit usage low: summarize, don't paste big code blocks; batch work.
-7. When the owner confirms a ZIP works: commit (ZIP-first), sync with `main`,
-   squash to one commit, push, open a PR, merge it, then create/refresh a GitHub
-   **Release** with the ZIP attached (it becomes the owner's "Latest" download).
-   Always give the owner the PR URL and the Release URL.
+7. When the owner confirms a ZIP works: commit (ZIP-first) directly on `main`,
+   push to `origin/main`, then run `./make-release.sh` to create the Gitea
+   **Release** with the ZIP + signatures attached (it becomes the owner's
+   "Latest" download). Always give the owner the Release URL.
