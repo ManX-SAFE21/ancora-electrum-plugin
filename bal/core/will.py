@@ -443,11 +443,12 @@ class Will:
         for wid in will:
             wtx = will[wid].tx
             found = False
+            inp = None
             for inp in wtx.inputs():
                 if inp.prevout.txid.hex() in will:
                     found = True
                     break
-            if not found:
+            if not found and inp is not None:
                 out[inp.prevout.to_str()] = inp
         return out
 

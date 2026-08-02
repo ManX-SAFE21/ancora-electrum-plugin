@@ -385,7 +385,7 @@ class BalWindow:
                 f = False
                 for _u, w in self.willexecutors.items():
                     if Willexecutors.is_selected(
-                        w, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get()
+                        w
                     ) and Willexecutors.is_valid(
                         w, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                         dust=self.window.wallet.dust_threshold()
@@ -521,8 +521,8 @@ class BalWindow:
     def show_message(self, text):
         self.window.show_message(text)
 
-    def show_warning(self, text, parent=None):
-        self.window.show_warning(text, parent=None)
+    def show_warning(self, text, parent=None, title=None):
+        self.window.show_warning(text, parent=parent, title=title)
 
     def show_error(self, text):
         self.window.show_error(text)
@@ -703,7 +703,7 @@ class BalWindow:
                 f = False
                 for _k, we in self.willexecutors.items():
                     if Willexecutors.is_selected(
-                        we, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get()
+                        we
                     ) and Willexecutors.is_valid(
                         we, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                         dust=self.window.wallet.dust_threshold()
@@ -903,7 +903,7 @@ class BalWindow:
                 self.show_message(_("No transactions to invalidate"))
 
         def on_failure(exec_info):
-            log_error(exec_info, self.bal_window)
+            log_error(exec_info, self)
 
         willitems = will if will is not None else self.willitems
         fee_per_byte = self.will_settings.get("baltx_fees", 1)
@@ -1080,7 +1080,7 @@ class BalWindow:
                         raise e
 
         def on_failure(exec_info):
-            log_error(exec_info, self.bal_window)
+            log_error(exec_info, self)
 
         password = self.get_wallet_password()
         task = partial(self.sign_transactions, password, will=will, txids=txids)
@@ -1106,7 +1106,7 @@ class BalWindow:
             )
 
         def on_failure(exec_info):
-            log_error(exec_info, self.bal_window)
+            log_error(exec_info, self)
             # a,b,c = err
             # _logger.error(f"fail to broadcast transactions:{err}")
             # _logger.error(f"error: {b}")
@@ -1246,6 +1246,13 @@ class BalWindow:
         valid/invalidated/replaced statuses (no server contact, no expiry
         raise).
         """
+        # The reference timestamp is normally set by init_class_variables(),
+        # which the merge flow does not run (Merge -> file import can be the
+        # very first action in a session). Fall back to "now" so the local
+        # validity check and the trailing update_all() always have it.
+        if not hasattr(self, "date_to_check") or self.date_to_check is None:
+            self.date_to_check = datetime.now().timestamp()
+
         for wid, wi in imported.items():
             if wid in self.willitems:
                 live = self.willitems[wid]
@@ -1298,7 +1305,7 @@ class BalWindow:
             )
             Will.check_signatures(self.willitems, self.wallet)
         except Exception as e:
-            log_error(e, self.bal_window)
+            log_error(e, self)
         self.save_willitems()
         self.update_all()
 
@@ -1726,14 +1733,15 @@ class BalWindow:
         Willexecutors.ping_servers_parallel(wes, on_each=on_each, on_tick=on_tick)
 
     def ping_willexecutors(self, wes, fn_on_success, fn_on_failure=None):
+        if not fn_on_failure:
+            fn_on_failure = log_error
+
         def on_success(result):
             fn_on_success(result)
 
         def on_failure(exec_info):
             fn_on_failure(exec_info)
 
-        if not fn_on_failure:
-            fn_on_failure = log_error
         _logger.info("ping willexecutors")
         task = partial(self.ping_willexecutors_task, wes)
         msg = _("Ping Will-Executors")

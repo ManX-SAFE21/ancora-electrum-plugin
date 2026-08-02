@@ -21,6 +21,8 @@ Will-executor "heirs" are synthetic entries whose key starts with the
 ``w!ll3x3c"`` marker; they are skipped by most heir comparisons.
 """
 
+import asyncio
+import inspect
 import math
 import random
 import re
@@ -31,6 +33,7 @@ from typing import (
     Dict,
     Optional,
     Tuple,
+    cast,
 )
 
 import dns
@@ -64,6 +67,19 @@ if TYPE_CHECKING:
 
 
 _logger = get_logger(__name__)
+
+
+def _query_txt_records(url: str) -> Tuple[Any, bool]:
+    """Resolve TXT records with DNSSEC validation.
+
+    ``electrum.dnssec.query`` became an ``async`` function in Electrum 4.7.2,
+    so adapt the call for this synchronous context while staying compatible
+    with older synchronous implementations.
+    """
+    query = dnssec.query
+    if inspect.iscoroutinefunction(query):
+        return asyncio.run(query(url, dns.rdatatype.TXT))
+    return cast(Tuple[Any, bool], query(url, dns.rdatatype.TXT))
 
 # Column layout of a stored heir list.  These indices are part of the on-disk
 # wallet format and are relied upon all over the codebase, so they must NEVER
@@ -520,8 +536,8 @@ class Heirs(dict, Logger):
         )
 
     def prepare_lists(
-        self, balance, total_fees, wallet, willexecutor=False, from_locktime=0,
-        max_fee=None,
+        self, balance, total_fees, wallet, willexecutor: Optional[dict] = None,
+        from_locktime=0, max_fee=None,
     ):
         if balance<total_fees or balance < wallet.dust_threshold():
             raise BalanceTooLowException(balance,wallet.dust_threshold(),total_fees)
@@ -541,7 +557,7 @@ class Heirs(dict, Logger):
                                 willexecutor, max_fee
                             )
                         willexecutors_amount += base_fee
-                        h = [None] * 4
+                        h: list = [None] * 4
                         h[HEIR_AMOUNT] = base_fee
                         h[HEIR_REAL_AMOUNT] = base_fee
                         h[HEIR_LOCKTIME] = locktime
@@ -661,7 +677,7 @@ class Heirs(dict, Logger):
         self.decimal_point = bal_plugin.get_decimal_point()
         no_willexecutors = bal_plugin.NO_WILLEXECUTOR.get()
         for utxo in utxos:
-            if utxo.value_sats() > 0 * tx_fees:
+            if utxo.value_sats() > 0:
                 balance += utxo.value_sats()
                 len_utxo_set += 1
                 available_utxos.append(utxo)
@@ -685,11 +701,12 @@ class Heirs(dict, Logger):
             elif j == -1:
                 if not no_willexecutors:
                     continue
-                url = willexecutor = False
+                url = willexecutor = None
             else:
                 break
             fees = {}
             i = 0
+            txs = {}
             while i < 10:
                 txs = {}
                 redo = False
@@ -829,7 +846,7 @@ class Heirs(dict, Logger):
         # support email-style addresses, per the OA standard
         url = url.replace("@", ".")
         try:
-            records, validated = dnssec.query(url, dns.rdatatype.TXT)
+            records, validated = _query_txt_records(url)
         except DNSException as e:
             _logger.info(f"Error resolving openalias: {repr(e)}")
             return None
@@ -838,15 +855,15 @@ class Heirs(dict, Logger):
             string = to_string(record.strings[0], "utf8")
             if string.startswith("oa1:" + prefix):
                 address = cls.find_regex(string, r"recipient_address=([A-Za-z0-9]+)")
+                if not address:
+                    continue
                 name = cls.find_regex(string, r"recipient_name=([^;]+)")
                 if not name:
                     name = address
-                if not address:
-                    continue
                 return address, name, validated
 
     @staticmethod
-    def find_regex(haystack, needle):
+    def find_regex(haystack, needle) -> Optional[str]:
         regex = re.compile(needle)
         try:
             return regex.search(haystack).groups()[0]

@@ -26,7 +26,7 @@ import json
 import os
 import sys
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
 # ------------------------------------------------------------------ #
 # Electrum regtest mode (replaces mocking bitcoin.is_address)

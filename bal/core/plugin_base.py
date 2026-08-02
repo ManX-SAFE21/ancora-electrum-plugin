@@ -108,7 +108,7 @@ def get_will(x):
 
 try:
     # Electrum >= 4.8.0
-    from electrum.stored_dict import register_name as _electrum_register_name
+    from electrum.stored_dict import register_name as _electrum_register_name  # pyright: ignore[reportMissingImports]
 
     def _register_will_dict(name, method, _type=None):
         """Register a plugin dict in the wallet DB (Electrum >= 4.8.0 API)."""
@@ -118,7 +118,7 @@ except ImportError:
     # Electrum <= 4.7.2
     def _register_will_dict(name, method, _type=None):
         """Register a plugin dict in the wallet DB (Electrum <= 4.7.2 API)."""
-        json_db.register_dict(name, method, _type)
+        json_db.register_dict(name, method, _type)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 _register_will_dict("heirs", tuple)
@@ -405,7 +405,7 @@ class BalPlugin(BasePlugin):
         """Fill in any missing will-setting with its default value."""
         defaults = BalPlugin.default_will_settings()
         if not will_settings:
-            will_settings = []
+            will_settings = {}
         if int(will_settings.get("baltx_fees", 0)) < 1:
             will_settings["baltx_fees"] = defaults['baltx_fees']
         if not will_settings.get("threshold"):
@@ -427,7 +427,7 @@ class BalPlugin(BasePlugin):
     @staticmethod
     def default_will_settings():
         """Default will settings: a fee rate plus absolute threshold/locktime."""
-        will_settings = {"baltx_fees": 20}
+        will_settings: dict[str, float] = {"baltx_fees": 20}
         will_settings.update(BalPlugin.default_will_settings_absolute())
         return will_settings
 
@@ -460,10 +460,12 @@ class BalTimestamp:
         * an integer -> an absolute UNIX timestamp (``unit is None``)
     """
 
-    value = None
-    unit = None
+    value: int
+    unit: str | None
 
     def __init__(self, value):
+        self.value = 1
+        self.unit = None
         str_value = str(value)
         if str_value and str_value[-1].lower() in ("y", "d"):
             self.value = int(str_value[:-1])

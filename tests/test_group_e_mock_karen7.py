@@ -30,7 +30,7 @@ import time
 import traceback
 from unittest.mock import MagicMock, patch
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
 # Make the plugin package importable when run directly (tests/ is one level
 # below the repo root that contains the ``bal`` package).
@@ -274,7 +274,7 @@ def test_e2_karen7_add_remove_heir():
 
     heirs["charlie"] = ["addr_charlie", "20000", "30d"]
     assert "charlie" in heirs
-    assert "charlie" in wallet.db.get("heirs", {})
+    assert "charlie" in (wallet.db.get("heirs") or {})
 
     removed = heirs.pop("alice")
     assert removed is not None
@@ -622,6 +622,7 @@ def test_e5_build_with_real_wallet_heirs_and_utxos():
         "bal.core.heirs.PartialTransaction.from_io",
         side_effect=_fake_from_io,
     ):
+        result = None
         try:
             result = h.buildTransactions(
                 bal_plugin, wallet, tx_fees=1, utxos=utxos

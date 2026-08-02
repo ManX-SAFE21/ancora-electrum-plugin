@@ -35,10 +35,12 @@ import sys
 import time
 from unittest.mock import patch
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 from electrum import constants
 
 constants.net = constants.BitcoinRegtest
+
+_VALID_REG_ADDR = "bcrt1q0567jspgutk84axs4l7sm04u86yjkzg27dv6fk"
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
@@ -250,7 +252,11 @@ class FakeBalWindow:
             f = False
             for _u, w in self.willexecutors.items():
                     if Willexecutors.is_selected(
-                        w, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get()
+                        w
+                    ) and Willexecutors.is_valid(
+                        w,
+                        max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
+                        dust=self.wallet.dust_threshold(),
                     ):
                         f = True
             if not f:
@@ -508,47 +514,70 @@ class TestNoWillexecutorKaren7:
                 "selected": True,
                 "base_fee": base_fee,
                 "url": "https://we.example.com",
+                "address": self.wallet._CHANGE_ADDR,
                 "sort": 0,
             }
         }
         self.bal_plugin._willexecutors.set({"regtest": we_data})
 
     # ------------------------------------------------------------------ #
-    # E. is_selected with max_fee
+    # E. is_selected / is_valid semantics
     # ------------------------------------------------------------------ #
 
-    def test_is_selected_fee_below_max_is_selected(self):
-        """is_selected returns True when base_fee < max_fee."""
-        we = {"selected": True, "base_fee": 1000}
-        assert Willexecutors.is_selected(we, max_fee=500000) is True
-
-    def test_is_selected_fee_equal_max_is_not_selected(self):
-        """is_selected returns False when base_fee == max_fee."""
-        we = {"selected": True, "base_fee": 500000}
-        assert Willexecutors.is_selected(we, max_fee=500000) is False
-
-    def test_is_selected_fee_above_max_is_not_selected(self):
-        """is_selected returns False when base_fee > max_fee."""
+    def test_is_selected_only_checks_selected_flag(self):
+        """is_selected ignores the fee entirely; it only reflects the
+        selected flag. Fee-range enforcement lives in is_valid."""
         we = {"selected": True, "base_fee": 600000}
-        assert Willexecutors.is_selected(we, max_fee=500000) is False
-
-    def test_is_selected_without_max_fee_ignores_fee(self):
-        """is_selected without max_fee only checks the selected flag."""
-        we = {"selected": True, "base_fee": 500000}
         assert Willexecutors.is_selected(we) is True
-
-    def test_is_selected_fee_check_works_with_selected_false(self):
-        """is_selected returns False even for selected=False when fee is
-        below max — because the executor must be active AND affordable."""
         we = {"selected": False, "base_fee": 1000}
-        assert Willexecutors.is_selected(we, max_fee=500000) is False
+        assert Willexecutors.is_selected(we) is False
 
-    def test_is_selected_fee_too_high_still_raises(self):
-        """A selected will-executor with base_fee >= MAX_WILLEXECUTOR_FEE
-        is treated as NOT selected, so build_will still raises."""
+    def test_is_selected_setter_sets_flag(self):
+        """is_selected(value) acts as a setter for the selected flag."""
+        we = {"selected": False}
+        assert Willexecutors.is_selected(we, True) is True
+        assert we["selected"] is True
+
+    def test_is_selected_missing_flag_defaults_to_false(self):
+        """A dict without the 'selected' key is treated as not selected."""
+        assert Willexecutors.is_selected({}) is False
+
+    def test_is_valid_fee_equal_max_is_valid(self):
+        """is_valid allows the boundary value base_fee == max_fee."""
+        we = {"selected": True, "base_fee": 500000,
+              "address": _VALID_REG_ADDR}
+        assert Willexecutors.is_valid(we, max_fee=500000, dust=546) is True
+
+    def test_is_valid_fee_above_max_is_invalid(self):
+        """is_valid rejects base_fee > max_fee."""
+        we = {"selected": True, "base_fee": 600000,
+              "address": _VALID_REG_ADDR}
+        assert Willexecutors.is_valid(we, max_fee=500000, dust=546) is False
+
+    def test_is_valid_fee_equal_dust_is_valid(self):
+        """is_valid allows the boundary value base_fee == dust."""
+        we = {"selected": True, "base_fee": 546,
+              "address": _VALID_REG_ADDR}
+        assert Willexecutors.is_valid(we, max_fee=500000, dust=546) is True
+
+    def test_is_valid_fee_below_dust_is_invalid(self):
+        """is_valid rejects base_fee < dust."""
+        we = {"selected": True, "base_fee": 545,
+              "address": _VALID_REG_ADDR}
+        assert Willexecutors.is_valid(we, max_fee=500000, dust=546) is False
+
+    def test_is_valid_requires_valid_address(self):
+        """is_valid rejects executors whose address is missing or invalid."""
+        we = {"selected": True, "base_fee": 1000}
+        assert Willexecutors.is_valid(we, max_fee=500000, dust=546) is False
+
+    def test_build_will_fee_above_max_still_raises(self):
+        """A selected will-executor whose fee is outside the valid range
+        (base_fee > MAX_WILLEXECUTOR_FEE) is not considered valid, so
+        build_will still raises NoWillExecutorNotPresent."""
         self.bal_window.init_class_variables()
 
-        # Add a selected executor with fee >= max (500000)
+        # Add a selected executor with fee > max (500000)
         self._add_selected_willexecutor(base_fee=600000)
 
         with pytest.raises(NoWillExecutorNotPresent):

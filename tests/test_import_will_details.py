@@ -444,6 +444,46 @@ def test_merge_will_new_ids_added_wholesale():
     assert new_id in fake.will
 
 
+def test_merge_will_missing_date_to_check_defaults_to_now():
+    # Regression: merge_will read self.date_to_check (which is only set by
+    # init_class_variables) and crashed with AttributeError when merging a
+    # will file was the first action of a session.
+    wid = "missing_dtc"
+    imported_tx = _make_partial_tx(locktime=1000, signed=True)
+    imported = {wid: _make_willitem_with_tx(imported_tx, key=wid)}
+    fake, calls = _make_merge_fake({})
+    del fake.date_to_check
+
+    window_mod.BalWindow.merge_will(fake, imported)
+
+    assert isinstance(fake.date_to_check, (int, float)), \
+        "date_to_check must fall back to a timestamp"
+    assert wid in fake.will
+    assert "update_all" in calls
+
+
+def test_merge_will_validity_error_logs_without_crashing():
+    # Regression: the except handler passed log_error(e, self.bal_window);
+    # BalWindow has no such attribute, so a validity failure raised a second
+    # AttributeError that masked the original error.
+    from unittest.mock import patch
+
+    wid = "validity_err"
+    imported_tx = _make_partial_tx(locktime=1000, signed=True)
+    imported = {wid: _make_willitem_with_tx(imported_tx, key=wid)}
+    fake, calls = _make_merge_fake({})
+    fake.show_error = lambda msg: calls.append(("show_error", msg))
+
+    with patch.object(
+        window_mod.Util, "get_available_utxos", side_effect=RuntimeError("boom")
+    ):
+        window_mod.BalWindow.merge_will(fake, imported)
+
+    assert any(c[0] == "show_error" for c in calls), \
+        "the validity error must be surfaced via show_error"
+    assert "update_all" in calls, "merge must complete after the error"
+
+
 def test_merge_will_from_file_invalid_file_raises():
     from bal.gui.qt.common import FileImportFailed
 

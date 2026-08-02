@@ -14,6 +14,8 @@ construction) for all business actions, so the heavy logic stays in ``window``
 and ``dialogs``.
 """
 
+from typing import TYPE_CHECKING
+
 from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 from PyQt6.QtWidgets import QMessageBox, QStyledItemDelegate
 
@@ -21,6 +23,9 @@ from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
 from .dialogs import BalBuildWillDialog, BalDialog
 from .widgets import BalCheckBox, WillSettingsWidget
+
+if TYPE_CHECKING:
+    from .window import BalWindow
 
 
 def _can_sign(will_item):
@@ -127,7 +132,7 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         self.bal_window.new_heir_dialog(edit_key)
 
     def on_edited(self, idx, edit_key, *, text):
-        original = prior_name = self.bal_window.heirs.get(edit_key)
+        prior_name = self.bal_window.heirs.get(edit_key)
         if not prior_name:
             return
         col = idx.column()
@@ -148,12 +153,7 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         try:
             self.bal_window.set_heir(prior_name)
         except Exception:
-            pass
-
-            try:
-                self.bal_window.set_heir((edit_key,) + original)
-            except Exception:
-                self.update()
+            self.update()
 
     def delete_heirs(self, selected_keys):
         self.bal_window.delete_heirs(selected_keys)
@@ -938,6 +938,7 @@ class WillExecutorListWidget(MyTreeView):
         idx = self.indexAt(position)
         column = idx.column() or self.Columns.URL
         selected_keys = []
+        sel_key = None
         for s_idx in self.selected_in_column(self.Columns.URL):
             item = self.model().itemFromIndex(s_idx)
             # Use the FULL url stored in the key role, NOT item.data(0): the
@@ -1079,7 +1080,7 @@ class WillExecutorListWidget(MyTreeView):
                 # are shown unchanged.
                 display_url = url if len(url) <= 40 else url[:37] + "\u2026"
                 labels[self.Columns.URL] = display_url
-                if Willexecutors.is_selected(value, max_fee=float("inf")):
+                if Willexecutors.is_selected(value):
 
                     labels[self.Columns.SELECTED] = [
                         read_QIcon_from_bytes(
@@ -1368,6 +1369,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
             add_another_btn.clicked.connect(add_another)
         else:
             self._add_another = False
+            add_another_btn = None
 
         row = 0
         grid.addWidget(QLabel(_("URL")), row, 0)

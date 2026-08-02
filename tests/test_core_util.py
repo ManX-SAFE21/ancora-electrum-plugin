@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
 from bal.core.util import Util
 

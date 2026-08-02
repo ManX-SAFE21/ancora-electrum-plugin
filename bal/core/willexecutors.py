@@ -17,6 +17,7 @@ interaction is handled by the Qt layer.
 import json
 import time
 from datetime import datetime
+from typing import Any
 
 from aiohttp import ClientResponse
 from electrum import bitcoin, constants
@@ -154,7 +155,7 @@ class Willexecutors:
 
     @staticmethod
     def get_willexecutors(
-        bal_plugin, update=False, bal_window=False, force=False, task=True
+        bal_plugin, update=False, bal_window: Any = None, force=False, task=True
     ):
         willexecutors = bal_plugin.WILLEXECUTORS.get()
         willexecutors = willexecutors.get(chainname, {})
@@ -205,15 +206,11 @@ class Willexecutors:
         return w_sorted
 
     @staticmethod
-    def is_selected(willexecutor, value=None, max_fee=None):
+    def is_selected(willexecutor, value=None):
         if not willexecutor:
             return False
         if value is not None:
             willexecutor["selected"] = value
-        if max_fee is not None:
-            base_fee = willexecutor.get("base_fee", 0)
-            if int(base_fee) >= max_fee:
-                return False
         try:
             return willexecutor["selected"]
         except Exception:
@@ -228,9 +225,9 @@ class Willexecutors:
         if not address or not bitcoin.is_address(address, net=constants.net):
             return False
         base_fee = int(willexecutor.get("base_fee", 0))
-        if dust is not None and base_fee <= dust:
+        if dust is not None and base_fee < dust:
             return False
-        if max_fee is not None and base_fee >= max_fee:
+        if max_fee is not None and base_fee > max_fee:
             return False
         return True
 
@@ -426,7 +423,7 @@ class Willexecutors:
                 else:
                     base_fee = w.get("base_fee")
                     try:
-                        base_fee = int(base_fee)
+                        base_fee = int(base_fee or 0)
                         if base_fee < 0:
                             raise ValueError("negative fee")
                         if base_fee > TOTAL_COIN_SUPPLY_LIMIT_IN_BTC * COIN:

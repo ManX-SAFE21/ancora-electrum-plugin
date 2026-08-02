@@ -140,6 +140,7 @@ def test_prepare_lists_mixed_dust_continues():
         "dust": ["bcrt1q08z5t4x74u2883sx2qwsmzk2hj8e5n7z83e4vy", "1%", "30d"],
     })
     raised = False
+    result = None
     try:
         result, _onlyfixed = h.prepare_lists(5200, 100, wallet)
     except HeirAmountIsDustException:
@@ -166,6 +167,7 @@ def test_prepare_lists_multi_locktime_continues():
         "late_valid": ["bcrt1q08z5t4x74u2883sx2qwsmzk2hj8e5n7z83e4vy", 5000, "60d"],
     })
     raised = False
+    result = None
     try:
         result, _onlyfixed = h.prepare_lists(5200, 100, wallet)
     except HeirAmountIsDustException:

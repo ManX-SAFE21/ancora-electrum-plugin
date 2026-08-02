@@ -33,7 +33,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-import pytest  # noqa: E402
+import pytest  # noqa: E402  # pyright: ignore[reportMissingImports]
 
 from bal.core.will import (  # noqa: E402
     NotCompleteWillException,

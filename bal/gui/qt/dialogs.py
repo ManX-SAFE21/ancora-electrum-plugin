@@ -17,6 +17,8 @@ the few list classes they reference are imported lazily inside the methods that
 use them (see ``lists`` imports below).
 """
 
+from typing import TYPE_CHECKING
+
 from .calendar import BalCalendar, BalCalendarButton
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
@@ -26,6 +28,9 @@ from .widgets import (
     basic_reminder_offsets,
     compute_reminder_offsets,
 )
+
+if TYPE_CHECKING:
+    from .window import BalWindow
 
 # NOTE: list views (HeirListWidget, PreviewList, WillExecutorWidget) are
 # imported lazily where needed to avoid a dialogs<->lists import cycle.
@@ -467,7 +472,6 @@ class BalWaitingDialog(BalDialog):
     def exe(self):
         self.thread = TaskThread(self)
         self.thread.finished.connect(self.deleteLater)  # see #3956
-        self.thread.finished.connect(self.finished)
         self.thread.add(self.task, self.on_success, self.accept, self.on_error)
         # IMPORTANT: keep the *application-modal* exec() of the original code.
         # This dialog is driven by a TaskThread whose result (on_success, e.g.
@@ -480,9 +484,6 @@ class BalWaitingDialog(BalDialog):
         self.exec()
 
     def hello(self):
-        pass
-
-    def finished(self):
         pass
 
 
@@ -1147,7 +1148,6 @@ class BalBuildWillDialog(BalDialog):
                 for url, we in willexecutors.items()
                 if Willexecutors.is_selected(
                     self.bal_window.willexecutors.get(url),
-                    max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                 ) and Willexecutors.is_valid(
                     self.bal_window.willexecutors.get(url),
                     max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),

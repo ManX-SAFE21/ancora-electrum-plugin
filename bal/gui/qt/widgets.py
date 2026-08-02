@@ -18,9 +18,14 @@ Contents:
     * WillWidget                                            - single will-tx box
 """
 
+from typing import TYPE_CHECKING
+
 from .calendar import BalCalendar, BalCalendarButton
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
+
+if TYPE_CHECKING:
+    from .window import BalWindow
 
 
 def compute_reminder_offsets(days, count):

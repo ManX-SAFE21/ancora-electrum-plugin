@@ -113,5 +113,5 @@ def test_same_heirs_empty():
 
 
 if __name__ == "__main__":
-    import pytest
+    import pytest  # pyright: ignore[reportMissingImports]
     raise SystemExit(pytest.main([__file__, "-v"]))

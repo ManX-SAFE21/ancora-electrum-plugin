@@ -18,6 +18,13 @@ node_modules/
 *.swo
 *.bak
 
+# Local tooling / scratch files (not part of the plugin)
+TODO_LIST.md
+opencode.json
+package.json
+package-lock.json
+pyrightconfig.json
+
 # Debug / scratch files
 debug.py
 init.ol
