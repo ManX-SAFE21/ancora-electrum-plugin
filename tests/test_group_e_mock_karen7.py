@@ -37,10 +37,14 @@ import pytest  # pyright: ignore[reportMissingImports]
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from bal.core.heirs import Heirs
+from bal.core.reminders import (
+    compute_reminder_offsets,
+    format_time,
+    ical_escape,
+    write_temp_ics,
+)
 from bal.core.will import HeirNotFoundException, Will, WillItem
 from bal.core.willexecutors import Willexecutors
-from bal.gui.qt.calendar import BalCalendar
-from bal.gui.qt.widgets import compute_reminder_offsets
 
 # A valid serialized Bitcoin transaction hex (1 input + 1 P2PKH output,
 # version 2).  Reused from test_core_will.py so WillItem can parse a real tx.
@@ -196,8 +200,8 @@ def test_e1_build_separate_events_for_karen7():
 
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0"]
     for idx, offset in enumerate(offsets, start=1):
-        event_dt = BalCalendar.format_time(locktime - timedelta(days=offset))
-        summary = BalCalendar.ical_escape(f"{summary_base} (reminder {idx}/{total})")
+        event_dt = format_time(locktime - timedelta(days=offset))
+        summary = ical_escape(f"{summary_base} (reminder {idx}/{total})")
         lines.extend([
             "BEGIN:VEVENT",
             f"UID:bal-{wallet}-{offset}d",
@@ -219,7 +223,7 @@ def test_e1_build_separate_events_for_karen7():
     assert any("(reminder 1/3)" in ln for ln in lines)
     assert any("(reminder 3/3)" in ln for ln in lines)
     # The LAST event (offset 1) sits one day before the locktime.
-    last_dt = BalCalendar.format_time(locktime - timedelta(days=1))
+    last_dt = format_time(locktime - timedelta(days=1))
     assert f"DTSTART:{last_dt}" in lines
 
 
@@ -227,7 +231,7 @@ def test_e1_event_description_escaping():
     """Special iCalendar characters in karen7's event text are escaped so
     the .ics file stays valid."""
     raw = "Wallet karen7; heirs: alice, bob"
-    escaped = BalCalendar.ical_escape(raw)
+    escaped = ical_escape(raw)
     assert "\\;" in escaped       # semicolon escaped
     assert "\\," in escaped       # comma escaped
     assert "karen7" in escaped
@@ -245,7 +249,7 @@ def test_e1_write_temp_ics_for_karen7():
         "END:VEVENT\r\n"
         "END:VCALENDAR\r\n"
     )
-    path = BalCalendar.write_temp_ics(content)
+    path = write_temp_ics(content)
     try:
         assert os.path.isfile(path)
         with open(path, "rb") as f:

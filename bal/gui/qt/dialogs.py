@@ -19,14 +19,14 @@ use them (see ``lists`` imports below).
 
 from typing import TYPE_CHECKING
 
-from .calendar import BalCalendar, BalCalendarButton
+from ...core.checkalive import CheckAliveError
+from ...core.reminders import build_ics_reminders
+from .calendar import BalCalendarButton
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
 from .widgets import (
     WillSettingsWidget,
     WillWidget,
-    basic_reminder_offsets,
-    compute_reminder_offsets,
 )
 
 if TYPE_CHECKING:
@@ -1598,7 +1598,7 @@ class BalBuildWillDialog(BalDialog):
 
     def _ics_provider(self):
         """Return the .ics content for the current will data."""
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         try:
             locktime_ts = Util.parse_locktime_string(
@@ -1606,22 +1606,25 @@ class BalBuildWillDialog(BalDialog):
             )
             locktime = datetime.fromtimestamp(locktime_ts)
 
-            if self.bal_window.bal_plugin.is_basic_mode():
-                days_to_deadline = (locktime - datetime.now()).days
-                offsets = basic_reminder_offsets(days_to_deadline)
+            basic_mode = self.bal_window.bal_plugin.is_basic_mode()
+            if basic_mode:
+                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
+                threshold = None
+                num_reminders = 3
             else:
                 threshold_ts = BalTimestamp(
                     self.bal_window.will_settings["threshold"]
                 ).to_timestamp()
                 threshold = datetime.fromtimestamp(threshold_ts)
-                days = (locktime - threshold).days
+                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()
                 try:
-                    count = int(self.bal_window.bal_plugin.NUM_REMINDERS.get())
+                    num_reminders = int(
+                        self.bal_window.bal_plugin.NUM_REMINDERS.get()
+                    )
                 except Exception:
-                    count = 3
-                offsets = compute_reminder_offsets(days, count)
-
-            now = BalCalendar.format_time(datetime.now())
+                    num_reminders = 3
 
             heirs_details = "\r\n".join(
                 f" {heir} - {self.bal_window.heirs[heir][0]}, "
@@ -1629,56 +1632,21 @@ class BalBuildWillDialog(BalDialog):
                 for heir in self.bal_window.heirs
             )
 
-            if self.bal_window.bal_plugin.is_basic_mode():
-                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
-                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
-            else:
-                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
-                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()
-
-            event_description = BalCalendar.ical_escape(
-                f"{raw_description}"
-                .replace("$wallet_name", str(self.bal_window.wallet))
-                .replace("$heirs_complete", heirs_details)
+            # ToDo #2: when no reminder falls in the future (the delivery date is
+            # too close or already passed), build_ics_reminders returns None so
+            # the caller shows a clear warning instead of producing an empty,
+            # seemingly-broken .ics file.
+            return build_ics_reminders(
+                locktime=locktime,
+                basic_mode=basic_mode,
+                description=raw_description,
+                summary=raw_summary,
+                wallet_name=str(self.bal_window.wallet),
+                heirs_details=heirs_details,
+                version=self.bal_window.bal_plugin.version,
+                num_reminders=num_reminders,
+                threshold=threshold,
             )
-            summary_base = (
-                f"{raw_summary}"
-                .replace("$wallet_name", str(self.bal_window.wallet))
-            )
-
-            lines = [
-                "BEGIN:VCALENDAR",
-                "VERSION:2.0",
-                "PRODID:-//Bitcoin After Life//Electrum Plugin/"
-                f"{self.bal_window.bal_plugin.version}",
-            ]
-
-            total = len(offsets)
-            # ToDo #2: if no reminder falls in the future (the delivery date is
-            # too close or already passed), there are no events to write.
-            # Return None so the caller shows a clear warning instead of
-            # producing an empty, seemingly-broken .ics file.
-            if total == 0:
-                return None
-            for idx, offset in enumerate(offsets, start=1):
-                event_dt = BalCalendar.format_time(locktime - timedelta(days=offset))
-                summary = BalCalendar.ical_escape(
-                    f"{summary_base} (reminder {idx}/{total})"
-                )
-                lines.extend([
-                    "BEGIN:VEVENT",
-                    f"UID:bal-{str(self.bal_window.wallet)}-{offset}d",
-                    f"DTSTAMP:{now}",
-                    f"DTSTART:{event_dt}",
-                    f"DTEND:{event_dt}",
-                    f"SUMMARY:{summary}",
-                    f"DESCRIPTION:{event_description}",
-                    "END:VEVENT",
-                ])
-
-            lines.append("END:VCALENDAR")
-            lines = [s.rstrip("\r\n") for s in lines]
-            return "\r\n".join(lines) + "\r\n"
         except Exception as e:
             _logger.error(f"failed to generate .ics: {e}")
             return None
@@ -1706,7 +1674,12 @@ class BalBuildWillDialog(BalDialog):
             try:
                 if txs := self.bal_window.sign_transactions(password):
                     for txid, tx in txs.items():
-                        self.bal_window.willitems[txid].tx = copy.deepcopy(tx)
+                        # Re-parse instead of deepcopy (the signed tx can carry
+                        # wallet-derived input info holding a threading.RLock,
+                        # which copy.deepcopy cannot pickle).
+                        self.bal_window.willitems[txid].tx = Will.get_tx_from_any(
+                            str(tx)
+                        )
                     self.bal_window.save_willitems()
                     self.msg_set_signing(self.msg_ok())
             except Exception as e:

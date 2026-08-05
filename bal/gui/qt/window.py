@@ -14,8 +14,16 @@ The actual Bitcoin logic lives in :mod:`bal.core`; this class only coordinates
 it with the GUI.
 """
 
+import json
 import threading
 
+from electrum.util import MyEncoder
+
+from ...core.checkalive import (
+    CheckAliveError,
+    check_alive_expired,
+    resolve_date_to_check,
+)
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
 from .dialogs import (
@@ -123,7 +131,22 @@ class BalWindow:
         for k in keys:
             del self.will[k]
         for wid, w in self.willitems.items():
-            self.will[wid] = w.to_dict()
+            d = w.to_dict()
+            # Store the tx in its serialized form: the wallet DB deep-copies
+            # every value on save (JsonDB.put), and a live Transaction carrying
+            # wallet-derived input info (utxo / script_descriptor, which hold a
+            # threading.RLock) cannot be deep-copied.  Serializing to a string
+            # matches how the will is re-read (get_will -> tx_from_any).
+            d["tx"] = str(d["tx"])
+            # Mirror the encoder the wallet DB uses: JsonDB.put returns False
+            # (silently dropping the will) when a value cannot be serialized,
+            # so prove it here and fail loudly instead.
+            try:
+                json.dumps(d, cls=MyEncoder)
+            except Exception as e:
+                _logger.error(f"save_willitems: will {wid} is not serializable: {e!r}")
+                raise
+            self.will[wid] = d
 
     def init_will(self):
         _logger.info("********************init_____will____________**********")
@@ -614,11 +637,11 @@ class BalWindow:
             # against the current moment, i.e. the Check Alive effectively does
             # not exist, while the delivery time (locktime) is still fully
             # enforced. ADVANCED mode keeps the user-controlled Check Alive
-            # exactly as before.
-            if self.bal_plugin.is_basic_mode():
-                self.date_to_check = datetime.now().timestamp()
-            else:
-                self.date_to_check = BalTimestamp(self.will_settings['threshold']).to_timestamp()
+            # exactly as before. The policy itself lives in
+            # ``bal.core.checkalive.resolve_date_to_check``.
+            self.date_to_check = resolve_date_to_check(
+                self.bal_plugin.is_basic_mode(), self.will_settings
+            )
             # found = False
             # NOTE: block-height tracking removed (A1) - locktimes are always
             # UNIX timestamps now, so we no longer read the current block height
@@ -635,9 +658,10 @@ class BalWindow:
             # flow. In BASIC we therefore SKIP this check entirely, so a passed
             # check-alive date never forces a postpone/rewrite of the will. The
             # delivery time (locktime) is unaffected and still fully enforced.
-            if (
-                not self.bal_plugin.is_basic_mode()
-                and self.date_to_check < datetime.now().timestamp()
+            # The BASIC/ADVANCED rule lives in
+            # ``bal.core.checkalive.check_alive_expired``.
+            if check_alive_expired(
+                self.bal_plugin.is_basic_mode(), self.date_to_check
             ):
                 raise CheckAliveError(self.date_to_check)
 
@@ -945,7 +969,12 @@ class BalWindow:
                 targets = Will.only_valid(willitems)
             for txid in targets:
                 wi = willitems[txid]
-                tx = copy.deepcopy(wi.tx)
+                # Do NOT deepcopy: the stored tx carries wallet-derived objects
+                # (utxo / script_descriptor) that hold a threading.RLock, and
+                # copy.deepcopy raises "cannot pickle '_thread.RLock'".  Re-parse
+                # from the serialized form instead, which is exactly how the will
+                # is persisted/loaded (WillItem.to_dict -> serialize -> tx_from_any).
+                tx = Will.get_tx_from_any(str(wi.tx))
                 if wi.get_status("COMPLETE"):
                     txs[txid] = tx
                     continue
@@ -1057,7 +1086,10 @@ class BalWindow:
         def on_success(txs):
             if txs:
                 for txid, tx in txs.items():
-                    willitems[txid].tx = copy.deepcopy(tx)
+                    # Re-parse instead of deepcopy: the signed tx may carry
+                    # wallet-derived input info holding a threading.RLock, which
+                    # copy.deepcopy cannot pickle (see sign_transactions above).
+                    willitems[txid].tx = Will.get_tx_from_any(str(tx))
                     if not external:
                         self.will[txid] = willitems[txid].to_dict()
                 try:
@@ -1251,7 +1283,9 @@ class BalWindow:
         # very first action in a session). Fall back to "now" so the local
         # validity check and the trailing update_all() always have it.
         if not hasattr(self, "date_to_check") or self.date_to_check is None:
-            self.date_to_check = datetime.now().timestamp()
+            self.date_to_check = resolve_date_to_check(
+                self.bal_plugin.is_basic_mode(), self.will_settings
+            )
 
         for wid, wi in imported.items():
             if wid in self.willitems:

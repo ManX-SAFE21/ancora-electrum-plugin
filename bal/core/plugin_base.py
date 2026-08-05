@@ -306,7 +306,10 @@ class BalPlugin(BasePlugin):
             config, "bal_event_summary", "BAL -Will execution of $wallet_name"
         )
 
-        # Default will-executor servers, keyed by network.
+        # Default will-executor servers, keyed by network.  These addresses are
+        # the ones currently reported by each server's <chain>/info endpoint and
+        # are refreshed again on ping; testnet/testnet4 must NOT be regtest
+        # (bcrt1...) addresses, which are invalid on those networks.
         self.WILLEXECUTORS = BalConfig(
             config,
             "bal_willexecutors",
@@ -325,7 +328,7 @@ class BalPlugin(BasePlugin):
                         "base_fee": 100000,
                         "status": "New",
                         "info": "Bitcoin After Life Will Executor",
-                        "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
+                        "address": "tb1qp5tmrvtm6dmz23mzkf55n5d53xh39wt0gwpp5m",
                         "selected": True,
                     }
                 },
@@ -334,7 +337,7 @@ class BalPlugin(BasePlugin):
                         "base_fee": 100000,
                         "status": "New",
                         "info": "Bitcoin After Life Will Executor",
-                        "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
+                        "address": "tb1qfj5ewmczg8ck2z0eeff6uysdrxd4qdy2ltrx5a",
                         "selected": True,
                     }
                 },

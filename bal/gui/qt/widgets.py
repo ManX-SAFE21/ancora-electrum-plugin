@@ -20,92 +20,19 @@ Contents:
 
 from typing import TYPE_CHECKING
 
+from ...core.input_rules import (
+    LockTimeEditor,
+    normalize_locktime_raw_text,
+    normalize_perc_amount_text,
+    parse_perc_amount,
+)
+from ...core.reminders import build_ics_reminders, write_temp_ics
 from .calendar import BalCalendar, BalCalendarButton
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
 
 if TYPE_CHECKING:
     from .window import BalWindow
-
-
-def compute_reminder_offsets(days, count):
-    """Return the reminder offsets (in days BEFORE the deadline) for an .ics event.
-
-    Group D / D1. The reminders are spread uniformly across the check-alive
-    period and always fall *before* the delivery deadline, i.e. every returned
-    offset is ``>= 1`` (a reminder exactly on the deadline would be useless).
-
-    Rules:
-        * ``count`` is the requested number of reminders (the settings dialog
-          caps it at 5, default 3).
-        * at most ONE reminder per available day: the effective number is
-          ``min(count, days)``;
-        * with ``days`` available days, offsets are chosen as evenly spaced
-          points inside ``[1, days]`` (1 = the day before the deadline, ``days``
-          = the first day of the period), de-duplicated and returned sorted
-          descending (earliest reminder first).
-
-    Args:
-        days: number of whole days between check-alive and the deadline.
-        count: requested number of reminders.
-
-    Returns:
-        A list of integer day-offsets (each ``>= 1``), e.g. ``[22, 15, 8]`` for
-        ``days=30, count=3``. Empty if there is no room for any reminder.
-    """
-    # No room for any reminder (deadline today or already passed).
-    if days < 1 or count < 1:
-        return []
-
-    # Never more reminders than available days (one per day at most).
-    effective = min(int(count), int(days))
-
-    # A single reminder: put it one day before the deadline.
-    if effective == 1:
-        return [1]
-
-    # Spread "effective" points evenly inside [1, days]. Using i/(effective-1)
-    # for i in 0..effective-1 gives fractions 0..1; map them onto [1, days].
-    # This places the first reminder at the start of the period (offset ~days)
-    # and the last one one day before the deadline (offset 1).
-    offsets = set()
-    for i in range(effective):
-        frac = i / (effective - 1)  # 0.0 .. 1.0
-        # offset = days at frac 0 (start), 1 at frac 1 (just before deadline).
-        offset = round(days - frac * (days - 1))
-        offset = max(1, min(days, offset))
-        offsets.add(offset)
-
-    # Sorted descending: earliest reminder (largest offset) first.
-    return sorted(offsets, reverse=True)
-
-
-# Fixed reminder offsets (in days BEFORE the delivery date) used in BASIC mode.
-# In BASIC the check-alive parameter is hidden/unmanaged, so reminders cannot be
-# spread over it; instead the owner asked for three fixed reminders: 30, 10 and
-# 1 day before the inheritance delivery date.
-BASIC_REMINDER_OFFSETS = (30, 10, 1)
-
-
-def basic_reminder_offsets(days_to_deadline):
-    """Return the BASIC-mode reminder offsets that still fall in the future.
-
-    BASIC mode uses the fixed offsets in ``BASIC_REMINDER_OFFSETS`` (30, 10 and
-    1 day before the delivery date). Any offset that would land in the past is
-    dropped, because a reminder before "today" is useless: if the delivery date
-    is only ``days_to_deadline`` days away, only the offsets that are ``<=
-    days_to_deadline`` are kept.
-
-    Args:
-        days_to_deadline: whole days from now until the delivery date.
-
-    Returns:
-        A list of integer day-offsets (each ``>= 1``), sorted as in
-        ``BASIC_REMINDER_OFFSETS`` (descending: earliest reminder first). Empty
-        when the delivery date is less than one day away.
-    """
-    horizon = max(int(days_to_deadline), 0)
-    return [off for off in BASIC_REMINDER_OFFSETS if 1 <= off <= horizon]
 
 
 class ClickableLabel(QLabel):
@@ -219,39 +146,12 @@ class BalTxFeesWidget(QWidget):
 
 
 
-class _LockTimeEditor:
-    min_allowed_value = NLOCKTIME_MIN
-    max_allowed_value = NLOCKTIME_MAX
-    alarm = None
+class _LockTimeEditor(LockTimeEditor):
+    """Qt-side locktime editor base.
 
-    def get_value(self) -> Optional[int]:
-        raise NotImplementedError()
-
-    def set_value(self, x: Any, force=True) -> None:
-        raise NotImplementedError()
-
-    @classmethod
-    def is_acceptable_locktime(cls, x: Any) -> bool:
-        if not x:  # e.g. empty string
-            return True
-        try:
-            x = int(x)
-        except Exception as _e:
-            return False
-        return cls.min_allowed_value <= x <= cls.max_allowed_value
-
-    @staticmethod
-    def get_max_allowed_timestamp() -> int:
-        ts = NLOCKTIME_MAX
-        # Test if this value is within the valid timestamp limits (which is platform-dependent).
-        # see #6170
-        try:
-            datetime.fromtimestamp(ts)
-        except (OSError, OverflowError):
-            ts = 2**31 - 1  # INT32_MAX
-            datetime.fromtimestamp(ts)  # test if raises
-        return ts
-
+    The pure acceptance bounds and helpers live in ``bal.core.input_rules``;
+    this is just the mixin that lets Qt widgets reuse them.
+    """
 
 
 class BalTimeEditWidget(QWidget, _LockTimeEditor):
@@ -572,51 +472,16 @@ class LockTimeRawEdit(QLineEdit, _LockTimeEditor):
         self.isyears = False
         self.time_edit = time_edit
 
-    @staticmethod
-    def replace_str(text):
-        """Strip the relative-time suffixes (d/y) from the text.
-
-        Only days ("d") and years ("y") are supported. The block-height
-        suffix ("b") was removed (A1): locktimes are always timestamps now.
-        """
-        return str(text).replace("d", "").replace("y", "")
-
-    def checkbdy(self, s, pos, appendix):
-        try:
-            charpos = pos - 1
-            charpos = max(0, charpos)
-            charpos = min(len(s) - 1, charpos)
-            if appendix == s[charpos]:
-                s = self.replace_str(s) + appendix
-                pos = charpos
-        except Exception:
-            pass
-        return pos, s
-
     def numbify(self):
         # Only digits plus the day ("d") and year ("y") suffixes are accepted.
         # The block-height suffix ("b") was removed (A1): locktimes are always
         # UNIX timestamps now, so block-relative input is no longer allowed.
+        # The sanitisation itself lives in bal.core.input_rules.
         text = self.text().strip()
-        chars = "0123456789dy"
         pos = self.cursorPosition()
-        pos = len("".join([i for i in text[:pos] if i in chars]))
-        s = "".join([i for i in text if i in chars])
-        self.isdays = False
-        self.isyears = False
-
-        pos, s = self.checkbdy(s, pos, "d")
-        pos, s = self.checkbdy(s, pos, "y")
-
-        if "d" in s:
-            self.isdays = True
-        if "y" in s:
-            self.isyears = True
-
-        if self.isdays:
-            s = self.replace_str(s) + "d"
-        if self.isyears:
-            s = self.replace_str(s) + "y"
+        s, isdays, isyears, pos = normalize_locktime_raw_text(text, pos)
+        self.isdays = isdays
+        self.isyears = isyears
         self.blockSignals(True)
         self.setText(s)
         self.blockSignals(False)
@@ -1073,11 +938,12 @@ class WillSettingsWidget(QWidget):
         sees several distinct appointments in their calendar.
 
         The number of events is read from the NUM_REMINDERS setting (default 3,
-        capped at 5 by the settings dialog). Their dates are computed with
-        ``compute_reminder_offsets``: the offsets are spread uniformly across the
-        check-alive period and the LAST event always falls one day before the
-        delivery deadline (locktime). If the period is shorter than the
-        requested number of reminders, at most one event per day is produced.
+        capped at 5 by the settings dialog). Their dates are computed by
+        ``bal.core.reminders.build_ics_reminders`` (offsets spread uniformly
+        across the check-alive period; the LAST event always falls one day
+        before the delivery deadline / locktime). If the period is shorter than
+        the requested number of reminders, at most one event per day is
+        produced.
 
         Each event:
             * is placed on ``locktime - offset`` days (its own visible date);
@@ -1092,103 +958,23 @@ class WillSettingsWidget(QWidget):
         path the user picks in the save dialog (default name "BAL_will_event.ics"
         on the Desktop).
         """
-        now = BalCalendar.format_time(datetime.now())
-
-        # locktime = delivery deadline. It is exposed by the date widget as
-        # ``.alarm`` and already reflects the (possibly auto-anticipated) minimum
-        # transaction locktime, so the calendar uses the correct delivery date.
-        locktime = self.widgets["locktime"].alarm
-
-        # BASIC vs ADVANCED reminder strategy.
-        #
-        # In ADVANCED mode the reminders are spread uniformly across the
-        # check-alive (threshold) period, ending one day before the deadline.
-        #
-        # In BASIC mode the check-alive parameter is NOT shown nor managed by the
-        # user (it stays at an arbitrary default), so spreading reminders over it
-        # is meaningless. The owner asked that, in BASIC, the calendar simply
-        # saves the inheritance delivery date with three fixed reminders: 30 days
-        # before, 10 days before and 1 day before. We also drop any fixed offset
-        # that would fall in the past (a reminder before "today" is useless), so
-        # a short-dated will still gets the reminders that are still in the
-        # future.
-        if self.bal_window.bal_plugin.is_basic_mode():
-            # Whole days from now until the delivery date. Fixed offsets (30, 10,
-            # 1 day before) are applied by basic_reminder_offsets, which also
-            # drops any offset that would fall in the past.
-            days_to_deadline = (locktime - datetime.now()).days
-            offsets = basic_reminder_offsets(days_to_deadline)
-        else:
-            # ADVANCED: spread reminders over the check-alive period as before.
-            threshold = self.widgets["threshold"].alarm
-            # Whole days available between check-alive and the deadline.
-            days = (locktime - threshold).days
-            # How many reminders the user asked for (default 3 if unreadable).
-            try:
-                count = int(self.bal_window.bal_plugin.NUM_REMINDERS.get())
-            except Exception:
-                count = 3
-            # Day-offsets BEFORE the deadline, e.g. [30, 16, 1]. The list always
-            # ends with 1 (one day before the locktime) when >= 2 reminders fit.
-            offsets = compute_reminder_offsets(days, count)
-
-        # Per-event heir details and the shared description/summary templates.
-        heirs_details = "\r\n".join(
-            f" {heir} - {self.bal_window.heirs[heir][0]}, {self.bal_window.heirs[heir][1]}"
-            for heir in self.bal_window.heirs
-        )
-        # BASIC mode: use factory defaults (the hidden settings are ignored).
-        # ADVANCED mode: use the user-configured values.
-        if self.bal_window.bal_plugin.is_basic_mode():
-            raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
-            raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
-        else:
-            raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
-            raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()
-        event_description = BalCalendar.ical_escape(
-            f"{raw_description}"
-            .replace("$wallet_name", str(self.bal_window.wallet))
-            .replace("$heirs_complete", heirs_details)
-        )
-        summary_base = (
-            f"{raw_summary}"
-            .replace("$wallet_name", str(self.bal_window.wallet))
-        )
-
-        lines = [
-            "BEGIN:VCALENDAR",
-            "VERSION:2.0",
-            f"PRODID:-//Bitcoin After Life//Electrum Plugin/{self.bal_window.bal_plugin.version}",
-        ]
-
-        # One separate VEVENT per reminder offset (its own date in the calendar).
-        total = len(offsets)
-        for idx, offset in enumerate(offsets, start=1):
-            # The visible date of this event: "offset" days before the deadline.
-            event_dt = BalCalendar.format_time(locktime - timedelta(days=offset))
-            # Suffix the summary so the N events are easy to tell apart.
-            summary = BalCalendar.ical_escape(
-                f"{summary_base} (reminder {idx}/{total})"
+        # The .ics content (offsets, escaping, folding, VEVENT layout) is built
+        # by the pure ``build_ics_reminders`` in bal.core.reminders. When no
+        # reminder falls in the future it returns None (ToDo #2) and the user is
+        # warned instead of getting an empty-looking file.
+        ics_content = self._ics_provider()
+        if not ics_content:
+            self.bal_window.show_warning(
+                _(
+                    "No reminders were saved: the delivery date is too "
+                    "close (or already passed)"
+                )
             )
-            lines.extend([
-                "BEGIN:VEVENT",
-                # Offset in the UID keeps each event unique (no merging).
-                f"UID:bal-{str(self.bal_window.wallet)}-{offset}d",
-                f"DTSTAMP:{now}",
-                f"DTSTART:{event_dt}",
-                f"DTEND:{event_dt}",
-                f"SUMMARY:{summary}",
-                f"DESCRIPTION:{event_description}",
-                "END:VEVENT",
-            ])
+            return
 
-        lines.append("END:VCALENDAR")
-
-        lines = [s.rstrip("\r\n") for s in lines]
-        ics_content = "\r\n".join(lines) + "\r\n"
         # Keep the generated .ics in a temp file; it is copied to the path the
         # user picks below.
-        self.temp_path = BalCalendar.write_temp_ics(ics_content)
+        self.temp_path = write_temp_ics(ics_content)
 
         # Group D / D1b: always ask the user WHERE to save the .ics file (the
         # plugin no longer tries to open it with a calendar app). The save
@@ -1241,26 +1027,31 @@ class WillSettingsWidget(QWidget):
     def _ics_provider(self):
         """Return the .ics content for the current locktime/threshold values.
 
-        Used by :class:`BalCalendarButton` as its content provider.
+        Used by :class:`BalCalendarButton` as its content provider. The whole
+        document (reminder offsets, escaping, folding, VEVENT layout) is built
+        by the pure :func:`bal.core.reminders.build_ics_reminders`.
         """
-        from datetime import datetime, timedelta
-
         try:
             locktime = self.widgets["locktime"].alarm
 
-            if self.bal_window.bal_plugin.is_basic_mode():
-                days_to_deadline = (locktime - datetime.now()).days
-                offsets = basic_reminder_offsets(days_to_deadline)
+            basic_mode = self.bal_window.bal_plugin.is_basic_mode()
+            if basic_mode:
+                # BASIC mode: use factory defaults (the hidden settings are
+                # ignored) and the fixed 30/10/1 offsets.
+                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
+                threshold = None
+                num_reminders = 3
             else:
+                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()
                 threshold = self.widgets["threshold"].alarm
-                days = (locktime - threshold).days
                 try:
-                    count = int(self.bal_window.bal_plugin.NUM_REMINDERS.get())
+                    num_reminders = int(
+                        self.bal_window.bal_plugin.NUM_REMINDERS.get()
+                    )
                 except Exception:
-                    count = 3
-                offsets = compute_reminder_offsets(days, count)
-
-            now = BalCalendar.format_time(datetime.now())
+                    num_reminders = 3
 
             heirs_details = "\r\n".join(
                 f" {heir} - {self.bal_window.heirs[heir][0]}, "
@@ -1268,50 +1059,17 @@ class WillSettingsWidget(QWidget):
                 for heir in self.bal_window.heirs
             )
 
-            if self.bal_window.bal_plugin.is_basic_mode():
-                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
-                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
-            else:
-                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
-                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()
-
-            event_description = BalCalendar.ical_escape(
-                f"{raw_description}"
-                .replace("$wallet_name", str(self.bal_window.wallet))
-                .replace("$heirs_complete", heirs_details)
+            return build_ics_reminders(
+                locktime=locktime,
+                basic_mode=basic_mode,
+                description=raw_description,
+                summary=raw_summary,
+                wallet_name=str(self.bal_window.wallet),
+                heirs_details=heirs_details,
+                version=self.bal_window.bal_plugin.version,
+                num_reminders=num_reminders,
+                threshold=threshold,
             )
-            summary_base = (
-                f"{raw_summary}"
-                .replace("$wallet_name", str(self.bal_window.wallet))
-            )
-
-            lines = [
-                "BEGIN:VCALENDAR",
-                "VERSION:2.0",
-                "PRODID:-//Bitcoin After Life//Electrum Plugin/"
-                f"{self.bal_window.bal_plugin.version}",
-            ]
-
-            total = len(offsets)
-            for idx, offset in enumerate(offsets, start=1):
-                event_dt = BalCalendar.format_time(locktime - timedelta(days=offset))
-                summary = BalCalendar.ical_escape(
-                    f"{summary_base} (reminder {idx}/{total})"
-                )
-                lines.extend([
-                    "BEGIN:VEVENT",
-                    f"UID:bal-{str(self.bal_window.wallet)}-{offset}d",
-                    f"DTSTAMP:{now}",
-                    f"DTSTART:{event_dt}",
-                    f"DTEND:{event_dt}",
-                    f"SUMMARY:{summary}",
-                    f"DESCRIPTION:{event_description}",
-                    "END:VEVENT",
-                ])
-
-            lines.append("END:VCALENDAR")
-            lines = [s.rstrip("\r\n") for s in lines]
-            return "\r\n".join(lines) + "\r\n"
         except Exception as e:
             _logger.error(f"failed to generate .ics: {e}")
             return None
@@ -1354,40 +1112,20 @@ class PercAmountEdit(BTCAmountEdit):
         super().__init__(decimal_point, is_int, parent, max_amount=max_amount)
 
     def numbify(self):
+        # The text sanitisation lives in bal.core.input_rules.
         text = self.text().strip()
         if text == "!":
             self.shortcut.emit()
             return
         pos = self.cursorPosition()
-        chars = "0123456789%"
-        chars += DECIMAL_POINT
-
-        s = "".join([i for i in text if i in chars])
-
-        if "%" in s:
-            self.is_perc = True
-            s = s.replace("%", "")
-        else:
-            self.is_perc = False
-
-        if DECIMAL_POINT in s:
-            p = s.find(DECIMAL_POINT)
-            s = s.replace(DECIMAL_POINT, "")
-            s = s[:p] + DECIMAL_POINT + s[p : p + 8]
-        if self.is_perc:
-            s += "%"
+        s, self.is_perc = normalize_perc_amount_text(text, DECIMAL_POINT)
 
         self.setText(s)
         self.setModified(self.hasFocus())
         self.setCursorPosition(pos)
 
     def _get_amount_from_text(self, text: str) -> Union[None, Decimal, int]:
-        try:
-            text = text.replace(DECIMAL_POINT, ".")
-            text = text.replace("%", "")
-            return (Decimal)(text)
-        except Exception:
-            return None
+        return parse_perc_amount(text, DECIMAL_POINT)
 
     def _get_text_from_amount(self, amount):
         out = super()._get_text_from_amount(amount)

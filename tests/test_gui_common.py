@@ -1,7 +1,8 @@
 """
 Tests for ``bal.gui.qt.common``.
 
-Covers shown_cv, CheckAliveError, add_widget, log_error, export_meta_gui.
+Covers shown_cv, add_widget, log_error, export_meta_gui (and the
+CheckAliveError exception, which now lives in ``bal.core.checkalive``).
 
 Run:
     QT_QPA_PLATFORM=offscreen python3 tests/test_gui_common.py
@@ -44,23 +45,30 @@ def test_shown_cv_roundtrip():
 
 
 # ------------------------------------------------------------------ #
-# CheckAliveError
+# CheckAliveError (moved to bal.core.checkalive; kept tested via the
+# common->core import chain)
 # ------------------------------------------------------------------ #
 
 def test_check_alive_error_default():
-    err = common.CheckAliveError(1000000)
+    from bal.core.checkalive import CheckAliveError
+
+    err = CheckAliveError(1000000)
     assert err.timestamp_to_check == 1000000
 
 
 def test_check_alive_error_str():
-    err = common.CheckAliveError(1000000)
+    from bal.core.checkalive import CheckAliveError
+
+    err = CheckAliveError(1000000)
     s = str(err)
     assert "Check alive expired" in s
     assert "1970" in s
 
 
 def test_check_alive_error_subclass():
-    assert issubclass(common.CheckAliveError, Exception)
+    from bal.core.checkalive import CheckAliveError
+
+    assert issubclass(CheckAliveError, Exception)
 
 
 # ------------------------------------------------------------------ #

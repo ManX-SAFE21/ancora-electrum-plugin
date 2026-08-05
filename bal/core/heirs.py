@@ -630,7 +630,19 @@ class Heirs(dict, Logger):
     def buildTransactions(
         self, bal_plugin, wallet, tx_fees=None, utxos=None, from_locktime=0
     ):
-        Heirs._validate(self)
+        _before = list(self.keys())
+        Heirs._validate(self, persist=False)
+        _removed = [k for k in _before if k not in self]
+        if _removed:
+            # The build skips invalid heirs, but they are only dropped in memory
+            # (persist=False): the wallet still keeps them, so the user can fix
+            # or remove them deliberately instead of losing them silently.
+            _logger.warning(
+                "buildTransactions: skipped %d invalid heir(s) (kept in wallet, "
+                "not removed): %s",
+                len(_removed),
+                ", ".join(_removed),
+            )
         if len(self) <= 0:
             _logger.info("while building transactions there was no heirs")
             return
@@ -877,16 +889,22 @@ class Heirs(dict, Logger):
         return (address, amount, locktime)
 
     @staticmethod
-    def _validate(data, timestamp_to_check=False):
+    def _validate(data, timestamp_to_check=False, persist=True):
 
         for k, v in list(data.items()):
             if k == "heirs":
-                return Heirs._validate(v, timestamp_to_check)
+                return Heirs._validate(v, timestamp_to_check, persist)
             try:
                 Heirs.validate_heir(k, v, timestamp_to_check)
             except Exception as e:
                 _logger.info(f"exception heir removed {e}")
-                data.pop(k)
+                if persist:
+                    data.pop(k)
+                else:
+                    # Drop the invalid heir in memory only, so the overridden
+                    # Heirs.pop (which calls save()) is not triggered: a build
+                    # must not silently delete heirs from the wallet.
+                    dict.pop(data, k)
         return data
 
 

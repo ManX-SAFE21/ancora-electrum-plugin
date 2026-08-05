@@ -28,6 +28,10 @@
             [
                 "2c659529455fdacab80781dab351553428e85f2a491866b0a8274dbedaff4f4c",
                 2279
+            ],
+            [
+                "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe",
+                2413
             ]
         ],
         "bcrt1q0tf3hnml0s03rsqfjzmm4tlnxu9k0969yqvhn9": [
@@ -717,6 +721,7 @@
                 710
             ]
         ],
+        "bcrt1qaxj23v6mp5tj2wyvzh0p0xuu0jhh74vjkk3dnu": [],
         "bcrt1qazle627r46apscly8lj4q5cxfxgrtuew879jde": [
             [
                 "8ec1f1de03d4af8a3a22bc479fec5b766f4499d955def32d8aa58b8873ecf9fe",
@@ -1156,6 +1161,7 @@
                 710
             ]
         ],
+        "bcrt1qggc9a8nf9vjnjrru8v869zswhycajrsudfz4g4": [],
         "bcrt1qghmsds7h0r00nqx4m38jjn43fl6h93pkxurfz5": [
             [
                 "77270fdd97f95bfaf6bd3132246ec2aba1ff9a0dfb92c87791aee18cad6b0011",
@@ -1186,7 +1192,12 @@
                 734
             ]
         ],
-        "bcrt1qgv0wu4v6kjzef5mnxfh2m9z6y7mez0ja0tt8mu": [],
+        "bcrt1qgv0wu4v6kjzef5mnxfh2m9z6y7mez0ja0tt8mu": [
+            [
+                "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326",
+                2438
+            ]
+        ],
         "bcrt1qgx5kpesp2c6rlckln2vrmyt3xgvkj8pafx42tw": [
             [
                 "683425171b094d3e222a7eb6327e2276e8a66f02314d57cd3c50271eaef8d3f9",
@@ -2183,7 +2194,16 @@
                 734
             ]
         ],
-        "bcrt1qwxlea0j59zl6vx54apa072l89q7zemz5fj5tea": [],
+        "bcrt1qwxlea0j59zl6vx54apa072l89q7zemz5fj5tea": [
+            [
+                "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe",
+                2413
+            ],
+            [
+                "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326",
+                2438
+            ]
+        ],
         "bcrt1qx2tr9392tlw33vffx47qkx3hk8vqt07223w8jt": [
             [
                 "83ff9433dece51bf3a37f60c81e196fac96cef88c587a2f97fb44be490482536",
@@ -2445,7 +2465,9 @@
             "bcrt1q4wle4rjunlheyrpx3cgewjry84lt9vcfn6dzm7",
             "bcrt1qn69fe8fjlwyx0eqhzxl4wmypj8re3j6sq5m9zk",
             "bcrt1quykurwfx3strtkezdvvkffalncgpx85p83w9v4",
-            "bcrt1q08atkh7p3xu5cn4azclc7tcuuv7332kmjfjjlr"
+            "bcrt1q08atkh7p3xu5cn4azclc7tcuuv7332kmjfjjlr",
+            "bcrt1qaxj23v6mp5tj2wyvzh0p0xuu0jhh74vjkk3dnu",
+            "bcrt1qggc9a8nf9vjnjrru8v869zswhycajrsudfz4g4"
         ],
         "receiving": [
             "bcrt1qpm5utekdtmzwnlkh7jq5497vwwf6sm38tljan5",
@@ -2771,12 +2793,14 @@
         "10617202b6e0856c5b015e1f882b7ee51ad7edf85ab1d0f7764b5e8eb70775d5": "BAL Transaction",
         "11a7d226afc8d5fe63f9cc00b7edb5a8e4dd8444e08930d1bbe77e8d14171cd2": "BAL Transaction",
         "11b6ce930c0c09f264cf9ce9ee5ff174c1550673fc65cff3d3cffac86ef8ea8e": "BAL Transaction",
+        "11e2628fbdf54a7484b99124b2bc8f9ade3549d2eedcae72dd42cded7f9ac4eb": "BAL Inheritance transaction",
         "1210e8189eed90143785def33b65240deab8b2c051526a267aec313762ebe295": "BAL Transaction",
         "12e8be720f97a0e449e047d1eb3b8b5700d47112737c3acb894a98e33fd3598d": "BAL Inheritance transaction",
         "13998d34fcafd09ac0740f728d0381233e9ec59628785e8e3d4ce79e59232ac7": "BAL Transaction",
         "1403ff43f52ec3cf73892c429bb7c0c913814b01f87fff5d71f2f10f240d6dfb": "BAL Transaction",
         "150945af0c56e570acd35c4c003f074c775d20aafc2f6a20beaf380f5e3d5ecd": "BAL Transaction",
         "152f2c51c58697507f03641069d3100923f06bdc77c10de9b85e21b59986d458": "BAL Transaction",
+        "15c42573436162f794bd007039f5930cf3fdd3bb8c9362840c127f7b398ff337": "BAL Invalidate transaction",
         "15f7dda988d4171681de6892a19934c81d86121f20fff6f9b3a00c1f4174a392": "BAL Transaction",
         "1623f1892736ae0e057b43760d813a82f7a6dbc39ef1aeb050dc0176eb89c26a": "BAL Transaction",
         "172dcc6519f6381112614ad40e4b743f2cb7b3217ce1f3965539c83d2a9ac773": "BAL Transaction",
@@ -2808,6 +2832,7 @@
         "27674bbe4485cb5f4d869124814f6d643201bcd13599b60dcaf693550cb0cdcc": "BAL Invalidate",
         "27a70f96b10b49e4dccccabc27d6b75516bfa5779ec53c3aa02cacb6d7c2c39b": "BAL Transaction",
         "27d8bafd4f7be6a086af8ffc6ce0fb50588c035669582beed48538032bc7d50d": "BAL Transaction",
+        "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326": "BAL Invalidate transaction",
         "28b432660bc1232de270461ec9639c07d4438d77f0c2571cede1f92351254a9a": "BAL Transaction",
         "28e0ba1ecf9c349345c67317a15fb7e53193dfb1657170b32e4dd8354261bdab": "BAL Transaction",
         "2967d7c89ad9c988524978a11d5fa51aa16269049c57dce4d01baba990e2d95d": "BAL Inheritance transaction",
@@ -2908,6 +2933,7 @@
         "641c271d8afa23eeb708a2b517640992fdcca1f6554cb68862f1e9237404b68f": "BAL Transaction",
         "649088a6e3629a72aae112903c62eab2cfb4d89cb824e99f66320b1dbba5c258": "BAL Transaction",
         "66627bf44c45314fca32195df8dfa6fa6a950a6f6492a2192d18f292b5c441bd": "BAL Invalidate",
+        "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe": "BAL Invalidate transaction",
         "6698bda498953e55b81e114aee06b876f547225d90e388dc4327577e591e3e26": "BAL Transaction",
         "66a8b89e1d14a0a4d100740f152bc187ecb28c5c6b38a5a4137f53531f362439": "BAL Transaction",
         "66e35bcf24f86540d0d8f0bd12706ddab93727ba7dfb63834f9d1537b23068c4": "BAL Transaction",
@@ -2954,6 +2980,7 @@
         "7d25d1b0e753475729b42391e9e4f8c6afdd5055d54ea18c92b4d7db5f6dda78": "BAL Transaction",
         "7d5aaab55aa767a943c343226819a9ed404a0de5b4c795b525b347b51c5301bb": "BAL Transaction",
         "7e6926289bea6a005a09b7a11e8d7b7a74397874de74920741501ddcd9189da5": "BAL Transaction",
+        "7e78ec1cb9c9ae8a948b2a3329edd9b48986752a6a9e86dc080e764d21945e4f": "BAL Invalidate transaction",
         "7f70ff6a1ad00685939cd5db836bd6822314d7caaa3cb03431bb2251de578388": "BAL Transaction",
         "8041b7ba7543b2d7dd21198210a5efc2c03ecfc4378d0b8a20aa3de0799b12ca": "BAL Transaction",
         "808dc784760bf9e9e52b390a54a2a07720659b51b10df6b98dce83368c39fe08": "BAL Transaction",
@@ -3103,6 +3130,7 @@
         "dd1536302b7321252eb68fa30bdbeb13989934c1bc946f005dafbe8bc8c2b517": "BAL Transaction",
         "de35722e384e4903dd5551357d9276e3fa1f7c9b1c97ad943e4bd91fa9d52ed9": "BAL Transaction",
         "decb3c083ce18a76b8371a4533b90a094ce8cbb0e2cc64d17071a51076ed1cc6": "BAL Transaction",
+        "def15833cf94c5795c6275076bdadebd809175455f6eb4d5f8db304f816433b8": "BAL Inheritance transaction",
         "df032c7e361179bccd7b93a72d98d81872d29d704c2444acc3db7a4485f81e02": "BAL Transaction",
         "df31987dd7c3dc785606d3149d58dbed33317b959fbcd5e3037bd2375cf93953": "BAL Transaction",
         "df4e9dc8f6442c08ef66b16e5c38da3f611e27b4171c5fad42d7a21cb458eb0b": "BAL Transaction",
@@ -3188,7 +3216,7 @@
     "lightning_xprv": "vprv9HMaVA1cGK7XCUCiTrrdD9kGgiSeiwpqDDYfAafTZoSXyZtmQYnQ4CUvsZggS4fWrF3kve47MFWjrWLJ6t4uXjzs2XagtmBeUqoaRRFpJGF",
     "notes_text": "",
     "num_parents": {
-        "2c659529455fdacab80781dab351553428e85f2a491866b0a8274dbedaff4f4c": 4
+        "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326": 6
     },
     "onchain_channel_backups": {},
     "payment_requests": {
@@ -3704,6 +3732,9 @@
         "5846748d35cc1f8b447cc00f0f3dd3de9d8c6647f3c74e736dfe2c14ae9fb22d": {
             "42a1d1b8b6fbfa6b9f1158c2663e00c023a278d9c587901a40ca77fb5835e471:0": 1250000000
         },
+        "596e445351c65bcdef2637da42474ca7e283a1103b1366e1afc548701f68fa3f": {
+            "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe:0": 999999560
+        },
         "5a5b19468ec2a7ce43bfa32b7128296e6f08fb01a0113fb50ca2324988b901ec": {
             "83d64baa165f011c9c6902880c2fefada3df75c1271a51da205e383cc6d58327:0": 1250000000
         },
@@ -3817,6 +3848,9 @@
         },
         "81316109befd2d543582d68b9cbb65a9c1bc215d16791b6b546d50134aaac363": {
             "ab74079fca87f186df5676c62de63d8b21e98746c8c8888f108310bc7849e70e:0": 2500000000
+        },
+        "8149fa7c3ec75c7ea3075adae72f7d7119acadae6af68b90d7c1174a669eff22": {
+            "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326:0": 999999450
         },
         "8206833de2ac45d066b04a520a4bb776b8dc473d7d9be96a7c4c2ebf0a749786": {
             "13c4b8b888b4c7f68076855c11d51eace7ee8d6c106142b493cf47a65a8f5be1:0": 1250000000
@@ -4380,6 +4414,9 @@
         "2af047c4a003fb7b90ce2c8fc49bcdb3eaee0fff213b14dc1645b9fb18b8f0f6": {
             "0": "d2d953e950d28c021a5ddf6f77cfb9551af2fd33ccc7473b20a31d208e7bd308"
         },
+        "2c659529455fdacab80781dab351553428e85f2a491866b0a8274dbedaff4f4c": {
+            "0": "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe"
+        },
         "2c6d3a41eb0f5589e2586138b2bee1cf453144fe48dc73c2a3b0f4d0a3bfd596": {
             "0": "5c6d7a19cfb35a98949a25c5fede1dd798a7e1509e0067d000319126c34f8c15"
         },
@@ -4584,6 +4621,9 @@
         },
         "64f40121401bcfa201bf59dc9c8d23e2fe89da362685bf64694eb98f6f4fc991": {
             "0": "5c6d7a19cfb35a98949a25c5fede1dd798a7e1509e0067d000319126c34f8c15"
+        },
+        "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe": {
+            "0": "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326"
         },
         "683425171b094d3e222a7eb6327e2276e8a66f02314d57cd3c50271eaef8d3f9": {
             "0": "5c6d7a19cfb35a98949a25c5fede1dd798a7e1509e0067d000319126c34f8c15"
@@ -5169,7 +5209,7 @@
             "2": "8cebb4ea3a63829a2787c3a473f14b4f73ced07552f73ff8c2b1152169042550"
         }
     },
-    "stored_height": 2381,
+    "stored_height": 2455,
     "submarine_swaps": {},
     "transactions": {
         "00fda0d8fdc53b1f95410bafca884c5dff8ac1e5c168ace5f09a32d872b7413a": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402460100ffffffff02807c814a00000000160014b51c529851d6140f1a37f2aa46bafe171a549f210000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -5207,6 +5247,7 @@
         "211e0cb1f99e931a517437fe2b1ea81e97332b8abf066a99704da17bcbeabb43": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff04026c0100ffffffff02807c814a000000001600146b6f2c9545e188f8e79b25d091b8e0a20af8364b0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
         "26171dce2366ca96fdcb0749bab05fa8b5abbf9b3a4dae1b9ae6f7f5425108b1": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402690100ffffffff02807c814a0000000016001494b9a93c92e060c47bbccffcd29c9cc56b9da05c0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
         "267eeb8e65681ffaeafe0a04616b270750f1f0a83e5d51f82974ad0c98e2c5a6": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402d10100ffffffff0240be40250000000016001498b1a3d729e96088cc6c83408b36fa1382c4f4f30000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
+        "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326": "02000000000101be5e0d37d1d9583a2c8e2dffd59192f663d85af9edfce4fcb2f129aea8be72660000000000fdffffff01dac79a3b00000000160014431eee559ab48594d373326ead945a27b7913e5d0247304402201c45c2dac9ba31b9905aada8f44a676397a8ed56df73c81f17e4baf34d4a2e4d022078598b32228eedefc5a89be1f123d5139041a56579c499bcbafd7b5c1a24a0fa012102825bd3669bd57813180d972def557b09b204c631fed9654af4870c80130ddf1885090000",
         "282778a46251bd4de17361ee948d6ca274ee0668b190398ca85fd939adb59d55": "0200000000010174e4465944e8dd66f59e82e22eebb10e8387a5527618073a285b29f9d9735d330200000000fdffffff01445b2015200000001600145533cc833ce8cd1408ff3c9bd860351d69ab95040247304402207b7509ead1f9f26b005fdeb91bac1d5d77a590bd903aa006453ce65b8f54e8fc022069755b2c93d42e69cc9c4216e43dd7d85403d0e788c56caa0d4e6ab55b5246550121038d7efb75df24733109903da38632c3a3404bc80451d29524a96b623a7af5921e8b030000",
         "28837747eb6a849543f5f03063f1436fc44f64f028448022ec0c382ac5bb7c31": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402500100ffffffff02807c814a000000001600147ac0abff0d5ffafcb01f9df3cfed0bbc741854b80000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
         "2a1b54803e6649bb49778d2b84b542c5db10351f075941c7ed6453e0c152ea39": "02000000000101f50cec494750062daf2f321231228cc0cf35f77d25c3f55815c5bcd0f42a935e0000000000fdffffff0250c30000000000001600140ee9c5e6cd5ec4e9fed7f4814a97cc7393a86e27a65622000000000016001488be8e07f7edee0da5b5db16d8c89f408c055f2b0247304402201859ab99d7bce45216ba1083efbd0511ee5ffac7628bfb63fdd5f3993bb1d80e02206ddf15ca3e6537076823c8176094db3ff901a7ec91632e5d23e1ec4258c47c95012102159c4641474a4d8fff2f454af57f4db23cffaabfd2f93ca4c99e9318a0bf540738070000",
@@ -5274,6 +5315,7 @@
         "642e892416a039224ad50e987bfbfecefee57103dd39c6833e2992cebf8a2e8d": "02000000000101609438ba82251a8cf3acfd1f189369029290cf2f8793b2b8f3c4c363c8e6c1a30000000000fdffffff01296a364030000000160014d30dc6386b39a982f0bc51494e03c91c3037b11802473044022035bb5c21bc90400ef14bc8b0b9c89de15979b091b222ee645b8c0cfad289e3c0022056d38d2157fbeef74a2af3307120586e29a873a51c6e71cb41becf53d410da3f012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b300000000",
         "6444792f99c990677950a6e8c27a18eb4aa1eb946763887cd8c67d7495cbd1dc": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402220100ffffffff0200f9029500000000160014e23a95111d6159da1219fc9dd9107b486f6399970000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
         "64f40121401bcfa201bf59dc9c8d23e2fe89da362685bf64694eb98f6f4fc991": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff04022d0100ffffffff02807c814a00000000160014eb6b5ae76ee9273ec6e61f72db27988605839d280000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
+        "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe": "020000000001014c4fffdabe4d27a8b06618492a5fe828345551b3da8107b8cada5f452995652c0000000000fdffffff0148c89a3b0000000016001471bf9ebe5428bfa61a95e87aff2be7283c2cec5402473044022028734896d1f74344516e024fbf106124db3f521b67caead7ff929601a1d0d04d02204d70dac814580261157f0e5808f9d488ad369979dcd083b4adfdb4fc1d80dd550121032592689364f3a4796fc35a1f183791eb7c5db25e6f36fa0f1e92654ed679c7916c090000",
         "683425171b094d3e222a7eb6327e2276e8a66f02314d57cd3c50271eaef8d3f9": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402490100ffffffff02807c814a0000000016001441a960e60156343fe2df9a983d91713219691c3d0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
         "68a99483af54769940b80095e83d95d607f9c32c2d03c0b89a86cd4143d65eb9": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402d10700ffffffff022f50090000000000160014ed834d872f7e3f5eaacab4fc5249df650e626fa60000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
         "68b9c5bddb83e4f54192b67a978f6bea1e305ec558c1042623d6bcc54188e135": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0402f50200ffffffff02902f500900000000160014ea779f0f8e203034ae25cd71e52c1a81ac488e2b0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -5626,6 +5668,11 @@
             false,
             1
         ],
+        "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326": [
+            110,
+            true,
+            1
+        ],
         "282778a46251bd4de17361ee948d6ca274ee0668b190398ca85fd939adb59d55": [
             1099890,
             true,
@@ -5959,6 +6006,11 @@
         "64f40121401bcfa201bf59dc9c8d23e2fe89da362685bf64694eb98f6f4fc991": [
             null,
             false,
+            1
+        ],
+        "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe": [
+            110,
+            true,
             1
         ],
         "683425171b094d3e222a7eb6327e2276e8a66f02314d57cd3c50271eaef8d3f9": [
@@ -6870,6 +6922,11 @@
                 "0fb9da0e14c71d8b85bf00d23fa3b599972ea48f94e567e0f9733ed7357ba686:2": 137794696378
             }
         },
+        "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326": {
+            "bcrt1qwxlea0j59zl6vx54apa072l89q7zemz5fj5tea": {
+                "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe:0": 999999560
+            }
+        },
         "282778a46251bd4de17361ee948d6ca274ee0668b190398ca85fd939adb59d55": {
             "bcrt1qh2c83yulvs7kgw0g6q3lkxqws4cnf0uxpcgcpt": {
                 "335d73d9f9295b283a07187652a587830eb1eb2ee2829ef566dde8445946e474:2": 137794495414
@@ -7258,6 +7315,11 @@
         "642e892416a039224ad50e987bfbfecefee57103dd39c6833e2992cebf8a2e8d": {
             "bcrt1qvpgytucyvqexr4g9lltdq528u4hep0p4pz5sfx": {
                 "a3c1e6c863c3c4f3b8b293872fcf9092026993181ffdacf38c1a2582ba389460:0": 207235749153
+            }
+        },
+        "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe": {
+            "bcrt1q0ma5z02ma7q0cq7j49wz66clf69xw3fq2zl05n": {
+                "2c659529455fdacab80781dab351553428e85f2a491866b0a8274dbedaff4f4c:0": 999999670
             }
         },
         "697895649863c50517092f62b47284ab00dd812a100a2ca6ac9469b5e4f6da2b": {
@@ -8008,6 +8070,14 @@
                 ]
             }
         },
+        "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326": {
+            "bcrt1qgv0wu4v6kjzef5mnxfh2m9z6y7mez0ja0tt8mu": {
+                "0": [
+                    999999450,
+                    false
+                ]
+            }
+        },
         "282778a46251bd4de17361ee948d6ca274ee0668b190398ca85fd939adb59d55": {
             "bcrt1q25eueqeuarx3gz8l8jdascp4r456h9gydxmezx": {
                 "0": [
@@ -8565,6 +8635,14 @@
                 "0": [
                     1250000000,
                     true
+                ]
+            }
+        },
+        "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe": {
+            "bcrt1qwxlea0j59zl6vx54apa072l89q7zemz5fj5tea": {
+                "0": [
+                    999999560,
+                    false
                 ]
             }
         },
@@ -10255,6 +10333,12 @@
             0,
             "79074b9f422009b5260706bb2fb943267b562284205df412901c048d1d8f8fb8"
         ],
+        "27e579cf0329d3a7ac6ee3cce36de4532911829d71bb2c6bb2c17d3084fd4326": [
+            2438,
+            1785952526,
+            1,
+            "10486dd0f7712166482261e685320b732ecb245a39c2040ab8cbc6d8c480638b"
+        ],
         "282778a46251bd4de17361ee948d6ca274ee0668b190398ca85fd939adb59d55": [
             908,
             1770380931,
@@ -10656,6 +10740,12 @@
             1761778003,
             0,
             "54e5b9d88869c451c66306d661feb802bdbea5078f46bad551d03eb352993e29"
+        ],
+        "6672bea8ae29f1b2fce4fcedf95ad863f69291d5ff2d8e2c3a58d9d1370d5ebe": [
+            2413,
+            1785872632,
+            1,
+            "71d17faedbcf2e69598e039dfca0476eecce1c2f227e939f66227a6a9b4c51bb"
         ],
         "683425171b094d3e222a7eb6327e2276e8a66f02314d57cd3c50271eaef8d3f9": [
             329,
@@ -11704,91 +11794,10 @@
     },
     "wallet_type": "standard",
     "will": {
-        "04a14aa60b6ef0c727fae209070dcb7926389aea0ef643ceaaf788c2c6e8ea1f": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "04a14aa60b6ef0c727fae209070dcb7926389aea0ef643ceaaf788c2c6e8ea1f",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460136260
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315422362
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460136260
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    20000,
-                    1807848000,
-                    20000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Updated.Replaced.Invalidated",
-            "time": 1781960175.6909134,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05204e000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc9a0ab5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d445bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc445bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022036cb123a7272c69e1bb485912617d0ae587c01fbbbeba14a2d77803a6119ca5c022068db54ab23b601f494c31c6922fcda7b5074d7d20510c4a32f2acde3df8d5039012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 20000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05204e000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc9a0ab5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d445bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc445bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022036cb123a7272c69e1bb485912617d0ae587c01fbbbeba14a2d77803a6119ca5c022068db54ab23b601f494c31c6922fcda7b5074d7d20510c4a32f2acde3df8d5039012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b\n020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc3075000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1afeb4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9dfc4dc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcfc4dc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402204806fcb89b45a541d7a48355beece24af53ce4a0d40c94390929e8bfd393a9b5022000f1d4d4ad4bed3d323773f8bff93481c1a125cfa1e67d737c7e83519be6fdf8012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b\ncHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA\n020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d9af1b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcb440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402200e8ed269cd0443b9259ac666ca8a349f44aa4607a935fdf6f9bceebe1cc69bfd0220450cf86be10e9454abeb2815ed84960e1d45e5d489a43fe4c84bb2f943ae6975012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b\ncHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA\n",
-                "txsids": [
-                    "04a14aa60b6ef0c727fae209070dcb7926389aea0ef643ceaaf788c2c6e8ea1f",
-                    "12e8be720f97a0e449e047d1eb3b8b5700d47112737c3acb894a98e33fd3598d",
-                    "3318599c8ac525d9f9a29c298a943ae887afbf31ed92b781ceaa547e3ddd352b",
-                    "5e9355915428b150861ede28eb86cfd17692e063f495657c3fdedc267a95e20b",
-                    "b708916e8f8ab4562bb415f6876276e3901231649a9ed7f2d22ed0bae65cf0b9"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "051f5bb1b0df3f8e5011e71449646a1c6595b4e41a0252afbfbe92489a6c5043": {
+        "11e2628fbdf54a7484b99124b2bc8f9ade3549d2eedcae72dd42cded7f9ac4eb": {
             "ANTICIPATED": false,
             "BROADCASTED": false,
-            "CHECKED": false,
+            "CHECKED": true,
             "CHECK_FAIL": false,
             "COMPLETE": true,
             "CONFIRMED": false,
@@ -11799,1336 +11808,84 @@
             "INVALIDATED": true,
             "MEMPOOL": false,
             "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "051f5bb1b0df3f8e5011e71449646a1c6595b4e41a0252afbfbe92489a6c5043",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "aaaa\nlucia\nmario\nmario2",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    58716792428
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    55262863462
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    58716792428
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "20%",
-                    "300d",
-                    34539289663
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Replaced.Invalidated",
-            "time": 1781888638.550394,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff043fbcb30a080000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6660ecdd0c0000001600147e19af296f25d092f23a0c208823e65c81a2af9d6c26cbab0d0000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6c26cbab0d0000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402206cbd2596c9f7f855e7f64338b8e098c33da609b01e124f4ba56083536a354992022075b419be3b8fe981ecea5281ef007eeb49b688d50cf6147186c3db1b444de43b012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c040c06b",
-            "willexecutor": false
-        },
-        "0f864bd74f0a66410e4c251f0993a61837f01ca947ce1badf0bb57e4b38e6866": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
+            "PUSHED": true,
             "PUSH_FAIL": false,
             "REPLACED": false,
             "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "0f864bd74f0a66410e4c251f0993a61837f01ca947ce1badf0bb57e4b38e6866",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460137314
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "120d",
-                    66315423354
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460137314
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    "120d",
-                    40001,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Updated.Firmato.Invalidated",
-            "time": 1781968114.0018213,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff04419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc7a0eb5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d625fc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc625fc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220352e03b4c6bd7659078562b7a38e6fe0110995a14d7c1a8752de590c10cf7b7702202899f837837a63c697024e1c88fa77c868c9c71fd41c3f39ed9cfbce0fcc18bc012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c0f2d26a",
-            "willexecutor": false
-        },
-        "12e8be720f97a0e449e047d1eb3b8b5700d47112737c3acb894a98e33fd3598d": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "12e8be720f97a0e449e047d1eb3b8b5700d47112737c3acb894a98e33fd3598d",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460132860
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315419162
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460132860
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    30000,
-                    1807848000,
-                    30000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Updated.Replaced.Invalidated",
-            "time": 1781962486.7599566,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc3075000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1afeb4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9dfc4dc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcfc4dc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402204806fcb89b45a541d7a48355beece24af53ce4a0d40c94390929e8bfd393a9b5022000f1d4d4ad4bed3d323773f8bff93481c1a125cfa1e67d737c7e83519be6fdf8012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 30000,
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "2967d7c89ad9c988524978a11d5fa51aa16269049c57dce4d01baba990e2d95d": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
             "UPDATED": false,
             "VALID": false,
-            "_id": "2967d7c89ad9c988524978a11d5fa51aa16269049c57dce4d01baba990e2d95d",
-            "baltx_fees": 100,
+            "_id": "11e2628fbdf54a7484b99124b2bc8f9ade3549d2eedcae72dd42cded7f9ac4eb",
+            "baltx_fees": 1,
             "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
+            "description": "w!ll3x3c\"http://localhost:9133\"1817352000\nmario2\naaaa\nlucia\nmario",
             "heirs": {
                 "aaaa": [
                     "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
                     "34%",
-                    "300d",
-                    70460144114
+                    "1y",
+                    336619634
                 ],
                 "lucia": [
                     "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
                     "32%",
-                    "300d",
-                    66315429754
+                    "1y",
+                    316818479
                 ],
                 "mario": [
                     "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460144114
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Replaced.Invalidated",
-            "time": 1781960091.7051795,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff04214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc7a27b5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9df279c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcf279c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402204da23c14a00c8c13adbfafb9e8c709841a0dc0c6ae5a8f7e83d5b5d8765c73a002200c0488fd746623633072628b3d09e78b44ed845f4b50bacbe92c2ba3e2177cd2012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c09dbd6b",
-            "willexecutor": false
-        },
-        "2ed95ab6bcf71b6fd9c6f81840654fb72f19ab945019f265253bf7414ec57496": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "2ed95ab6bcf71b6fd9c6f81840654fb72f19ab945019f265253bf7414ec57496",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1799208000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460129460
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "200d",
-                    66315415962
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460129460
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "200d",
-                    20001,
-                    20000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1799208000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1799208000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Updated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781964056.280334,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d9af1b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcb440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220340774663c70c09f523e56049fa09d189dea98faf701df8eaa59ae6b8144be8c022028e4546176a6445c5ed6b4573c78dd15aa7ac04c3a177e6c00f40b1821237147012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340bc3d6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d9af1b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcb440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220340774663c70c09f523e56049fa09d189dea98faf701df8eaa59ae6b8144be8c022028e4546176a6445c5ed6b4573c78dd15aa7ac04c3a177e6c00f40b1821237147012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340bc3d6b\n",
-                "txsids": [
-                    "2ed95ab6bcf71b6fd9c6f81840654fb72f19ab945019f265253bf7414ec57496"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "30c57bb2828d8fb85ec366a1642093318fd3d4c3e8cb69f90fa15ab3d25c633d": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": false,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "30c57bb2828d8fb85ec366a1642093318fd3d4c3e8cb69f90fa15ab3d25c633d",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460137950
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "120d",
-                    66315423952
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460137950
+                    "35%",
+                    "1y",
+                    346520211
                 ],
                 "mario2": [
                     "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
                     40000,
-                    "120d",
-                    40001,
+                    "1y",
+                    40002,
                     40000
+                ],
+                "w!ll3x3c\"http://localhost:9133\"1817352000": [
+                    "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
+                    1000,
+                    1817352000,
+                    1000
                 ]
             },
             "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Updated.Firmato.Invalidated",
-            "time": 1781968538.3178709,
-            "tx": "02000000000101d048cc969bc0a6ecea52609029b4c1c547afcf94ad0d7fb66166b15824e8fb3f0000000000fdffffff04419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcd010b5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9dde61c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcde61c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022076dd8e78312b62c0daa890d62eb70add3e5a6542afb65695eaa1e0aeeb042dad0220127037d614d01fdd9e3bf21a049931b6f1113d4521b06b7357b978b507ee0515012102b72cc9ba68640a476abe173da069c5d37a1091346d9242fd794b470d04a236cd4044d46a",
-            "willexecutor": false
-        },
-        "3318599c8ac525d9f9a29c298a943ae887afbf31ed92b781ceaa547e3ddd352b": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "3318599c8ac525d9f9a29c298a943ae887afbf31ed92b781ceaa547e3ddd352b",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460139660
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315425562
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460139660
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    10000,
-                    1807848000,
-                    10000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Updated.Replaced.Invalidated",
-            "time": 1781960130.4184484,
-            "tx": "cHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA",
+            "sigs_required": 1,
+            "status": "New.Signed.Pushed.Checked.Invalidated",
+            "time": 1785872109.7311695,
+            "tx": "02000000000101be5e0d37d1d9583a2c8e2dffd59192f663d85af9edfce4fcb2f129aea8be72660000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a429c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc2f44e212000000001600147e19af296f25d092f23a0c208823e65c81a2af9d72681014000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc937aa714000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402205e8a50ffca86b91b54455f9086b9a0bf81ec5443f88b396ecc72e6f0202f1c9b022072d8c01bbb872414df45895c9ded797ca9c79c9af11896e7f74fa7125bb2da55012102825bd3669bd57813180d972def557b09b204c631fed9654af4870c80130ddf184097526c",
             "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 10000,
-                "broadcast_status": "Waiting...",
-                "info": "Bitcoin After Life Will Executor",
+                "address": "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
+                "balance": 90000,
+                "base_fee": 1000,
+                "broadcast_status": "Success",
+                "chain": "regtest",
+                "count_win": 0,
+                "id": 66,
+                "info": "BAL devel willexecutor server",
+                "last_block": 0,
+                "last_update": 1785592563.693952,
+                "onion_url": null,
+                "points": 0,
                 "promo_code": null,
                 "selected": true,
-                "status": "New",
-                "txs": "cHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA\ncHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA\n020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05204e000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc9a0ab5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d445bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc445bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022036cb123a7272c69e1bb485912617d0ae587c01fbbbeba14a2d77803a6119ca5c022068db54ab23b601f494c31c6922fcda7b5074d7d20510c4a32f2acde3df8d5039012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b\n",
+                "status": 200,
+                "tld": "localhost",
+                "txs": "02000000000101be5e0d37d1d9583a2c8e2dffd59192f663d85af9edfce4fcb2f129aea8be72660000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a429c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc2f44e212000000001600147e19af296f25d092f23a0c208823e65c81a2af9d72681014000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc937aa714000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402205e8a50ffca86b91b54455f9086b9a0bf81ec5443f88b396ecc72e6f0202f1c9b022072d8c01bbb872414df45895c9ded797ca9c79c9af11896e7f74fa7125bb2da55012102825bd3669bd57813180d972def557b09b204c631fed9654af4870c80130ddf184097526c\n",
                 "txsids": [
-                    "3318599c8ac525d9f9a29c298a943ae887afbf31ed92b781ceaa547e3ddd352b",
-                    "b708916e8f8ab4562bb415f6876276e3901231649a9ed7f2d22ed0bae65cf0b9",
-                    "04a14aa60b6ef0c727fae209070dcb7926389aea0ef643ceaaf788c2c6e8ea1f"
+                    "11e2628fbdf54a7484b99124b2bc8f9ade3549d2eedcae72dd42cded7f9ac4eb"
                 ],
-                "url": "https://we.bitcoin-after.life"
+                "unconfirmed_balance": 0,
+                "url": "http://localhost:9133",
+                "version": "0.3.2"
             }
         },
-        "41e4db32c6457c93f853d452eed770ba23c78a3127f620fce080af0ddacec101": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "41e4db32c6457c93f853d452eed770ba23c78a3127f620fce080af0ddacec101",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460140714
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "200d",
-                    66315426554
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460140714
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    30000,
-                    "200d",
-                    30001,
-                    30000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Updated.Firmato.Replaced.Invalidated",
-            "time": 1781964114.071311,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0431750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcfa1ab5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9daa6cc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcaa6cc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022059045766338bac0862f8b3d70fd5f33682ad976df5d390cb7d6d241bd8839fe002203742da94d9a7145737288303030e1197fe38629d56840c48c220ab2061f2dda2012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c06a3c6b",
-            "willexecutor": false
-        },
-        "49d611bdf156bc19df59502a466a0c379f155d4c9d7509917faaf9f9ba67672b": {
+        "def15833cf94c5795c6275076bdadebd809175455f6eb4d5f8db304f816433b8": {
             "ANTICIPATED": false,
             "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "49d611bdf156bc19df59502a466a0c379f155d4c9d7509917faaf9f9ba67672b",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460130470
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315416912
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460130470
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    "300d",
-                    40001,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Updated.Firmato.Replaced.Invalidated",
-            "time": 1781969519.6341054,
-            "tx": "020000000001018d2e8abfce92293e83c639dd0371e5fecefefb7b980ed54a2239a01624892e640000000000fdffffff04419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc50f5b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9da644c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca644c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022023cc71809c27b03f64d317dec85cb5be9291f12af999dbb33a7ca3271123e32b02200d78246d7fd23c857f408fc393f6e79a4459257ca601ada4630cac806e5bf49c012102ad2e7f599fec06e794dabe7d7c97100c8a16a5a8ee7a473e6b877629521ecae04092c16b",
-            "willexecutor": false
-        },
-        "5e9355915428b150861ede28eb86cfd17692e063f495657c3fdedc267a95e20b": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "5e9355915428b150861ede28eb86cfd17692e063f495657c3fdedc267a95e20b",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460129460
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315415962
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460129460
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1807848000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781962665.8778772,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d9af1b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9db440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcb440c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402200e8ed269cd0443b9259ac666ca8a349f44aa4607a935fdf6f9bceebe1cc69bfd0220450cf86be10e9454abeb2815ed84960e1d45e5d489a43fe4c84bb2f943ae6975012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "5f8c84f762867a340f7be5577bdfe09fced800b44c5a03e92f4092440e9004f2": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "5f8c84f762867a340f7be5577bdfe09fced800b44c5a03e92f4092440e9004f2",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460147514
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315432954
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460147514
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    10000,
-                    "300d",
-                    10001,
-                    10000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Updated.Replaced.Invalidated",
-            "time": 1781888681.1007006,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0411270000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcfa33b5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d3a87c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc3a87c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402207b3c0b9fb449501283229d37ab20fa8ecf1ba65835532ce570b62c98cee78ea002202813d74f280f9d04f90d91e87d97f772656fdcce20246f6fec59f7188e984aee012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340efbe6b",
-            "willexecutor": false
-        },
-        "6e8b3178ff725013483725bd95df08f7a0284f6dc0a62ab8740d191a8c5889b2": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "6e8b3178ff725013483725bd95df08f7a0284f6dc0a62ab8740d191a8c5889b2",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460144114
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "200d",
-                    66315429754
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460144114
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "200d",
-                    20001,
-                    20000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Replaced.Invalidated",
-            "time": 1781964056.280334,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff04214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc7a27b5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9df279c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcf279c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220195ddae3a7de4959daf7d89105692600d1e0164ce0fa535251ee06b47adb11780220046455aedf9b97c4ea38abc52c35798e5b194a7d971547b79fab7e1cd7b174f0012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340bc3d6b",
-            "willexecutor": false
-        },
-        "7a94407ccb2efc2445542bfe1107eadafb8da00692fb058c8ab3f8013ba7a013": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "7a94407ccb2efc2445542bfe1107eadafb8da00692fb058c8ab3f8013ba7a013",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460144114
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315429754
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460144114
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Updated.Firmato.Replaced.Invalidated",
-            "time": 1781960130.4184484,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff04214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc7a27b5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9df279c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcf279c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220281673a776da91290720d87a3c23756097c865fc9bf332f343ed52a9bf7adebe0220689a09e1968a213475f0f96214f0ca49a8b52d167c104a9c1a1db369ef458e41012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3404cbc6b",
-            "willexecutor": false
-        },
-        "7be33b8465d0cc539990f55186d0a62c9a303b0f955dc2fc35a98da75749bb3d": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": false,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "7be33b8465d0cc539990f55186d0a62c9a303b0f955dc2fc35a98da75749bb3d",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460134210
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "200d",
-                    66315420432
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460134210
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    "200d",
-                    40001,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Updated.Firmato.Invalidated",
-            "time": 1781969271.933921,
-            "tx": "02000000000101609438ba82251a8cf3acfd1f189369029290cf2f8793b2b8f3c4c363c8e6c1a30000000000fdffffff04419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc1003b5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d4253c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc4253c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402202f3bb3b9a7b540b553cd3b78d8ece4b5aaf9d2c47fd0077540eea803a063306e02202b43c2812e9deef1e2446a3e1e55745282881410060c41ee3c8fb59937a08e66012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340bc3d6b",
-            "willexecutor": false
-        },
-        "92687e2749995130bbb0a7e2e89961d3aca94131099585d0c4d1508ebfa27752": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "92687e2749995130bbb0a7e2e89961d3aca94131099585d0c4d1508ebfa27752",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460109060
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315396762
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460109060
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    100000,
-                    1807848000,
-                    100000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Updated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781960091.7051795,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d9aa6b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d04f1bf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc04f1bf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220646865bede38ec96e9c7c02666bdb5a8807db670703e2549a227f97ec900f5e8022001e255b37bc5a09d170f2c74487cf1952a9a3a38a709da2c741ebff2933a1ecf012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c09dbd6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 100000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05214e0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d9aa6b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d04f1bf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc04f1bf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220646865bede38ec96e9c7c02666bdb5a8807db670703e2549a227f97ec900f5e8022001e255b37bc5a09d170f2c74487cf1952a9a3a38a709da2c741ebff2933a1ecf012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c09dbd6b\n",
-                "txsids": [
-                    "92687e2749995130bbb0a7e2e89961d3aca94131099585d0c4d1508ebfa27752"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "934671a6ef20b76a3ea106e69ff79d62851c1213b3540bc6fb8c34a253b83dcc": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "934671a6ef20b76a3ea106e69ff79d62851c1213b3540bc6fb8c34a253b83dcc",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807761600\naaaa\nlucia\nmario\nmario2",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    58716763216
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    55262835968
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    58716763216
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "20%",
-                    "300d",
-                    34539272480
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807761600": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    100000,
-                    1807761600,
-                    100000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781888638.550394,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05a086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d2079b30a080000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc00f5ebdd0c0000001600147e19af296f25d092f23a0c208823e65c81a2af9d50b4caab0d0000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc50b4caab0d0000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022036a3c5f2cb80a9118d1af8d9a25eb33092fff8e0e9ceda3055148366fc7aef8902206532d305fa20385516860c527b822e493aaac7930a33ec114639b7428ea5cfd4012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c040c06b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 100000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05a086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d2079b30a080000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc00f5ebdd0c0000001600147e19af296f25d092f23a0c208823e65c81a2af9d50b4caab0d0000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc50b4caab0d0000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022036a3c5f2cb80a9118d1af8d9a25eb33092fff8e0e9ceda3055148366fc7aef8902206532d305fa20385516860c527b822e493aaac7930a33ec114639b7428ea5cfd4012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c040c06b\n",
-                "txsids": [
-                    "934671a6ef20b76a3ea106e69ff79d62851c1213b3540bc6fb8c34a253b83dcc"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "959f3e6f135b585811e87165352bb97ae696309a0e9e4f6c93f63c85b5178d2b": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "959f3e6f135b585811e87165352bb97ae696309a0e9e4f6c93f63c85b5178d2b",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1792296000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460126060
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "120d",
-                    66315412762
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460126060
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    30000,
-                    "120d",
-                    30001,
-                    30000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1792296000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1792296000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Updated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781968091.2853925,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0531750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ae5b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022043294051a4a7eed0875f3737f0f4c74b3679a203c40e6ef54d740b6ff48e0ba10220521c2ebf00cecc6c756f60352e9842d9de757895728f1ec5a90ffad3693f64d5012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b34044d46a",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0531750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ae5b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022043294051a4a7eed0875f3737f0f4c74b3679a203c40e6ef54d740b6ff48e0ba10220521c2ebf00cecc6c756f60352e9842d9de757895728f1ec5a90ffad3693f64d5012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b34044d46a\n",
-                "txsids": [
-                    "959f3e6f135b585811e87165352bb97ae696309a0e9e4f6c93f63c85b5178d2b"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "98b959e4921df6feab764eb7f41f5afe49e7cae5950a10decb6e3c1644d873f1": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "98b959e4921df6feab764eb7f41f5afe49e7cae5950a10decb6e3c1644d873f1",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1799208000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460126060
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "200d",
-                    66315412762
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460126060
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    30000,
-                    "200d",
-                    30001,
-                    30000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1799208000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1799208000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781964114.071311,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0531750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ae5b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220233d22dabe66850fcd5cea525646981cc7f3e24bafb7a0ead451bcb6b8345f1c02203e82f071e534f9379f6fc893914ac8fc2a129848f8ea460c752e409e96b33c71012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c06a3c6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0531750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ae5b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220233d22dabe66850fcd5cea525646981cc7f3e24bafb7a0ead451bcb6b8345f1c02203e82f071e534f9379f6fc893914ac8fc2a129848f8ea460c752e409e96b33c71012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c06a3c6b\n",
-                "txsids": [
-                    "98b959e4921df6feab764eb7f41f5afe49e7cae5950a10decb6e3c1644d873f1"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "a38fdd27e8ab86430603726fb3d9c7c30e452df0aca433daf822bcecb99c9fbd": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "a38fdd27e8ab86430603726fb3d9c7c30e452df0aca433daf822bcecb99c9fbd",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807761600\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460112460
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315399962
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460112460
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    10000,
-                    "300d",
-                    10001,
-                    10000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807761600": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    100000,
-                    1807761600,
-                    100000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781888681.1007006,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0511270000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ab3b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d4cfebf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc4cfebf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022043491efd8be6c3d2d7b37af6823e7d5c2e0d15086e01cd5fe36935fc119674080220652135dadf0d85ad5d647e32ad7dd7e039fd8f35ed03d5ae8ff8cd0cb56ac9e9012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340efbe6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 100000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0511270000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ab3b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d4cfebf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc4cfebf67100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022043491efd8be6c3d2d7b37af6823e7d5c2e0d15086e01cd5fe36935fc119674080220652135dadf0d85ad5d647e32ad7dd7e039fd8f35ed03d5ae8ff8cd0cb56ac9e9012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340efbe6b\n",
-                "txsids": [
-                    "a38fdd27e8ab86430603726fb3d9c7c30e452df0aca433daf822bcecb99c9fbd"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "a91ff4a30363a1907d57093a92adeaed86820cb36e6225b571b17b655e0bf512": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": true,
-            "VALID": false,
-            "_id": "a91ff4a30363a1907d57093a92adeaed86820cb36e6225b571b17b655e0bf512",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1794888000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "150d",
-                    70460126060
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "150d",
-                    66315412762
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "150d",
-                    70460126060
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    30000,
-                    "150d",
-                    30001,
-                    30000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1794888000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1794888000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Updated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781967421.724049,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0531750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ae5b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220578abf0bcc0606c2ca89062daa5b59cf2a1adfb4732e166a0485c31c8b1b7e07022058e1f2baa2a4ccccfa460fb569c97df13930eb1d98a463eb8b9062e7b9989ba7012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340d1fb6a",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0531750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d1ae5b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6c33c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220578abf0bcc0606c2ca89062daa5b59cf2a1adfb4732e166a0485c31c8b1b7e07022058e1f2baa2a4ccccfa460fb569c97df13930eb1d98a463eb8b9062e7b9989ba7012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340d1fb6a\n",
-                "txsids": [
-                    "a91ff4a30363a1907d57093a92adeaed86820cb36e6225b571b17b655e0bf512"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "adb13f7887359732c227e0d0523090de7d6cef7e7c73fb3b0a8b67844efbcd91": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
+            "CHECKED": true,
             "CHECK_FAIL": false,
             "COMPLETE": true,
             "CONFIRMED": false,
@@ -13145,53 +11902,53 @@
             "RESTORED": false,
             "UPDATED": false,
             "VALID": true,
-            "_id": "adb13f7887359732c227e0d0523090de7d6cef7e7c73fb3b0a8b67844efbcd91",
+            "_id": "def15833cf94c5795c6275076bdadebd809175455f6eb4d5f8db304f816433b8",
             "baltx_fees": 1,
             "change": null,
-            "description": "w!ll3x3c\"http://localhost:9133\"1817092800\nmario2\naaaa\nlucia\nmario",
+            "description": "w!ll3x3c\"http://localhost:9133\"1817438400\nmario2\naaaa\nlucia\nmario",
             "heirs": {
                 "aaaa": [
                     "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
                     "34%",
                     "1y",
-                    336619671
+                    336619597
                 ],
                 "lucia": [
                     "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
                     "32%",
                     "1y",
-                    316818514
+                    316818444
                 ],
                 "mario": [
                     "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
                     "35%",
                     "1y",
-                    346520250
+                    346520173
                 ],
                 "mario2": [
                     "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
                     40000,
                     "1y",
-                    40001,
+                    40002,
                     40000
                 ],
-                "w!ll3x3c\"http://localhost:9133\"1817092800": [
+                "w!ll3x3c\"http://localhost:9133\"1817438400": [
                     "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
                     1000,
-                    1817092800,
+                    1817438400,
                     1000
                 ]
             },
-            "sigs_have": 0,
+            "sigs_have": 1,
             "sigs_required": 1,
-            "status": "New.Firmato.Pushed",
-            "time": 1785620332.2813325,
-            "tx": "020000000001014c4fffdabe4d27a8b06618492a5fe828345551b3da8107b8cada5f452995652c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc5244e212000000001600147e19af296f25d092f23a0c208823e65c81a2af9d97681014000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcba7aa714000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402205b777b06e8392136b30177d8a353bde7238a5aa5235eaf973a298c0eb974b4750220783b0b1c7093c93a2aee94829c6e0f6288cecd9e8eba94c61b9c54c2c84f4d2c0121032592689364f3a4796fc35a1f183791eb7c5db25e6f36fa0f1e92654ed679c791c0a24e6c",
+            "status": "New.Signed.Pushed.Checked",
+            "time": 1785962732.933536,
+            "tx": "020000000001012643fd84307dc1b26b2cbb719d82112953e46de3cce36eaca7d32903cf79e5270000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a429c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0c44e212000000001600147e19af296f25d092f23a0c208823e65c81a2af9d4d681014000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6d7aa714000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022043be5753ad8ebcacf8e37c55fe0e59b04b6012892b149c63dd9d91b0f97096710220700565cd7bd947469c29cafb5c3fa80a090c31d920f26ec28483536f1531c8a6012102321c23031f88968710649e9ed043a0b484a5db5febb565152e15ccd288ece7f3c0e8536c",
             "willexecutor": {
                 "address": "bcrt1qrjwc0ww8xcvgum9zwmq858wndqguw7q27ek3sk",
                 "balance": 90000,
                 "base_fee": 1000,
-                "broadcast_status": "Riuscito",
+                "broadcast_status": "Waiting...",
                 "chain": "regtest",
                 "count_win": 0,
                 "id": 66,
@@ -13204,667 +11961,13 @@
                 "selected": true,
                 "status": 200,
                 "tld": "localhost",
-                "txs": "020000000001014c4fffdabe4d27a8b06618492a5fe828345551b3da8107b8cada5f452995652c0000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc5244e212000000001600147e19af296f25d092f23a0c208823e65c81a2af9d97681014000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcba7aa714000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402205b777b06e8392136b30177d8a353bde7238a5aa5235eaf973a298c0eb974b4750220783b0b1c7093c93a2aee94829c6e0f6288cecd9e8eba94c61b9c54c2c84f4d2c0121032592689364f3a4796fc35a1f183791eb7c5db25e6f36fa0f1e92654ed679c791c0a24e6c\n",
+                "txs": "020000000001012643fd84307dc1b26b2cbb719d82112953e46de3cce36eaca7d32903cf79e5270000000000fdffffff05e8030000000000001600141c9d87b9c736188e6ca276c07a1dd36811c7780a429c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0c44e212000000001600147e19af296f25d092f23a0c208823e65c81a2af9d4d681014000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc6d7aa714000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc02473044022043be5753ad8ebcacf8e37c55fe0e59b04b6012892b149c63dd9d91b0f97096710220700565cd7bd947469c29cafb5c3fa80a090c31d920f26ec28483536f1531c8a6012102321c23031f88968710649e9ed043a0b484a5db5febb565152e15ccd288ece7f3c0e8536c\n",
                 "txsids": [
-                    "adb13f7887359732c227e0d0523090de7d6cef7e7c73fb3b0a8b67844efbcd91"
+                    "def15833cf94c5795c6275076bdadebd809175455f6eb4d5f8db304f816433b8"
                 ],
                 "unconfirmed_balance": 0,
                 "url": "http://localhost:9133",
                 "version": "0.3.2"
-            }
-        },
-        "b708916e8f8ab4562bb415f6876276e3901231649a9ed7f2d22ed0bae65cf0b9": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "3318599c8ac525d9f9a29c298a943ae887afbf31ed92b781ceaa547e3ddd352b",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460139660
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315425562
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460139660
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    20000,
-                    "300d",
-                    20001,
-                    20000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    10000,
-                    1807848000,
-                    10000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Replaced.Invalidated",
-            "time": 1781960130.4184484,
-            "tx": "cHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 10000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "cHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA\ncHNidP8BAM4CAAAAATwyIk7fo395BQp+yWQkAi3cbJvLbRmda5/tvOr9l4OrAAAAAAD9////BRAnAAAAAAAAFgAU7TE18rdHWuOJsZ6gBUxSJGsDNW0hTgAAAAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8Ghe1cA8AAAAWABR+Ga8pbyXQkvI6DCCII+ZcgaKvnYxowGcQAAAAFgAUjh/DmWHFR4f917XPPlnAlblzT7yMaMBnEAAAABYAFI4fw5lhxUeH/de1zz5ZwJW5c0+8QEy8awABAR/LuDZAMAAAABYAFGBQRfMEYDJh1QX/1tBRR+VvkLw1AQC/AgAAAAABAdBIzJabwKbs6lJgkCm0wcVHr8+UrQ1/tmFmsVgk6Ps/AAAAAAD9////Acu4NkAwAAAAFgAUYFBF8wRgMmHVBf/W0FFH5W+QvDUCRzBEAiBsSSpHFP2Gh940TxVArbX+kwXOWOx+h6QMC6uGd1BJ2AIgRAA9Mt59IRdg35PVtTzAiXxpRBbNtC5iFkrG8a3JpwkBIQK3LMm6aGQKR2q+Fz2gacXTehCRNG2SQv15S0cNBKI2zd0FAAAiBgPqVPo0IcmIzsGP4vghpv7ElJA+HX0ubSzmFtmxSKqQsxBZSzQGAAAAgAEAAAALAAAAAAAAAAAA\n",
-                "txsids": [
-                    "b708916e8f8ab4562bb415f6876276e3901231649a9ed7f2d22ed0bae65cf0b9",
-                    "3318599c8ac525d9f9a29c298a943ae887afbf31ed92b781ceaa547e3ddd352b"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "cc249f4b68e8d52c4a2622d86bf13ebc256525e2e85dd7dd02514658e869d4dd": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "cc249f4b68e8d52c4a2622d86bf13ebc256525e2e85dd7dd02514658e869d4dd",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460140714
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "120d",
-                    66315426554
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460140714
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    30000,
-                    "120d",
-                    30001,
-                    30000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Replaced.Invalidated",
-            "time": 1781968091.2853925,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0431750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcfa1ab5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9daa6cc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcaa6cc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402207c5a4fe19fc15204abc89058ce988eeb499d52b906a51f6347d69581903b2b0c022001c7b4396bcd9b8ff0bd13bd9014468d75fd140a19703c0876f91912b9596104012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b34044d46a",
-            "willexecutor": false
-        },
-        "d3c6048e8b2d169ea88a8b85869e996b165181a8532853c1e94eb6010a53164f": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "d3c6048e8b2d169ea88a8b85869e996b165181a8532853c1e94eb6010a53164f",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "mario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "150d",
-                    70460140714
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "150d",
-                    66315426554
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "150d",
-                    70460140714
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    30000,
-                    "150d",
-                    30001,
-                    30000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Replaced.Invalidated",
-            "time": 1781967421.724049,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff0431750000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcfa1ab5700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9daa6cc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcaa6cc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402207dc67b956e892ae5a44a0d015501f8e0f39f6a6987e750a77ee6bc73a6fc3d7f02205d358971ecf087d7d9e8c424f63e3c5fa0c17b52b31b88a243d4aa9d8cd2f1f8012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340d1fb6a",
-            "willexecutor": false
-        },
-        "dabe77c276942c463e0c34b49b1aba08f563dce97a32c41c098d59e58f476539": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": false,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "dabe77c276942c463e0c34b49b1aba08f563dce97a32c41c098d59e58f476539",
-            "baltx_fees": 1,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1814068800\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    1814068800.0,
-                    69762478507
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    1814068800.0,
-                    65658803301
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "35%",
-                    1814068800.0,
-                    71814316110
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    1814068800.0,
-                    40001,
-                    40000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1814068800": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    100000,
-                    1814068800,
-                    100000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Invalidated",
-            "time": 1782556752.5544994,
-            "tx": "020000000001018d2e8abfce92293e83c639dd0371e5fecefefb7b980ed54a2239a01624892e640000000000fdffffff05419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d65d491490f0000001600147e19af296f25d092f23a0c208823e65c81a2af9dabf12a3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc4e8077b8100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220459f471c2befd1bd528e5059675f12aba5d2117d8d3bd5005aca401cab307aa002201e50c4b3da8f15c62e33f9fd9cd99645046b4eb0348d77beeeac6c1f929a3568012102ad2e7f599fec06e794dabe7d7c97100c8a16a5a8ee7a473e6b877629521ecae0c040c06b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 100000,
-                "broadcast_status": "Waiting...",
-                "info": "Bitcoin After Life Will Executor",
-                "last_update": 1782551347.567278,
-                "promo_code": null,
-                "selected": true,
-                "status": "KO",
-                "txs": "020000000001018d2e8abfce92293e83c639dd0371e5fecefefb7b980ed54a2239a01624892e640000000000fdffffff05419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d65d491490f0000001600147e19af296f25d092f23a0c208823e65c81a2af9dabf12a3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc4e8077b8100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220459f471c2befd1bd528e5059675f12aba5d2117d8d3bd5005aca401cab307aa002201e50c4b3da8f15c62e33f9fd9cd99645046b4eb0348d77beeeac6c1f929a3568012102ad2e7f599fec06e794dabe7d7c97100c8a16a5a8ee7a473e6b877629521ecae0c040c06b\n020000000001018d2e8abfce92293e83c639dd0371e5fecefefb7b980ed54a2239a01624892e640000000000fdffffff05419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d65d491490f0000001600147e19af296f25d092f23a0c208823e65c81a2af9dabf12a3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc4e8077b8100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220381a8ccc9edba0d8b8d304493103639e58a4c19d79525976ab09f990f8c104440220720b86e4c80b61068195dd62f0e28d4cd11793b2683acacfeb2b507e5b7fa360012102ad2e7f599fec06e794dabe7d7c97100c8a16a5a8ee7a473e6b877629521ecae0407e206c\n",
-                "txsids": [
-                    "dabe77c276942c463e0c34b49b1aba08f563dce97a32c41c098d59e58f476539",
-                    "e289ca8134bc76e77dfe30295482489bfe15831bf6d6326471fb8d1fc876ca96"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "e289ca8134bc76e77dfe30295482489bfe15831bf6d6326471fb8d1fc876ca96": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": false,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "e289ca8134bc76e77dfe30295482489bfe15831bf6d6326471fb8d1fc876ca96",
-            "baltx_fees": 1,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1814068800\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    1814068800.0,
-                    69762478507
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    1814068800.0,
-                    65658803301
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "35%",
-                    1814068800.0,
-                    71814316110
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    1814068800.0,
-                    40001,
-                    40000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1814068800": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    100000,
-                    1814068800,
-                    100000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Replaced.Invalidated",
-            "time": 1782556767.004284,
-            "tx": "020000000001018d2e8abfce92293e83c639dd0371e5fecefefb7b980ed54a2239a01624892e640000000000fdffffff05419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca086010000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d65d491490f0000001600147e19af296f25d092f23a0c208823e65c81a2af9dabf12a3e100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc4e8077b8100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220381a8ccc9edba0d8b8d304493103639e58a4c19d79525976ab09f990f8c104440220720b86e4c80b61068195dd62f0e28d4cd11793b2683acacfeb2b507e5b7fa360012102ad2e7f599fec06e794dabe7d7c97100c8a16a5a8ee7a473e6b877629521ecae0407e206c",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 100000,
-                "info": "Bitcoin After Life Will Executor",
-                "last_update": 1782551347.567278,
-                "promo_code": null,
-                "selected": true,
-                "status": "KO",
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "eb9f798774b196368f5f1e24a22669c48dcd8406aee7b8de878ad0a4b42a189f": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": false,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "eb9f798774b196368f5f1e24a22669c48dcd8406aee7b8de878ad0a4b42a189f",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1792296000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460123296
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "120d",
-                    66315410160
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460123296
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    "120d",
-                    40001,
-                    40000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1792296000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1792296000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Push failed.Invalidated",
-            "time": 1781968538.3178709,
-            "tx": "02000000000101d048cc969bc0a6ecea52609029b4c1c547afcf94ad0d7fb66166b15824e8fb3f0000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcf0dab4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9da028c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca028c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402205df4e886280853547a595e4aebf4bc04fe71c6b0e5b81f765492637183e3e5b902202deae6e1b3707f4a9242638509af4411f1347bf6e2c8c8f02308880f338f9c09012102b72cc9ba68640a476abe173da069c5d37a1091346d9242fd794b470d04a236cd4044d46a",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "02000000000101d048cc969bc0a6ecea52609029b4c1c547afcf94ad0d7fb66166b15824e8fb3f0000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbcf0dab4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9da028c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbca028c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402205df4e886280853547a595e4aebf4bc04fe71c6b0e5b81f765492637183e3e5b902202deae6e1b3707f4a9242638509af4411f1347bf6e2c8c8f02308880f338f9c09012102b72cc9ba68640a476abe173da069c5d37a1091346d9242fd794b470d04a236cd4044d46a\n",
-                "txsids": [
-                    "eb9f798774b196368f5f1e24a22669c48dcd8406aee7b8de878ad0a4b42a189f"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "eced91d575c32dbf7b9712d7f2e6881f5992cdad954d486f4278f223cc7cae02": {
-            "ANTICIPATED": true,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": false,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "eced91d575c32dbf7b9712d7f2e6881f5992cdad954d486f4278f223cc7cae02",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1792296000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460122660
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "120d",
-                    66315409562
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "120d",
-                    70460122660
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    "120d",
-                    40001,
-                    40000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1792296000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1792296000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Anticipated.Firmato.Push failed.Invalidated",
-            "time": 1781968114.0018213,
-            "tx": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc9ad8b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d2426c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc2426c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220046f713d5ff3427a3839a54fad776840265d32a008c0132dd067eb925b42d9a30220386a1bd590869e913898856c81df9a1aa1e2ea1fb11f76d418324b3f6ba770b2012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c0f2d26a",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001013c32224edfa37f79050a7ec96424022ddc6c9bcb6d199d6b9fedbceafd9783ab0000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc9ad8b4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d2426c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc2426c067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc024730440220046f713d5ff3427a3839a54fad776840265d32a008c0132dd067eb925b42d9a30220386a1bd590869e913898856c81df9a1aa1e2ea1fb11f76d418324b3f6ba770b2012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b3c0f2d26a\n",
-                "txsids": [
-                    "eced91d575c32dbf7b9712d7f2e6881f5992cdad954d486f4278f223cc7cae02"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "edf4cf16e67adb2b4edae518122f902d5e6c07499ea4f5661e32b272bb8d67d0": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": false,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "edf4cf16e67adb2b4edae518122f902d5e6c07499ea4f5661e32b272bb8d67d0",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1799208000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460119556
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "200d",
-                    66315406640
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "200d",
-                    70460119556
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    "200d",
-                    40001,
-                    40000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1799208000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1799208000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Push failed.Invalidated",
-            "time": 1781969271.933921,
-            "tx": "02000000000101609438ba82251a8cf3acfd1f189369029290cf2f8793b2b8f3c4c363c8e6c1a30000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc30cdb4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d041ac067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc041ac067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402207723e0a35a030b4032c5961482c14dfa4bc6c7c09e71d83e5b487742825100eb02205f3f81b10a592fc367b8bf3ed055d4d8849413c8d4c16cd89a555f5186bd9fbc012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340bc3d6b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "02000000000101609438ba82251a8cf3acfd1f189369029290cf2f8793b2b8f3c4c363c8e6c1a30000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc30cdb4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d041ac067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc041ac067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402207723e0a35a030b4032c5961482c14dfa4bc6c7c09e71d83e5b487742825100eb02205f3f81b10a592fc367b8bf3ed055d4d8849413c8d4c16cd89a555f5186bd9fbc012103ea54fa3421c988cec18fe2f821a6fec494903e1d7d2e6d2ce616d9b148aa90b340bc3d6b\n",
-                "txsids": [
-                    "edf4cf16e67adb2b4edae518122f902d5e6c07499ea4f5661e32b272bb8d67d0"
-                ],
-                "url": "https://we.bitcoin-after.life"
-            }
-        },
-        "f3fe529f7269138b4d08bb934e0d61546d5d590db7a3f62a23a360590a3d533b": {
-            "ANTICIPATED": false,
-            "BROADCASTED": false,
-            "CHECKED": false,
-            "CHECK_FAIL": false,
-            "COMPLETE": true,
-            "CONFIRMED": false,
-            "ERROR": false,
-            "EXPIRED": false,
-            "EXPORTED": false,
-            "IMPORTED": false,
-            "INVALIDATED": true,
-            "MEMPOOL": false,
-            "PARTIALLY_SIGNED": false,
-            "PUSHED": false,
-            "PUSH_FAIL": true,
-            "REPLACED": true,
-            "RESTORED": false,
-            "UPDATED": false,
-            "VALID": false,
-            "_id": "f3fe529f7269138b4d08bb934e0d61546d5d590db7a3f62a23a360590a3d533b",
-            "baltx_fees": 100,
-            "change": null,
-            "description": "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000\nmario2\naaaa\nlucia\nmario",
-            "heirs": {
-                "aaaa": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460115816
-                ],
-                "lucia": [
-                    "bcrt1q0cv672t0yhgf9u36pssgsglxtjq69tuakdzy2j",
-                    "32%",
-                    "300d",
-                    66315403120
-                ],
-                "mario": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    "34%",
-                    "300d",
-                    70460115816
-                ],
-                "mario2": [
-                    "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-                    40000,
-                    "300d",
-                    40001,
-                    40000
-                ],
-                "w!ll3x3c\"https://we.bitcoin-after.life\"1807848000": [
-                    "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                    40000,
-                    1807848000,
-                    40000
-                ]
-            },
-            "sigs_have": 0,
-            "sigs_required": 0,
-            "status": "New.Firmato.Replaced.Push failed.Invalidated",
-            "time": 1781969519.6341054,
-            "tx": "020000000001018d2e8abfce92293e83c639dd0371e5fecefefb7b980ed54a2239a01624892e640000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc70bfb4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d680bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc680bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402206fc53acf1f67198ce0b36e5624e8d509f301ab4729e9e0776b59ea7afce75322022050a99933c34b6189266b4e234b48368fe9178caf915c63f21aa720fe5b7798bf012102ad2e7f599fec06e794dabe7d7c97100c8a16a5a8ee7a473e6b877629521ecae04092c16b",
-            "willexecutor": {
-                "address": "bcrt1qa5cntu4hgadw8zd3n6sq2nzjy34sxdtd9u0gp7",
-                "base_fee": 40000,
-                "broadcast_status": "Fallito",
-                "info": "Bitcoin After Life Will Executor",
-                "promo_code": null,
-                "selected": true,
-                "status": "New",
-                "txs": "020000000001018d2e8abfce92293e83c639dd0371e5fecefefb7b980ed54a2239a01624892e640000000000fdffffff05409c000000000000160014ed3135f2b7475ae389b19ea0054c52246b03356d419c0000000000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc70bfb4700f0000001600147e19af296f25d092f23a0c208823e65c81a2af9d680bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc680bc067100000001600148e1fc39961c54787fdd7b5cf3e59c095b9734fbc0247304402206fc53acf1f67198ce0b36e5624e8d509f301ab4729e9e0776b59ea7afce75322022050a99933c34b6189266b4e234b48368fe9178caf915c63f21aa720fe5b7798bf012102ad2e7f599fec06e794dabe7d7c97100c8a16a5a8ee7a473e6b877629521ecae04092c16b\n",
-                "txsids": [
-                    "f3fe529f7269138b4d08bb934e0d61546d5d590db7a3f62a23a360590a3d533b"
-                ],
-                "url": "https://we.bitcoin-after.life"
             }
         }
     },

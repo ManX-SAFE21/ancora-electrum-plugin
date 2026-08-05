@@ -118,23 +118,25 @@ def test_locktime_editor_min_max():
 def test_locktime_raw_edit_replace_str():
     # replace_str only strips the day ("d") and year ("y") suffixes. The
     # block-height suffix ("b") was removed (A1), so "b" is NOT stripped
-    # anymore (locktimes are always UNIX timestamps now).
-    from bal.gui.qt.widgets import LockTimeRawEdit
-    assert LockTimeRawEdit.replace_str("123d") == "123"
-    assert LockTimeRawEdit.replace_str("456y") == "456"
+    # anymore (locktimes are always UNIX timestamps now). The helper moved to
+    # bal.core.input_rules (replace_dy_suffixes); the widget delegates to it.
+    from bal.core.input_rules import replace_dy_suffixes
+    assert replace_dy_suffixes("123d") == "123"
+    assert replace_dy_suffixes("456y") == "456"
     # "b" is left untouched (no longer a recognised suffix)
-    assert LockTimeRawEdit.replace_str("789b") == "789b"
+    assert replace_dy_suffixes("789b") == "789b"
     # only d/y are stripped; a stray "b" remains
-    assert LockTimeRawEdit.replace_str("12d34y56b") == "123456b"
+    assert replace_dy_suffixes("12d34y56b") == "123456b"
 
 
 def test_locktime_raw_edit_checkbdy():
-    from bal.gui.qt.widgets import LockTimeRawEdit
+    # checkbdy moved to bal.core.input_rules (_checkbdy).
+    from bal.core.input_rules import _checkbdy
     # character at expected position matches appendix
-    pos, s = LockTimeRawEdit.checkbdy(None, "123d", 4, "d")
+    pos, s = _checkbdy("123d", 4, "d")
     assert s == "123d"
     # character at expected position does not match
-    pos, s = LockTimeRawEdit.checkbdy(None, "123x", 4, "d")
+    pos, s = _checkbdy("123x", 4, "d")
     assert s == "123x"
 
 

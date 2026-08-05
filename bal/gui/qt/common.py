@@ -12,7 +12,7 @@ hosts a few GUI helpers that do not deserve a module of their own:
     * :func:`add_widget`      - add a labelled widget (plus optional help) to a grid.
     * :func:`log_error`       - format an exception traceback for a dialog.
     * :func:`export_meta_gui` - export plugin metadata to a JSON file.
-    * :class:`CheckAliveError`- raised when the "check alive" date is in the past.
+      (:class:`CheckAliveError` now lives in ``bal.core.checkalive``.)
 """
 
 import copy
@@ -177,18 +177,6 @@ def add_widget(grid, label, widget, row, help_):
     grid.addWidget(QLabel(_(label)), row, 0)
     grid.addWidget(widget, row, 1)
     grid.addWidget(HelpButton(help_), row, 2)
-
-
-
-
-class CheckAliveError(Exception):
-    def __init__(self, timestamp_to_check):
-        self.timestamp_to_check = timestamp_to_check
-
-    def __str__(self):
-        return "Check alive expired please update it: {}".format(
-            datetime.fromtimestamp(self.timestamp_to_check).isoformat()
-        )
 
 
 

@@ -305,10 +305,14 @@ def _make_merge_fake(willitems):
         wallet=FakeWallet(),
         bal_window=None,
         date_to_check=1700000000,
+        will_settings={"threshold": 1700000000},
         bal_plugin=SimpleNamespace(
             HISTORY_LABEL=SimpleNamespace(
                 get=lambda: "BAL will history ({willexecutor})"
-            )
+            ),
+            # BASIC is the default user type; merge_will resolves date_to_check
+            # through bal.core.checkalive when it is missing.
+            is_basic_mode=lambda: True,
         ),
         update_all=lambda: calls.append("update_all"),
     )

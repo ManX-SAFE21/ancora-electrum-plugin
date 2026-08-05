@@ -7,11 +7,16 @@ iCalendar (.ics) generation and "open with default calendar app" helper.
 When a will is built, the plugin can create a calendar event reminding the user
 to "check in" before the locktime expires.  This module turns the event data
 into an RFC-5545 .ics file and opens it with the OS default application.
+
+The pure RFC-5545 logic (offsets, escaping, folding, the unified .ics builder,
+``write_temp_ics``) lives in :mod:`bal.core.reminders`; this module keeps only
+the Qt button and the OS/subprocess glue.
 """
 
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QToolButton
 
+from ...core.reminders import write_temp_ics
 from .common import *
 from .common import _, _logger  # underscore names are not re-exported by "import *"
 
@@ -57,7 +62,7 @@ class BalCalendarButton(QToolButton):
         try:
             content = self._ics_provider()
             if content:
-                self._calendar_temp_path = BalCalendar.write_temp_ics(content)
+                self._calendar_temp_path = write_temp_ics(content)
             else:
                 self._calendar_temp_path = None
                 self._bal_window.show_warning(
@@ -150,13 +155,6 @@ class BalCalendarButton(QToolButton):
 
 class BalCalendar:
     @staticmethod
-    def write_temp_ics(content):
-        fd, path = tempfile.mkstemp(prefix="event_", suffix=".ics")
-        with os.fdopen(fd, "wb") as f:
-            f.write(content.encode("utf-8"))
-        return path
-
-    @staticmethod
     def open_with_default_app(calendar_app, path):
         _logger.debug("opening calendar app")
         try:
@@ -184,37 +182,3 @@ class BalCalendar:
         if os.path.isdir(desktop):
             return desktop
         return home
-
-
-    @staticmethod
-    def format_time(time):
-        return time.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        #return time.astimezone(timezone.utc).strftime("%Y%m%d")
-
-    @staticmethod
-    def ical_escape(text: str) -> str:
-        # escape per RFC5545: backslash, ; , newlines
-        text = (
-            text.replace("\\", "\\\\")
-            .replace(";", "\\;")
-            .replace(",", "\\,")
-        )
-        return "\r\n".join(
-            BalCalendar.fold_ical_line(line)
-            for line in text.split("\r\n")
-        )
-
-    @staticmethod
-    def fold_ical_line(line: str, limit: int = 75) -> str:
-        # ritorna linee separate da CRLF e folding con spazio iniziale sulle righe successive
-        encoded = line.encode("utf-8")
-        parts = []
-        while len(encoded) > limit:
-            # taglia senza spezzare byte UTF-8
-            cut = limit
-            while (encoded[cut] & 0xC0) == 0x80:  # byte di continuazione UTF-8
-                cut -= 1
-            parts.append(encoded[:cut].decode("utf-8"))
-            encoded = encoded[cut:]
-        parts.append(encoded.decode("utf-8"))
-        return "\r\n ".join(parts)

@@ -10,13 +10,12 @@ that would fall in the past.
 These tests pin the behaviour of the pure helper ``basic_reminder_offsets`` that
 drives that decision.
 
-``basic_reminder_offsets`` lives in ``bal.gui.qt.widgets`` (which imports
-PyQt6), so these tests are run headless with ``QT_QPA_PLATFORM=offscreen`` like
-the other GUI tests.
+``basic_reminder_offsets`` now lives in ``bal.core.reminders`` (pure, GUI-free),
+so these tests run without Qt (or Electrum) at all.
 
 Run:
-    QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \
-        python3 -m pytest tests/test_group_g_basic_calendar.py -q
+    source "$BAL_HOME/electrum/env/bin/activate"
+    python3 tests/test_group_g_basic_calendar.py
 """
 
 import os
@@ -24,7 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from bal.gui.qt.widgets import BASIC_REMINDER_OFFSETS, basic_reminder_offsets
+from bal.core.reminders import BASIC_REMINDER_OFFSETS, basic_reminder_offsets
 
 
 def test_basic_offsets_all_future():
