@@ -1144,8 +1144,6 @@ class Will:
                     if heir := heirs.get(wheir, None):
 
                         if heir[0] == their[0] and heir[1] == their[1]:
-                            # The requested (possibly new) locktime for this heir.
-                            new_locktime = Util.parse_locktime_string(heir[2])
                             # IMPORTANT: compare against the locktime that is
                             # actually frozen inside the already-signed Bitcoin
                             # transaction (w.tx.locktime), NOT against their[2].
@@ -1156,6 +1154,16 @@ class Will:
                             # undetected.  w.tx.locktime is immutable once signed
                             # and is exactly what the will-executors hold.
                             tx_locktime = int(w.tx.locktime)
+                            # The requested (possibly new) locktime for this heir.
+                            # A RELATIVE recipe ("1y"/"30d") is resolved against
+                            # the moment the signed tx was built, NOT against now:
+                            # re-parsing it from "now" drifts it one day per day
+                            # away from the frozen tx locktime, so an UNCHANGED
+                            # will would be read as a POSTPONE and the plugin
+                            # would ask to invalidate it every day.
+                            new_locktime = Util.resolve_locktime_against_tx(
+                                heir[2], their[2], tx_locktime
+                            )
                             if new_locktime == tx_locktime:
                                 # Unchanged: this heir is still coherent.
                                 count = heirs_found.get(wheir, 0)

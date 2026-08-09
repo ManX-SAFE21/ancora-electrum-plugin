@@ -85,6 +85,63 @@ def test_int_locktime():
     assert Util.int_locktime() == 0
 
 
+def test_relative_days():
+    assert Util._relative_days("30d") == 30
+    assert Util._relative_days("1y") == 365
+    assert Util._relative_days("2y") == 730
+    assert Util._relative_days("30D") == 30
+    assert Util._relative_days(1700000000) is None
+    assert Util._relative_days("1700000000") is None
+    assert Util._relative_days("garbage") is None
+
+
+def test_resolve_locktime_against_tx_absolute():
+    """An absolute current date is returned unchanged (compared vs the tx)."""
+    frozen = 1817438400
+    assert Util.resolve_locktime_against_tx(str(frozen), "1y", frozen) == frozen
+    assert Util.resolve_locktime_against_tx(frozen, str(frozen), frozen) == frozen
+
+
+def test_resolve_locktime_against_tx_unchanged_relative():
+    """An unchanged relative recipe resolves to exactly the frozen tx locktime
+    (coherent), instead of drifting one day per day away from it."""
+    frozen = 1817438400  # 2027-08-05, i.e. a tx built 2026-08-05 with "1y"
+    resolved = Util.resolve_locktime_against_tx("1y", "1y", frozen)
+    assert resolved == frozen
+
+
+def test_resolve_locktime_against_tx_lengthened():
+    """A lengthened relative recipe resolves later than the frozen tx locktime
+    (this is what the postpone check uses to trigger invalidation)."""
+    frozen = 1817438400  # tx built 2026-08-05 with "1y" -> delivery 2027-08-05
+    resolved = Util.resolve_locktime_against_tx("2y", "1y", frozen)
+    assert resolved == frozen + 365 * 86400
+
+
+def test_resolve_locktime_against_tx_shortened():
+    """A shortened relative recipe resolves earlier than the frozen tx locktime
+    (this is what the anticipate/rebuild path uses)."""
+    frozen = 1817438400
+    resolved = Util.resolve_locktime_against_tx("30d", "1y", frozen)
+    assert resolved < frozen
+
+
+def test_resolve_locktime_against_tx_no_relative_anchor():
+    """When the built recipe was absolute there is no anchor: falls back to the
+    legacy forward-from-now resolution (returns a timestamp, no crash)."""
+    frozen = 1817438400
+    result = Util.resolve_locktime_against_tx("30d", str(frozen), frozen)
+    assert isinstance(result, int)
+    assert result > 1700000000
+
+
+def test_resolve_locktime_against_tx_zero_tx_locktime():
+    """A tx with no usable locktime falls back to now-based resolution."""
+    result = Util.resolve_locktime_against_tx("1y", "1y", 0)
+    assert isinstance(result, int)
+    assert result > 1700000000
+
+
 def test_encode_decode_amount():
     dp = 8  # typical BTC decimal point
 
@@ -440,6 +497,13 @@ if __name__ == "__main__":
     test_str_to_locktime()
     test_parse_locktime_string()
     test_int_locktime()
+    test_relative_days()
+    test_resolve_locktime_against_tx_absolute()
+    test_resolve_locktime_against_tx_unchanged_relative()
+    test_resolve_locktime_against_tx_lengthened()
+    test_resolve_locktime_against_tx_shortened()
+    test_resolve_locktime_against_tx_no_relative_anchor()
+    test_resolve_locktime_against_tx_zero_tx_locktime()
     test_encode_decode_amount()
     test_is_perc()
     test_cmp_array()

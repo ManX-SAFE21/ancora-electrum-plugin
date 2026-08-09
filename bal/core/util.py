@@ -131,6 +131,72 @@ class Util:
             + days * 60 * 60 * 24
         )
 
+    @staticmethod
+    def _relative_days(value):
+        """Duration in days of a relative ``"Nd"``/``"Ny"`` recipe.
+
+        Returns ``None`` when the value is not a relative recipe (an absolute
+        timestamp, a plain number, or garbage).
+        """
+        s = str(value)
+        if s and s[-1] in "yYdD":
+            try:
+                n = int(s[:-1])
+            except ValueError:
+                return None
+            return n * 365 if s[-1] in "yY" else n
+        return None
+
+    @staticmethod
+    def resolve_locktime_against_tx(current, built, tx_locktime):
+        """Resolve a locktime recipe against the moment the signed tx was built.
+
+        A RELATIVE recipe stored in the wallet (``"1y"``/``"30d"``) is a moving
+        target: parsing it against *now* on every check drifts it one day per
+        day away from the fixed locktime frozen inside the signed Bitcoin
+        transaction, so an UNCHANGED will is mistaken for a POSTPONE and the
+        plugin asks to invalidate it every day (reported bug).  This resolves
+        the current recipe against the build moment instead, recovered from the
+        signed transaction's locktime and the recipe that was actually frozen
+        at build time (``built``, the value stored in the will item):
+
+            build_moment = tx_locktime - duration(built)
+            expected     = build_moment + duration(current)
+
+        An unchanged recipe therefore resolves to exactly ``tx_locktime``
+        (coherent), a lengthened one resolves later (postpone) and a shortened
+        one earlier (anticipate).
+
+        Args:
+            current: the current locktime recipe (relative or absolute).
+            built: the recipe frozen at build time (stored in the will item).
+            tx_locktime: the absolute locktime frozen inside the signed tx.
+
+        Returns:
+            int: the resolved absolute locktime (UNIX timestamp).
+        """
+        current_days = Util._relative_days(current)
+        built_days = Util._relative_days(built)
+        if current_days is None:
+            # Absolute current date: compare directly against the frozen tx.
+            try:
+                return int(current)
+            except Exception:
+                return Util.parse_locktime_string(current)
+        if built_days is None or not tx_locktime:
+            # The stored recipe was absolute (a fixed date) or the tx has no
+            # usable locktime: there is no relative anchor to recover the build
+            # moment, so fall back to the legacy forward-from-now resolution.
+            return Util.parse_locktime_string(current)
+        try:
+            base = datetime.fromtimestamp(int(tx_locktime)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            build_moment = base - timedelta(days=built_days)
+            return int((build_moment + timedelta(days=current_days)).timestamp())
+        except Exception:
+            return Util.parse_locktime_string(current)
+
     # ------------------------------------------------------------------ #
     # Amount helpers
     # ------------------------------------------------------------------ #

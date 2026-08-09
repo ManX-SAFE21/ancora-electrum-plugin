@@ -640,7 +640,9 @@ class BalWindow:
             # exactly as before. The policy itself lives in
             # ``bal.core.checkalive.resolve_date_to_check``.
             self.date_to_check = resolve_date_to_check(
-                self.bal_plugin.is_basic_mode(), self.will_settings
+                self.bal_plugin.is_basic_mode(),
+                self.will_settings,
+                built_locktime=Will.get_min_locktime(self.willitems),
             )
             # found = False
             # NOTE: block-height tracking removed (A1) - locktimes are always

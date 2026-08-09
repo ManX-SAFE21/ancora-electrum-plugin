@@ -1012,6 +1012,14 @@ class BalBuildWillDialog(BalDialog):
         desired behaviour, and that the date shown in the panel/wizard must
         reflect this anticipated date (so the calendar .ics also uses it).
 
+        RELATIVE dates are additionally normalised here: a relative value
+        ("30d"/"1y") is re-parsed against "now" on every check, so it drifts
+        away from the fixed transaction locktime and the postpone check would
+        wrongly ask to invalidate the will every day.  The stored locktime is
+        therefore frozen to the built transactions' absolute locktime, and a
+        relative threshold is frozen to its "N days before the delivery"
+        absolute value.
+
         We route the update through BalWindow.update_setting_widgets, which is
         the single place that (1) stores the value in WILL_SETTINGS, (2)
         persists it to Electrum's database and (3) refreshes the date widgets in
@@ -1024,31 +1032,73 @@ class BalBuildWillDialog(BalDialog):
         if min_locktime is None:
             return
         min_locktime = int(min_locktime)
+        stored_locktime = self.bal_window.will_settings["locktime"]
+        # A relative value ("30d"/"1y") is a MOVING TARGET: it is re-parsed
+        # against "now" on every check, so it drifts one day per day away from
+        # the fixed tx locktime and the postpone check would ALWAYS see a
+        # postpone -> the plugin asks to invalidate the will every day.  It must
+        # therefore be normalised here to the frozen absolute locktime of the
+        # built transactions, even when it happens to parse to the same moment
+        # today.  (Only an absolute stored value is comparable, see below.)
+        is_relative_locktime = (
+            isinstance(stored_locktime, str)
+            and stored_locktime[-1:].lower() in ("d", "y")
+        )
         # Current stored delivery date, as a comparable UNIX timestamp.
         try:
-            current = int(
-                Util.parse_locktime_string(
-                    self.bal_window.will_settings["locktime"]
-                )
-            )
+            current = int(Util.parse_locktime_string(stored_locktime))
         except Exception:
             # If the stored value cannot be parsed, fall back to syncing.
             current = None
-        # Only anticipate (move the date EARLIER); never overwrite a postpone.
-        if current is not None and min_locktime >= current:
-            return
-        _logger.debug(
-            f"sync delivery date to anticipated tx locktime: "
-            f"{current} -> {min_locktime}"
-        )
-        # Remember that we anticipated the date, so the later sign prompt can
-        # explain WHY signing is needed (see on_success_phase1).
-        self._date_was_anticipated = True
-        # update_setting_widgets stores the value, persists it and refreshes the
-        # date widgets in all panels/wizard (so the .ics calendar uses it too).
-        self.bal_window.update_setting_widgets(
-            min_locktime, "locktime", update_all=True
-        )
+        # A genuine user-chosen POSTPONE (a later absolute date) is never
+        # overwritten; anything else is synced to the built transactions.
+        was_anticipation = current is not None and min_locktime < current
+        if not is_relative_locktime and current is not None and not was_anticipation:
+            pass
+        else:
+            _logger.debug(
+                f"sync delivery date to built tx locktime: "
+                f"{current} -> {min_locktime}"
+            )
+            # Remember that we anticipated the date, so the later sign prompt can
+            # explain WHY signing is needed (see on_success_phase1).  A pure
+            # relative->absolute normalisation is NOT an anticipation.
+            if was_anticipation:
+                self._date_was_anticipated = True
+            # update_setting_widgets stores the value, persists it and refreshes
+            # the date widgets in all panels/wizard (the .ics calendar too).
+            self.bal_window.update_setting_widgets(
+                min_locktime, "locktime", update_all=True
+            )
+        # Same moving-target problem for a relative "Check Alive" threshold:
+        # it means "N days BEFORE the delivery" (the settings widget resolves it
+        # as real_threshold = locktime - N days), so it is normalised to that
+        # absolute date, referenced against the now-absolute stored locktime.
+        threshold_raw = self.bal_window.will_settings.get("threshold")
+        if (
+            isinstance(threshold_raw, str)
+            and threshold_raw[-1:].lower() in ("d", "y")
+        ):
+            try:
+                locktime_ts = int(
+                    Util.parse_locktime_string(
+                        self.bal_window.will_settings["locktime"]
+                    )
+                )
+                real_threshold = int(
+                    BalTimestamp(threshold_raw)
+                    .to_date(locktime_ts, reverse=True)
+                    .timestamp()
+                )
+            except Exception as e:
+                _logger.error(f"sync threshold to absolute failed: {e}")
+            else:
+                _logger.debug(
+                    f"sync threshold {threshold_raw} -> absolute {real_threshold}"
+                )
+                self.bal_window.update_setting_widgets(
+                    real_threshold, "threshold", update_all=True
+                )
 
     def on_accept(self):
         try:
