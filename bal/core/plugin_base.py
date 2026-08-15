@@ -251,6 +251,14 @@ class BalPlugin(BasePlugin):
         # (handled by BalWindow.get_wallet_password). Default ON.
         self.AUTO_SIGN = BalConfig(config, "bal_auto_sign", True)
 
+        # REBUILD_ON_CLOSE: when enabled (default), closing the wallet or
+        # quitting Electrum runs the "Build your will" wizard
+        # (BalBuildWillDialog) to rebuild and re-validate the will. When
+        # disabled, on_close() only persists the current in-memory willitems to
+        # the wallet DB: no rebuild dialog, no auto-sign/broadcast, no
+        # invalidation prompts at close. Default ON.
+        self.REBUILD_ON_CLOSE = BalConfig(config, "bal_rebuild_on_close", True)
+
         # EDITABLE_DATES (Group C / C2): when enabled, the delivery-time and
         # check-alive date fields are editable everywhere (toolbar / Heirs tab),
         # not only inside the "Build your will" wizard. Default OFF, so the dates

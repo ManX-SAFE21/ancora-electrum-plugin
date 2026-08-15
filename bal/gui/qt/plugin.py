@@ -456,6 +456,14 @@ class Plugin(BalPlugin):
         # be saved on a USB stick and a copy given to the heirs).
         heir_no_willexecutor = BalCheckBox(self.NO_WILLEXECUTOR)
 
+        # "Rebuild will on wallet close" checkbox. Bound to the persisted
+        # REBUILD_ON_CLOSE config (default ON). When ticked, closing the wallet
+        # / quitting Electrum runs the "Build your will" wizard to rebuild and
+        # re-validate the will. When unticked, the will is only rebuilt when
+        # the user presses Check/Prepare. Visible to all users (BASIC and
+        # ADVANCED).
+        heir_rebuild_on_close = BalCheckBox(self.REBUILD_ON_CLOSE)
+
         # USER TYPE selector (SIMPLE / ADVANCED, global). A two-choice combo
         # (not a free-text field) bound to the USER_TYPE config:
         #   index 0 -> "BASIC"    -> stored value "basic"    (DEFAULT)
@@ -810,6 +818,24 @@ class Plugin(BalPlugin):
             2,
         )
 
+        # "Rebuild will on wallet close" row (always visible, BASIC + ADVANCED).
+        # Placed below the rebroadcast button so the existing rows keep their
+        # numbers.
+        lbl_rebuild_on_close = QLabel(_("Rebuild will on wallet close"))
+        help_rebuild_on_close = HelpButton(
+            "Run the 'Build your will' wizard every time the wallet is closed "
+            "or Electrum is quit, so the will is rebuilt and re-validated.\n"
+            "When disabled, the will is only rebuilt when you press Check or "
+            "Prepare. The last built state is still saved to the wallet."
+        )
+        grid.addWidget(lbl_rebuild_on_close, 15, 0)
+        grid.addWidget(heir_rebuild_on_close, 15, 1)
+        grid.addWidget(help_rebuild_on_close, 15, 2)
+        reset_btn_rebuild_on_close = _make_reset_btn(
+            self.REBUILD_ON_CLOSE, heir_rebuild_on_close, "check"
+        )
+        grid.addWidget(reset_btn_rebuild_on_close, 15, 3)
+
         # ----------------------------------------------------------------- #
         # Group C / C4b: "Reset" button that restores the dialog settings to  #
         # their factory defaults. It only resets the settings exposed by THIS #
@@ -842,6 +868,7 @@ class Plugin(BalPlugin):
                 (self.CALENDAR_APP, edit_calendar_app, "line"),
                 (self.SAVE_HISTORY, heir_save_history, "check"),
                 (self.HISTORY_LABEL, edit_history_label, "line"),
+                (self.REBUILD_ON_CLOSE, heir_rebuild_on_close, "check"),
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.

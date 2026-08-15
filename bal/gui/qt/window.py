@@ -1044,9 +1044,12 @@ class BalWindow:
             return
 
         # 1) Business logic: build/save the will on close (unchanged behaviour).
+        # REBUILD_ON_CLOSE gates the "Build your will" wizard only: the will is
+        # still persisted so a manual Build/Check from the session is not lost.
         try:
-            close_window = BalBuildWillDialog(self)
-            close_window.build_will_task()
+            if self.bal_plugin.REBUILD_ON_CLOSE.get():
+                close_window = BalBuildWillDialog(self)
+                close_window.build_will_task()
             self.save_willitems()
         except Exception as e:
             _logger.error(f"on_close: build/save will failed: {e}")
