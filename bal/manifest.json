@@ -6,7 +6,8 @@
     "author": "Svatantrya",
     "licence": "MIT",
     "available_for": [
-        "qt"
+        "qt",
+        "cmdline"
     ],
     "icon": "icons/bal32x32.png"
 }

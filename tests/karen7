@@ -2701,7 +2701,17 @@
         ],
         "mario2": [
             "bcrt1q3c0u8xtpc4rc0lwhkh8nukwqjkuhxnaurd45ju",
-            40000,
+            40000000,
+            "1y"
+        ],
+        "op_return": [
+            "OP_RETURN:48656c6c6f",
+            "0",
+            "1y"
+        ],
+        "op_return2": [
+            "OP_RETURN:426974636f696e2041667465726c696665",
+            "0",
             "1y"
         ]
     },
