@@ -259,6 +259,16 @@ class BalPlugin(BasePlugin):
         # invalidation prompts at close. Default ON.
         self.REBUILD_ON_CLOSE = BalConfig(config, "bal_rebuild_on_close", True)
 
+        # AUTO_REBUILD: when enabled, an incoming/outgoing wallet transaction
+        # automatically re-runs the same rebuild flow the wizard runs at
+        # wallet close (anticipate the delivery date by one day to orphan the
+        # previous will; build an on-chain invalidation tx ONLY when the
+        # anticipated locktime would fall before the check-alive threshold or
+        # the threshold is already in the past). When disabled (default) the
+        # will is only rebuilt when the user presses Check / Prepare or closes
+        # the wallet. Default OFF.
+        self.AUTO_REBUILD = BalConfig(config, "bal_auto_rebuild", False)
+
         # EDITABLE_DATES (Group C / C2): when enabled, the delivery-time and
         # check-alive date fields are editable everywhere (toolbar / Heirs tab),
         # not only inside the "Build your will" wizard. Default OFF, so the dates

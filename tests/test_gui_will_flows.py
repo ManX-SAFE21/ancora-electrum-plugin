@@ -269,7 +269,9 @@ def test_prepare_will_builds_and_persists():
 
     assert item.get_status("VALID"), "fresh items default to VALID"
     assert txid == item.tx.txid()
-    assert isinstance(txid, str) and txid.startswith("2"), "raw tx id expected"
+    assert isinstance(txid, str) and len(txid) == 64 and all(
+        c in "0123456789abcdef" for c in txid
+    ), "raw tx id expected (64-char hex, not a label/short id)"
     assert not item.tx.is_complete(), "unsigned will must not be complete"
     assert isinstance(item.tx.locktime, int) and item.tx.locktime > 0
 

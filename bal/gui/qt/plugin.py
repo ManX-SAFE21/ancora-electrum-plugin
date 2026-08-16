@@ -15,6 +15,7 @@ and cached in ``self.bal_windows``.
 """
 
 from electrum.gui.qt.main_window import StatusBarButton
+from electrum.util import EventListener, event_listener
 from PyQt6.QtWidgets import QLayout
 
 from .common import *
@@ -40,7 +41,7 @@ def _window_key(window):
     return id(window)
 
 
-class Plugin(BalPlugin):
+class Plugin(BalPlugin, EventListener):
     def __init__(self, parent, config, name):
         _logger.info("INIT BALPLUGIN")
         BalPlugin.__init__(self, parent, config, name)
@@ -49,6 +50,10 @@ class Plugin(BalPlugin):
         # remove a stale button before creating a fresh one when a wallet is
         # switched / Electrum is restarted, so the icon is never duplicated.
         self._statusbar_buttons = {}
+        # Register the on_event_* handlers with Electrum's callback manager so
+        # the plugin learns about new wallet transactions (used by the
+        # AUTO_REBUILD setting).
+        self.register_callbacks()
 
     @hook
     def init_qt(self, gui_object):
@@ -328,6 +333,44 @@ class Plugin(BalPlugin):
                 except Exception as e:
                     _logger.error("close_wallet: on_close failed: {}".format(e))
 
+    @event_listener
+    def on_event_new_transaction(self, wallet, tx):
+        """Electrum event: a transaction was added to *wallet*."""
+        self._wallet_activity(wallet)
+
+    @event_listener
+    def on_event_wallet_updated(self, wallet):
+        """Electrum event: *wallet* finished a sync pass."""
+        self._wallet_activity(wallet)
+
+    def _wallet_activity(self, wallet):
+        """React to wallet activity (new transaction / sync update).
+
+        When the AUTO_REBUILD setting is enabled, any change to a wallet that
+        has a live BalWindow schedules the headless "auto rebuild" flow
+        (``BalWindow.schedule_auto_rebuild``): it re-runs the same check the
+        wizard runs at wallet close, anticipating the delivery date by one day
+        and building an on-chain invalidation tx only when the anticipated
+        locktime would fall before the check-alive threshold (or the threshold
+        is already in the past).
+
+        This handler runs on the asyncio callback thread, so it only touches
+        thread-safe state and defers all work to the BalWindow (which marshals
+        itself onto the GUI thread through QTimer).
+        """
+        if not self.AUTO_REBUILD.get():
+            return
+        for win in list(self.bal_windows.values()):
+            try:
+                if (
+                    getattr(win, "wallet", None) == wallet
+                    and win.ok
+                    and not win.disable_plugin
+                ):
+                    win.schedule_auto_rebuild()
+            except Exception as e:
+                _logger.debug("_wallet_activity failed: {}".format(e))
+
     @hook
     def init_keystore(self):
         _logger.debug("init keystore")
@@ -463,6 +506,17 @@ class Plugin(BalPlugin):
         # the user presses Check/Prepare. Visible to all users (BASIC and
         # ADVANCED).
         heir_rebuild_on_close = BalCheckBox(self.REBUILD_ON_CLOSE)
+
+        # "Rebuild automatically on new transactions" checkbox. Bound to the
+        # persisted AUTO_REBUILD config (default OFF). When ticked, an incoming
+        # or outgoing wallet transaction automatically re-runs the same rebuild
+        # flow the wizard runs at wallet close: the delivery date is
+        # anticipated by one day (so the new will replaces the previous one
+        # without an invalidation tx), and an on-chain invalidation is only
+        # built when the anticipated locktime would fall before the Check Alive
+        # threshold or the threshold is already in the past. Visible to all
+        # users (BASIC and ADVANCED).
+        heir_auto_rebuild = BalCheckBox(self.AUTO_REBUILD)
 
         # USER TYPE selector (SIMPLE / ADVANCED, global). A two-choice combo
         # (not a free-text field) bound to the USER_TYPE config:
@@ -836,6 +890,30 @@ class Plugin(BalPlugin):
         )
         grid.addWidget(reset_btn_rebuild_on_close, 15, 3)
 
+        # "Rebuild automatically on new transactions" row (always visible,
+        # BASIC + ADVANCED), right below the "Rebuild will on wallet close"
+        # row.
+        lbl_auto_rebuild = QLabel(_("Rebuild automatically on new transactions"))
+        help_auto_rebuild = HelpButton(
+            "When a new transaction arrives for the wallet, automatically "
+            "rebuild the will the same way the wizard does at wallet close: "
+            "the delivery date is anticipated by one day so the new will "
+            "replaces the previous one, and the rebuilt transactions are "
+            "signed and sent to their will-executors.\n"
+            "An on-chain invalidation transaction is only built when the "
+            "anticipated delivery date would fall before the Check Alive "
+            "threshold, or when the threshold is already in the past.\n"
+            "When disabled (default), the will is only rebuilt on Check / "
+            "Prepare / wallet close."
+        )
+        grid.addWidget(lbl_auto_rebuild, 16, 0)
+        grid.addWidget(heir_auto_rebuild, 16, 1)
+        grid.addWidget(help_auto_rebuild, 16, 2)
+        reset_btn_auto_rebuild = _make_reset_btn(
+            self.AUTO_REBUILD, heir_auto_rebuild, "check"
+        )
+        grid.addWidget(reset_btn_auto_rebuild, 16, 3)
+
         # ----------------------------------------------------------------- #
         # Group C / C4b: "Reset" button that restores the dialog settings to  #
         # their factory defaults. It only resets the settings exposed by THIS #
@@ -869,6 +947,7 @@ class Plugin(BalPlugin):
                 (self.SAVE_HISTORY, heir_save_history, "check"),
                 (self.HISTORY_LABEL, edit_history_label, "line"),
                 (self.REBUILD_ON_CLOSE, heir_rebuild_on_close, "check"),
+                (self.AUTO_REBUILD, heir_auto_rebuild, "check"),
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.

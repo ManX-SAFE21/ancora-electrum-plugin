@@ -39,6 +39,13 @@ from .widgets import LockTimeWidget, PercAmountEdit
 
 
 class BalWindow:
+    # Automatic rebuild-on-new-transaction flow (AUTO_REBUILD setting):
+    # the debounce window collapses bursts of wallet events into one run, and
+    # the cooldown prevents the flow from re-triggering right after a rebuild
+    # (the freshly persisted txs can themselves fire wallet events).
+    _AUTO_REBUILD_DEBOUNCE_MS = 5000
+    _AUTO_REBUILD_COOLDOWN = 10.0
+
     def __init__(self, bal_plugin: "BalPlugin", window: "ElectrumWindow"):
         self.bal_plugin = bal_plugin
         self.window = window
@@ -56,6 +63,9 @@ class BalWindow:
         # ``init_menubar_tools`` twice would add the Heirs/Will tabs and the
         # menu actions twice, producing the garbled/condensed menu entry.
         self._menubar_initialized = False
+        # Auto-rebuild flow state: re-entrancy guard and cooldown deadline.
+        self._auto_rebuild_running = False
+        self._auto_rebuild_cooldown_until = 0.0
         self.bal_plugin.get_decimal_point = self.window.get_decimal_point
 
         if self.window.wallet:
@@ -1033,6 +1043,297 @@ class BalWindow:
                 self.show_error(str(e))
                 password = self.get_wallet_password(message)
         return password
+
+    # ------------------------------------------------------------------ #
+    # Automatic rebuild on new transactions (AUTO_REBUILD)
+    #
+    # When the AUTO_REBUILD setting is enabled, wallet activity (a new
+    # transaction / a sync update) schedules the headless rebuild flow below,
+    # which reproduces EXACTLY what the "Build your will" wizard does at wallet
+    # close (task_phase1 / task_phase2):
+    #
+    #   * the delivery date of the rebuilt transactions is anticipated by one
+    #     day (Will.search_anticipate -> check_anticipate) so the new will
+    #     mines BEFORE the previous one and orphans it WITHOUT an on-chain
+    #     invalidation transaction;
+    #   * an on-chain invalidation transaction is built ONLY when the
+    #     anticipated locktime would fall before the check-alive threshold
+    #     (post-build check_will -> WillExpiredException), or when the
+    #     threshold is already in the past (CheckAliveError) - the same two
+    #     conditions that trigger invalidation in the wizard.
+    # ------------------------------------------------------------------ #
+
+    def schedule_auto_rebuild(self, delay_ms=None):
+        """Debounced entry point for the auto-rebuild flow.
+
+        Called by ``Plugin._wallet_activity`` (on the asyncio callback thread)
+        whenever a transaction/update is seen for this wallet.  The actual
+        rebuild is deferred through ``QTimer`` (thread-safe to schedule, runs
+        on the GUI thread) so a burst of events collapses into a single run.
+        """
+        try:
+            delay = delay_ms if delay_ms is not None else self._AUTO_REBUILD_DEBOUNCE_MS
+            QTimer.singleShot(delay, self._run_auto_rebuild)
+        except Exception as e:
+            _logger.debug("schedule_auto_rebuild failed: {}".format(e))
+
+    def _run_auto_rebuild(self):
+        """GUI-thread guard before launching the auto-rebuild worker.
+
+        Checks the cheap guards that must be evaluated on the GUI thread and,
+        when allowed, runs the headless flow in a background thread so the
+        interface is not frozen (signing/pushing can take a while).
+        """
+        if not self._auto_rebuild_allowed():
+            return
+        self._auto_rebuild_running = True
+        threading.Thread(target=self._auto_rebuild_worker, daemon=True).start()
+
+    def _auto_rebuild_worker(self):
+        try:
+            self._auto_rebuild_flow()
+        except Exception as e:
+            _logger.error("auto rebuild worker failed: {}".format(e))
+        finally:
+            self._auto_rebuild_running = False
+            QTimer.singleShot(0, self._after_auto_rebuild)
+
+    def _auto_rebuild_allowed(self):
+        """Cheap guards evaluated before running the auto-rebuild flow."""
+        if self.disable_plugin or not self.ok:
+            return False
+        if not self.bal_plugin.AUTO_REBUILD.get():
+            return False
+        if not self.willitems:
+            return False
+        if self._auto_rebuild_running:
+            return False
+        if time.time() < self._auto_rebuild_cooldown_until:
+            return False
+        return True
+
+    def maybe_auto_rebuild(self):
+        """Run the headless auto-rebuild flow synchronously on this thread.
+
+        This is the testable entry point (and what the background worker
+        runs): it reproduces the wizard's close-time flow and returns True when
+        it rebuilt/invalidated the will, False when there was nothing to do.
+        """
+        if not self._auto_rebuild_allowed():
+            return False
+        self._auto_rebuild_running = True
+        try:
+            result = self._auto_rebuild_flow()
+        finally:
+            self._auto_rebuild_running = False
+            QTimer.singleShot(0, self._after_auto_rebuild)
+        return result
+
+    def _after_auto_rebuild(self):
+        """Refresh the will tabs after an auto-rebuild (GUI thread)."""
+        try:
+            self.update_all()
+        except Exception as e:
+            _logger.debug("_after_auto_rebuild update_all failed: {}".format(e))
+        try:
+            if hasattr(self, "will_list_widget"):
+                self.will_list_widget.update()
+        except Exception:
+            pass
+
+    def _auto_rebuild_flow(self):
+        """Core headless rebuild flow (mirrors the wizard's close flow).
+
+        Returns True when the will was rebuilt or invalidated, False when there
+        was nothing to do.  Runs on the caller's thread.
+        """
+        try:
+            self._auto_rebuild_cooldown_until = (
+                time.time() + self._AUTO_REBUILD_COOLDOWN
+            )
+            _logger.info("auto rebuild: checking will after wallet activity")
+
+            # 1) Recompute date_to_check / willexecutors exactly like
+            #    init_class_variables does at the start of the wizard's phase 1.
+            #    A Check Alive threshold already in the past (ADVANCED mode)
+            #    means the old will must be invalidated on-chain.
+            try:
+                self.init_class_variables()
+            except CheckAliveError:
+                _logger.info("auto rebuild: check-alive threshold passed -> invalidate")
+                self._auto_invalidate_will()
+                return True
+            except NoHeirsException:
+                _logger.info("auto rebuild: no heirs, nothing to rebuild")
+                return False
+
+            # 2) Check the current will against the freshly computed reference
+            #    date.  A still-valid will needs no rebuild.
+            try:
+                self.check_will()
+                _logger.debug("auto rebuild: will is still valid, nothing to do")
+                return False
+            except (WillExpiredException, WillPostponedException) as e:
+                # Expired ("too late to anticipate") or a postpone on a
+                # signed/sent will: the old coins must be invalidated on-chain
+                # first.
+                _logger.info(
+                    "auto rebuild: {} -> invalidate".format(type(e).__name__)
+                )
+                self._auto_invalidate_will()
+                return True
+            except NoHeirsException:
+                return False
+            except NotCompleteWillException:
+                # The will no longer covers the wallet's current UTXOs / heirs
+                # / date: rebuild it.  The rebuild automatically anticipates
+                # the delivery date by one day when the same coins/heirs are
+                # involved (Will.search_anticipate), so the new transactions
+                # mine before the previous ones.
+                pass
+
+            # 3) Rebuild.
+            try:
+                txs = self.build_will()
+            except Exception as e:
+                _logger.error("auto rebuild: build_will failed: {}".format(e))
+                return False
+            if not txs:
+                _logger.info("auto rebuild: nothing was built")
+                return False
+
+            # 4) Re-validate the freshly built will (mirrors task_phase1 after
+            #    build_will).  If the anticipated locktime now falls before the
+            #    check-alive threshold, the previous will must be invalidated
+            #    on-chain before the new one is used - and we STOP, exactly like
+            #    the wizard ("invalidate_classic"): signing/pushing the new will
+            #    while the invalidation is not confirmed would race it for the
+            #    same inputs.  The next wallet event / manual Check continues
+            #    once the invalidation confirms.
+            try:
+                self.check_will()
+            except (WillExpiredException, WillPostponedException) as e:
+                _logger.info(
+                    "auto rebuild: anticipated locktime crossed threshold "
+                    "({}) -> invalidate old will".format(type(e).__name__)
+                )
+                self._auto_invalidate_will()
+                return True
+            except NoHeirsException:
+                return False
+            except NotCompleteWillException:
+                # The freshly rebuilt transactions simply need signing.
+                pass
+            except Exception as e:
+                _logger.error(
+                    "auto rebuild: post-build check failed: {}".format(e)
+                )
+                return False
+
+            # 5) Sign (passwordless wallets only, headlessly), persist and push
+            #    the rebuilt transactions to their will-executors: pushing the
+            #    earlier-locktime transactions is what makes them orphan the
+            #    previous ones.
+            self._auto_sign_save_push()
+            return True
+        finally:
+            # Always apply the cooldown so a burst of events (or the wallet
+            # events fired by our own persistence) cannot loop forever.
+            self._auto_rebuild_cooldown_until = (
+                time.time() + self._AUTO_REBUILD_COOLDOWN
+            )
+
+    def _auto_invalidate_will(self, will=None):
+        """Build, sign and broadcast the on-chain invalidation tx, headlessly.
+
+        Reuses the exact recipe of the wizard's ``loop_broadcast_invalidating``
+        (label set before broadcast, tx info pulled from wallet/network,
+        broadcast timeout 120s) without any dialog.  An encrypted wallet cannot
+        sign headlessly, so we stop with a logged warning and leave the
+        invalidation to the user's manual flow.
+        """
+        willitems = will if will is not None else self.willitems
+        try:
+            tx = Will.invalidate_will(
+                willitems,
+                self.wallet,
+                self.will_settings.get("baltx_fees", 1),
+                history_label=self.bal_plugin.HISTORY_LABEL.get(),
+                will_locktime=Will.get_min_locktime(
+                    willitems,
+                    default_value=getattr(self, "date_to_check", None),
+                ),
+            )
+        except Exception as e:
+            _logger.error("auto invalidate: could not build tx: {}".format(e))
+            return None
+        if not tx:
+            _logger.info("auto invalidate: no transactions to invalidate")
+            return None
+        try:
+            if self.wallet.has_keystore_encryption():
+                _logger.warning(
+                    "auto invalidate: wallet is encrypted; signing the "
+                    "invalidation requires the password -> invalidate manually"
+                )
+                return None
+            network = getattr(self.wallet, "network", None)
+            if network is None:
+                _logger.error("auto invalidate: no network, cannot broadcast")
+                return None
+            tx = self.wallet.sign_transaction(tx, None, ignore_warnings=True)
+            if not tx or not tx.is_complete():
+                raise Exception("invalidation tx not complete")
+            tx.add_info_from_wallet(self.wallet)
+            network.run_from_another_thread(tx.add_info_from_network(network))
+            txid = tx.txid()
+            if txid:
+                # Label BEFORE broadcasting so the History tab shows it the
+                # moment the tx appears (matches the wizard behaviour).
+                self.wallet.set_label(txid, "BAL Invalidate transaction")
+            network.run_from_another_thread(
+                network.broadcast_transaction(tx, timeout=120), timeout=120
+            )
+            _logger.info("auto invalidate: broadcast invalidation {}".format(txid))
+            return tx
+        except Exception as e:
+            _logger.error("auto invalidate failed: {}".format(e))
+            return None
+
+    def _auto_sign_save_push(self):
+        """Headless sign + persist + push of the rebuilt will.
+
+        Mirrors the wizard's phase 2 (sign_transactions -> save_willitems ->
+        push_transactions_to_willexecutors) without dialogs.  Encrypted
+        wallets cannot be signed headlessly, so the rebuilt transactions are
+        left unsigned ("New") for the user to sign manually.
+        """
+        try:
+            if self.wallet.has_keystore_encryption():
+                _logger.warning(
+                    "auto rebuild: wallet is encrypted; rebuilt will left "
+                    "unsigned (sign manually)"
+                )
+            else:
+                txs = self.sign_transactions(None)
+                if txs:
+                    for txid, tx in txs.items():
+                        # Store the signed tx back, like
+                        # ask_password_and_sign_transactions.on_success does
+                        # (re-parse instead of deepcopy: the signed tx may carry
+                        # wallet-derived input info holding a threading.RLock).
+                        self.willitems[txid].tx = Will.get_tx_from_any(str(tx))
+        except Exception as e:
+            _logger.error("auto rebuild: signing failed: {}".format(e))
+        try:
+            self.save_willitems()
+        except Exception as e:
+            _logger.error("auto rebuild: save_willitems failed: {}".format(e))
+        self._save_will_to_history()
+        try:
+            self.push_transactions_to_willexecutors()
+        except Exception as e:
+            _logger.error("auto rebuild: push failed: {}".format(e))
 
     def on_close(self):
         # Wallet is closing: run the closing "build will" task and tear down
