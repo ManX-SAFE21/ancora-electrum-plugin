@@ -338,6 +338,23 @@ async def will_prepare(self, wallet=None, plugin=None):
     return _call(plugin, wallet, "prepare_will")
 
 
+@plugin_command("nw", plugin_name)
+async def will_autorebuild(self, wallet=None, plugin=None):
+    """Run the automatic rebuild flow in one shot (check, rebuild, sign, push).
+
+    The same flow the GUI runs automatically on new wallet transactions:
+    the delivery date is anticipated by one day to orphan the old will on-chain
+    and, only when the anticipated locktime crosses the Check Alive threshold
+    (or the threshold is already in the past), an invalidation transaction is
+    returned instead.  Signing needs a passwordless wallet.
+
+    Returns a JSON object with ``result``: ``valid``, ``no_heirs``,
+    ``invalidated`` (with ``invalidation_tx``), ``nothing``,
+    ``needs_signing`` or ``rebuilt``.
+    """
+    return _call(plugin, wallet, "auto_rebuild")
+
+
 @plugin_command("nwp", plugin_name)
 async def will_sign(self, txid=None, password=None, wallet=None, plugin=None):
     """Sign the valid, not-yet-complete will transactions (or just one).

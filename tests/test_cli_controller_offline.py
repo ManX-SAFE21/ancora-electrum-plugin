@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
@@ -206,6 +207,24 @@ def test_will_check_no_heirs_raises():
             raise AssertionError("expected UserFacingException")
         except UserFacingException as e:
             assert "heir" in str(e).lower()
+
+
+def test_auto_rebuild_no_heirs():
+    with Plugin() as plugin:
+        c = _make_controller(plugin)
+        assert c.auto_rebuild() == {"result": "no_heirs"}
+
+
+def test_auto_rebuild_threshold_passed_invalidates():
+    with Plugin() as plugin:
+        c = _make_controller(plugin)
+        c.heirs_add("alice", VALID_ADDRESS, "100000")
+        plugin.USER_TYPE.set("advanced")
+        c.will_settings["threshold"] = int(time.time()) - 3600
+        result = c.auto_rebuild()
+        assert result["result"] == "invalidated"
+        assert result["reason"] == "threshold_passed"
+        assert result["invalidation_tx"] == {"txid": None, "tx": None}
 
 
 # ------------------------------------------------------------------ #

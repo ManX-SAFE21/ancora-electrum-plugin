@@ -71,6 +71,7 @@ EXPECTED_COMMANDS = {
     "bal_will_status": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     "bal_will_check": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     "bal_will_prepare": {"requires_network": True, "requires_wallet": True, "requires_password": False},
+    "bal_will_autorebuild": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     "bal_will_sign": {"requires_network": True, "requires_wallet": True, "requires_password": True},
     "bal_will_broadcast": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     "bal_will_export": {"requires_network": True, "requires_wallet": True, "requires_password": False},

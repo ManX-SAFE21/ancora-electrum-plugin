@@ -526,6 +526,123 @@ class BalController:
                 }
             raise UserFacingException(_("will not rebuilt")) from None
 
+    def auto_rebuild(self):
+        """Headless equivalent of the GUI's automatic rebuild flow (one shot).
+
+        Re-runs the same check the wizard runs at wallet close - anticipation
+        of the delivery date by one day (orphaning the old will on-chain),
+        on-chain invalidation only when the anticipated locktime crosses the
+        Check Alive threshold or the threshold is already in the past - and,
+        when the will is rebuilt, signs it (passwordless wallets only) and
+        pushes it to its will-executors.
+
+        Returns a JSON object with ``result``:
+
+        * ``valid``         -> the will is still coherent; nothing was done.
+        * ``no_heirs``      -> no valid heirs are configured.
+        * ``invalidated``   -> the old will must be invalidated on-chain first:
+          the returned ``invalidation_tx`` must be signed and broadcast, then
+          the command re-run.
+        * ``nothing``       -> nothing was built.
+        * ``needs_signing`` -> the will was rebuilt but this wallet is
+          encrypted: run ``bal_will_sign`` (with the password) then
+          ``bal_will_broadcast``.
+        * ``rebuilt``       -> the will was rebuilt, signed and pushed; ``push``
+          maps every will-executor URL to its broadcast status.
+        """
+        try:
+            self.init_class_variables()
+        except will_mod.NoHeirsException as e:
+            _logger.info(f"auto rebuild: no heirs ({e})")
+            return {"result": "no_heirs"}
+        except CheckAliveError:
+            _logger.info("auto rebuild: Check Alive already in the past")
+            return self._auto_rebuild_invalidate("threshold_passed")
+
+        try:
+            self.check_will()
+            return {"result": "valid", "will": self._will_status_dict()}
+        except will_mod.NoHeirsException as e:
+            _logger.info(f"auto rebuild: no heirs ({e})")
+            return {"result": "no_heirs"}
+        except (will_mod.WillExpiredException, will_mod.WillPostponedException) as e:
+            _logger.info(f"auto rebuild: {type(e).__name__}: must invalidate")
+            return self._auto_rebuild_invalidate("expired")
+        except will_mod.NotCompleteWillException:
+            pass
+
+        try:
+            txs = self.build_will()
+        except Exception as e:
+            raise _user_facing(e) from e
+        if not txs:
+            _logger.info("auto rebuild: nothing was built")
+            return {"result": "nothing"}
+
+        try:
+            self.check_will()
+        except will_mod.NoHeirsException as e:
+            _logger.info(f"auto rebuild: no heirs ({e})")
+            return {"result": "no_heirs"}
+        except (will_mod.WillExpiredException, will_mod.WillPostponedException) as e:
+            _logger.info(
+                f"auto rebuild: rebuilt will {type(e).__name__}: must invalidate"
+            )
+            return self._auto_rebuild_invalidate("anticipation_crossed")
+        except will_mod.NotCompleteWillException:
+            pass
+
+        if self.wallet.has_keystore_encryption():
+            _logger.warning(
+                "auto rebuild: wallet is encrypted, signing requires a password"
+            )
+            self.save_willitems()
+            self._save_to_history()
+            return {
+                "result": "needs_signing",
+                "message": _(
+                    "The will was rebuilt but this wallet is encrypted: sign it "
+                    "with bal_will_sign and push it with bal_will_broadcast"
+                ),
+                "will": self._will_status_dict(),
+            }
+
+        try:
+            self.sign_transactions(None)
+        except Exception as e:
+            raise _user_facing(e) from e
+        push = {}
+        try:
+            push = self.push_transactions_to_willexecutors()
+        except Exception as e:
+            _logger.error(f"auto rebuild: push failed: {e}")
+            push = {"_error": True, "_message": str(e)}
+        return {
+            "result": "rebuilt",
+            "message": _(
+                "The will was rebuilt, signed and pushed to its will-executors"
+            ),
+            "push": push,
+            "will": self._will_status_dict(),
+        }
+
+    def _auto_rebuild_invalidate(self, reason):
+        """Build the invalidation transaction for :meth:`auto_rebuild`.
+
+        Returns the ``invalidated`` result dict; the transaction is NOT signed
+        nor broadcast (the CLI never sends coins without being told to).
+        """
+        inv = self._tx_out(self.invalidate_will())
+        return {
+            "result": "invalidated",
+            "reason": reason,
+            "invalidation_tx": inv,
+            "message": _(
+                "Sign and broadcast the invalidation transaction, then run "
+                "bal_will_autorebuild again"
+            ),
+        }
+
     def sign_transactions(self, password, txids=None):
         """Sign the valid will transactions (or a subset given by ``txids``).
 
