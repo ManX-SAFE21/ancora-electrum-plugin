@@ -112,8 +112,6 @@ def is_tor_active():
         return False
 
 
-chainname = BalPlugin.chainname
-
 
 class Willexecutors:
 
@@ -146,9 +144,9 @@ class Willexecutors:
 
     @staticmethod
     def save(bal_plugin, willexecutors):
-        _logger.debug(f"save {willexecutors},{chainname}")
+        _logger.debug(f"save {willexecutors},{BalPlugin.chainname}")
         aw = bal_plugin.WILLEXECUTORS.get()
-        aw[chainname] = willexecutors
+        aw[BalPlugin.chainname] = willexecutors
         bal_plugin.WILLEXECUTORS.set(aw)
         _logger.debug(f"saved: {aw}")
         # bal_plugin.WILLEXECUTORS.set(willexecutors)
@@ -158,7 +156,7 @@ class Willexecutors:
         bal_plugin, update=False, bal_window: Any = None, force=False, task=True
     ):
         willexecutors = bal_plugin.WILLEXECUTORS.get()
-        willexecutors = willexecutors.get(chainname, {})
+        willexecutors = willexecutors.get(BalPlugin.chainname, {})
         to_del = []
         for w in willexecutors:
             if not isinstance(willexecutors[w], dict):
@@ -172,7 +170,7 @@ class Willexecutors:
                 )
             )
             del willexecutors[w]
-        bal = bal_plugin.WILLEXECUTORS.default.get(chainname, {})
+        bal = bal_plugin.WILLEXECUTORS.default.get(BalPlugin.chainname, {})
         for bal_url, bal_executor in bal.items():
             if bal_url not in willexecutors:
                 _logger.debug(f"force add {bal_url} willexecutor")
@@ -368,7 +366,7 @@ class Willexecutors:
             _logger.debug(f"{willexecutor['url']}: {willexecutor['txs']}")
             if w := Willexecutors.send_request(
                 "post",
-                willexecutor["url"] + "/" + chainname + "/pushtxs",
+                willexecutor["url"] + "/" + BalPlugin.chainname + "/pushtxs",
                 data=willexecutor["txs"].encode("ascii"),
                 timeout=timeout,
                 max_retries=max_retries,
@@ -408,7 +406,7 @@ class Willexecutors:
             # single short timeout instead of retrying 10x with sleeps, which
             # used to freeze the UI for minutes per unreachable server.
             w = Willexecutors.send_request(
-                "get", url + "/" + chainname + "/info",
+                "get", url + "/" + BalPlugin.chainname + "/info",
                 timeout=timeout, max_retries=max_retries, retry_sleep=retry_sleep,
             )
             if isinstance(w, dict):
@@ -788,7 +786,7 @@ class Willexecutors:
             welist_server = welist_server if welist_server[-1] == '/' else welist_server+'/'
             willexecutors = Willexecutors.send_request(
                 "get",
-                f"{welist_server}data/{chainname}?page=0&limit=100",
+                f"{welist_server}data/{BalPlugin.chainname}?page=0&limit=100",
             )
             if not isinstance(willexecutors, dict):
                 _logger.warning(

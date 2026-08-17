@@ -30,6 +30,7 @@ from electrum import constants, json_db
 from electrum.logging import get_logger
 from electrum.plugin import BasePlugin
 from electrum.transaction import tx_from_any
+from electrum.util import classproperty
 
 _logger = get_logger(__name__)
 
@@ -169,9 +170,12 @@ class BalPlugin(BasePlugin):
     }
 
     # Human-readable chain name ("bitcoin", "testnet", "regtest", ...).
-    chainname = (
-        constants.net.NET_NAME if constants.net.NET_NAME != "mainnet" else "bitcoin"
-    )
+    # Must be a classproperty (not a plain class attribute) because the class
+    # is defined before constants.net is set to the correct network — a plain
+    # attribute would capture "bitcoin" and never update.
+    @classproperty
+    def chainname(cls):
+        return constants.net.NET_NAME if constants.net.NET_NAME != "mainnet" else "bitcoin"
 
     # Default geometry hint for some dialogs (kept from the original code).
     SIZE = (159, 97)

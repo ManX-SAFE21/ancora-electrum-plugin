@@ -643,8 +643,7 @@ class BalBuildWillDialog(BalDialog):
             return None, tx
         except NoHeirsException:
             self.msg_set_status("Checking variables", varrow,"No Heirs",self.COLOR_ERROR)
-            #self.msg_set_checking("No Heirs")
-            return False, None
+            return "no_heirs", None
         except Exception as e:
             raise e
         try:
@@ -1439,6 +1438,10 @@ class BalBuildWillDialog(BalDialog):
             self._add_no_willexecutor_buttons()
             return
 
+        if self.have_to_sign == "no_heirs":
+            self._add_no_heirs_buttons()
+            return
+
         _logger.debug("have to sign {}".format(self.have_to_sign))
         password = None
         if self.have_to_sign is None:
@@ -1637,6 +1640,70 @@ class BalBuildWillDialog(BalDialog):
                     w.deleteLater()
             self.vbox.removeItem(self._no_we_layout)
             self._no_we_layout = None
+        self.labels = []
+        self.msg_update()
+        self.thread.add(
+            self.task_phase1,
+            on_success=self.on_success_phase1,
+            on_done=self.on_accept,
+            on_error=self.on_error_phase1,
+        )
+
+    # ------------------------------------------------------------------ #
+    # No-heirs error handling (mirrors the no-willexecutor pattern above)
+    # ------------------------------------------------------------------ #
+
+    def _add_no_heirs_buttons(self):
+        """Add "Heirs", "Wizard" and "Close" buttons when no heirs are
+        configured."""
+        if getattr(self, "_no_heirs_buttons_added", False):
+            return
+        self._no_heirs_buttons_added = True
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+
+        heirs_btn = QPushButton(_("Heirs"))
+        heirs_btn.clicked.connect(self._open_heir_dialog)
+        btn_row.addWidget(heirs_btn)
+
+        wizard_btn = QPushButton(_("\U0001f52e Wizard"))
+        wizard_btn.clicked.connect(self._open_heirs_wizard)
+        btn_row.addWidget(wizard_btn)
+
+        close_btn = QPushButton(_("Close"))
+        close_btn.clicked.connect(self.close)
+        btn_row.addWidget(close_btn)
+
+        self._no_heirs_layout = btn_row
+        self.vbox.addLayout(btn_row)
+        self.resize(self.vbox.sizeHint())
+
+    def _open_heir_dialog(self):
+        """Open the heirs management dialog, then retry the build."""
+        d = HeirsDialog(self.bal_window, parent=self)
+        d.exec()
+        self._retry_build_after_heirs()
+
+    def _open_heirs_wizard(self):
+        """Close the build-will dialog and open the wizard at the heirs
+        step so the user can add heirs."""
+        self.close()
+        wizard = BalWizardDialog(self.bal_window)
+        wizard.exec()
+
+    def _retry_build_after_heirs(self):
+        """Remove the no-heirs buttons, reset the message panel,
+        and re-run ``task_phase1`` on the same thread."""
+        self._no_heirs_buttons_added = False
+        if self._no_heirs_layout:
+            while self._no_heirs_layout.count():
+                item = self._no_heirs_layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.setParent(None)
+                    w.deleteLater()
+            self.vbox.removeItem(self._no_heirs_layout)
+            self._no_heirs_layout = None
         self.labels = []
         self.msg_update()
         self.thread.add(
@@ -2196,4 +2263,50 @@ class WillExecutorDialog(BalDialog, MessageBoxMixin):
     def closeEvent(self, event):
         event.accept()
 
+
+class HeirsDialog(BalDialog, MessageBoxMixin):
+    def __init__(self, bal_window, parent=None):
+        if not parent:
+            parent = bal_window.window
+        BalDialog.__init__(self, parent, bal_window.bal_plugin)
+        self.bal_plugin = bal_window.bal_plugin
+        self.bal_window = bal_window
+
+        self.setWindowTitle(_("Heirs"))
+        self.setMinimumSize(800, 300)
+
+        from .lists import HeirListWidget
+        vbox = QVBoxLayout(self)
+        self.heir_list_widget = HeirListWidget(bal_window, self)
+        vbox.addWidget(self.heir_list_widget)
+
+        btn_row = QHBoxLayout()
+        new_heir_btn = QPushButton(_("New Heir"))
+        new_heir_btn.clicked.connect(self._add_heir)
+        btn_row.addWidget(new_heir_btn)
+
+        import_btn = QPushButton(_("Import"))
+        import_btn.clicked.connect(self._import_heirs)
+        btn_row.addWidget(import_btn)
+
+        export_btn = QPushButton(_("Export"))
+        export_btn.clicked.connect(self._export_heirs)
+        btn_row.addWidget(export_btn)
+
+        btn_row.addStretch(1)
+        vbox.addLayout(btn_row)
+
+    def _add_heir(self):
+        self.bal_window.new_heir_dialog()
+        self.heir_list_widget.update()
+
+    def _import_heirs(self):
+        self.bal_window.import_heirs()
+        self.heir_list_widget.update()
+
+    def _export_heirs(self):
+        self.bal_window.export_heirs()
+
+    def closeEvent(self, event):
+        event.accept()
 
