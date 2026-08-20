@@ -18,7 +18,7 @@ original implementation.
 """
 
 import bisect
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
 from electrum.transaction import PartialTxOutput
@@ -103,7 +103,7 @@ class Util:
         except Exception:
             pass
         try:
-            now = datetime.now()
+            now = datetime.now(tz=timezone.utc)
             if locktime[-1] == "y":
                 locktime = str(int(locktime[:-1]) * 365) + "d"
             if locktime[-1] == "d":
@@ -189,7 +189,7 @@ class Util:
             # moment, so fall back to the legacy forward-from-now resolution.
             return Util.parse_locktime_string(current)
         try:
-            base = datetime.fromtimestamp(int(tx_locktime)).replace(
+            base = datetime.fromtimestamp(int(tx_locktime), tz=timezone.utc).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
             build_moment = base - timedelta(days=built_days)
@@ -440,43 +440,15 @@ class Util:
         # On Windows datetime.fromtimestamp raises OverflowError past 2038
         # (e.g. NLOCKTIME_MAX); clamp to INT32_MAX (Electrum issue #6170).
         try:
-            dt = datetime.fromtimestamp(locktime)
+            dt = datetime.fromtimestamp(locktime, tz=timezone.utc)
         except (OverflowError, OSError, ValueError):
-            dt = datetime.fromtimestamp(min(locktime, 2 ** 31 - 1))
+            dt = datetime.fromtimestamp(min(locktime, 2 ** 31 - 1), tz=timezone.utc)
         dt -= timedelta(seconds=seconds)
         out = dt.timestamp()
 
         if out < 1:
             out = 1
         return out
-
-    @staticmethod
-    def cmp_locktime(locktimea, locktimeb):
-        """Compare two relative locktime strings sharing the same unit."""
-        if locktimea == locktimeb:
-            return 0
-        strlocktimea = str(locktimea)
-        strlocktimeb = str(locktimeb)
-        if locktimea[-1] in "ydb":
-            if locktimeb[-1] == locktimea[-1]:
-                return int(strlocktimea[-1]) - int(strlocktimeb[-1])
-            else:
-                return int(locktimea) - (locktimeb)
-
-    @staticmethod
-    def get_lowest_valid_tx(available_utxos, will):
-        """Placeholder kept from the original code (sorts the will by locktime)."""
-        will = sorted(will.items(), key=lambda x: x[1]["tx"].locktime)
-        for _txid, _willitem in will.items():
-            pass
-
-    @staticmethod
-    def get_locktimes(will):
-        """Return the distinct locktimes used by the transactions in ``will``."""
-        locktimes = {}
-        for _, willitem in will.items():
-            locktimes[willitem["tx"].locktime] = True
-        return locktimes.keys()
 
     @staticmethod
     def get_lowest_locktimes(locktimes):
@@ -491,32 +463,6 @@ class Util:
                 bisect.insort(sorted_timestamp, locktime)
 
         return sorted(sorted_timestamp), sorted(sorted_block)
-
-    @staticmethod
-    def get_lowest_locktimes_from_will(will):
-        """Convenience wrapper: lowest locktimes directly from a will dict."""
-        return Util.get_lowest_locktimes(Util.get_locktimes(will))
-
-    @staticmethod
-    def search_willtx_per_io(will, tx):
-        """Find a will entry whose tx has the same inputs/outputs as ``tx``."""
-        for wid, w in will.items():
-            if Util.cmp_txs(w["tx"], tx["tx"]):
-                return wid, w
-        return None, None
-
-    @staticmethod
-    def invalidate_will(will):
-        raise Exception("not implemented")
-
-    @staticmethod
-    def get_will_spent_utxos(will):
-        """Collect every input spent by any transaction in ``will``."""
-        utxos = []
-        for _, willitem in will.items():
-            utxos += willitem["tx"].inputs()
-
-        return utxos
 
     # ------------------------------------------------------------------ #
     # UTXO helpers

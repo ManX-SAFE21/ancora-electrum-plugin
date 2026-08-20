@@ -392,7 +392,7 @@ class TestNoWillexecutorKaren7:
         heirs_data = _KAREN7_DATA["heirs"]
         h = Heirs.__new__(Heirs)
         h.update(heirs_data)
-        assert len(h) == 4
+        assert len(h) == 6
 
         self.heirs_obj = h
         self.bal_plugin = _Karen7BalPlugin()

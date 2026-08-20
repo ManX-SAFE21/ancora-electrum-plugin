@@ -5,10 +5,11 @@ Free and decentralized **Bitcoin inheritance** support for the
 that transfer your funds to your heirs if you stop refreshing them
 (dead-man's switch), optionally relayed by will-executor servers.
 
-This repository contains a **behavior-preserving refactor** of the original
-plugin. The logic was kept byte-identical wherever possible; only the file
-layout was reorganized to cleanly separate **business logic** from the
-**PyQt GUI**.
+This repository contains a **refactored and extended** version of the original
+plugin. The logic was reorganized to cleanly separate **business logic** from the
+**PyQt GUI**, and new features have been added including a headless CLI,
+auto-rebuild on new transactions, OP_RETURN heirs, and configurable calendar
+reminders.
 
 ## Repository layout
 
@@ -16,12 +17,20 @@ layout was reorganized to cleanly separate **business logic** from the
 bal/                     the installable Electrum plugin package
 ├── manifest.json        plugin metadata (Electrum reads this)
 ├── qt.py                Qt entry-point shim (re-exports Plugin)
+├── cmdline.py           CLI entry-point shim (re-exports Plugin)
 ├── core/                GUI-free logic (importable without Qt)
 │   ├── util.py
 │   ├── plugin_base.py
 │   ├── heirs.py
 │   ├── will.py
-│   └── willexecutors.py
+│   ├── willexecutors.py
+│   ├── checkalive.py
+│   ├── reminders.py
+│   └── input_rules.py
+├── cli/                 headless command-line layer (no Qt)
+│   ├── commands.py      bal_* daemon commands (@plugin_command)
+│   ├── controller.py    headless BalController (replicates BalWindow)
+│   └── plugin.py        CLI Plugin entry point
 ├── gui/qt/              PyQt6 presentation layer
 │   ├── theme.py         status → color mapping
 │   ├── common.py        shared imports / helpers
@@ -30,6 +39,7 @@ bal/                     the installable Electrum plugin package
 │   ├── dialogs.py       dialog windows
 │   ├── lists.py         tree/list views
 │   ├── window.py        per-wallet GUI controller
+│   ├── window_utils.py  GUI utility helpers
 │   └── plugin.py        Plugin (Electrum @hooks → GUI)
 ├── icons/  wallet_util/  LICENSE  README.md
 build_zip.py             builds a clean, zipimport-friendly distribution zip
@@ -76,6 +86,42 @@ portable builds.
 Copy the `bal/` directory into your Electrum installation's
 `electrum/plugins/` directory, so that `electrum/plugins/bal/manifest.json`
 exists, then enable it from **Tools → Plugins**.
+
+## Command-line / headless usage
+
+BAL can be used without the Qt GUI via Electrum's daemon mode. The CLI layer
+exposes `bal_*` commands that replicate the full inheritance cycle.
+
+### Prerequisites
+
+- An **Electrum daemon** running (`electrum daemon -d`)
+- A wallet loaded (`electrum load_wallet`)
+
+### Available commands
+
+| Category | Commands |
+|----------|----------|
+| Settings | `bal_settings_list`, `bal_settings_get`, `bal_settings_set`, `bal_settings_reset` |
+| Heirs | `bal_heirs_list`, `bal_heirs_show`, `bal_heirs_add`, `bal_heirs_update`, `bal_heirs_delete`, `bal_heirs_import`, `bal_heirs_export` |
+| Will-Executors | `bal_willexecutors_list`, `bal_willexecutors_show`, `bal_willexecutors_add`, `bal_willexecutors_update`, `bal_willexecutors_select`, `bal_willexecutors_delete`, `bal_willexecutors_ping`, `bal_willexecutors_download`, `bal_willexecutors_import`, `bal_willexecutors_export` |
+| Will | `bal_will_status`, `bal_will_check`, `bal_will_prepare`, `bal_will_autorebuild`, `bal_will_sign`, `bal_will_broadcast`, `bal_will_export`, `bal_will_import_merge`, `bal_will_invalidate`, `bal_will_check_executor` |
+
+### Example workflow
+
+```bash
+electrum daemon -d
+electrum load_wallet
+electrum bal_heirs_list
+electrum bal_will_prepare
+electrum bal_will_sign --password '...'
+electrum bal_will_broadcast
+electrum stop
+```
+
+All commands require a running daemon (Electrum's `plugin_command` enforces
+this). Wallet-bound commands (`bal_heirs_*`, `bal_will_*`, etc.) require the
+wallet to be loaded first. Signing commands require `--password` for encrypted
+wallets.
 
 ## Inheritance safety: anticipate / postpone
 

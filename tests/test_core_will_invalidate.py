@@ -77,7 +77,10 @@ def _make_willitem(value_sats=1000000, valid=True, extra_heirs=None):
     })
     item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
     # Set the input value so the balance calculation works.
-    item.tx.inputs()[0]._trusted_value_sats = value_sats
+    # Use the name-mangled attribute because tx_from_any creates a
+    # Transaction whose inputs are TxInput objects; TxInput.value_sats()
+    # reads __value_sats, not _trusted_value_sats.
+    item.tx.inputs()[0]._TxInput__value_sats = value_sats
     if not valid:
         item.set_status("INVALIDATED", True)
     return item

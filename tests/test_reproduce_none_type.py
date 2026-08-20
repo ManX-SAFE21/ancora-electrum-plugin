@@ -170,7 +170,7 @@ def test_simulate_task_phase1():
     heirs_data = KAREN7_DATA["heirs"]
     h = Heirs.__new__(Heirs)
     h.update(heirs_data)
-    assert len(h) == 4
+    assert len(h) == 6
 
     # 2. Build UTXOs
     utxos = build_utxos(KAREN7_DATA)

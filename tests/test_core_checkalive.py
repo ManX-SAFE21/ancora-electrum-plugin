@@ -61,14 +61,14 @@ def test_advanced_mode_uses_threshold_absolute():
 def test_advanced_mode_parses_relative_threshold():
     # A relative threshold means "N days BEFORE the delivery": it resolves
     # against the stored locktime (backwards), not forward from now.
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     fake_now = 1_800_000_000.0
     locktime = fake_now + 90 * 86400
     settings = {"threshold": "30d", "locktime": locktime}
     result = resolve_date_to_check(False, settings, now=fake_now)
     # date_to_check = (locktime, midnight-normalised) - 30 days.
-    expected = (datetime.fromtimestamp(locktime)
+    expected = (datetime.fromtimestamp(locktime, tz=timezone.utc)
                 .replace(hour=0, minute=0, second=0, microsecond=0)
                 - timedelta(days=30)).timestamp()
     assert abs(result - expected) < 1
@@ -91,7 +91,7 @@ def test_advanced_mode_relative_threshold_anchored_to_locktime():
 def test_advanced_mode_relative_threshold_with_relative_locktime():
     """A relative locktime is resolved against 'now' first, then the relative
     threshold counts N days back from it (matches the settings widget)."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     from bal.core.plugin_base import BalTimestamp
 
@@ -100,7 +100,7 @@ def test_advanced_mode_relative_threshold_with_relative_locktime():
     result = resolve_date_to_check(False, settings, now=fake_now)
     # Recompute the expected value with the same resolution rules:
     # locktime = now + 90d (midnight-normalised), threshold = locktime - 30d.
-    locktime_dt = BalTimestamp("90d").to_date(datetime.fromtimestamp(fake_now))
+    locktime_dt = BalTimestamp("90d").to_date(datetime.fromtimestamp(fake_now, tz=timezone.utc))
     expected = BalTimestamp("30d").to_date(locktime_dt, reverse=True).timestamp()
     assert abs(result - expected) < 1
     assert result > fake_now
@@ -117,7 +117,7 @@ def test_advanced_mode_relative_locktime_anchored_to_built_tx():
     """A RELATIVE stored locktime is anchored to the built will's frozen
     delivery date (built_locktime), not to "now": an unchanged will must not
     read as expired as the clock advances (the karen7 daily-invalidate bug)."""
-    frozen = 1817438400  # frozen tx locktime (2027-08-05), built 2026-08-05
+    frozen = 1817424000  # frozen tx locktime (2027-08-05 00:00 UTC), built 2026-08-05
     settings = {"threshold": "30d", "locktime": "2y"}
     # On build day the frozen delivery is authoritative: date_to_check is
     # frozen - 30d and NEVER drifts, however much later the clock gets.
@@ -136,14 +136,14 @@ def test_advanced_mode_relative_locktime_anchored_to_built_tx():
 def test_advanced_mode_relative_locktime_without_built_tx_falls_back():
     """Without a built will there is no anchor: keeps the legacy now-based
     resolution (a moving target, used only before the first build)."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     from bal.core.plugin_base import BalTimestamp
 
     fake_now = 1_800_000_000.0
     settings = {"threshold": "30d", "locktime": "90d"}
     result = resolve_date_to_check(False, settings, now=fake_now)
-    locktime_dt = BalTimestamp("90d").to_date(datetime.fromtimestamp(fake_now))
+    locktime_dt = BalTimestamp("90d").to_date(datetime.fromtimestamp(fake_now, tz=timezone.utc))
     expected = BalTimestamp("30d").to_date(locktime_dt, reverse=True).timestamp()
     assert abs(result - expected) < 1
 

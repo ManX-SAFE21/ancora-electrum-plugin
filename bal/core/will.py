@@ -74,11 +74,6 @@ class Will:
                 if not will[child[0]].father:
                     will[child[0]].father = willid
 
-    # return a list of will sorted by locktime
-    @staticmethod
-    def get_sorted_will(will):
-        return sorted(will.items(), key=lambda x: x[1]["tx"].locktime)
-
     @staticmethod
     def only_valid(will):
         for k, v in will.items():
@@ -106,15 +101,6 @@ class Will:
             and w.get_status("PUSHED")
             and not w.get_status("CHECKED")
         )
-
-    @staticmethod
-    def search_equal_tx(will, tx, wid):
-        for w in will:
-            if w != wid and not tx.to_json() != will[w]["tx"].to_json():
-                if will[w]["tx"].txid() != tx.txid():
-                    if Util.cmp_txs(will[w]["tx"], tx):
-                        return will[w]["tx"]
-        return False
 
     @staticmethod
     def get_tx_from_any(x):
@@ -516,6 +502,7 @@ class Will:
         for _wid, w in will.items():
             if w.get_status("VALID") and not w.get_status("COMPLETE"):
                 return True
+        return False
 
     @staticmethod
     def search_rai(all_inputs, all_utxos, will, wallet):
@@ -1345,6 +1332,8 @@ class WillItem(Logger):
             WillItem,
         ):
             self.__dict__ = w.__dict__.copy()
+            self.STATUS = copy.deepcopy(w.STATUS)
+            self.heirs = copy.deepcopy(w.heirs) if w.heirs is not None else None
         else:
             self.tx = Will.get_tx_from_any(w["tx"])
             self.heirs = w.get("heirs", None)

@@ -126,22 +126,6 @@ def test_willitem_str_repr():
 # Will static methods
 # ------------------------------------------------------------------ #
 
-def test_will_get_sorted_will():
-    # Use a simple dict structure that will[key]["tx"].locktime works
-    class FakeTx:
-        def __init__(self, locktime):
-            self.locktime = locktime
-
-    will = {
-        "b": {"tx": FakeTx(200)},
-        "a": {"tx": FakeTx(100)},
-    }
-    sorted_will = Will.get_sorted_will(will)
-    assert len(sorted_will) == 2
-    assert sorted_will[0][1]["tx"].locktime == 100
-    assert sorted_will[1][1]["tx"].locktime == 200
-
-
 def test_will_only_valid():
     item1 = _make_willitem_blank()
     item2 = _make_willitem_blank()

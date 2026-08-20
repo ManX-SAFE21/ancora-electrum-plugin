@@ -281,10 +281,10 @@ class TestKaren7BuildAndInvalidate:
             )
 
     def test_built_tx_has_karen7_heirs(self):
-        """The built will contains karen7's four heirs."""
-        assert len(self.heirs_model) == 4
+        """The built will contains karen7's six heirs."""
+        assert len(self.heirs_model) == 6
         assert list(self.heirs_model.keys()) == [
-            "aaaa", "lucia", "mario", "mario2"
+            "aaaa", "lucia", "mario", "mario2", "op_return", "op_return2"
         ]
 
     def test_will_items_are_valid(self):

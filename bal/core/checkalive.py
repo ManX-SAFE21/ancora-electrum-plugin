@@ -10,7 +10,7 @@ Pure, GUI-free. The GUI raises :class:`CheckAliveError` to trigger the
 postpone/invalidate flow; the decision that it *should* be raised lives here.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .plugin_base import BalTimestamp
@@ -24,7 +24,7 @@ class CheckAliveError(Exception):
 
     def __str__(self):
         return "Check alive expired please update it: {}".format(
-            datetime.fromtimestamp(self.timestamp_to_check).isoformat()
+            datetime.fromtimestamp(self.timestamp_to_check, tz=timezone.utc).isoformat()
         )
 
 
@@ -70,7 +70,7 @@ def resolve_date_to_check(
         The reference timestamp (float, UNIX seconds).
     """
     if is_basic_mode:
-        return (now if now is not None else datetime.now().timestamp())
+        return (now if now is not None else datetime.now(tz=timezone.utc).timestamp())
 
     threshold = BalTimestamp(will_settings["threshold"])
     # A RELATIVE threshold ("30d"/"1y") means "N days BEFORE the delivery":
@@ -107,5 +107,5 @@ def check_alive_expired(
     """
     if is_basic_mode:
         return False
-    current = now if now is not None else datetime.now().timestamp()
+    current = now if now is not None else datetime.now(tz=timezone.utc).timestamp()
     return date_to_check < current

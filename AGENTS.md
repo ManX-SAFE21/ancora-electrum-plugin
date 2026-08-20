@@ -20,13 +20,21 @@ The plugin's `bal/` directory is symlinked into
 
 ## Test & verify
 
-Tests are **standalone scripts**, not pytest. Each `tests/test_*.py` file runs
-its `test_*` functions from `if __name__ == "__main__"`. Run a file directly:
+Tests work **both** as standalone scripts and via pytest (tests use `def test_*`
+naming and also have `if __name__ == "__main__"` blocks). Run a single file
+directly:
 
 ```bash
 source "$BAL_HOME/electrum/env/bin/activate"
 python3 tests/test_core_heirs.py        # core, no Qt needed
 QT_QPA_PLATFORM=offscreen python3 tests/test_gui_common.py   # GUI tests need offscreen
+```
+
+Or run a batch with pytest (as `make-release.sh` does):
+
+```bash
+source "$BAL_HOME/electrum/env/bin/activate"
+QT_QPA_PLATFORM=offscreen python3 -m pytest tests/test_core_*.py -q
 ```
 
 - Most core tests run offline (no wallet/network). Some files
@@ -43,7 +51,8 @@ QT_QPA_PLATFORM=offscreen python3 tests/test_gui_common.py   # GUI tests need of
 - **Ruff is NOT clean** (hundreds of pre-existing errors in `bal/` and
   `tests/`). Do not run `--fix` wholesale and do not try to silence everything;
   just avoid adding new violations. Config: `pyproject.toml` (line-length 88,
-  E501 ignored).
+  E501 ignored). Per-file ignores suppress `F403`/`F405` for the intentional
+  `from .common import *` hub pattern in `bal/gui/qt/`.
 - Lint via the repo venv: `./venv/bin/ruff`
 - Typecheck: `pyright` (npm, `node_modules/`), config `pyrightconfig.json`
   (`extraPaths: ["../electrum"]`). Pyright reports many false positives on
@@ -53,9 +62,18 @@ QT_QPA_PLATFORM=offscreen python3 tests/test_gui_common.py   # GUI tests need of
 ## Architecture
 
 - `bal/core/` = GUI-free logic (`heirs.py`, `will.py`, `willexecutors.py`,
-  `plugin_base.py`, `util.py`). Must never import Qt.
+  `plugin_base.py`, `util.py`, `checkalive.py`, `reminders.py`,
+  `input_rules.py`).
+  Must never import Qt.
 - `bal/gui/qt/` = PyQt6 layer. `window.py` is the per-wallet controller,
-  `plugin.py` is the Electrum `@hooks` entry, `qt.py` is a zipimport shim.
+  `plugin.py` is the Electrum `@hooks` entry. `qt.py` is a zipimport shim.
+  `common.py` uses `import *` intentionally (ruff suppresses F403/F405 here);
+  `bal/gui/qt/*.py` all import from it.
+- `bal/cli/` = headless command-line layer (no Qt). `plugin.py` is the daemon
+  entry point, `commands.py` registers `bal_*` commands with Electrum.
+- `bal/wallet_util/` = wallet helper utilities for Qt and core.
+- `bal/qt.py` and `bal/cmdline.py` are thin shims that Electrum discovers
+  via `manifest.json`; they import the real `Plugin` class via `importlib`.
 - `bal/manifest.json` = version source of truth (Electrum reads it; also read by
   `make-release.sh`).
 - Compatibility constraint: must support Electrum **4.7.2 and 4.8.0**; the DB

@@ -38,7 +38,7 @@ def compute_reminder_offsets(days, count):
         count: requested number of reminders.
 
     Returns:
-        A list of integer day-offsets (each ``>= 1``), e.g. ``[22, 15, 8]`` for
+        A list of integer day-offsets (each ``>= 1``), e.g. ``[30, 16, 1]`` for
         ``days=30, count=3``. Empty if there is no room for any reminder.
     """
     # No room for any reminder (deadline today or already passed).

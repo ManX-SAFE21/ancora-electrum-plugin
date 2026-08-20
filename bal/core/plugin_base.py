@@ -24,7 +24,7 @@ This module performs **no** GUI work and imports nothing from PyQt / electrum.gu
 import json
 import os
 import platform
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from electrum import constants, json_db
 from electrum.logging import get_logger
@@ -460,8 +460,8 @@ class BalPlugin(BasePlugin):
     def default_will_settings_absolute():
         """Convert the default relative dates into absolute timestamps (from today)."""
         relative_dates = BalPlugin.default_will_settings_relative()
-        today = date.today()
-        dt = datetime(today.year, today.month, today.day, 0, 0, 0)
+        today = datetime.now(tz=timezone.utc).date()
+        dt = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=timezone.utc)
         threshold = (
             dt + timedelta(days=BalTimestamp(relative_dates["threshold"]).duration_to_days())
         ).timestamp()
@@ -521,12 +521,12 @@ class BalTimestamp:
         """
         int32_max = 2 ** 31 - 1
         try:
-            return datetime.fromtimestamp(ts)
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
         except (OSError, OverflowError, ValueError):
             try:
-                return datetime.fromtimestamp(min(int(ts), int32_max))
+                return datetime.fromtimestamp(min(int(ts), int32_max), tz=timezone.utc)
             except (OSError, OverflowError, ValueError):
-                return datetime.fromtimestamp(int32_max)
+                return datetime.fromtimestamp(int32_max, tz=timezone.utc)
 
     def to_date(self, from_date=None, reverse=False):
         """Resolve to a ``datetime``.
@@ -539,7 +539,7 @@ class BalTimestamp:
             return self._safe_fromtimestamp(self.value)
         else:
             if from_date is None:
-                from_date = datetime.now()
+                from_date = datetime.now(tz=timezone.utc)
             if isinstance(from_date, (int, float)):
                 from_date = self._safe_fromtimestamp(from_date)
             reverse = 1 if not reverse else -1

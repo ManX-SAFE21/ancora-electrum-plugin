@@ -97,7 +97,7 @@ def test_relative_days():
 
 def test_resolve_locktime_against_tx_absolute():
     """An absolute current date is returned unchanged (compared vs the tx)."""
-    frozen = 1817438400
+    frozen = 1817424000
     assert Util.resolve_locktime_against_tx(str(frozen), "1y", frozen) == frozen
     assert Util.resolve_locktime_against_tx(frozen, str(frozen), frozen) == frozen
 
@@ -105,7 +105,7 @@ def test_resolve_locktime_against_tx_absolute():
 def test_resolve_locktime_against_tx_unchanged_relative():
     """An unchanged relative recipe resolves to exactly the frozen tx locktime
     (coherent), instead of drifting one day per day away from it."""
-    frozen = 1817438400  # 2027-08-05, i.e. a tx built 2026-08-05 with "1y"
+    frozen = 1817424000  # 2027-08-05 00:00 UTC, i.e. a tx built 2026-08-05 with "1y"
     resolved = Util.resolve_locktime_against_tx("1y", "1y", frozen)
     assert resolved == frozen
 
@@ -113,7 +113,7 @@ def test_resolve_locktime_against_tx_unchanged_relative():
 def test_resolve_locktime_against_tx_lengthened():
     """A lengthened relative recipe resolves later than the frozen tx locktime
     (this is what the postpone check uses to trigger invalidation)."""
-    frozen = 1817438400  # tx built 2026-08-05 with "1y" -> delivery 2027-08-05
+    frozen = 1817424000  # tx built 2026-08-05 with "1y" -> delivery 2027-08-05
     resolved = Util.resolve_locktime_against_tx("2y", "1y", frozen)
     assert resolved == frozen + 365 * 86400
 
@@ -121,7 +121,7 @@ def test_resolve_locktime_against_tx_lengthened():
 def test_resolve_locktime_against_tx_shortened():
     """A shortened relative recipe resolves earlier than the frozen tx locktime
     (this is what the anticipate/rebuild path uses)."""
-    frozen = 1817438400
+    frozen = 1817424000
     resolved = Util.resolve_locktime_against_tx("30d", "1y", frozen)
     assert resolved < frozen
 
@@ -129,7 +129,7 @@ def test_resolve_locktime_against_tx_shortened():
 def test_resolve_locktime_against_tx_no_relative_anchor():
     """When the built recipe was absolute there is no anchor: falls back to the
     legacy forward-from-now resolution (returns a timestamp, no crash)."""
-    frozen = 1817438400
+    frozen = 1817424000
     result = Util.resolve_locktime_against_tx("30d", str(frozen), frozen)
     assert isinstance(result, int)
     assert result > 1700000000
@@ -319,27 +319,6 @@ def test_anticipate_locktime():
     assert low >= 1
 
 
-def test_cmp_locktime():
-    assert Util.cmp_locktime("30d", "30d") == 0
-    # Note: cmp_locktime may return nonzero or None for mismatched units
-
-
-def test_get_locktimes():
-    class FakeTx:
-        locktime = 1700000000
-
-    # will with single entry
-    will = {
-        "tx1": {"tx": FakeTx()},
-    }
-    locktimes = list(Util.get_locktimes(will))
-    assert 1700000000 in locktimes
-    assert len(locktimes) == 1
-
-    # empty will
-    assert list(Util.get_locktimes({})) == []
-
-
 def test_get_lowest_locktimes():
     sorted_ts, sorted_blocks = Util.get_lowest_locktimes([500000, 1700000000, 100, 900000])
     # 500000, 900000 are block-height (< THRESHOLD)
@@ -349,18 +328,6 @@ def test_get_lowest_locktimes():
 
     # empty
     assert Util.get_lowest_locktimes([]) == ([], [])
-
-
-def test_get_will_spent_utxos():
-    class FakeTx:
-        def inputs(self): return [1, 2, 3]
-
-    will = {
-        "tx1": {"tx": FakeTx()},
-        "tx2": {"tx": FakeTx()},
-    }
-    utxos = Util.get_will_spent_utxos(will)
-    assert len(utxos) == 6  # 3 inputs * 2 txs
 
 
 def test_utxo_to_str():
@@ -518,10 +485,7 @@ if __name__ == "__main__":
     test_get_value_amount()
     test_chk_locktime()
     test_anticipate_locktime()
-    test_cmp_locktime()
-    test_get_locktimes()
     test_get_lowest_locktimes()
-    test_get_will_spent_utxos()
     test_utxo_to_str()
     test_cmp_utxo()
     test_in_utxo()

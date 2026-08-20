@@ -58,6 +58,7 @@ bal/                         <- the plugin package (this is what ships in the ZI
   __init__.py                <- package docstring (no version here anymore)
   manifest.json              <- plugin manifest, "version" field (SINGLE SOURCE OF TRUTH for the version)
   qt.py                      <- zipimport shim used when loaded as an external ZIP plugin
+  cmdline.py                 <- CLI entry-point shim (Electrum gui_name='cmdline')
   core/
     plugin_base.py           <- get_version() reads the version from manifest.json (zip-safe)
     heirs.py                 <- HEIRS + transaction building (prepare_lists,
@@ -67,6 +68,14 @@ bal/                         <- the plugin package (this is what ships in the ZI
     willexecutors.py         <- remote will-executor services handling (is_selected / is_valid,
                                 parallel push/check).
     util.py                  <- locktime parsing/most helpers (timestamps only).
+    checkalive.py            <- resolve_date_to_check, check_alive_expired (GUI-free).
+    reminders.py             <- compute_reminder_offsets, BALCalendar .ics generation (GUI-free).
+    input_rules.py           <- locktime/threshold data models, Raw/Date selector logic (GUI-free).
+  cli/                       <- headless command-line layer (no Qt)
+    __init__.py              <- registers bal_* commands on import
+    commands.py              <- bal_* daemon commands (@plugin_command, async, thin transport)
+    controller.py            <- BalController: headless replica of BalWindow (no Qt)
+    plugin.py                <- CLI Plugin entry point (extends BalPlugin, no Qt hooks)
   gui/qt/
     common.py                <- shared imports; every gui module does
                                 `from .common import *`. Add new shared imports HERE.
@@ -80,7 +89,6 @@ bal/                         <- the plugin package (this is what ships in the ZI
   wallet_util/               <- standalone wallet-inspection helpers, no Qt
 tests/                       <- standalone test scripts (see Section 3).
 docs/                        <- user manual + inheritance-options guide (.md sources).
-bal_cli.py                   <- headless CLI (heirs/will build/sign/push/check), no Qt.
 build_zip.py                 <- builds the shippable ZIP (36 files).
 CHANGELOG.md                 <- numbered task log (English).
 .agent_memory_tasks.md       <- terse internal memory notes per task batch.
@@ -295,8 +303,8 @@ See Section 5 for details.
   update `GITEA_TOKEN` env var or `~/.git-credentials`, then retry.
 - Older PR history (pre-`main` direct workflow): **#13** (v0.4.7), **#14**
   (docs/DUST section + translation), **#15** (v0.4.8), **#4** (v0.6.1 —
-  manifest.json version). All merged into `main`.
-- Releases: latest is **v0.6.1**; v0.6.0 and v0.5.18 before it; the older
+  manifest.json version); all merged into `main`.
+- Releases: latest is **v0.7.0**; v0.6.1, v0.6.0 and v0.5.18 before it; the older
   v0.2.x line is kept in history.
 
 ---
@@ -346,6 +354,11 @@ See Section 5 for details.
 - **#47 / #48 (post-v0.6.1)** — `is_selected`/`is_valid` fee bounds (extremes
   allowed) and the `merge_will` missing-`date_to_check` crash fix (see
   CHANGELOG).
+- **v0.7.0** — OP_RETURN heirs; core extraction (checkalive, reminders,
+  input_rules); RLock pickle fix; `REBUILD_ON_CLOSE`; headless CLI layer
+  (`bal/cli/`, `bal/cmdline.py`, 30 `bal_*` commands); `AUTO_REBUILD` on new
+  transactions; `bal_will_autorebuild` CLI command; removed redundant
+  "Add transaction without willexecutor" from settings dialog.
 
 ### Open / suspended / backlog items (see `.agent_memory_tasks.md` for detail)
 - **SUSPENDED — "(UTC)" label in the wizard.** The owner asked to show an

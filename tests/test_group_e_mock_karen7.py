@@ -570,8 +570,8 @@ def test_e5_build_with_real_wallet_heirs_and_utxos():
     h = Heirs.__new__(Heirs)
     h.update(heirs_data)
 
-    assert len(h) == 4, f"expected 4 heirs, got {len(h)}"
-    assert list(h.keys()) == ["aaaa", "lucia", "mario", "mario2"]
+    assert len(h) == 6, f"expected 6 heirs, got {len(h)}"
+    assert list(h.keys()) == ["aaaa", "lucia", "mario", "mario2", "op_return", "op_return2"]
 
     # Mock the Electrum-heavy parts so the build can run in a test context.
     wallet = MagicMock()

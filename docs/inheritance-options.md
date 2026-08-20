@@ -357,5 +357,5 @@ that limit.
 
 ---
 
-*This document reflects the current BAL plugin (v0.6.1). Behaviour is derived
+*This document reflects the current BAL plugin (v0.7.0). Behaviour is derived
 directly from `core/will.py`, `core/heirs.py` and `gui/qt/window.py`.*

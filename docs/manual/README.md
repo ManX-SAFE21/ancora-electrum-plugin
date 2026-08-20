@@ -475,6 +475,27 @@ transactions can have in the WILL tab, on each will‑executor that is online.
 > **NB:** When you close Electrum, the plugin automatically proceeds to execute
 > **Prepare → Sign → Broadcast** (if they have not already been completed) to
 > ensure the inheritance is correctly executed.
+>
+> Optionally, the **Rebuild on close** setting (available in **Tools → Plugins →
+> BAL**, default OFF) skips the full wizard and runs a one-shot rebuild/sign/push
+> flow when Electrum closes.
+
+---
+
+## Auto-rebuild on new transactions
+
+> **NB:** this feature requires the **Auto-rebuild** setting to be enabled
+> (available in **Tools → Plugins → BAL**, default OFF).
+
+When the **Auto-rebuild** setting is enabled, the plugin automatically rebuilds
+the will when new transactions are detected in the wallet (e.g. incoming
+payments). The delivery date is anticipated by one day so the new will orphans
+the old one on-chain without requiring a manual invalidation. An on-chain
+invalidation is only needed when the anticipated locktime crosses the **Check
+Alive** threshold (ADVANCED mode only).
+
+This is useful for wallets that receive funds regularly: the inheritance stays
+up-to-date without manual intervention.
 
 ---
 
@@ -524,6 +545,32 @@ value.
 > always strongly discouraged), spending even one transaction of even one satoshi
 > **invalidates** the inheritance, because it changes the wallet's UTXO structure
 > and therefore the nodes discard the inheritance transaction.
+
+---
+
+## Command-line / headless usage
+
+BAL can also be used without the Qt GUI, via Electrum's daemon mode. This is
+useful for scripting, automation, or running on a headless server.
+
+**Prerequisites:** an Electrum daemon (`electrum daemon -d`) and a loaded wallet
+(`electrum load_wallet`).
+
+**Example:**
+
+```bash
+electrum daemon -d
+electrum load_wallet
+electrum bal_heirs_list
+electrum bal_will_prepare
+electrum bal_will_sign --password '...'
+electrum bal_will_broadcast
+electrum stop
+```
+
+All GUI operations (prepare, sign, broadcast, check, rebuild) are available as
+`bal_*` commands. See the full command table in the
+[README](../../README.md#command-line--headless-usage).
 
 ---
 

@@ -61,9 +61,9 @@ _VALID_TX_HEX = (
     "42146f11ef8414ae929feaafc388ac00000000"
 )
 
-# The frozen tx.locktime of karen7's valid item: delivery 2027-08-05, i.e. a
-# will built 2026-08-05 with a "1y" recipe.
-_FROZEN = 1817438400
+# The frozen tx.locktime of karen7's valid item: delivery 2027-08-05 00:00 UTC,
+# i.e. a will built 2026-08-05 with a "1y" recipe.
+_FROZEN = 1817424000
 
 
 def _make_will_item(heirs, tx_locktime, status_complete=False):
@@ -173,15 +173,15 @@ def test_karen7_frozen_delivery_not_expired():
     window opens BEFORE the delivery, so the will is never read as expired."""
     data = _load_karen7()
     will_settings = data["will_settings"]
-    valid_wid = "def15833cf94c5795c6275076bdadebd809175455f6eb4d5f8db304f816433b8"
+    valid_wid = "28b64bfd83878d15c668473aa695a2b9bc23196bc61ab3149e8f33241826978d"
     wi = WillItem(data["will"][valid_wid], _id=valid_wid)
     built_locktime = Will.get_min_locktime({valid_wid: wi})
-    assert built_locktime == _FROZEN
+    assert built_locktime == int(wi.tx.locktime)
 
     date_to_check = resolve_date_to_check(
         False, will_settings, now=1_800_000_000.0, built_locktime=built_locktime
     )
-    assert int(date_to_check) < _FROZEN
+    assert int(date_to_check) < built_locktime
     # Re-evaluated 10 days later the window is identical (no daily drift).
     later = resolve_date_to_check(
         False, will_settings, now=1_800_000_000.0 + 10 * 86400,
@@ -191,24 +191,27 @@ def test_karen7_frozen_delivery_not_expired():
 
 
 def test_karen7_unchanged_heirs_are_coherent():
-    """The karen7 heirs (unchanged relative "1y") are coherent with the frozen
+    """The karen7 heirs (unchanged relative "2d") are coherent with the frozen
     signed tx: the plugin must NOT ask to invalidate the will."""
     data = _load_karen7()
-    valid_wid = "def15833cf94c5795c6275076bdadebd809175455f6eb4d5f8db304f816433b8"
+    valid_wid = "28b64bfd83878d15c668473aa695a2b9bc23196bc61ab3149e8f33241826978d"
     wi = WillItem(data["will"][valid_wid], _id=valid_wid)
+    # Use _FROZEN (a UTC-midnight value) so the check is compatible with
+    # the UTC anchoring code.
+    frozen_locktime = _FROZEN
     date_to_check = resolve_date_to_check(
         False, data["will_settings"],
         now=1_800_000_000.0,
-        built_locktime=int(wi.tx.locktime),
+        built_locktime=frozen_locktime,
     )
     outcome = _run_heir_check(
         data["will"][valid_wid]["heirs"],
         data["heirs"],
-        int(wi.tx.locktime),
+        frozen_locktime,
         status_complete=True,
     )
     assert outcome.startswith("coherent"), outcome
-    assert int(date_to_check) < int(wi.tx.locktime)
+    assert int(date_to_check) < frozen_locktime
 
 
 # ------------------------------------------------------------------ #

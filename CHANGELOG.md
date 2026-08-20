@@ -2568,3 +2568,343 @@ of a session, without requiring the normal wizard flow to have run first.
   `test_merge_will_validity_error_logs_without_crashing`.
 
 **Outcome:** DONE.
+
+---
+
+## 49. OP_RETURN support for heirs
+
+**Date:** 2026-07-30
+
+**Goal:** allow heirs to produce an OP_RETURN output instead of a regular BTC
+payment. An address prefixed with `OP_RETURN:` carries hex data (max 80 bytes);
+such heirs always have amount 0 and are excluded from the normal amount
+calculations (percentage normalization, dust checks, leftover redistribution).
+
+**What changed:**
+
+- `bal/core/heirs.py`
+  - `validate_heir`: new `OP_RETURN:<hex>` address validation (rejects non-hex,
+    > 80 bytes). OP_RETURN heirs are stored with amount `"0"` and carry the raw
+    hex data in the address field.
+  - `prepare_lists`: OP_RETURN heirs are skipped during amount calculation
+    (`normalize_perc`, dust checks). They are kept in the will but produce a
+    zero-value output.
+  - `buildTransactions`: when building the transaction, OP_RETURN heirs emit a
+    `OP_RETURN <hex>` scriptPubKey output with value 0, matching Bitcoin's
+    OP_RETURN output standard.
+  - `get_transactions`: OP_RETURN heirs are grouped with their locktime peers
+    but excluded from fee/dust arithmetic.
+
+- `bal/gui/qt/window.py`
+  - Heir dialog / wizard: the address field accepts `OP_RETURN:` prefix and
+    shows a decoded-text message field when an OP_RETURN address is entered.
+  - `build_will` / `_build_success_report`: OP_RETURN heirs display the
+    decoded message text in the build report instead of a BTC address.
+
+- `bal/gui/qt/lists.py`
+  - Heir list: OP_RETURN heirs display the decoded message in the address
+    column and show "0" for the amount.
+
+- `bal/gui/qt/common.py`
+  - Re-export the new `validate_op_return_hex` helper for the GUI layer.
+
+- `tests/test_core_heirs.py`
+  - 8 new tests: OP_RETURN validation (valid hex, too long, non-hex), OP_RETURN
+    heirs excluded from amount calculations, OP_RETURN output shape in built
+    transactions, mixed OP_RETURN + regular heirs.
+
+**Verification:**
+- `ruff check` on changed production files: no new errors.
+- Full test suite: 307 passed.
+
+**Outcome:** DONE.
+
+---
+
+## 50. Core extraction: GUI-free logic into bal/core/ (reminders, checkalive, input_rules); RLock pickle fix
+
+**Date:** 2026-08-05
+
+**Goal:** extract GUI-free business logic that was previously embedded in Qt
+widgets (`bal/gui/qt/widgets.py`) into standalone `bal/core/` modules, making
+them independently testable without Qt. Also fix a critical `copy.deepcopy(tx)`
+crash on Electrum 4.8 (`RLock` cannot be pickled) and improve wallet-DB
+persistence robustness.
+
+**What changed:**
+
+- `bal/core/checkalive.py` (new)
+  - `resolve_date_to_check`: computes the effective check-alive timestamp from
+    will-settings and user type (BASIC uses `now()`; ADVANCED uses the stored
+    threshold). Extracted from `window.py init_class_variables`.
+  - `check_alive_expired`: pure-logic test for whether the check-alive has
+    passed. Previously duplicated inline in `window.py`.
+
+- `bal/core/reminders.py` (new)
+  - `compute_reminder_offsets`, `basic_reminder_offsets`, `BALCalendar.write_ics`,
+    `BALCalendar._ics_provider`: all calendar/reminder logic extracted from
+    `widgets.py`. Generates iCal (.ics) files with separate VEVENT entries per
+    reminder date. No Qt dependency.
+
+- `bal/core/input_rules.py` (new)
+  - `LockTimeRawEdit`, `LockTimeDateEdit`, `BalTimeEditWidget`,
+    `ThresholdTimeWidget`: GUI-free data models for locktime/threshold
+    validation and the Raw/Date selector logic. The Qt widgets in
+    `widgets.py` now thin-wrap these helpers.
+
+- `bal/core/heirs.py`
+  - Fixed `copy.deepcopy(tx)` failure on Electrum 4.8: the `Transaction`
+    object contains a `_thread.RLock` that cannot be pickled. Will-item
+    persistence now re-parses the transaction from its hex serialization
+    instead of deep-copying.
+  - Invalid heirs (sentinel values from failed builds) are now kept in the
+    wallet DB instead of being silently dropped, so the user can see and
+    correct them.
+
+- `bal/core/plugin_base.py`
+  - Minor adjustments to support the extracted modules.
+
+- `bal/gui/qt/widgets.py`
+  - Major slim-down: business logic delegates to `bal/core/checkalive.py`,
+    `bal/core/reminders.py`, and `bal/core/input_rules.py`. Only Qt widget
+    creation and layout remain.
+
+- `bal/gui/qt/calendar.py`
+  - Adapted to use `bal/core/reminders.py` for .ics generation.
+
+- `bal/gui/qt/window.py`
+  - `init_class_variables` now calls `resolve_date_to_check` from
+    `bal/core/checkalive.py` instead of computing inline.
+
+- `bal/gui/qt/common.py`
+  - Updated re-exports for the new core modules.
+
+- Tests reorganized: core-only tests moved to `tests/test_core_checkalive.py`,
+  `tests/test_core_reminders.py`, `tests/test_core_input_rules.py` (run
+  without Qt).
+
+- `tests/karen7`: fixture file compressed/updated for the new test structure.
+
+**Verification:**
+- `ruff check` on changed files: no new errors.
+- Full test suite: 388 passed (significant increase due to new core test modules).
+
+**Outcome:** DONE.
+
+---
+
+## 51. "Rebuild will on wallet close" setting (`REBUILD_ON_CLOSE`)
+
+**Date:** 2026-08-14
+
+**Goal:** add a new plugin setting that lets the plugin rebuild the will
+automatically when Electrum closes, skipping the full Build wizard. When
+enabled, closing Electrum triggers a one-shot prepare/inheritance flow
+(check, rebuild if needed, sign, broadcast) without showing the
+`BalBuildWillDialog`.
+
+**What changed:**
+
+- `bal/core/plugin_base.py`
+  - New persisted config `REBUILD_ON_CLOSE = BalConfig(config,
+    "bal_rebuild_on_close", False)` (default OFF), with explanatory comment.
+
+- `bal/gui/qt/plugin.py`
+  - New "Rebuild on close" checkbox in the settings dialog, bound to
+    `REBUILD_ON_CLOSE`, with a tooltip explaining the behaviour. Added to the
+    "Reset to Default Setting" list.
+
+- `bal/gui/qt/window.py`
+  - `on_close`: when `REBUILD_ON_CLOSE` is enabled, the close flow runs
+    the auto-rebuild path (check + rebuild + sign + push) instead of the
+    full wizard dialog. The legacy wizard-on-close path is kept when the
+    setting is OFF.
+
+- `tests/test_rebuild_on_close_setting.py` (new)
+  - 8 tests: default OFF, toggle/persist, close triggers rebuild when ON,
+    close skips rebuild when OFF, reset restores default.
+
+**Verification:**
+- `ruff check` on changed files: no new errors.
+- Full test suite: 396 passed.
+
+**Outcome:** DONE.
+
+---
+
+## 52. Headless CLI layer (`bal/cli/`, `bal/cmdline.py`, `bal_*` daemon commands)
+
+**Date:** 2026-08-14
+
+**Goal:** expose the full BAL inheritance cycle via Electrum's command-line
+interface (daemon mode), without the Qt GUI. This enables scripting,
+automation, and headless server usage.
+
+**What changed:**
+
+- `bal/cmdline.py` (new)
+  - Zip-import shim for Electrum's `gui_name='cmdline'` plugin loader.
+  - Follows the same `importlib` pattern as `qt.py` but never imports Qt.
+  - Re-exports `Plugin` from `bal.cli.plugin`.
+
+- `bal/cli/__init__.py` (new)
+  - Registers the `bal_*` commands with Electrum on import.
+
+- `bal/cli/plugin.py` (new)
+  - `Plugin(BalPlugin)` -- minimal entry point for the daemon (no Qt hooks,
+    no `bal_windows`).
+
+- `bal/cli/commands.py` (new)
+  - 30 `@plugin_command` async functions registered as `bal_*` commands:
+    settings (list/get/set/reset), heirs (list/show/add/update/delete/import/
+    export), will-executors (list/show/add/update/select/delete/ping/download/
+    import/export), will (status/check/prepare/sign/broadcast/export/
+    import_merge/invalidate/check_executor).
+  - Each command is a thin transport layer: validates args, delegates to
+    `BalController`, returns JSON-serializable results.
+
+- `bal/cli/controller.py` (new, ~1100 lines)
+  - `BalController` -- headless replica of `BalWindow`. Reads/writes wallet DB,
+    config, and will-executors without any Qt dependency.
+  - Methods mirror `BalWindow` flows: `load_willitems`, `save_willitems`,
+    `init_class_variables`, `build_inheritance_transaction`, `sign_transactions`,
+    `push_transactions_to_willexecutors`, `check_transactions`, `export_json_file`,
+    `merge_will_from_file`, `invalidate_will`.
+  - Domain exceptions (`WillExpiredException`, `HeirNotFoundException`, etc.)
+    are converted to `UserFacingException` with clear text.
+
+- `bal/manifest.json`
+  - `"available_for"` updated from `["qt"]` to `["qt", "cmdline"]`.
+
+- `bal/__init__.py`
+  - Added `from .cli import commands` to register `bal_*` commands on import
+    (both CLI pre-parse and GUI startup).
+
+- `tests/test_cli_commands_registered.py` (new)
+  - 4 tests: all `bal_*` commands registered, all are coroutines, no duplicate
+    registration, all args documented.
+
+- `tests/test_cli_controller_offline.py` (new)
+  - Offline CRUD tests for heirs, will-executors, settings, and will
+    import/export merge via `BalController` (no network).
+
+**Verification:**
+- `ruff check` on new files: clean.
+- Full test suite: 427 passed.
+- `tests/test_cli_commands_registered.py`: all 4 tests pass.
+
+**Outcome:** DONE.
+
+---
+
+## 53. Auto-rebuild on new transactions (`AUTO_REBUILD`)
+
+**Date:** 2026-08-16
+
+**Goal:** when new transactions are detected in the wallet (e.g. incoming
+payments), automatically rebuild the will so the inheritance covers the
+new UTXOs. The delivery date is anticipated by one day to orphan the old
+will on-chain; an on-chain invalidation is only needed when the anticipated
+locktime crosses the Check Alive threshold.
+
+**What changed:**
+
+- `bal/core/plugin_base.py`
+  - New persisted config `AUTO_REBUILD = BalConfig(config,
+    "bal_auto_rebuild", False)` (default OFF), with explanatory comment.
+
+- `bal/gui/qt/plugin.py`
+  - New "Auto-rebuild" checkbox in the settings dialog, bound to
+    `AUTO_REBUILD`, with a tooltip. Added to the "Reset to Default Setting"
+    list.
+
+- `bal/gui/qt/window.py`
+  - New `_auto_rebuild_on_new_tx()` method: triggered when Electrum detects
+    a new transaction in the wallet. Runs the full prepare flow: check
+    coherence, rebuild with the anticipated locktime (delivery date minus 1
+    day), persist, sign (if passwordless), push to will-executors.
+  - When the anticipated locktime crosses the Check Alive threshold, returns
+    an invalidation transaction instead of auto-completing.
+  - Connected to Electrum's `new_transaction` signal.
+
+- `tests/test_auto_rebuild_on_new_tx.py` (new)
+  - 16 tests: AUTO_REBUILD default OFF, toggle/persist, rebuild triggers on
+    new tx, locktime anticipation by 1 day, threshold crossing returns
+    invalidation, passwordless wallet signs automatically, encrypted wallet
+    returns invalidation tx for manual signing.
+
+**Verification:**
+- `ruff check` on changed files: no new errors.
+- Full test suite: 432 passed.
+
+**Outcome:** DONE.
+
+---
+
+## 54. CLI `bal_will_autorebuild` command
+
+**Date:** 2026-08-16
+
+**Goal:** expose the auto-rebuild flow (entry #53) as a headless CLI command,
+so scripts and daemons can trigger the one-shot check/rebuild/sign/push
+cycle without the Qt GUI.
+
+**What changed:**
+
+- `bal/cli/commands.py`
+  - New `bal_will_autorebuild` async command (flag `nw`): runs the full
+    auto-rebuild flow via `BalController.auto_rebuild()`. Returns a JSON
+    object with `result` (`valid`, `no_heirs`, `invalidated`, `nothing`,
+    `needs_signing`, `rebuilt`) and, when applicable, the invalidation
+    transaction.
+
+- `bal/cli/controller.py`
+  - New `auto_rebuild()` method: headless replica of the GUI auto-rebuild
+    flow. Checks coherence, rebuilds with anticipated locktime, handles
+    threshold-crossing (returns invalidation tx), signs passwordless wallets
+    automatically, pushes to will-executors.
+
+- `tests/test_cli_autorebuild.py` (new)
+  - 10 tests: auto-rebuild returns `valid` when will is coherent, `rebuilt`
+    when rebuilt, `invalidated` with invalidation tx when threshold crossed,
+    `needs_signing` for encrypted wallets, `no_heirs` when heirs are missing.
+
+- `tests/test_cli_commands_registered.py`
+  - Updated `EXPECTED_COMMANDS` to include `bal_will_autorebuild`.
+
+- `tests/test_cli_controller_offline.py`
+  - Extended with auto-rebuild flow tests.
+
+**Verification:**
+- `ruff check` on changed files: no new errors.
+- Full test suite: 438 passed.
+
+**Outcome:** DONE.
+
+---
+
+## 55. Remove "Add transaction without willexecutor" from settings dialog
+
+**Date:** 2026-08-17
+
+**Goal (owner request):** the "Add transaction without willexecutor" checkbox
+was already available in the Will-Executor tab; showing it redundantly in the
+settings dialog created confusion. Remove it from the settings dialog and
+renumber the grid rows.
+
+**What changed:**
+
+- `bal/gui/qt/plugin.py`
+  - Removed the "Add transaction without willexecutor" checkbox
+    (`NO_WILLEXECUTOR`) from the settings dialog grid. The setting is still
+    functional (available from the Will-Executor tab and the wizard); only
+    the settings-dialog exposure was removed.
+  - Grid rows 5--16 renumbered to 4--15 to close the gap left by the removal.
+  - Removed the corresponding reset-button widget for `NO_WILLEXECUTOR` from
+    the "Reset to Default Setting" list.
+
+**Verification:**
+- `ruff check` on changed file: no new errors.
+- Full test suite: 438 passed (unchanged).
+
+**Outcome:** DONE.
