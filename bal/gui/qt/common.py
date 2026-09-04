@@ -108,6 +108,7 @@ from ...core.heirs import (
     HEIR_DUST_AMOUNT,
     HEIR_REAL_AMOUNT,
     OP_RETURN_PREFIX,
+    BalanceTooLowException,
     HeirAmountIsDustException,
     Heirs,
     WillExecutorFeeTooHighException,

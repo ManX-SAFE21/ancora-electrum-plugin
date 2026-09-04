@@ -363,6 +363,10 @@ class Heirs(dict, Logger):
         Logger.__init__(self)
         self.db = wallet.db
         self.wallet = wallet
+        # Reason code explaining why the last buildTransactions() produced no
+        # transaction (None when the last build succeeded or never ran).  See
+        # buildTransactions for the list of codes and why they exist.
+        self.last_build_error = None
         d = self.db.get("heirs", {})
         try:
             self.update(d)
@@ -630,6 +634,20 @@ class Heirs(dict, Logger):
     def buildTransactions(
         self, bal_plugin, wallet, tx_fees=None, utxos=None, from_locktime=0
     ):
+        # Reset the diagnostic reason at the start of every build attempt.
+        #
+        # WHY: when the build produced nothing, the GUI used to show a fixed
+        # list of three "possible reasons" (low balance / dust shares /
+        # check-alive after the delivery date).  In practice the real cause is
+        # often NONE of those three - several code paths below simply return
+        # an empty result with no explanation at all, so the user was shown
+        # three guesses that were all wrong.  Each such path now records WHY
+        # it gave up, and BalBuildWillDialog names the actual cause.
+        #
+        # Codes: NO_HEIRS, NO_UTXO, NO_WILLEXECUTOR_USABLE, NO_FUTURE_DATE,
+        # WILLEXECUTOR_FEE, WILLEXECUTOR_FEE_TOO_HIGH, TX_BUILD_FAILED,
+        # WILLEXECUTOR_TX_ERROR.
+        self.last_build_error = None
         _before = list(self.keys())
         Heirs._validate(self, persist=False)
         _removed = [k for k in _before if k not in self]
@@ -644,6 +662,7 @@ class Heirs(dict, Logger):
                 ", ".join(_removed),
             )
         if len(self) <= 0:
+            self.last_build_error = "NO_HEIRS"
             _logger.info("while building transactions there was no heirs")
             return
         balance = 0.0
@@ -660,12 +679,18 @@ class Heirs(dict, Logger):
                 len_utxo_set += 1
                 available_utxos.append(utxo)
         if len_utxo_set == 0:
+            self.last_build_error = "NO_UTXO"
             _logger.info("no usable utxos")
             return
         j = -2
         willexecutorsitems = list(willexecutors.items())
         willexecutorslen = len(willexecutorsitems)
         alltxs = {}
+        # Counts how many will-executors were actually PROCESSED (i.e. passed
+        # the is_selected/is_valid filter below and reached the build loop).
+        # If it stays 0 the loop silently skipped every single one, which is a
+        # distinct failure from "we tried and the build failed".
+        processed_willexecutors = 0
         while True:
             j += 1
             if j >= willexecutorslen:
@@ -682,6 +707,7 @@ class Heirs(dict, Logger):
                 url = willexecutor = None
             else:
                 break
+            processed_willexecutors += 1
             fees = {}
             i = 0
             txs = {}
@@ -699,9 +725,11 @@ class Heirs(dict, Logger):
                         max_fee=bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                     )
                 except WillExecutorFeeException:
+                    self.last_build_error = "WILLEXECUTOR_FEE"
                     i = 10
                     continue
                 except WillExecutorFeeTooHighException:
+                    self.last_build_error = "WILLEXECUTOR_FEE_TOO_HIGH"
                     i = 10
                     continue
                 if locktimes:
@@ -710,19 +738,33 @@ class Heirs(dict, Logger):
                             locktimes, available_utxos[:], fees, wallet
                         )
                         if not txs:
+                            self.last_build_error = "TX_BUILD_FAILED"
                             return {}
                     except Exception as e:
+                        # An unexpected failure while assembling the
+                        # transactions for THIS will-executor.
+                        #
+                        # WHY THIS CHANGED: the previous code read
+                        # ``e.heirname`` here, in order to auto-deselect the
+                        # will-executor blamed by the exception.  NOTHING in
+                        # the plugin sets that attribute any more (it is a
+                        # leftover from an older exception design), so the
+                        # lookup itself raised AttributeError, and the inner
+                        # ``except Exception: raise`` re-raised THAT - aborting
+                        # the whole build with a confusing secondary error
+                        # instead of the real one.  We now record the reason,
+                        # log the actual exception together with the
+                        # will-executor it happened on, and simply move on to
+                        # the next one, which is what the original code was
+                        # clearly trying to do.
+                        self.last_build_error = "WILLEXECUTOR_TX_ERROR"
                         _logger.error(
-                            f"build transactions: error preparing transactions: {e}"
+                            "build transactions: error preparing transactions "
+                            "for will-executor %s: %r",
+                            (willexecutor or {}).get("url", "(none)"),
+                            e,
                         )
-                        try:
-                            if "w!ll3x3c" in e.heirname:
-                                Willexecutors.is_selected(
-                                    e.heirname[len("w!ll3x3c") :], False
-                                )
-                                break
-                        except Exception:
-                            raise
+                        break
                     total_fees = 0
                     total_fees_real = 0
                     total_in = 0
@@ -746,11 +788,25 @@ class Heirs(dict, Logger):
                     if i >= 10:
                         break
                 else:
+                    self.last_build_error = "NO_FUTURE_DATE"
                     _logger.info(
                         f"no locktimes for willexecutor {willexecutor} skipped"
                     )
                     break
             alltxs.update(txs)
+
+        # Every will-executor was skipped by the is_selected/is_valid filter
+        # (or the list was empty) and no "no will-executor" build was allowed,
+        # so the loop above never even attempted a build.  This path used to
+        # return silently with no log line at all, which is exactly the case
+        # the owner hit: the dialog then blamed balance/dust/check-alive, none
+        # of which was true.
+        if not alltxs and processed_willexecutors == 0:
+            self.last_build_error = "NO_WILLEXECUTOR_USABLE"
+            _logger.info(
+                "no usable will-executor: all %d skipped (not selected or not valid)",
+                willexecutorslen,
+            )
 
         return alltxs
 

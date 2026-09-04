@@ -28,6 +28,7 @@ from .common import (
     AmountException,
     Any,
     BalTimestamp,
+    BalanceTooLowException,
     BestEffortRequestFailed,
     Buttons,
     Callable,
@@ -690,12 +691,19 @@ class BalBuildWillDialog(BalDialog):
                 _logger.debug(
                     "during phase1 CAE: {}, Continue to invalidate".format(cae)
                 )
-                self.msg_set_status("Checking variables",varrow, "Check Alive Threshold Passed: you have to Invalidate your old Will",self.COLOR_ERROR)
+                self.msg_set_status(
+                    "Checking variables", varrow,
+                    "Check Alive Threshold Passed: you have to Invalidate "
+                    "your old Will",
+                    self.COLOR_ERROR,
+                )
             else:
                 raise cae
             return None, tx
         except NoHeirsException:
-            self.msg_set_status("Checking variables", varrow,"No Heirs",self.COLOR_ERROR)
+            self.msg_set_status(
+                "Checking variables", varrow, self.msg_alert("No Heirs")
+            )
             return "no_heirs", None
         except Exception as e:
             raise e
@@ -811,61 +819,29 @@ class BalBuildWillDialog(BalDialog):
                     _("Inheritance in mempool (waiting confirmation)"),
                     self.COLOR_WARNING,
                 )
-            if isinstance(e, HeirChangeException):
-                message = _("Heirs changed:")
-            elif isinstance(e, WillExecutorNotPresent):
-                message = _("Will-Executor not present")
-            elif isinstance(e, WillexecutorChangeException):
-                message = _("Will-Executor changed")
-            elif isinstance(e, TxFeesChangedException):
-                message = _("Txfees are changed")
-            elif isinstance(e, HeirNotFoundException):
-                # Task #01b: the old text "Heir not found" was misleading.
-                # In practice this branch is reached whenever the will is no
-                # longer coherent and must be rebuilt - very often simply
-                # because the delivery date was anticipated, NOT because an heir
-                # is genuinely missing. We therefore show a clear, accurate
-                # message that covers both the DATE and the HEIRS cases.
-                message = _(
-                    "Found CHANGES to the DATE or the HEIRS,\n"
-                    "a NEW WILL must be prepared."
-                )
-            if message:
-                _logger.debug(f"message: {message}")
-                self.msg_set_checking(message)
-            else:
-                # Task #01b: the old fallback text "New" was unclear. When the
-                # will is incomplete without a more specific reason, it still
-                # means the will has to be rebuilt, so we use the same clear
-                # message as the HeirNotFoundException branch above.
-                self.msg_set_checking(
-                    _(
-                        "Found CHANGES to the DATE or the HEIRS,\n"
-                        "a NEW WILL must be prepared."
-                    )
-                )
+            # All of these situations used to collapse into the SAME sentence
+            # ("Found CHANGES to the DATE or the HEIRS, a NEW WILL must be
+            # prepared"), shown for five genuinely different causes - and
+            # plainly WRONG for the most common one, receiving funds, where
+            # neither the date nor the heirs changed.  _check_failure_message
+            # names the real cause using the detail each exception already
+            # carries (heir name, will-executor URL, old/new fee rate).
+            message = self._check_failure_message(e)
+            _logger.debug(f"message: {message}")
+            self.msg_set_checking(message)
 
         if have_to_build:
             self.msg_set_building()
             try:
                 txs = self.bal_window.build_will()
                 if not txs:
+                    # The message now names the ACTUAL reason the build gave
+                    # up (recorded by Heirs.buildTransactions) instead of
+                    # listing three fixed guesses that were frequently all
+                    # wrong.  msg_alert keeps the warning sign coloured and the
+                    # text in the default colour so it stays readable.
                     self.msg_set_building(
-                        _(
-                            "Could not build the will ! Possible reasons:\n"
-                            "1- the Balance of wallet is too low to cover the "
-                            "fees for miners and will executors,\n"
-                            "2- the Heirs' shares are below the minimum (Dust "
-                            "UTXO, less than 546 Satoshi),\n"
-                            "3- the Check Alive Date/Time is later than the "
-                            "delivery time (it must be earlier),\n"
-                            "Skipped"
-                        ),
-                        # Orange (warning) instead of red (error): an empty
-                        # wallet after the inheritance was executed is a NORMAL
-                        # situation, not a failure, so the colour should not
-                        # alarm the user (owner request).
-                        color=self.COLOR_WARNING,
+                        self.msg_alert(self._build_failure_message())
                     )
                     return False, None
 
@@ -946,6 +922,28 @@ class BalBuildWillDialog(BalDialog):
                             "the inheritance cannot be created. "
                             "Increase the amounts or reduce the number of heirs."
                         )
+                    )
+                )
+                return False, None
+
+            except BalanceTooLowException as e:
+                # The core DOES detect this precisely and carries the numbers,
+                # but the exception was never caught here: it fell through to
+                # the generic handler below, which printed the raw technical
+                # string in red and re-raised.  Show the real figures instead.
+                self.msg_set_building(
+                    self.msg_alert(
+                        _(
+                            "Wallet balance is too low: {} satoshi available, "
+                            "but the miner and will-executor fees need {} "
+                            "satoshi (the minimum usable amount is {} "
+                            "satoshi). Add funds, or select fewer "
+                            "will-executors."
+                        ).format(
+                            int(e.balance), int(e.fees), int(e.dust_threshold)
+                        )
+                        + "\n\n"
+                        + _("Skipped")
                     )
                 )
                 return False, None
@@ -2009,6 +2007,168 @@ class BalBuildWillDialog(BalDialog):
             _logger.debug(f"_executed_inheritance_status error: {_err}")
         return "MEMPOOL" if has_mempool else None
 
+    def _check_failure_message(self, e):
+        """Return a precise explanation of why the will is no longer coherent.
+
+        ``Will.is_will_valid`` raises NotCompleteWillException (or one of its
+        subclasses) when the stored will stops matching the wallet, the heirs
+        or the will-executors.  Those exceptions ALREADY carry the useful
+        detail - the heir name, the will-executor URL, the old and new fee
+        rate - but this dialog used to discard all of it and print the same
+        sentence, "Found CHANGES to the DATE or the HEIRS", for every case.
+
+        That was not merely vague, it was WRONG for the most common situation:
+        when the wallet simply receives new funds, neither the date nor the
+        heirs changed, yet the user was sent hunting for edits never made.
+
+        NOTE: no new exception classes were added for this (owner request).
+        Every case below is told apart using only what the core already
+        raises today.
+        """
+        # Subclasses first - they are all NotCompleteWillException.
+        if isinstance(e, TxFeesChangedException):
+            # The core raises TxFeesChangedException(f"{tx_fees}:  {w.tx_fees}"),
+            # i.e. "current:  stored".  Show both rates when they can be read,
+            # and fall back to a plain sentence if that format ever changes.
+            try:
+                now_fee, old_fee = [p.strip() for p in str(e).split(":", 1)]
+                return _(
+                    "Miner fee rate changed (the will was built with {} "
+                    "sat/byte, now it is {}): a new will must be prepared."
+                ).format(old_fee, now_fee)
+            except Exception:
+                return _(
+                    "The miner fee rate changed: a new will must be prepared."
+                )
+        if isinstance(e, WillExecutorNotPresent):
+            return _(
+                'Will-executor "{}" is not covered by the current will: '
+                "a new will must be prepared."
+            ).format(str(e))
+        if isinstance(e, NoWillExecutorNotPresent):
+            return _(
+                "Backup mode is enabled but the will has no backup "
+                "transaction: a new will must be prepared."
+            )
+        if isinstance(e, HeirNotFoundException):
+            # Raised when an heir was added, removed, or had its delivery date
+            # changed.  We deliberately do NOT try to tell those three apart
+            # (owner request: too fine-grained); naming the heir is what makes
+            # the message actionable.
+            return _(
+                'Heir "{}" is not covered by the current will (it was added '
+                "or removed, or its delivery date changed): a new will must "
+                "be prepared."
+            ).format(str(e))
+        # Kept for completeness: nothing in the plugin raises these two today,
+        # but they ARE NotCompleteWillException subclasses, so should future
+        # code raise them they get a sensible message rather than the fallback.
+        if isinstance(e, HeirChangeException):
+            return _("The heirs changed: a new will must be prepared.")
+        if isinstance(e, WillexecutorChangeException):
+            return _("A will-executor changed: a new will must be prepared.")
+
+        # A plain NotCompleteWillException.  The core raises it in exactly two
+        # places, told apart STRUCTURALLY (not by matching message text, which
+        # would be fragile): with no argument when the will holds no valid
+        # transaction, and with one argument when a wallet utxo is not
+        # included in the will.
+        if type(e) is NotCompleteWillException:
+            if e.args:
+                return _(
+                    "The wallet contains funds that the current will does not "
+                    "cover yet: a new will must be prepared."
+                )
+            return _(
+                "The will contains no valid transaction: a new will must be "
+                "prepared."
+            )
+
+        # An unrecognised subclass: say so honestly instead of guessing.
+        return _(
+            "The will is no longer coherent and must be rebuilt; the exact "
+            "reason could not be determined."
+        )
+
+    def _build_failure_message(self):
+        """Return a plain-language explanation of why the will was not built.
+
+        ``Heirs.buildTransactions`` records a reason code in
+        ``last_build_error`` every time it gives up (the codes are listed in
+        that method).  Here we turn that code into ONE specific sentence
+        telling the user what to fix.
+
+        WHY: this dialog used to print the same three "possible reasons"
+        (low balance / dust shares / check-alive after the delivery date)
+        whenever the build returned nothing.  The owner hit a real case where
+        all three were false - the actual cause was that no will-executor was
+        usable, which the list did not even mention - so the message actively
+        misled.  When the reason is unknown we now SAY that it is unknown and
+        list what to check, instead of asserting three guesses as if they were
+        the only possibilities.
+        """
+        reason = None
+        try:
+            reason = getattr(self.bal_window.heirs, "last_build_error", None)
+        except Exception as _err:
+            # A diagnostic must never break the report it is explaining.
+            _logger.debug(f"_build_failure_message: {_err}")
+
+        messages = {
+            "NO_HEIRS": _(
+                "No heirs: add at least one heir before building the will."
+            ),
+            "NO_UTXO": _(
+                "The wallet has no spendable funds, so no inheritance "
+                "transaction can be created."
+            ),
+            "NO_WILLEXECUTOR_USABLE": _(
+                "No usable will-executor: none of the servers in the list is "
+                "both selected and valid. Open the will-executor settings, "
+                "select at least one server and check that it is reachable."
+            ),
+            "NO_FUTURE_DATE": _(
+                "No delivery date left to build: every heir's date is already "
+                "covered by the existing will. Choose a later delivery date, "
+                "or change an heir's date."
+            ),
+            "WILLEXECUTOR_FEE": _(
+                "The amount to send must cover the miner fees plus this "
+                "will-executor's fee, and the wallet balance is not enough: "
+                "select cheaper will-executors, or add funds to the wallet."
+            ),
+            "WILLEXECUTOR_FEE_TOO_HIGH": _(
+                "A will-executor asks for more than the maximum fee you "
+                "allowed: raise the maximum fee in the settings, or select a "
+                "cheaper will-executor."
+            ),
+            "TX_BUILD_FAILED": _(
+                "The inheritance transactions could not be assembled from the "
+                "available funds (the balance may not cover the miner fees)."
+            ),
+            "WILLEXECUTOR_TX_ERROR": _(
+                "An unexpected error stopped the transactions being prepared "
+                "for a will-executor, so it was skipped. Try again, or select "
+                "a different will-executor."
+            ),
+        }
+
+        if reason in messages:
+            return messages[reason] + "\n\n" + _("Skipped")
+
+        return (
+            _(
+                "Could not build the will, and the exact cause could not be "
+                "determined. Please check that:\n"
+                "- the wallet balance covers the miner and will-executor fees,\n"
+                "- each heir's share is above the minimum (dust limit),\n"
+                "- the Check Alive date is EARLIER than the delivery date,\n"
+                "- at least one will-executor is selected and reachable."
+            )
+            + "\n\n"
+            + _("Skipped")
+        )
+
     def msg_set_checking(self, status="Waiting", row=None):
         row = self.check_row if row is None else row
         self.check_row = self.msg_set_status(_("Checking your will"), row, status)
@@ -2051,6 +2211,22 @@ class BalBuildWillDialog(BalDialog):
     def msg_warning(self, e):
         # Results are shown in bold (see msg_error).
         return "<font color='{}'><b>{}</b></font>".format(self.COLOR_WARNING, e)
+
+    def msg_alert(self, e):
+        """Amber warning sign followed by text in the theme's default colour.
+
+        WHY: long warnings printed entirely in amber (COLOR_WARNING) are hard
+        to read - the owner reported the multi-line "could not build the will"
+        block as barely legible.  Colour is only needed to ATTRACT attention,
+        not to be read, so we keep it on the "warning sign" character alone and
+        let the message body inherit Electrum's normal text colour.  That also
+        keeps it readable under the dark theme, where a hard-coded black would
+        disappear.  U+26A0 is written as a numeric HTML entity so the source
+        file stays pure ASCII; QLabel renders it as rich text.
+        """
+        return "<font color='{}'>&#9888;</font> <b>{}</b>".format(
+            self.COLOR_WARNING, e
+        )
 
     def msg_set_status(self, msg, row=None, status=None, color=None):
         # The left "state" label keeps its normal weight; only the right-side

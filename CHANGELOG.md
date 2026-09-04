@@ -2908,3 +2908,88 @@ renumber the grid rows.
 - Full test suite: 438 passed (unchanged).
 
 **Outcome:** DONE.
+
+---
+
+## 57. Name the real cause of a failed build instead of guessing
+
+**Date:** 2026-09-04
+
+**Goal (owner request):** the "Building Will" report was hard to read and often
+misleading.
+
+1. The long "could not build the will" block was printed entirely in amber
+   (`COLOR_WARNING`), which the owner reported as barely legible.
+2. Whenever the build produced nothing, the dialog printed a FIXED list of
+   three "possible reasons" (low balance / dust shares / check-alive later than
+   the delivery date) regardless of what had actually happened. In a case
+   reproduced from the owner's log all three were false, and the real cause
+   (no delivery date left to build) was not even in the list.
+3. The "Checking your will" row had the same problem: the single sentence
+   "Found CHANGES to the DATE or the HEIRS" was shown for five different
+   situations, including one where it is plainly wrong - funds received, where
+   neither the date nor the heirs changed.
+
+**What changed:**
+
+- `bal/core/heirs.py`
+  - `Heirs.__init__` / `buildTransactions`: new `last_build_error` attribute
+    recording WHY a build produced no transaction. Reset at the start of every
+    build, and set at each path that previously returned empty with no
+    explanation at all: `NO_HEIRS`, `NO_UTXO`, `NO_WILLEXECUTOR_USABLE`,
+    `NO_FUTURE_DATE`, `WILLEXECUTOR_FEE`, `WILLEXECUTOR_FEE_TOO_HIGH`,
+    `TX_BUILD_FAILED`, `WILLEXECUTOR_TX_ERROR`.
+  - Added a `processed_willexecutors` counter so that "the loop skipped every
+    will-executor" - which returned silently, with no log line whatsoever - is
+    told apart from "we tried and the build failed".
+  - Fixed a latent crash in the `prepare_transactions` exception handler. It
+    read `e.heirname` in order to auto-deselect the offending will-executor,
+    but NOTHING in the plugin sets that attribute any more (leftover from an
+    older exception design), so the lookup itself raised AttributeError and the
+    inner `except Exception: raise` re-raised THAT, aborting the whole build
+    with a confusing secondary error instead of the real one. The handler now
+    records `WILLEXECUTOR_TX_ERROR`, logs the actual exception together with
+    the will-executor it happened on, and moves on to the next one - which is
+    what the original code was clearly trying to do.
+
+- `bal/gui/qt/dialogs.py`
+  - New `msg_alert()`: an amber warning sign (U+26A0, written as a numeric HTML
+    entity so the source stays ASCII) followed by text in the theme's default
+    colour. Colour is what ATTRACTS attention, not what is read, so it is kept
+    on the sign alone; the message body stays readable and still works under
+    the dark theme, where a hard-coded black would disappear.
+  - New `_build_failure_message()`: maps `last_build_error` to ONE specific
+    sentence. When the code is missing or unrecognised it SAYS the cause could
+    not be determined and lists what to check, instead of asserting three
+    guesses as if they were the only possibilities.
+  - New `_check_failure_message()`: replaces the single "Found CHANGES to the
+    DATE or the HEIRS" line with seven precise messages, reusing the detail the
+    exceptions already carry (heir name, will-executor URL, old and new fee
+    rate). The two plain `NotCompleteWillException` cases are told apart
+    STRUCTURALLY (raised with no argument vs. with one), not by matching
+    message text, which would be fragile. No new exception classes were added
+    (owner request).
+  - Added a dedicated `except BalanceTooLowException` handler. The exception
+    already carried the balance, the fees and the dust threshold, but was
+    falling through to the generic handler, which printed the raw technical
+    string in red and re-raised. It now shows the real figures.
+  - "Checking variables" row: `No Heirs` now uses `msg_alert()`. The
+    "Check Alive Threshold Passed" message deliberately STAYS red
+    (`COLOR_ERROR`) because it is the more urgent situation (owner request).
+
+- `bal/gui/qt/common.py`
+  - Re-export `BalanceTooLowException` from `core.heirs` so the Qt layer can
+    catch it.
+
+**Verification:**
+- `py_compile` clean on all 44 files of the package.
+- The real `msg_alert`, `_build_failure_message` and `_check_failure_message`
+  were extracted from the source via AST and executed against every reason code
+  and every exception type, with the exception hierarchy rebuilt from
+  `will.py`: 9 build cases and 8 check cases all produce the intended text.
+- NOT RUN: the official test suite. The machine used for this task (Windows)
+  has no importable `electrum` module, so `tests/` could not be executed.
+- Manually tested by the owner in Electrum 4.8.1: `NO_FUTURE_DATE`,
+  `WILLEXECUTOR_FEE` and `No Heirs` were all confirmed on screen.
+
+**Outcome:** DONE.
