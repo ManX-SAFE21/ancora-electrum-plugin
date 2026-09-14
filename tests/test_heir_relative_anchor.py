@@ -18,9 +18,10 @@ The two gates that produced the prompt are covered here:
      never read as EXPIRED because the check window drifts past the frozen
      tx locktime.
 
-The karen7 regtest wallet fixture (``tests/karen7``) reproduces the exact
-reported state: heirs with ``"1y"``, a signed/pushed/checked item whose frozen
-tx.locktime is 2027-08-05 (built 2026-08-05), and will_settings
+The reported state (reproduced hermetically here — the original live wallet
+dump ``tests/karen7`` is gitignored and regenerated as the wallet evolves) is:
+heirs with ``"1y"``, a signed/pushed/checked item whose frozen tx.locktime is
+2027-08-05 (built 2026-08-05), and will_settings
 ``{"locktime": "2y", "threshold": "150d"}``.
 
 Run:
@@ -28,18 +29,16 @@ Run:
     python3 tests/test_heir_relative_anchor.py
 """
 
-import copy
-import json
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
+import pytest  # noqa: E402  (path insert above)
 from electrum import constants  # noqa: E402  (path insert above)
 
-constants.net = constants.BitcoinRegtest
-
 from bal.core.checkalive import resolve_date_to_check  # noqa: E402
+from bal.core.util import copy_structure  # noqa: E402
 from bal.core.will import (  # noqa: E402
     HeirNotFoundException,
     NoHeirsException,
@@ -48,6 +47,16 @@ from bal.core.will import (  # noqa: E402
     WillItem,
     WillPostponedException,
 )
+
+
+@pytest.fixture(autouse=True)
+def _regtest_net():
+    """Run these regtest-focused tests with BitcoinRegtest, restoring mainnet
+    afterwards so sibling test modules are unaffected by the net switch."""
+    constants.net = constants.BitcoinRegtest
+    yield
+    constants.net = constants.BitcoinMainnet
+
 
 # A valid serialized tx (1 input + 1 output, version 2). Its nLockTime is 0;
 # the tests override ``tx.locktime`` to simulate the frozen signed locktime.
@@ -71,7 +80,7 @@ def _make_will_item(heirs, tx_locktime, status_complete=False):
     is forced to ``tx_locktime`` (the value frozen in the signed Bitcoin tx)."""
     d = {
         "tx": _VALID_TX_HEX,
-        "heirs": copy.deepcopy(heirs),
+        "heirs": copy_structure(heirs),
         "willexecutor": None,
         "status": "",
         "description": "",
@@ -80,7 +89,7 @@ def _make_will_item(heirs, tx_locktime, status_complete=False):
         "baltx_fees": 1,
     }
     item = WillItem(d, _id="willid_1")
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     item.tx.locktime = tx_locktime
     if status_complete:
         item.set_status("COMPLETE", True)
@@ -111,7 +120,7 @@ def test_unchanged_relative_recipe_signed_is_coherent():
     read as a postpone just because the clock has advanced past build day."""
     heirs = {"alice": ["addr_alice", 5000, "1y"]}
     outcome = _run_heir_check(
-        copy.deepcopy(heirs), copy.deepcopy(heirs), _FROZEN, status_complete=True
+        copy_structure(heirs), copy_structure(heirs), _FROZEN, status_complete=True
     )
     assert outcome.startswith("coherent"), outcome
 
@@ -119,7 +128,7 @@ def test_unchanged_relative_recipe_signed_is_coherent():
 def test_unchanged_relative_recipe_unsigned_is_coherent():
     heirs = {"alice": ["addr_alice", 5000, "1y"]}
     outcome = _run_heir_check(
-        copy.deepcopy(heirs), copy.deepcopy(heirs), _FROZEN, status_complete=False
+        copy_structure(heirs), copy_structure(heirs), _FROZEN, status_complete=False
     )
     assert outcome.startswith("coherent"), outcome
 
@@ -145,7 +154,7 @@ def test_relative_recipe_shortened_on_signed_is_rebuild():
 def test_unchanged_absolute_recipe_is_coherent():
     built = {"alice": ["addr_alice", 5000, str(_FROZEN)]}
     outcome = _run_heir_check(
-        copy.deepcopy(built), copy.deepcopy(built), _FROZEN, status_complete=True
+        copy_structure(built), copy_structure(built), _FROZEN, status_complete=True
     )
     assert outcome.startswith("coherent"), outcome
 
@@ -158,55 +167,52 @@ def test_absolute_postpone_on_signed_still_detected():
 
 
 # ------------------------------------------------------------------ #
-# karen7 wallet regression (real fixture)
+# karen7 regression (hermetic, no live wallet fixture)
 # ------------------------------------------------------------------ #
 
-
-def _load_karen7():
-    path = os.path.join(os.path.dirname(__file__), "karen7")
-    with open(path) as f:
-        return json.load(f)
+# karen7's reported state, reproduced hermetically: heirs "1y", a signed item
+# frozen at delivery 2027-08-05 (built 2026-08-05), will_settings with a
+# relative "150d" delivery window and a "2y" promised locktime.
+_WILL_SETTINGS = {"locktime": "2y", "threshold": "150d"}
 
 
 def test_karen7_frozen_delivery_not_expired():
     """ADVANCED date_to_check anchored to the frozen tx locktime: the check
     window opens BEFORE the delivery, so the will is never read as expired."""
-    data = _load_karen7()
-    will_settings = data["will_settings"]
-    valid_wid = "28b64bfd83878d15c668473aa695a2b9bc23196bc61ab3149e8f33241826978d"
-    wi = WillItem(data["will"][valid_wid], _id=valid_wid)
-    built_locktime = Will.get_min_locktime({valid_wid: wi})
-    assert built_locktime == int(wi.tx.locktime)
+    heirs = {"alice": ["addr_alice", 5000, "1y"]}
+    item = _make_will_item(copy_structure(heirs), _FROZEN, status_complete=True)
+    will = {"willid_1": item}
+    built_locktime = Will.get_min_locktime(will)
+    assert built_locktime is not None
+    assert built_locktime == int(item.tx.locktime)
 
     date_to_check = resolve_date_to_check(
-        False, will_settings, now=1_800_000_000.0, built_locktime=built_locktime
+        False, _WILL_SETTINGS, now=1_800_000_000.0, built_locktime=built_locktime
     )
     assert int(date_to_check) < built_locktime
     # Re-evaluated 10 days later the window is identical (no daily drift).
     later = resolve_date_to_check(
-        False, will_settings, now=1_800_000_000.0 + 10 * 86400,
+        False, _WILL_SETTINGS, now=1_800_000_000.0 + 10 * 86400,
         built_locktime=built_locktime,
     )
     assert date_to_check == later
 
 
 def test_karen7_unchanged_heirs_are_coherent():
-    """The karen7 heirs (unchanged relative "2d") are coherent with the frozen
-    signed tx: the plugin must NOT ask to invalidate the will."""
-    data = _load_karen7()
-    valid_wid = "28b64bfd83878d15c668473aa695a2b9bc23196bc61ab3149e8f33241826978d"
-    wi = WillItem(data["will"][valid_wid], _id=valid_wid)
+    """Unchanged relative "1y" heirs are coherent with the frozen signed tx:
+    the plugin must NOT ask to invalidate the will."""
+    heirs = {"alice": ["addr_alice", 5000, "1y"]}
     # Use _FROZEN (a UTC-midnight value) so the check is compatible with
     # the UTC anchoring code.
     frozen_locktime = _FROZEN
     date_to_check = resolve_date_to_check(
-        False, data["will_settings"],
+        False, _WILL_SETTINGS,
         now=1_800_000_000.0,
         built_locktime=frozen_locktime,
     )
     outcome = _run_heir_check(
-        data["will"][valid_wid]["heirs"],
-        data["heirs"],
+        copy_structure(heirs),
+        copy_structure(heirs),
         frozen_locktime,
         status_complete=True,
     )
@@ -219,6 +225,7 @@ def test_karen7_unchanged_heirs_are_coherent():
 # ------------------------------------------------------------------ #
 
 if __name__ == "__main__":
+    constants.net = constants.BitcoinRegtest
     for name in sorted(dir()):
         if name.startswith("test_"):
             globals()[name]()

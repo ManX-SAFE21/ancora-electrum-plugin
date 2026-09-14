@@ -15,7 +15,6 @@ hosts a few GUI helpers that do not deserve a module of their own:
       (:class:`CheckAliveError` now lives in ``bal.core.checkalive``.)
 """
 
-import copy
 import enum
 import os
 import subprocess
@@ -28,6 +27,7 @@ from functools import partial
 from typing import Any, Callable, Mapping, Optional, Union
 
 from electrum.bitcoin import NLOCKTIME_BLOCKHEIGHT_MAX, NLOCKTIME_MAX, NLOCKTIME_MIN
+from electrum.gui.common_qt.util import draw_qr
 from electrum.gui.qt.amountedit import BTCAmountEdit
 from electrum.gui.qt.main_window import ElectrumWindow, StatusBarButton
 from electrum.gui.qt.my_treeview import MyTreeView
@@ -42,6 +42,7 @@ from electrum.gui.qt.util import (
     MessageBoxMixin,
     OkButton,
     TaskThread,
+    WaitingDialog,
     WindowModalDialog,
     char_width_in_lineedit,
     getOpenFileName,
@@ -80,6 +81,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDateTimeEdit,
@@ -92,6 +94,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMenuBar,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
@@ -119,7 +122,7 @@ from ...core.heirs import (
 
 # --- Core (GUI-free) logic layer ---
 from ...core.plugin_base import BalPlugin, BalTimestamp
-from ...core.util import Util
+from ...core.util import Util, copy_structure
 from ...core.will import (
     AmountException,
     HeirChangeException,

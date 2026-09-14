@@ -8,13 +8,19 @@ Run:
     python3 tests/test_core_will.py
 """
 
-import copy
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from bal.core.will import Will, WillItem
+from bal.core.checkalive import resolve_date_to_check
+from bal.core.util import copy_structure
+from bal.core.will import (
+    HeirNotFoundException,
+    NoHeirsException,
+    Will,
+    WillItem,
+)
 
 # A valid serialized Bitcoin transaction hex (1 input + 1 P2PKH output, version 2)
 _VALID_TX_HEX = (
@@ -48,7 +54,7 @@ def _make_willitem_blank():
     """Create a fresh WillItem from scratch."""
     item = WillItem(_make_minimal_willitem_dict())
     # Reset STATUS to clean defaults
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     return item
 
 
@@ -151,8 +157,8 @@ def test_will_only_valid_list():
 def _make_will_with_heirs(heirs, tx_locktime):
     """Build a single-item will whose stored heirs == ``heirs`` and whose
     frozen tx.locktime == ``tx_locktime`` (what the will-executors hold)."""
-    item = WillItem(_make_minimal_willitem_dict(heirs=copy.deepcopy(heirs)))
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item = WillItem(_make_minimal_willitem_dict(heirs=copy_structure(heirs)))
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     item.tx.locktime = tx_locktime
     return {"willid_1": item}
 
@@ -163,7 +169,7 @@ def test_check_heirs_unchanged_is_coherent():
     heirs = {"alice": ["addr_alice", 5000, str(lt)]}
     will = _make_will_with_heirs(heirs, lt)
     result = Will.check_willexecutors_and_heirs(
-        will, copy.deepcopy(heirs), {}, False, 0, 100
+        will, copy_structure(heirs), {}, False, 0, 100
     )
     assert result is True
 
@@ -208,6 +214,59 @@ def test_check_heir_added_triggers_rebuild():
     except HeirNotFoundException:
         raised = True
     assert raised, "adding an heir must raise HeirNotFoundException"
+
+
+def test_shortened_relative_recipe_on_signed_rebuilds_not_noheirs():
+    """Regression (karen7): heirs shortened "2y"->"1y" on a signed will whose
+    ADVANCED check window is anchored to the frozen built delivery must trigger
+    a plain rebuild (HeirNotFoundException), NOT "No Heirs".
+
+    Earlier the count gate resolved each current relative recipe from *now*
+    while ``check_date`` was anchored to the (longer) frozen built locktime, so
+    every heir fell below the window and was silently excluded -> NoHeirs even
+    though the will simply needs rebuilding on the new, shorter schedule."""
+    lt = 2_100_000_000  # a far-future frozen delivery (a "2y" build)
+    will_heirs = {"alice": ["addr_alice", 5000, "2y"]}
+    current_heirs = {"alice": ["addr_alice", 5000, "1y"]}
+    will = _make_will_with_heirs(will_heirs, lt)
+    will["willid_1"].set_status("COMPLETE", True)
+    check_date = resolve_date_to_check(
+        False, {"locktime": "2y", "threshold": "150d"}, built_locktime=lt
+    )
+    assert check_date < lt  # the anchored window really precedes the delivery
+    raised = None
+    try:
+        Will.check_willexecutors_and_heirs(
+            will, copy_structure(current_heirs), {}, False, check_date, 100
+        )
+    except HeirNotFoundException:
+        raised = "rebuild"
+    except NoHeirsException:
+        raised = "noheirs"
+    assert raised == "rebuild", (
+        f"shortened recipe on a signed will must rebuild, got {raised!r}"
+    )
+
+
+def test_all_heirs_past_check_date_still_noheirs():
+    """The "no valid heirs" gate is preserved: when every heir is coherent with
+    the built will but its delivery lies before ``check_date``, the check still
+    reports NoHeirsException (there is literally nothing future to inherit)."""
+    lt = 1_900_000_000
+    will_heirs = {"alice": ["addr_alice", 5000, str(lt)]}
+    will = _make_will_with_heirs(will_heirs, lt)
+    raised = None
+    try:
+        Will.check_willexecutors_and_heirs(
+            will, copy_structure(will_heirs), {}, False, lt + 86400, 100
+        )
+    except HeirNotFoundException:
+        raised = "rebuild"
+    except NoHeirsException:
+        raised = "noheirs"
+    assert raised == "noheirs", (
+        f"a fully delivered will must report NoHeirs, got {raised!r}"
+    )
 
 
 def test_needs_server_check():

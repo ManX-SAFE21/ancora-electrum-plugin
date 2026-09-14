@@ -18,6 +18,7 @@ from bal.core.checkalive import (  # noqa: E402  (path insert above)
     CheckAliveError,
     check_alive_expired,
     resolve_date_to_check,
+    resolve_guard_threshold,
 )
 
 # ------------------------------------------------------------------ #
@@ -146,6 +147,76 @@ def test_advanced_mode_relative_locktime_without_built_tx_falls_back():
     locktime_dt = BalTimestamp("90d").to_date(datetime.fromtimestamp(fake_now, tz=timezone.utc))
     expected = BalTimestamp("30d").to_date(locktime_dt, reverse=True).timestamp()
     assert abs(result - expected) < 1
+
+
+# ------------------------------------------------------------------ #
+# resolve_guard_threshold
+# ------------------------------------------------------------------ #
+
+
+def test_guard_threshold_basic_mode_returns_none():
+    fake_now = 1_800_000_000.0
+    threshold = resolve_guard_threshold(True, {"threshold": "30d"}, now=fake_now)
+    assert threshold is None
+
+
+def _guard_locktime(settings, fake_now):
+    """Reproduce the call-site locktime expression of the guard."""
+    from bal.core.plugin_base import BalTimestamp
+
+    return BalTimestamp(settings["locktime"]).to_timestamp(fake_now)
+
+
+def test_guard_threshold_absolute():
+    fake_now = 1_800_000_000.0
+    locktime = fake_now + 90 * 86400
+    threshold = locktime - 30 * 86400
+    settings = {"locktime": locktime, "threshold": threshold}
+    assert resolve_guard_threshold(False, settings, now=fake_now) == threshold
+
+
+def test_guard_threshold_relative_fresh_anchor():
+    """A relative threshold must be anchored to the FRESH locktime so the
+    guard and the settings always share one reference frame.
+
+    Regression for the false positive where a still-valid built will frozen at
+    a LONGER delivery ("2y") anchored ``date_to_check`` beyond the currently
+    stored shorter delivery ("1y"): the old guard compared the fresh "1y"
+    locktime against that anchored threshold and wrongly fired "locktime is
+    lower than threshold", even though the settings themselves are consistent
+    (locktime is 30d AFTER the threshold).
+    """
+    fake_now = 1_800_000_000.0
+    settings = {"locktime": "1y", "threshold": "30d"}
+    locktime = _guard_locktime(settings, fake_now)
+    threshold = resolve_guard_threshold(False, settings, now=fake_now)
+    assert threshold is not None
+    assert locktime > threshold  # internally consistent: no fire
+    assert threshold > fake_now
+    # The helper takes no built anchor: a frozen "2y" built will must NOT
+    # contaminate the result, although resolve_date_to_check (the expiry
+    # reference) legitimately keeps using it.
+    frozen_two_years = locktime + 365 * 86400
+    anchored = resolve_date_to_check(
+        False, settings, now=fake_now, built_locktime=frozen_two_years
+    )
+    assert anchored > threshold  # built anchor pushes date_to_check forward...
+    assert locktime < anchored  # ...which is exactly what used to fire the bug
+
+
+def test_guard_threshold_relative_locktime_absolute_threshold():
+    fake_now = 1_800_000_000.0
+    threshold = fake_now + 200 * 86400
+    settings = {"locktime": "1y", "threshold": threshold}
+    assert resolve_guard_threshold(False, settings, now=fake_now) == threshold
+    # "1y" from now is later than the stored absolute threshold: allowed.
+    locktime = _guard_locktime(settings, fake_now)
+    assert locktime > threshold
+
+
+def test_guard_threshold_missing_returns_none():
+    fake_now = 1_800_000_000.0
+    assert resolve_guard_threshold(False, {"locktime": "1y"}, now=fake_now) is None
 
 
 # ------------------------------------------------------------------ #

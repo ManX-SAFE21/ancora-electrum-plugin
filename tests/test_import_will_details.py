@@ -127,6 +127,11 @@ def test_sign_transactions_external_only():
         wallet=FakeWallet(),
         waiting_dialog=SimpleNamespace(update=lambda msg: None),
     )
+    # sign_transactions dispatches to self._prepare_and_sign_tx; bind the real
+    # implementation onto the fake so the external-sign run actually executes.
+    fake._prepare_and_sign_tx = MethodType(
+        window_mod.BalWindow._prepare_and_sign_tx, fake
+    )
 
     result = window_mod.BalWindow.sign_transactions(fake, None, will=imported)
 
@@ -164,6 +169,50 @@ def test_will_widget_explicit_will():
 
     w2 = WillWidget(parent=fake_parent)
     assert w2.will is live
+
+
+# ------------------------------------------------------------------ #
+# WillWidget shows heir/willexecutor addresses and decodes OP_RETURN
+# ------------------------------------------------------------------ #
+
+def test_will_widget_shows_addresses_and_decodes_opreturn():
+    from PyQt6.QtWidgets import QLabel
+
+    from bal.core.will import WillItem
+    from bal.gui.qt.widgets import WillWidget
+
+    op_hex = "68656c6c6f"  # "hello" in hex
+    heirs = {
+        "bob": ["bc1qtestaddr", 1_000_000, 1000, 500_000],
+        "msg": [f"OP_RETURN:{op_hex}", 0, 1000, 0],
+    }
+    wi = WillItem(
+        _make_willitem_dict(
+            heirs=heirs,
+            willexecutor={
+                "url": "https://exec.example",
+                "address": "bc1qexecaddr",
+                "base_fee": 200_000,
+            },
+        )
+    )
+    wi._id = "w0"
+    fake_parent = SimpleNamespace(
+        decimal_point=8,
+        base_unit_name="BTC",
+        bal_window=SimpleNamespace(
+            willitems={},
+            bal_plugin=SimpleNamespace(
+                _hide_replaced=False, _hide_invalidated=False
+            ),
+            show_transaction=lambda *a, **k: None,
+        ),
+    )
+    w = WillWidget(parent=fake_parent, will={"w0": wi})
+    texts = [lbl.text() for lbl in w.findChildren(QLabel)]
+    assert any("bc1qtestaddr" in t for t in texts), texts
+    assert any("OP_RETURN: hello" in t for t in texts), texts
+    assert any("bc1qexecaddr" in t for t in texts), texts
 
 
 # ------------------------------------------------------------------ #

@@ -17,7 +17,6 @@ Run:
         python3 -m pytest tests/test_core_will_invalidate.py -q
 """
 
-import copy
 import os
 import sys
 from unittest.mock import MagicMock, patch
@@ -75,7 +74,7 @@ def _make_willitem(value_sats=1000000, valid=True, extra_heirs=None):
         "change": "",
         "baltx_fees": 100,
     })
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     # Set the input value so the balance calculation works.
     # Use the name-mangled attribute because tx_from_any creates a
     # Transaction whose inputs are TxInput objects; TxInput.value_sats()
@@ -270,7 +269,7 @@ class TestInvalidateWill:
         """
         item = _make_willitem(value_sats=100)
         will = {"willtxid1": item}
-        wallet = _mock_wallet([_make_utxo()])
+        wallet = _mock_wallet([_make_utxo(value_sats=100)])
 
         result, mock_from_io, _ = _run_invalidate(will, wallet, fees_per_byte=100)
 

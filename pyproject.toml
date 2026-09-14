@@ -6,6 +6,9 @@ target-version = "py312"
 select =["E", "W", "F", "I", "N", "B"]
 ignore = ["E501"]
 
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = ["classmethod", "classproperty"]  # electrum.util.classproperty uses cls
+
 [tool.ruff.lint.per-file-ignores]
 "bal/gui/qt/common.py" = ["F401"]       # re-exports consumed via explicit imports
 "bal/gui/qt/dialogs.py" = ["N802"]      # Qt overrides: closeEvent/hideEvent/getText

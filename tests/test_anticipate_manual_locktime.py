@@ -27,7 +27,6 @@ Run:
         tests/test_anticipate_manual_locktime.py -q
 """
 
-import copy
 import os
 import sys
 
@@ -35,6 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 import pytest  # noqa: E402  # pyright: ignore[reportMissingImports]
 
+from bal.core.util import copy_structure  # noqa: E402
 from bal.core.will import (  # noqa: E402
     NotCompleteWillException,
     Will,
@@ -70,7 +70,7 @@ def _make_will_item(heirs, tx_locktime, status_complete=False):
     """
     d = {
         "tx": _VALID_TX_HEX,
-        "heirs": copy.deepcopy(heirs),
+        "heirs": copy_structure(heirs),
         "willexecutor": None,
         "status": "",
         "description": "",
@@ -79,7 +79,7 @@ def _make_will_item(heirs, tx_locktime, status_complete=False):
         "baltx_fees": TX_FEES,
     }
     item = WillItem(d, _id="willid_1")
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     item.tx.locktime = tx_locktime
     if status_complete:
         item.set_status("COMPLETE", True)

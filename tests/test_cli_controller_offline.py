@@ -18,6 +18,7 @@ import shutil
 import sys
 import tempfile
 import time
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
@@ -25,6 +26,8 @@ from electrum.simple_config import SimpleConfig
 from electrum.util import UserFacingException
 
 from bal.cli.controller import BalController
+from bal.core.heirs import Heirs
+from bal.core.util import Util
 
 VALID_ADDRESS = "bc1qusymuetsz2psaqzqxv8qmzcy64d9meckj3lxxf"
 
@@ -225,6 +228,39 @@ def test_auto_rebuild_threshold_passed_invalidates():
         assert result["result"] == "invalidated"
         assert result["reason"] == "threshold_passed"
         assert result["invalidation_tx"] == {"txid": None, "tx": None}
+
+
+def test_build_will_reanchors_date_to_check_to_new_locktime():
+    """CLI mirror of the GUI regression: ``build_will`` must re-anchor
+    ``date_to_check`` to the CURRENT heirs' earliest delivery before building,
+    so an anticipated (shortened) rebuild is not blocked by the old built-will
+    anchor (which would yield NO_FUTURE_DATE in ``get_transactions``).
+    """
+    with Plugin() as plugin:
+        plugin.USER_TYPE.set("advanced")
+        plugin.NO_WILLEXECUTOR.set(True)
+        plugin.ENABLE_MULTIVERSE.set(True)
+        plugin.WILL_SETTINGS.set({"threshold": "150d", "locktime": "2y", "baltx_fees": 20})
+        c = _make_controller(plugin)
+        c.no_willexecutor = True
+        c.heirs["alice"] = [VALID_ADDRESS, "100%", "1y"]
+
+        # Simulate an old built will frozen at 2y: reload keeps its (stale)
+        # anchor, which would reject the anticipated "1y" delivery.
+        c.init_class_variables()
+        stale_anchor = Util.parse_locktime_string("2y") - 150 * 86400
+        c.date_to_check = stale_anchor
+        assert Util.parse_locktime_string("1y") < c.date_to_check
+
+        with mock.patch.object(Heirs, "get_transactions", return_value={}) as gt:
+            result = c.build_will()
+
+        assert result == {}
+        # build_will re-anchored date_to_check to the new 1y delivery...
+        expected = Util.parse_locktime_string("1y") - 150 * 86400
+        assert abs(c.date_to_check - expected) < 3600
+        # ...and used THAT anchor as the build filter, not the stale 2y one.
+        assert gt.call_args.args[-1] == c.date_to_check
 
 
 # ------------------------------------------------------------------ #

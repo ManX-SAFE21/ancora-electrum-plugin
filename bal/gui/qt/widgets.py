@@ -20,6 +20,7 @@ Contents:
 
 from typing import TYPE_CHECKING
 
+from ...core.heirs import get_op_return_hex, is_op_return_address
 from ...core.input_rules import (
     LockTimeEditor,
     normalize_locktime_raw_text,
@@ -29,17 +30,15 @@ from ...core.input_rules import (
 from ...core.reminders import build_ics_reminders, write_temp_ics
 from .calendar import BalCalendar, BalCalendarButton
 from .common import (
-    _,
-    _logger,
-    Any,
-    BTCAmountEdit,
-    BalTimestamp,
-    ColorScheme,
     DECIMAL_POINT,
-    Decimal,
-    HelpButton,
     NLOCKTIME_BLOCKHEIGHT_MAX,
     NLOCKTIME_MAX,
+    Any,
+    BalTimestamp,
+    BTCAmountEdit,
+    ColorScheme,
+    Decimal,
+    HelpButton,
     Optional,
     QAbstractSpinBox,
     QCheckBox,
@@ -57,13 +56,15 @@ from .common import (
     QSpinBox,
     QStyle,
     QStyleOptionFrame,
+    Qt,
     QTextEdit,
     QVBoxLayout,
     QWidget,
-    Qt,
     Union,
     Util,
     Will,
+    _,
+    _logger,
     char_width_in_lineedit,
     datetime,
     getSaveFileName,
@@ -1331,14 +1332,28 @@ class WillWidget(QWidget):
                 )
                 detaillayout.addWidget(QLabel(""))
                 detaillayout.addWidget(QLabel("<b>Heirs:</b>"))
-                for heir in self.will[w].heirs:
-                    if 'w!ll3x3c"' not in heir:
-                        decoded_amount = Util.decode_amount(
-                            self.will[w].heirs[heir][3], self._bal_parent.decimal_point
-                        )
+                for heir_name in self.will[w].heirs:
+                    if 'w!ll3x3c"' in heir_name:
+                        continue
+                    h = self.will[w].heirs[heir_name]
+                    decoded_amount = Util.decode_amount(
+                        h[3], self._bal_parent.decimal_point
+                    )
+                    if is_op_return_address(h[0]):
+                        data_hex = get_op_return_hex(h[0]) or ""
+                        try:
+                            decoded = bytes.fromhex(data_hex).decode(
+                                "utf-8", errors="replace"
+                            )
+                        except Exception:
+                            decoded = h[0]
+                        detaillayout.addWidget(qlabel(heir_name, "OP_RETURN: " + decoded))
+                    else:
                         detaillayout.addWidget(
                             qlabel(
-                                heir, f"{decoded_amount} {self._bal_parent.base_unit_name}"
+                                heir_name,
+                                f"{decoded_amount} {self._bal_parent.base_unit_name} "
+                                f"[{h[0]}]",
                             )
                         )
                 if self.will[w].we:
@@ -1354,6 +1369,10 @@ class WillWidget(QWidget):
                             f"{decoded_amount} {self._bal_parent.base_unit_name}",
                         )
                     )
+                    if self.will[w].we.get("address"):
+                        detaillayout.addWidget(
+                            qlabel(_("Address"), self.will[w].we["address"])
+                        )
                 detaillayout.addStretch()
                 pal = QPalette()
                 pal.setColor(

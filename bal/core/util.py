@@ -21,7 +21,10 @@ import bisect
 from datetime import datetime, timedelta, timezone
 
 from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
+from electrum.logging import get_logger
 from electrum.transaction import PartialTxOutput
+
+_logger = get_logger(__name__)
 
 # Bitcoin consensus rule: an nLockTime value strictly below this threshold is
 # interpreted as a *block height*, otherwise it is interpreted as a *UNIX
@@ -33,6 +36,41 @@ from electrum.transaction import PartialTxOutput
 # value that would fall in the block-height range and force every locktime to be
 # a timestamp.
 LOCKTIME_THRESHOLD = 500000000
+
+
+def copy_structure(value, _path="copy"):
+    """Return a JSON-serializable deep copy of *value*.
+
+    This is the ad-hoc, deepcopy-free stand-in used every time the plugin needs
+    an independent copy of a plain-data structure (heirs dicts, will-executor
+    dicts, status tables).  It recursively clones dict / list / tuple values
+    while leaving JSON scalars (str / int / float / bool / None) as-is.
+
+    If any nested element is a live runtime object (e.g. one holding a
+    ``threading.RLock``), ``copy.deepcopy`` would raise
+    ``TypeError: cannot pickle '_thread.RLock' object``; instead we coerce the
+    offending value to ``str(value)`` and log it with its path so the source
+    field can be identified, without crashing the caller.
+    """
+    # Primitive JSON scalars are kept as-is.
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {
+            str(k): copy_structure(v, "{}[{!r}]".format(_path, k))
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            copy_structure(v, "{}[{}]".format(_path, i)) for i, v in enumerate(value)
+        ]
+    # Unexpected runtime object: do not let it reach deepcopy.  Log where it
+    # was found so the real source can be fixed, then store a safe string.
+    _logger.error(
+        "copy_structure: non-serializable value at {} (type={}); coercing to "
+        "str. value={!r}".format(_path, type(value).__name__, value)
+    )
+    return str(value)
 
 
 class Util:

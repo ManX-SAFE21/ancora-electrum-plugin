@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">BAL Reader</string>
+
+    <string name="status_waiting">Point the camera at the QR screen</string>
+    <string name="format_placeholder">—</string>
+    <string name="progress_fmt">%1$d / %2$d</string>
+
+    <string name="format_balqr">BAL QR</string>
+    <string name="format_ur1">BC-UR v1</string>
+    <string name="format_ur2">BC-UR v2</string>
+    <string name="format_bbqr">BBQR</string>
+
+    <string name="result_kind_will">Whole will (JSON)</string>
+    <string name="result_kind_txs">Transaction list</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_share">Share</string>
+    <string name="action_save">Save</string>
+    <string name="action_scan_another">Scan another</string>
+    <string name="copied_toast">Transfer copied to clipboard</string>
+    <string name="save_file_will">will.json</string>
+    <string name="save_file_txs">will_tx.txt</string>
+    <string name="permission_denied">Camera permission is required to scan QR codes.</string>
+    <string name="conflict_message">The QR switched to a different transfer. Let it rescan.</string>
+</resources>

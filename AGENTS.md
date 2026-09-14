@@ -3,6 +3,9 @@
 BAL — Bitcoin After Life, an Electrum plugin (inheritance / dead-man's-switch).
 Source-of-truth docs: `README.md`, `HANDOFF.md`, `COMPATIBILITY.md`.
 
+Paths below are relative to the repo, or use `$BAL_HOME` (the directory
+containing this repo and the sibling `electrum/` checkout).
+
 ## Environments (critical)
 
 Two separate venvs; using the wrong one is the #1 mistake.

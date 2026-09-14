@@ -33,3 +33,4 @@ tmp*
 
 # Release artifacts
 bal_v*.zip.*
+tests/karen7

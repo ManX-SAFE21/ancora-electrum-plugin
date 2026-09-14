@@ -20,15 +20,13 @@ from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 from PyQt6.QtWidgets import QMessageBox, QStyledItemDelegate
 
 from .common import (
-    _,
-    _logger,
+    OP_RETURN_PREFIX,
     BalTimestamp,
     Buttons,
     CancelButton,
     HelpButton,
     MessageBoxMixin,
     MyTreeView,
-    OP_RETURN_PREFIX,
     OkButton,
     QAbstractItemView,
     QApplication,
@@ -46,15 +44,17 @@ from .common import (
     QSpinBox,
     QStandardItem,
     QStandardItemModel,
+    Qt,
     QToolButton,
     QVBoxLayout,
     QWidget,
-    Qt,
     TaskThread,
     Util,
     Will,
-    WillItem,
     Willexecutors,
+    WillItem,
+    _,
+    _logger,
     char_width_in_lineedit,
     datetime,
     enum,
@@ -63,8 +63,8 @@ from .common import (
     import_meta_gui,
     is_op_return_address,
     partial,
-    read_QIcon_from_bytes,
     read_json_file,
+    read_QIcon_from_bytes,
     server_status_text,
     server_status_tooltip,
     signature_suffix,
@@ -663,11 +663,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Prepare"), self.build_transactions)
         menu.addAction(_("Display"), self.bal_window.preview_modal_dialog)
         menu.addAction(_("Sign"), self.ask_password_and_sign_transactions)
-        export_menu = menu.addMenu(_("Export"))
-        export_menu.addAction(_("All"), self.export_will)
-        export_menu.addAction(_("Valid"), self.export_will_valid)
-        export_menu.addAction(_("Valid NC"), self.export_will_valid_incomplete)
-        menu.addAction(_("Import"), self.import_will_into_details)
+        # Export/Import open a single window that offers all transports
+        # (file / QR / audio). The Choose Filter / transport settings live
+        # inside that window.
+        menu.addAction(_("Export"), self.export_will)
+        menu.addAction(_("Import"), self.import_will)
         menu.addAction(_("Merge"), self.merge_will)
         menu.addAction(_("Broadcast"), self.broadcast)
         menu.addAction(_("Check"), self.check)
@@ -733,38 +733,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         if will:
             self.update_will(will)
 
-    def export_json_file(self, path):
-        write_json_file(path, self.will)
-
     def export_will(self):
-        self.bal_window.export_will()
-        self.update()
+        self.bal_window.export_will_dialog()
 
-    def export_will_valid(self):
-        """Export only the will items that are valid."""
-        subset = {
-            wid: wi
-            for wid, wi in self.will.items()
-            if wi.get_status("VALID")
-        }
-        if not subset:
-            self.show_message(_("No valid will item to export"))
-            return
-        self.bal_window.export_will(will=subset)
-        self.update()
-
-    def export_will_valid_incomplete(self):
-        """Export only the will items that are valid but not yet fully signed (V-NC)."""
-        subset = {
-            wid: wi
-            for wid, wi in self.will.items()
-            if wi.get_status("VALID") and not wi.get_status("COMPLETE")
-        }
-        if not subset:
-            self.show_message(_("No valid, incomplete will item to export"))
-            return
-        self.bal_window.export_will(will=subset)
-        self.update()
+    def import_will(self):
+        self.bal_window.import_will_dialog()
 
     def import_will_into_details(self):
         self.bal_window.import_will_into_details()

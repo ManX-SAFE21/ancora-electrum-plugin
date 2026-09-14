@@ -26,9 +26,9 @@ The status flags themselves (the source of truth) stay here; only the mapping
 "status -> colour" now lives in the GUI layer.  No behaviour changed.
 """
 
-import copy
 from datetime import datetime, timezone
 
+from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
 from electrum.i18n import _
 from electrum.logging import Logger, get_logger
 from electrum.transaction import (
@@ -45,7 +45,7 @@ from electrum.util import (
 )
 
 from .heirs import WillExecutorFeeTooHighException
-from .util import Util
+from .util import Util, copy_structure
 from .willexecutors import Willexecutors
 
 MIN_LOCKTIME = 1
@@ -143,7 +143,7 @@ class Will:
         willitems = {}
         for wid in will:
             Will.add_info_from_will(will, wid, wallet)
-            willitems[wid] = WillItem(will[wid])
+            willitems[wid] = WillItem(will[wid], wallet=wallet)
         will = willitems
         errors = {}
         for wid in will:
@@ -165,7 +165,7 @@ class Will:
                 outputs = will[wid].tx.outputs()
                 ow = will[wid]
                 ow.normalize_locktime(others_input)
-                will[wid] = WillItem(ow.to_dict())
+                will[wid] = ow.copy()
 
                 for i in range(0, len(outputs)):
                     Will.change_input(
@@ -465,7 +465,7 @@ class Will:
                 continue
             utxo_str = utxo.prevout.to_str()
             if utxo_str in prevout_to_spend:
-                balance += inputs[utxo_str][0][2].value_sats()
+                balance += utxo.value_sats()
                 utxo_to_spend.append(utxo)
         _logger.debug("utxo to spend: {}".format(utxo_to_spend))
         if len(utxo_to_spend) > 0:
@@ -849,6 +849,48 @@ class Will:
             _logger.error(f"save_valid_transactions_to_history failed: {e}")
 
     @staticmethod
+    def remove_stale_wallet_history(wallet, history_label):
+        """Delete wallet-LOCAL will transactions saved under ``history_label``.
+
+        ``save_valid_transactions_to_history`` stores the not-yet-signed
+        inheritance txs into the wallet's local history; those local
+        placeholders nominally spend the coins they reference. When the will is
+        REBUILT (prepare/build, auto-rebuild, on-close rebuild, CLI build) the
+        stale placeholders must be removed so the coins become available again
+        to the new build (see ``Util.get_available_utxos``). Only
+        wallet-local/future (non-broadcast) txs whose label matches the history
+        label template are removed; confirmed/broadcast history is never
+        touched. Returns the txids that were removed.
+        """
+        if not wallet or not getattr(wallet, "adb", None):
+            return []
+        removed = []
+        for txid, label in Will._wallet_labels(wallet):
+            if not label or not Util._label_matches_history(label, history_label):
+                continue
+            try:
+                height = int(wallet.adb.get_tx_height(txid).height())
+            except Exception:
+                continue
+            if height not in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
+                continue
+            try:
+                wallet.adb.remove_transaction(txid)
+                removed.append(txid)
+            except Exception as e:
+                _logger.error(f"remove from history failed for {txid}: {e}")
+                continue
+            try:
+                wallet.set_label(txid, None)
+            except Exception as e:
+                _logger.error(f"set_label failed for {txid}: {e}")
+        try:
+            wallet.save_db()
+        except Exception as e:
+            _logger.error(f"save_db failed after history purge: {e}")
+        return removed
+
+    @staticmethod
     def _add_transaction_to_history(wallet, tx, txid):
         """Store *tx* into the wallet's local history via ``adb``.
 
@@ -1214,9 +1256,9 @@ class Will:
 
             if Util.parse_locktime_string(heirs[h][2]) >= check_date:
                 count_heirs += 1
-                if h not in heirs_found:
-                    _logger.debug(f"heir: {h} not found")
-                    raise HeirNotFoundException(h)
+            if h not in heirs_found:
+                _logger.debug(f"heir: {h} not found")
+                raise HeirNotFoundException(h)
         if not count_heirs:
             raise NoHeirsException("there are not valid heirs")
         if self_willexecutor and no_willexecutor == 0:
@@ -1327,48 +1369,75 @@ class WillItem(Logger):
         return self.STATUS[status][1]
 
     def __init__(self, w, _id=None, wallet=None):
-        if isinstance(
-            w,
-            WillItem,
-        ):
-            self.__dict__ = w.__dict__.copy()
-            self.STATUS = copy.deepcopy(w.STATUS)
-            self.heirs = copy.deepcopy(w.heirs) if w.heirs is not None else None
-        else:
-            self.tx = Will.get_tx_from_any(w["tx"])
-            self.heirs = w.get("heirs", None)
-            self.we = w.get("willexecutor", None)
-            self.status = w.get("status", None)
-            self.description = w.get("description", None)
-            self.time = w.get("time", None)
-            self.change = w.get("change", None)
-            self.tx_fees = w.get("baltx_fees", 0)
-            self.sigs_required = int(w.get("sigs_required", 0))
-            self.sigs_have = int(w.get("sigs_have", 0))
-            self.father = w.get("Father", None)
-            self.children = w.get("Children", None)
-            self.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
-            for s in self.STATUS:
-                self.STATUS[s][1] = w.get(s, WillItem.STATUS_DEFAULT[s][1])
-            # Backward-compatibility migration (A2): the "PENDING" status was
-            # renamed to "MEMPOOL". Wills saved by older versions of the plugin
-            # store the flag under the legacy "PENDING" key, so if that key is
-            # present and set, carry it over to "MEMPOOL". This way no state is
-            # lost when loading an older will. The new key always wins if both
-            # happen to be present.
-            if "MEMPOOL" not in w and w.get("PENDING"):
-                self.STATUS["MEMPOOL"][1] = True
+        if isinstance(w, WillItem):
+            # Copy a WillItem WITHOUT deepcopy. Serialize it to its plain-dict
+            # form and deserialize from there: the tx is re-parsed into a fresh
+            # object, STATUS is rebuilt from the clones below and heirs /
+            # will-executors are cloned recursively, so the copy shares no
+            # mutable state with the source. See also copy().
+            data = w.to_dict()
+            data["heirs"] = copy_structure(w.heirs) if w.heirs is not None else None
+            data["willexecutor"] = (
+                copy_structure(w.we) if w.we is not None else None
+            )
             if not _id:
-                self._id = self.tx.txid()
-            else:
-                self._id = _id
+                _id = w._id
+            w = data
+        self.tx = Will.get_tx_from_any(w["tx"])
+        self.heirs = w.get("heirs", None)
+        self.we = w.get("willexecutor", None)
+        self.status = w.get("status") or ""
+        self.description = w.get("description", None)
+        self.time = w.get("time", None)
+        self.change = w.get("change", None)
+        self.tx_fees = w.get("baltx_fees", 0)
+        self.sigs_required = int(w.get("sigs_required", 0))
+        self.sigs_have = int(w.get("sigs_have", 0))
+        self.father = w.get("Father", None)
+        self.children = w.get("Children", None)
+        self.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
+        for s in self.STATUS:
+            self.STATUS[s][1] = w.get(s, WillItem.STATUS_DEFAULT[s][1])
+        # Backward-compatibility migration (A2): the "PENDING" status was
+        # renamed to "MEMPOOL". Wills saved by older versions of the plugin
+        # store the flag under the legacy "PENDING" key, so if that key is
+        # present and set, carry it over to "MEMPOOL". This way no state is
+        # lost when loading an older will. The new key always wins if both
+        # happen to be present.
+        if "MEMPOOL" not in w and w.get("PENDING"):
+            self.STATUS["MEMPOOL"][1] = True
+        if not _id:
+            self._id = self.tx.txid()
+        else:
+            self._id = _id
 
-            if not self._id:
-                self.status += "ERROR!!!"
-                self.valid = False
+        if not self._id:
+            self.status += "ERROR!!!"
+            self.valid = False
 
         if wallet:
             self.tx.add_info_from_wallet(wallet)
+
+    def copy(self, wallet=None):
+        """Return an independent copy of this WillItem (no deepcopy).
+
+        The copy is produced by serializing this item and deserializing it:
+        the transaction is re-parsed, the STATUS table is rebuilt and
+        heirs / will-executors are cloned recursively, so the result shares no
+        mutable state with ``self``.  Pass a ``wallet`` when the copy's tx
+        needs its address/value information restored
+        (``tx.add_info_from_wallet``).
+        """
+        return WillItem(self, _id=self._id, wallet=wallet)
+
+    @staticmethod
+    def copy_status_table(status_table):
+        """Clone a STATUS table (``{flag: [label, bool]}``) without deepcopy.
+
+        Both the outer dict and every inner ``[label, bool]`` list are new
+        objects, so mutating the returned table never affects the source.
+        """
+        return {k: [label, value] for k, (label, value) in status_table.items()}
 
     def to_dict(self):
         out = {
@@ -1383,6 +1452,8 @@ class WillItem(Logger):
             "baltx_fees": self.tx_fees,
             "sigs_required": self.sigs_required,
             "sigs_have": self.sigs_have,
+            "Father": self.father,
+            "Children": self.children,
         }
         for key in self.STATUS:
             try:

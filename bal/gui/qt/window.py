@@ -23,10 +23,10 @@ from ...core.checkalive import (
     CheckAliveError,
     check_alive_expired,
     resolve_date_to_check,
+    resolve_guard_threshold,
 )
 from .common import (
-    _,
-    _logger,
+    OP_RETURN_PREFIX,
     AmountException,
     BalPlugin,
     Buttons,
@@ -40,10 +40,10 @@ from .common import (
     Mapping,
     Network,
     NoHeirsException,
-    NoWillExecutorNotPresent,
     NotCompleteWillException,
-    OP_RETURN_PREFIX,
+    NoWillExecutorNotPresent,
     OkButton,
+    Optional,
     PaymentIdentifier,
     QGridLayout,
     QLabel,
@@ -57,15 +57,17 @@ from .common import (
     TxFeesChangedException,
     Util,
     Will,
+    WillexecutorChangeException,
     WillExecutorFeeTooHighException,
     WillExecutorNotPresent,
+    Willexecutors,
     WillExpiredException,
     WillItem,
     WillPostponedException,
-    WillexecutorChangeException,
-    Willexecutors,
+    _,
+    _logger,
     char_width_in_lineedit,
-    copy,
+    copy_structure,
     export_meta_gui,
     import_meta_gui,
     is_onion_url,
@@ -73,8 +75,8 @@ from .common import (
     is_tor_active,
     log_error,
     partial,
-    read_QIcon_from_bytes,
     read_json_file,
+    read_QIcon_from_bytes,
     show_on_top,
     shown_cv,
     time,
@@ -88,6 +90,10 @@ from .dialogs import (
     BalWizardDialog,
     WillDetailDialog,
     WillExecutorDialog,
+    WillExportDialog,
+    WillImportDialog,
+    _complete_import,
+    decode_will_payload,
 )
 from .lists import HeirListWidget, PreviewList
 from .widgets import LockTimeWidget, PercAmountEdit
@@ -461,6 +467,31 @@ class BalWindow:
 
     def build_will(self, ignore_duplicate=True, keep_original=True):
         _logger.debug("building will...")
+        # Drop stale wallet-LOCAL will placeholders saved by previous prepares
+        # so their coins are available to this build (see remove_stale...).
+        Will.remove_stale_wallet_history(
+            self.window.wallet, self.bal_plugin.HISTORY_LABEL.get()
+        )
+        # A (re)build may have anticipated the delivery (shorter heir recipes)
+        # while ``date_to_check`` is still anchored to the OLD built will. Using
+        # that stale anchor as the build filter would block every future
+        # delivery ("NO_FUTURE_DATE"). Recompute ``date_to_check`` for the will
+        # that is being built: its locktime is the earliest future delivery
+        # among the CURRENT heirs. The checks of the EXISTING will keep their
+        # anchored ``date_to_check`` (set in init_class_variables).
+        _new_locktime = min(
+            (
+                Util.parse_locktime_string(h[2])
+                for h in self.heirs.values()
+            ),
+            default=None,
+        )
+        if _new_locktime:
+            self.date_to_check = resolve_date_to_check(
+                self.bal_plugin.is_basic_mode(),
+                self.will_settings,
+                built_locktime=_new_locktime,
+            )
         will = {}
         # willtodelete = []
         # willtoappend = {}
@@ -515,11 +546,11 @@ class BalWindow:
                     tx["my_locktime"] = txs[txid].my_locktime
                     tx["heirsvalue"] = txs[txid].heirsvalue
                     tx["description"] = txs[txid].description
-                    tx["willexecutor"] = copy.deepcopy(txs[txid].willexecutor)
+                    tx["willexecutor"] = copy_structure(txs[txid].willexecutor)
                     tx["status"] = _("New")
                     tx["baltx_fees"] = txs[txid].tx_fees
                     tx["time"] = creation_time
-                    tx["heirs"] = copy.deepcopy(txs[txid].heirs)
+                    tx["heirs"] = copy_structure(txs[txid].heirs)
                     tx["txchildren"] = []
                     will[txid] = WillItem(tx, _id=txid, wallet=self.wallet)
                 self.update_will(will)
@@ -740,6 +771,27 @@ class BalWindow:
 
             raise e
 
+    def is_locktime_below_threshold(self) -> bool:
+        """True when the stored settings make the delivery earlier than the
+        Check Alive threshold (the "locktime is lower than threshold" guard).
+
+        Compares the delivery against the settings-derived threshold on the
+        SAME reference frame (see ``resolve_guard_threshold``), never against
+        the built-will-anchored ``date_to_check``: anchoring the guard to an
+        old, longer built will would wrongly fire right after the delivery was
+        shortened.  The anchored reference still governs the validity and
+        expiry checks, which is where ``date_to_check`` belongs.
+        In BASIC mode there is no threshold, so the locktime is checked against
+        ``date_to_check`` (= now) exactly as before.
+        """
+        locktime = Util.parse_locktime_string(self.will_settings["locktime"])
+        threshold_ts = resolve_guard_threshold(
+            self.bal_plugin.is_basic_mode(), self.will_settings
+        )
+        if threshold_ts is not None:
+            return locktime < threshold_ts
+        return self.date_to_check is not None and locktime < self.date_to_check
+
     def build_inheritance_transaction(self, ignore_duplicate=True, keep_original=True):
         try:
             _logger.info(
@@ -752,6 +804,11 @@ class BalWindow:
             if not self.heirs:
                 _logger.warning("not heirs {}".format(self.heirs))
                 return
+            # Free the coins locked by stale wallet-LOCAL will placeholders
+            # BEFORE the amount/UTXO checks below (Step 1) see them.
+            Will.remove_stale_wallet_history(
+                self.window.wallet, self.bal_plugin.HISTORY_LABEL.get()
+            )
             try:
                 self.init_class_variables()
                 Will.check_amounts(
@@ -786,8 +843,7 @@ class BalWindow:
                     )
                 )
                 return
-            locktime = Util.parse_locktime_string(self.will_settings["locktime"])
-            if locktime < self.date_to_check:
+            if self.is_locktime_below_threshold():
                 self.show_error(_("locktime is lower than threshold"))
                 return
             if not self.no_willexecutor:
@@ -980,6 +1036,13 @@ class BalWindow:
         return self.show_transaction_real(tx, parent=parent)
 
     def invalidate_will(self, will=None):
+        # The reference timestamp is normally set by init_class_variables();
+        # fall back to "now" so a first-action invalidation always has it.
+        if not hasattr(self, "date_to_check") or self.date_to_check is None:
+            self.date_to_check = resolve_date_to_check(
+                self.bal_plugin.is_basic_mode(), self.will_settings
+            )
+
         def on_success(result):
             if result:
                 self.show_message(
@@ -1015,75 +1078,93 @@ class BalWindow:
         self.waiting_dialog.exe()
 
     def sign_transactions(self, password, will=None, txids=None):
-        try:
-            willitems = will if will is not None else self.willitems
-            txs = {}
-            signed = None
-            tosign = None
+            try:
+                willitems = will if will is not None else self.willitems
+                txs = {}
+                signed = None
+                tosign = None
 
-            def get_message():
-                msg = ""
-                if signed:
-                    msg = _(f"signed: {signed}\n")
-                return msg + _(f"signing: {tosign}")
+                def get_message():
+                    msg = ""
+                    if signed:
+                        msg = _(f"signed: {signed}\n")
+                    return msg + _(f"signing: {tosign}")
 
-            if txids is not None:
-                targets = [
-                    t for t in txids
-                    if t in willitems and willitems[t].get_status("VALID")
-                ]
-            else:
-                targets = Will.only_valid(willitems)
-            for txid in targets:
-                wi = willitems[txid]
-                # Do NOT deepcopy: the stored tx carries wallet-derived objects
-                # (utxo / script_descriptor) that hold a threading.RLock, and
-                # copy.deepcopy raises "cannot pickle '_thread.RLock'".  Re-parse
-                # from the serialized form instead, which is exactly how the will
-                # is persisted/loaded (WillItem.to_dict -> serialize -> tx_from_any).
-                tx = Will.get_tx_from_any(str(wi.tx))
-                if wi.get_status("COMPLETE"):
+                if txids is not None:
+                    targets = [
+                        t for t in txids
+                        if t in willitems and willitems[t].get_status("VALID")
+                    ]
+                else:
+                    targets = Will.only_valid(willitems)
+                for txid in targets:
+                    wi = willitems[txid]
+                    if wi.get_status("COMPLETE"):
+                        # Already signed and complete: keep as-is (the single-tx
+                        # helper short-circuits without touching the wallet).
+                        tx, _ = self._prepare_and_sign_tx(willitems, txid, password)
+                        txs[txid] = tx
+                        continue
+                    tosign = txid
+                    try:
+                        self.waiting_dialog.update(get_message())
+                    except Exception:
+                        pass
+                    tx, _signed = self._prepare_and_sign_tx(willitems, txid, password)
+                    signed = tosign
                     txs[txid] = tx
-                    continue
-                tosign = txid
+            except Exception:
+                return None
+            return txs
+
+    def _prepare_and_sign_tx(self, willitems, txid, password):
+        """Prepare one will transaction and sign it.
+
+        Shared by the batch signer (:meth:`sign_transactions`) and the
+        per-transaction review wizard of the QR import flow
+        (:class:`WillTxReviewSignDialog`).
+
+        Returns ``(tx, newly_signed)``: ``newly_signed`` is False when the
+        transaction was already COMPLETE (nothing was signed).
+        """
+        wi = willitems[txid]
+        # Do NOT deepcopy: the stored tx carries wallet-derived objects
+        # (utxo / script_descriptor) that hold a threading.RLock, and
+        # copy.deepcopy raises "cannot pickle '_thread.RLock'".  Re-parse
+        # from the serialized form instead, which is exactly how the will
+        # is persisted/loaded (WillItem.to_dict -> serialize -> tx_from_any).
+        tx = Will.get_tx_from_any(str(wi.tx))
+        if wi.get_status("COMPLETE"):
+            return tx, False
+        for txin in tx.inputs():
+            prevout = txin.prevout.to_json()
+            if prevout[0] in willitems:
+                change = willitems[prevout[0]].tx.outputs()[prevout[1]]
+                txin._trusted_value_sats = change.value
                 try:
-                    self.waiting_dialog.update(get_message())
+                    txin.script_descriptor = change.script_descriptor
                 except Exception:
                     pass
-                for txin in tx.inputs():
-                    prevout = txin.prevout.to_json()
-                    if prevout[0] in willitems:
-                        change = willitems[prevout[0]].tx.outputs()[prevout[1]]
-                        txin._trusted_value_sats = change.value
-                        try:
-                            txin.script_descriptor = change.script_descriptor
-                        except Exception:
-                            pass
-                        txin.is_mine = True
-                        txin._TxInput__address = change.address
-                        txin._TxInput__scriptpubkey = change.scriptpubkey
-                        txin._TxInput__value_sats = change.value
+                txin.is_mine = True
+                txin._TxInput__address = change.address
+                txin._TxInput__scriptpubkey = change.scriptpubkey
+                txin._TxInput__value_sats = change.value
+                txin._trusted_value_sats = change.value
 
-                self.wallet.sign_transaction(tx, password, ignore_warnings=True)
-                signed = tosign
-                # is_complete = False
-                if tx.is_complete():
-                    # is_complete = True
-                    wi.set_status("COMPLETE", True)
-                # Refresh the per-item signature counts from the freshly signed
-                # partial tx: at this point the signatures are still present
-                # (before any finalization), so the will list can show the real
-                # "added/required" count (e.g. "1/2" for a multisig).
-                try:
-                    have, required = tx.signature_count()
-                    wi.sigs_have = int(have)
-                    wi.sigs_required = int(required)
-                except Exception as e:
-                    _logger.debug(f"signature_count after signing failed: {e}")
-                txs[txid] = tx
-        except Exception:
-            return None
-        return txs
+        self.wallet.sign_transaction(tx, password, ignore_warnings=True)
+        if tx.is_complete():
+            wi.set_status("COMPLETE", True)
+        # Refresh the per-item signature counts from the freshly signed
+        # partial tx: at this point the signatures are still present
+        # (before any finalization), so the will list can show the real
+        # "added/required" count (e.g. "1/2" for a multisig).
+        try:
+            have, required = tx.signature_count()
+            wi.sigs_have = int(have)
+            wi.sigs_required = int(required)
+        except Exception as e:
+            _logger.debug(f"signature_count after signing failed: {e}")
+        return tx, True
 
     def get_wallet_password(self, message=None, parent=None):
         parent = self.window if not parent else parent
@@ -1611,6 +1692,19 @@ class BalWindow:
         else:
             write_json_file(path, {wid: wi.to_dict() for wid, wi in will.items()})
 
+    def export_tx_file(self, path, will=None):
+        """Export only the serialized transactions of the given will items.
+
+        Writes a plain text file with every transaction (or PSBT) serialized
+        on a single line, separated by a comma (``tx1,tx2,tx3``). The raw hex
+        and PSBT base64 alphabets never contain a comma, so the separator is
+        unambiguous. When ``will`` is omitted the live will items are used.
+        """
+        willitems = will if will is not None else self.willitems
+        serialized = ",".join(str(wi.tx) for wid, wi in willitems.items())
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(serialized)
+
     def export_will(self, will=None):
         try:
             export_meta_gui(
@@ -1619,6 +1713,73 @@ class BalWindow:
         except Exception as e:
             self.show_error(str(e))
             raise e
+
+    def export_will_dialog(self, will=None, initial_mode: Optional[str] = None):
+        """Open the unified export window (File / QR / Audio).
+
+        The window lets the user pick an All / Valid / Valid NC filter in
+        the top row and choose one of the three transports, each with its
+        contextual settings (file format for File, QR-code size and autoplay
+        for QR, KB/sec for Audio). ``will`` defaults to the live will items;
+        ``initial_mode`` opens the window directly on the given transport.
+        """
+        try:
+            willitems = will if will is not None else self.willitems
+            d = WillExportDialog(
+                self,
+                will=willitems,
+                bal_plugin=self.bal_plugin,
+                initial_mode=initial_mode or "file",
+            )
+            show_on_top(d)
+        except Exception as e:
+            self.show_error(str(e))
+            raise e
+
+    def get_audio_modem_plugin(self):
+        """Return Electrum's ``audio_modem`` plugin instance, or None.
+
+        The plugin is only usable when Electrum exposes it (the ``Plugins``
+        manager knows the name) and its optional runtime dependency
+        ``amodem`` is installed (:meth:`is_available`). Every other case
+        returns None so callers can simply hide the audio buttons.
+        """
+        try:
+            p = self.window.gui_object.plugins.get("audio_modem")
+        except Exception:
+            return None
+        if not p or not getattr(p, "is_available", lambda: False)():
+            return None
+        return p
+
+    def _audio_send_payload(self, payload):
+        """Send a transfer payload through the audio_modem plugin.
+
+        Wraps the plugin's own ``_send`` with a proper parent widget. The
+        audio channel zlib-compresses internally, so the payload is passed
+        uncompressed (no BAL ``Z`` flag needed on that transport).
+        """
+        plugin = self.get_audio_modem_plugin()
+        if plugin is None:
+            self.show_error(_("Audio MODEM plugin is not available."))
+            return
+        plugin._send(parent=self.window, blob=payload)
+
+    def set_audio_modem_bitrate(self, kbps):
+        """Set the ``audio_modem`` plugin transfer speed to ``kbps`` KB/sec.
+
+        Both the send and the receive paths read ``modem_config``, so the
+        sender and the receiver must be configured with the same speed. Raises
+        when the plugin (or its ``amodem`` dependency) is unavailable.
+        """
+        plugin = self.get_audio_modem_plugin()
+        if plugin is None:
+            raise Exception(_("Audio MODEM plugin is not available."))
+        try:
+            import amodem.config
+        except Exception as e:
+            raise Exception(str(e)) from e
+        plugin.modem_config = amodem.config.bitrates[int(kbps)]
 
     def merge_will(self, imported):
         """Merge imported will items into the live will.
@@ -1743,16 +1904,34 @@ class BalWindow:
 
         def on_file(path):
             try:
-                willitems = self._load_will_file(path)
+                with open(path, "r", encoding="utf-8") as f:
+                    text = f.read()
             except Exception as e:
                 self.show_error(_("Invalid will file: {}").format(e))
                 return
-            # Attach wallet/input info so the imported txs can be signed and
-            # broadcast (mirrors what merge_will_from_file does).
-            Will.normalize_will(willitems, self.wallet)
-            for wi in willitems.values():
-                wi.set_status("IMPORTED", True)
-            imported.update(willitems)
+            kind, data = decode_will_payload(text)
+            try:
+                if kind == "will":
+                    willitems = self._load_will_payload(data)
+                    # Attach wallet/input info so the imported txs can be
+                    # signed and broadcast (mirrors merge_will_from_file).
+                    Will.normalize_will(willitems, self.wallet)
+                    for wi in willitems.values():
+                        wi.set_status("IMPORTED", True)
+                    imported.update(willitems)
+                else:
+                    # Serialized transactions: route through the shared import
+                    # tail (validity pass + review/sign wizard).
+                    _complete_import(
+                        self,
+                        self.bal_plugin,
+                        text,
+                        show_error=self.show_error,
+                        show_warning=self.show_warning,
+                        close=lambda: None,
+                    )
+            except Exception as e:
+                self.show_error(_("Invalid will file: {}").format(e))
 
         def on_success():
             if not imported:
@@ -1762,12 +1941,33 @@ class BalWindow:
 
         import_meta_gui(self.window, _("will"), on_file, on_success)
 
+    def import_will_dialog(self):
+        """Open the unified import window (File / QR / Audio).
+
+        The window offers three transports: File opens the read-only
+        :class:`WillDetailDialog` preview; QR and Audio capture the
+        transfer and send it through the per-transaction review wizard
+        (:class:`WillTxReviewSignDialog`). Every flow works on fresh
+        :class:`WillItem` objects and never touches the live will.
+        """
+        d = WillImportDialog(self, bal_plugin=self.bal_plugin)
+        show_on_top(d)
+
     def _load_will_file(self, path):
         data = read_json_file(path)
         willitems = {}
         for k, v in data.items():
             data[k]["tx"] = tx_from_any(v["tx"])
             willitems[k] = WillItem(data[k], _id=k)
+        return willitems
+
+    def _load_will_payload(self, data):
+        """Build WillItems from decoded whole-will JSON data."""
+        willitems = {}
+        for k, v in data.items():
+            d = dict(v)
+            d["tx"] = tx_from_any(d["tx"])
+            willitems[k] = WillItem(d, _id=k)
         return willitems
 
     def check_transactions_task(self, will):

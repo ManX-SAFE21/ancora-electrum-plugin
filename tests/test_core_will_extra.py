@@ -450,6 +450,12 @@ class FakeADB:
 
     def remove_transaction(self, txid):
         self.removed.append(txid)
+        # Simulate the real adb: dropping a stored tx frees the outputs it spent.
+        for utxos in self.outputs.values():
+            for utxo in utxos.values():
+                if getattr(utxo, "spent_txid", None) == txid:
+                    utxo.spent_txid = None
+                    utxo.spent_height = None
 
     def get_spender(self, outpoint):
         txid = self.spenders.get(outpoint)
@@ -835,6 +841,73 @@ def test_get_available_utxos_none_locktime_is_raw_view():
     result = Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, None)
     assert result == []
     assert Util.get_available_utxos(None, _HISTORY_TEMPLATE, 1000) == []
+
+
+# ------------------------------------------------------------------ #
+# Will.remove_stale_wallet_history (pre-build history purge)
+# ------------------------------------------------------------------ #
+
+def test_remove_stale_wallet_history_frees_equal_locktime_spend():
+    # The stale placeholders (saved by a previous prepare) have the SAME
+    # locktime as the will being rebuilt, so get_available_utxos does NOT
+    # restore their coins (see test_...does_not_restore_not_later_locktime).
+    # The pre-build purge deletes them and the coins become available again.
+    wallet, utxo = _wallet_with_local_spend(locktime=1000)
+    spender = "ab" * 32
+    assert Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1000) == []
+    removed = Will.remove_stale_wallet_history(wallet, _HISTORY_TEMPLATE)
+    assert removed == [spender]
+    assert wallet.adb.removed == [spender]
+    assert spender not in wallet.labels
+    assert [
+        u.prevout.to_str()
+        for u in Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1000)
+    ] == [utxo.prevout.to_str()]
+
+
+def test_remove_stale_wallet_history_keeps_confirmed_spender():
+    # A broadcast (confirmed) BAL-labelled tx is never purged.
+    addr = "bcrt1qexample"
+    spender = "ab" * 32
+    utxo = _make_utxo(spent_txid=spender, spent_height=100)
+    wallet = FakeWallet(
+        stored_txs={spender: _make_multisig_ptx(0, locktime=2000)},
+        heights={spender: 100},
+        outputs={addr: {utxo.prevout.to_str(): utxo}},
+        addresses=[addr],
+    )
+    wallet.labels[spender] = _HISTORY_LABEL
+    removed = Will.remove_stale_wallet_history(wallet, _HISTORY_TEMPLATE)
+    assert removed == []
+    assert wallet.adb.removed == []
+    assert wallet.labels[spender] == _HISTORY_LABEL
+
+
+def test_remove_stale_wallet_history_keeps_unlabeled_local_spender():
+    # Wallet-local BAL-status tx without a matching history label stays.
+    wallet, _ = _wallet_with_local_spend(locktime=1000)
+    spender = "ab" * 32
+    wallet.labels[spender] = "some other label"
+    removed = Will.remove_stale_wallet_history(wallet, _HISTORY_TEMPLATE)
+    assert removed == []
+    assert wallet.adb.removed == []
+    assert wallet.labels[spender] == "some other label"
+
+
+def test_remove_stale_wallet_history_noop_without_wallet_or_adb():
+    assert Will.remove_stale_wallet_history(None, _HISTORY_TEMPLATE) == []
+    wallet = FakeWallet()
+    wallet.adb = None
+    assert Will.remove_stale_wallet_history(wallet, _HISTORY_TEMPLATE) == []
+
+
+def test_remove_stale_wallet_history_never_raises():
+    adb = MagicMock()
+    adb.get_tx_height.side_effect = RuntimeError("boom")
+    wallet = MagicMock()
+    wallet.adb = adb
+    wallet.get_all_labels.return_value = {"ab" * 32: _HISTORY_LABEL}
+    assert Will.remove_stale_wallet_history(wallet, _HISTORY_TEMPLATE) == []
 
 
 # ------------------------------------------------------------------ #

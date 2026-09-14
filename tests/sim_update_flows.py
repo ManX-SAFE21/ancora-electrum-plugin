@@ -21,12 +21,12 @@ Run:
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src python3 tests/sim_update_flows.py
 """
 
-import copy
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
+from bal.core.util import copy_structure
 from bal.core.will import (
     HeirNotFoundException,
     NoHeirsException,
@@ -58,7 +58,7 @@ def _make_will_item(heirs, tx_locktime, status_complete=False):
     is forced to ``tx_locktime`` (the value frozen in the signed Bitcoin tx)."""
     d = {
         "tx": _VALID_TX_HEX,
-        "heirs": copy.deepcopy(heirs),
+        "heirs": copy_structure(heirs),
         "willexecutor": None,
         "status": "",
         "description": "",
@@ -67,7 +67,7 @@ def _make_will_item(heirs, tx_locktime, status_complete=False):
         "baltx_fees": TX_FEES,
     }
     item = WillItem(d, _id="willid_1")
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     # Force the locktime frozen "inside" the signed tx.
     item.tx.locktime = tx_locktime
     if status_complete:
@@ -118,7 +118,7 @@ def main():
     # Scenario 0: nothing changed -> should be coherent.
     heirs = {"alice": ["addr_alice", 5000, same_lt]}
     _run("0. nothing changed",
-         will_heirs=heirs, current_heirs=copy.deepcopy(heirs),
+         will_heirs=heirs, current_heirs=copy_structure(heirs),
          tx_locktime=base_lt, check_date=0)
 
     # Scenario 1: delivery date moved forward (postpone), will NOT yet signed.

@@ -14,7 +14,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from bal.core.plugin_base import BalConfig, BalPlugin, BalTimestamp
 
@@ -74,7 +74,7 @@ def test_bt_to_date_absolute():
 
 
 def test_bt_to_date_relative():
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
 
     # relative days from now
     bt = BalTimestamp("7d")
@@ -86,8 +86,8 @@ def test_bt_to_date_relative():
     d_rev = bt.to_date(reverse=True)
     assert d_rev < now
 
-    # from explicit datetime
-    base = datetime(2025, 6, 1, 12, 0, 0)
+    # from explicit datetime (UTC, so the naive-timestamp roundtrip below is stable)
+    base = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
     d = bt.to_date(from_date=base)
     expected = (base + timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
     assert d == expected
@@ -101,7 +101,7 @@ def test_bt_to_date_relative():
 def test_bt_to_date_years():
     bt = BalTimestamp("1y")
     d = bt.to_date()
-    assert d > datetime.now()
+    assert d > datetime.now(timezone.utc)
 
 
 def test_bt_to_date_overflow():

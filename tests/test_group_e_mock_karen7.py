@@ -22,7 +22,6 @@ Run:
         python3 -m pytest tests/test_group_e_mock_karen7.py -q
 """
 
-import copy
 import json
 import os
 import sys
@@ -43,6 +42,7 @@ from bal.core.reminders import (
     ical_escape,
     write_temp_ics,
 )
+from bal.core.util import copy_structure
 from bal.core.will import HeirNotFoundException, Will, WillItem
 from bal.core.willexecutors import Willexecutors
 
@@ -136,7 +136,7 @@ def _make_willitem(**overrides):
     }
     d.update(overrides)
     item = WillItem(d)
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     return item
 
 
@@ -343,7 +343,7 @@ def test_e2_heir_change_triggers_rebuild():
     item = WillItem(
         {
             "tx": _VALID_TX_HEX,
-            "heirs": copy.deepcopy(will_heirs),
+            "heirs": copy_structure(will_heirs),
             "willexecutor": None,
             "status": "",
             "description": "",
@@ -352,7 +352,7 @@ def test_e2_heir_change_triggers_rebuild():
             "baltx_fees": 100,
         }
     )
-    item.STATUS = copy.deepcopy(WillItem.STATUS_DEFAULT)
+    item.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
     item.tx.locktime = lt
     will = {"willid_1": item}
 

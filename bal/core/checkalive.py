@@ -96,6 +96,54 @@ def resolve_date_to_check(
     return threshold.to_timestamp()
 
 
+def resolve_guard_threshold(
+    is_basic_mode: bool,
+    will_settings: Any,
+    now: float | None = None,
+) -> float | None:
+    """Resolve the "locktime is lower than threshold" guard's reference.
+
+    The guard compares the stored settings on ONE reference frame: the
+    delivery (``locktime``, kept as at the call site) against this threshold.
+
+    Unlike :func:`resolve_date_to_check` -- which may be *anchored* to the
+    built will's frozen tx locktime so that an unchanged will never reads as
+    expired -- this helper resolves the threshold from the **stored settings
+    alone**.  Otherwise, when the stored relative locktime is shorter than the
+    frozen locktime of an old (still valid) built will (e.g. the delivery was
+    shortened from ``"2y"`` to ``"1y"``), the guard would compare the fresh
+    "1y" locktime against the old will's anchored threshold and wrongly fire,
+    even though locktime > threshold by the settings themselves.
+
+    * BASIC mode: no threshold exists.  Returns ``None`` and the caller falls
+      back to comparing the locktime against ``date_to_check`` (= now), so its
+      behaviour is unchanged.
+    * ADVANCED mode with an ABSOLUTE threshold: returns the stored threshold
+      as-is.
+    * ADVANCED mode with a RELATIVE threshold (``"30d"``/``"1y"``, meaning
+      "N days BEFORE the delivery"): the threshold is anchored to the locktime
+      resolved forward from *now* (the settings' own delivery reading, never a
+      built tx), keeping both sides of the comparison in the same reference
+      frame, as the settings widget displays it.
+
+    Returns ``None`` when there is no threshold to enforce (BASIC mode or a
+    missing stored value).
+    """
+    if is_basic_mode:
+        return None
+    threshold_raw = will_settings.get("threshold")
+    if threshold_raw is None:
+        return None
+    threshold = BalTimestamp(threshold_raw)
+    if threshold.unit is None:
+        return threshold.to_timestamp()
+    now_dt = (
+        datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else None
+    )
+    locktime_dt = BalTimestamp(will_settings["locktime"]).to_date(now_dt)
+    return threshold.to_date(locktime_dt, reverse=True).timestamp()
+
+
 def check_alive_expired(
     is_basic_mode: bool, date_to_check: float, now: float | None = None
 ) -> bool:

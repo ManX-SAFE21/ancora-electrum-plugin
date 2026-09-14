@@ -1,0 +1,26 @@
+{
+  "imp-heiress-1": {
+    "tx": "0f1e2d3c4b5a69788796a5b4c3d2e1f0112233445566778899aabbccddeeff00",
+    "addr": "bc1qdeadbeef0",
+    "amount": 100000,
+    "tag": "heiress-1",
+    "metadata": {},
+    "notify": "heir1@example.invalid"
+  },
+  "imp-heiress-2": {
+    "tx": "112233445566778899aabbccddeeff00112233445566778899aabbccddeeff0011",
+    "addr": "bc1qdeadbeef1",
+    "amount": 200000,
+    "tag": "heiress-2",
+    "metadata": {},
+    "notify": "heir2@example.invalid"
+  },
+  "imp-heiress-3": {
+    "tx": "a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f708192a3b4c5d6e7f809",
+    "addr": "bc1qdeadbeef2",
+    "amount": 300000,
+    "tag": "heiress-3",
+    "metadata": {},
+    "notify": "heir3@example.invalid"
+  }
+}

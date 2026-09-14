@@ -24,7 +24,7 @@ This module performs **no** GUI work and imports nothing from PyQt / electrum.gu
 import json
 import os
 import platform
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from electrum import constants, json_db
 from electrum.logging import get_logger
@@ -109,7 +109,9 @@ def get_will(x):
 
 try:
     # Electrum >= 4.8.0
-    from electrum.stored_dict import register_name as _electrum_register_name  # pyright: ignore[reportMissingImports]
+    from electrum.stored_dict import (
+        register_name as _electrum_register_name,  # pyright: ignore[reportMissingImports]
+    )
 
     def _register_will_dict(name, method, _type=None):
         """Register a plugin dict in the wallet DB (Electrum >= 4.8.0 API)."""
@@ -278,6 +280,13 @@ class BalPlugin(BasePlugin):
         # not only inside the "Build your will" wizard. Default OFF, so the dates
         # stay display-only outside the wizard unless the user opts in.
         self.EDITABLE_DATES = BalConfig(config, "bal_editable_dates", False)
+
+        # QR_CHUNK_SIZE (will transfer via QR): payload budget, in bytes, used
+        # per QR frame when exporting/importing a will through the QR channel.
+        # The settings dialog offers the 4 standard presets of
+        # bal.core.qrtransfer.CHUNK_PRESETS; this stores the selected budget.
+        # Default 150 (small QR, low-resolution cameras).
+        self.QR_CHUNK_SIZE = BalConfig(config, "bal_qr_chunk_size", 150)
 
         # NUM_REMINDERS (Group D / D1): how many SEPARATE reminder events the
         # exported .ics calendar should contain. Each reminder becomes its own

@@ -179,6 +179,7 @@ def test_rebuild_path_schedules_full_refresh():
     win.date_to_check = 1_800_000_000
     win.will_settings = {"baltx_fees": 1, "locktime": "1 month"}
     win.bal_plugin = _CfgBag(
+        is_basic_mode=lambda: False,
         MAX_WILLEXECUTOR_FEE=_Cfg(1),
         SAVE_HISTORY=_Cfg(True),
         HISTORY_LABEL=_Cfg("LBL"),
@@ -202,6 +203,46 @@ def test_rebuild_path_schedules_full_refresh():
     ):
         BalWindow.build_inheritance_transaction(win)
     schedule_mock.assert_called_once_with()
+
+
+def test_rebuild_purges_stale_wallet_history_before_building():
+    # The rebuild path must drop stale wallet-LOCAL will placeholders (saved by
+    # an earlier prepare) so their coins are available to the new build.
+    win = object.__new__(BalWindow)
+    win.disable_plugin = False
+    win.heirs = {"h": object()}
+    win.willexecutors = {}
+    win.no_willexecutor = True
+    win.willitems = {}
+    win.will = {}
+    win.date_to_check = 1_800_000_000
+    win.will_settings = {"baltx_fees": 1, "locktime": "1 month"}
+    win.bal_plugin = _CfgBag(
+        is_basic_mode=lambda: False,
+        MAX_WILLEXECUTOR_FEE=_Cfg(1),
+        SAVE_HISTORY=_Cfg(True),
+        HISTORY_LABEL=_Cfg("LBL"),
+    )
+    win.window = _FakeWindow()
+    win.window.wallet = _Wallet()
+    with (
+        patch.object(Util, "get_available_utxos", return_value=[]),
+        patch.object(Util, "parse_locktime_string", return_value=1_800_000_001),
+        patch.object(Will, "get_min_locktime", return_value=0),
+        patch.object(Will, "check_amounts"),
+        patch.object(BalWindow, "init_class_variables"),
+        patch.object(BalWindow, "build_will"),
+        patch.object(
+            BalWindow,
+            "check_will",
+            side_effect=[NotCompleteWillException(), None],
+        ),
+        patch.object(BalWindow, "update_all"),
+        patch.object(BalWindow, "_schedule_history_refresh"),
+        patch.object(Will, "remove_stale_wallet_history") as purge_mock,
+    ):
+        BalWindow.build_inheritance_transaction(win)
+    purge_mock.assert_called_once_with(win.window.wallet, "LBL")
 
 
 # ------------------------------------------------------------------ #

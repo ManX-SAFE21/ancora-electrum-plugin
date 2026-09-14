@@ -27,7 +27,6 @@ Run::
         python3 -m pytest tests/test_no_willexecutor_karen7.py -v -s
 """
 
-import copy
 import json
 import logging
 import os
@@ -49,6 +48,7 @@ from electrum.transaction import PartialTxInput, TxOutpoint
 from electrum.util import bfh
 
 from bal.core.heirs import Heirs
+from bal.core.util import copy_structure
 from bal.core.will import (
     NotCompleteWillException,
     NoWillExecutorNotPresent,
@@ -278,11 +278,11 @@ class FakeBalWindow:
                 tx["my_locktime"] = txs[txid].my_locktime
                 tx["heirsvalue"] = txs[txid].heirsvalue
                 tx["description"] = txs[txid].description
-                tx["willexecutor"] = copy.deepcopy(txs[txid].willexecutor)
+                tx["willexecutor"] = copy_structure(txs[txid].willexecutor)
                 tx["status"] = "New"
                 tx["baltx_fees"] = txs[txid].tx_fees
                 tx["time"] = creation_time
-                tx["heirs"] = copy.deepcopy(txs[txid].heirs)
+                tx["heirs"] = copy_structure(txs[txid].heirs)
                 tx["txchildren"] = []
                 will[txid] = WillItem(tx, _id=txid, wallet=self.wallet)
             self.update_will(will)

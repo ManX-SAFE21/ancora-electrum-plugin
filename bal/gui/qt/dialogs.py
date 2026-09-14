@@ -11,20 +11,57 @@ All modal/non-modal dialogs of the plugin.
     * BalBuildWillDialog         - the central build/sign/push/broadcast flow.
     * WillDetailDialog           - shows the full will tree for one wallet.
     * WillExecutorDialog         - manage the list of will-executor servers.
+    * WillExportDialog           - unified export window (File / QR / Audio);
+      embeds a BalQrExportWidget for the QR transport.
+    * BalQrExportWidget          - render+autoplay the will as QR frames.
+    * WillImportDialog           - unified import window (File / QR / Audio);
+      embeds a BalQrImportWidget for the QR transport.
+    * BalQrImportWidget          - capture/assemble a will from QR frames via
+      a continuous, hands-free camera loop (change/detection debounce via
+      :func:`qr_import_accept_frame`) and send it to the review+sign wizard.
+    * WillTxReviewSignDialog     - per-transaction review/sign wizard for the
+      imported will (external copy, never touches the live will).
 
 To keep the dialogs verbatim while avoiding import cycles with the list views,
 the few list classes they reference are imported lazily inside the methods that
 use them (see ``lists`` imports below).
 """
 
+import io
+import json
+import re
+import zlib
 from typing import TYPE_CHECKING
 
-from ...core.checkalive import CheckAliveError
+from electrum.util import MyEncoder
+
+from ...core.animated_qr import (
+    AnimatedQrError,
+    AnimatedQrSession,
+    SessionLimitError,
+    TransferConflictError,
+    bbqr_frames,
+    format_name,
+    parse_for_detection,
+    ur1_frames,
+    ur2_frames,
+)
+from ...core.checkalive import CheckAliveError, resolve_date_to_check
+from ...core.qrtransfer import (
+    CHUNK_PRESETS,
+    MissingFramesError,
+    QrTransferError,
+    decode_transfer,
+    encode_transfer,
+    encode_transfer_best,
+    preset_index_for_chunk_size,
+    split_frames,
+)
 from ...core.reminders import build_ics_reminders
 from .calendar import BalCalendarButton
 from .common import (
-    _,
-    _logger,
+    HEIR_DUST_AMOUNT,
+    HEIR_REAL_AMOUNT,
     AmountException,
     Any,
     BalTimestamp,
@@ -33,50 +70,64 @@ from .common import (
     Buttons,
     Callable,
     CancelButton,
-    HEIR_DUST_AMOUNT,
-    HEIR_REAL_AMOUNT,
     HeirAmountIsDustException,
     HeirChangeException,
     HeirNotFoundException,
     MessageBoxMixin,
     Network,
     NoHeirsException,
-    NoWillExecutorNotPresent,
     NotCompleteWillException,
+    NoWillExecutorNotPresent,
+    QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
+    QStackedWidget,
+    Qt,
     QTimer,
     QVBoxLayout,
     QWidget,
-    Qt,
     TaskThread,
     TxBroadcastError,
     TxFeesChangedException,
     Util,
+    WaitingDialog,
     Will,
+    WillexecutorChangeException,
     WillExecutorFeeTooHighException,
     WillExecutorNotPresent,
-    WillExpiredException,
-    WillPostponedException,
-    WillexecutorChangeException,
     Willexecutors,
+    WillExpiredException,
+    WillItem,
+    WillPostponedException,
+    _,
+    _logger,
     bring_to_front,
     decimal_point_to_base_unit_name,
+    draw_qr,
+    export_meta_gui,
     import_meta_gui,
+    log_error,
     partial,
     pyqtSignal,
-    read_QIcon_from_bytes,
     read_json_file,
+    read_QIcon_from_bytes,
     show_modal,
     show_on_top,
     stop_thread,
     time,
     top_level_of,
+    tx_from_any,
+    write_json_file,
 )
 from .widgets import (
     WillSettingsWidget,
@@ -88,6 +139,29 @@ if TYPE_CHECKING:
 
 # NOTE: list views (HeirListWidget, PreviewList, WillExecutorWidget) are
 # imported lazily where needed to avoid a dialogs<->lists import cycle.
+
+
+# Animated-QR formats beyond the legacy BAL QR. Combined with the format
+# selector in :class:`BalQrExportWidget` they give the export page
+# interoperable BC-UR v1/v2 and BBQR output while keeping BAL QR as the
+# default (and the only format understood by older plugin versions).
+ANIMATED_QR_FORMATS = ("ur1", "ur2", "bbqr")
+
+
+def encode_animated_frames(transfer, fmt, budget_chars):
+    """Encode the transfer text into the given animated-QR format.
+
+    ``transfer`` is the BAL QR transfer text (str). ``budget_chars`` is the
+    maximum length of one frame (the exporter's "QR code size" preset).
+    """
+    payload = transfer.encode("utf-8")
+    if fmt == "ur1":
+        return ur1_frames(payload, budget_chars)
+    if fmt == "ur2":
+        return ur2_frames(payload, budget_chars)
+    if fmt == "bbqr":
+        return bbqr_frames(payload, budget_chars, encoding="Z")
+    raise QrTransferError("unknown animated QR format: {}".format(fmt))
 
 
 class BalDialog(QDialog,MessageBoxMixin):
@@ -1062,13 +1136,14 @@ class BalBuildWillDialog(BalDialog):
         desired behaviour, and that the date shown in the panel/wizard must
         reflect this anticipated date (so the calendar .ics also uses it).
 
-        RELATIVE dates are additionally normalised here: a relative value
-        ("30d"/"1y") is re-parsed against "now" on every check, so it drifts
-        away from the fixed transaction locktime and the postpone check would
-        wrongly ask to invalidate the will every day.  The stored locktime is
-        therefore frozen to the built transactions' absolute locktime, and a
-        relative threshold is frozen to its "N days before the delivery"
-        absolute value.
+        RELATIVE recipes ("30d"/"1y") are PRESERVED: they are resolved against
+        the built will's frozen locktime on every check (via
+        ``Util.resolve_locktime_against_tx`` for the postpone detection and
+        ``resolve_date_to_check(..., built_locktime=...)`` for the reference
+        timestamp), so they no longer drift away from the built transactions
+        and never trigger the daily invalidate prompt.  Freezing them to an
+        absolute timestamp here would silently erase the user's relative
+        choice from WILL_SETTINGS.
 
         We route the update through BalWindow.update_setting_widgets, which is
         the single place that (1) stores the value in WILL_SETTINGS, (2)
@@ -1083,72 +1158,46 @@ class BalBuildWillDialog(BalDialog):
             return
         min_locktime = int(min_locktime)
         stored_locktime = self.bal_window.will_settings["locktime"]
-        # A relative value ("30d"/"1y") is a MOVING TARGET: it is re-parsed
-        # against "now" on every check, so it drifts one day per day away from
-        # the fixed tx locktime and the postpone check would ALWAYS see a
-        # postpone -> the plugin asks to invalidate the will every day.  It must
-        # therefore be normalised here to the frozen absolute locktime of the
-        # built transactions, even when it happens to parse to the same moment
-        # today.  (Only an absolute stored value is comparable, see below.)
+        # A RELATIVE stored value ("30d"/"1y") is PRESERVED: it is resolved
+        # against the built transactions on every check (the post-build
+        # `resolve_date_to_check` anchoring and `resolve_locktime_against_tx`
+        # in the postpone detection), so it no longer drifts and must not be
+        # frozen to an absolute timestamp here.  Only an ABSOLUTE stored value
+        # is compared with the built transactions (see below).
         is_relative_locktime = (
             isinstance(stored_locktime, str)
             and stored_locktime[-1:].lower() in ("d", "y")
         )
-        # Current stored delivery date, as a comparable UNIX timestamp.
-        try:
-            current = int(Util.parse_locktime_string(stored_locktime))
-        except Exception:
-            # If the stored value cannot be parsed, fall back to syncing.
-            current = None
-        # A genuine user-chosen POSTPONE (a later absolute date) is never
-        # overwritten; anything else is synced to the built transactions.
-        was_anticipation = current is not None and min_locktime < current
-        if not is_relative_locktime and current is not None and not was_anticipation:
-            pass
-        else:
-            _logger.debug(
-                f"sync delivery date to built tx locktime: "
-                f"{current} -> {min_locktime}"
-            )
-            # Remember that we anticipated the date, so the later sign prompt can
-            # explain WHY signing is needed (see on_success_phase1).  A pure
-            # relative->absolute normalisation is NOT an anticipation.
-            if was_anticipation:
-                self._date_was_anticipated = True
-            # update_setting_widgets stores the value, persists it and refreshes
-            # the date widgets in all panels/wizard (the .ics calendar too).
-            self.bal_window.update_setting_widgets(
-                min_locktime, "locktime", update_all=True
-            )
-        # Same moving-target problem for a relative "Check Alive" threshold:
-        # it means "N days BEFORE the delivery" (the settings widget resolves it
-        # as real_threshold = locktime - N days), so it is normalised to that
-        # absolute date, referenced against the now-absolute stored locktime.
-        threshold_raw = self.bal_window.will_settings.get("threshold")
-        if (
-            isinstance(threshold_raw, str)
-            and threshold_raw[-1:].lower() in ("d", "y")
-        ):
+        if not is_relative_locktime:
+            # Current stored delivery date, as a comparable UNIX timestamp.
             try:
-                locktime_ts = int(
-                    Util.parse_locktime_string(
-                        self.bal_window.will_settings["locktime"]
-                    )
-                )
-                real_threshold = int(
-                    BalTimestamp(threshold_raw)
-                    .to_date(locktime_ts, reverse=True)
-                    .timestamp()
-                )
-            except Exception as e:
-                _logger.error(f"sync threshold to absolute failed: {e}")
-            else:
+                current = int(Util.parse_locktime_string(stored_locktime))
+            except Exception:
+                # If the stored value cannot be parsed, fall back to syncing.
+                current = None
+            # A genuine user-chosen POSTPONE (a later absolute date) is never
+            # overwritten; a genuine automatic ANTICIPATION (built earlier
+            # than stored) is synced to the built transactions.
+            was_anticipation = current is not None and min_locktime < current
+            if was_anticipation:
                 _logger.debug(
-                    f"sync threshold {threshold_raw} -> absolute {real_threshold}"
+                    f"sync delivery date to built tx locktime: "
+                    f"{current} -> {min_locktime}"
                 )
+                # Remember that we anticipated the date, so the later sign
+                # prompt can explain WHY signing is needed
+                # (see on_success_phase1).
+                self._date_was_anticipated = True
+                # update_setting_widgets stores the value, persists it and
+                # refreshes the date widgets in all panels/wizard (the .ics
+                # calendar too).
                 self.bal_window.update_setting_widgets(
-                    real_threshold, "threshold", update_all=True
+                    min_locktime, "locktime", update_all=True
                 )
+        # A relative "Check Alive" threshold ("N days BEFORE the delivery") is
+        # also PRESERVED: it is anchored on every check by
+        # ``resolve_date_to_check`` / ``resolve_guard_threshold``, so it does
+        # not need to be frozen to an absolute date here.
 
     def on_accept(self):
         try:
@@ -2538,4 +2587,1597 @@ class HeirsDialog(BalDialog, MessageBoxMixin):
 
     def closeEvent(self, event):
         event.accept()
+
+
+# --------------------------------------------------------------------------- #
+# QR / audio will transfer
+# --------------------------------------------------------------------------- #
+
+def export_filter_options():
+    """The export filters shared by the File / QR / Audio export dialogs.
+
+    Mirrors the historical All / Valid / Valid-NC choices of the "Export"
+    file menu: All selects every will item, Valid only the valid ones and
+    Valid NC the valid ones that are NOT yet fully signed (Complete).
+    """
+    return [
+        (_("All"), lambda wi: True),
+        (_("Valid"), lambda wi: wi.get_status("VALID")),
+        (
+            _("Valid NC"),
+            lambda wi: wi.get_status("VALID") and not wi.get_status("COMPLETE"),
+        ),
+    ]
+
+
+def filter_willitems(source, filters, filter_index):
+    """The will items of ``source`` matched by ``filters[filter_index]``."""
+    _label, fn = filters[filter_index]
+    return {wid: wi for wid, wi in source.items() if fn(wi)}
+
+
+def serialize_tx_list(willitems):
+    """The serialized transaction strings of the given will items, sorted by txid."""
+    items = sorted(willitems.values(), key=lambda wi: str(wi.tx.txid()))
+    return [str(wi.tx) for wi in items]
+
+
+def decode_will_payload(text) -> tuple[Any, Any]:
+    """Autodetect: whole-will JSON or transaction list?
+
+    Returns ``("will", dict_of_willitems_data)`` when ``text`` is a JSON
+    object whose values are dicts containing a ``"tx"`` key (the whole-will
+    format produced by :meth:`BalWindow.export_json_file` and friends).
+    Otherwise returns ``("txs", [tx_strings])`` where the transaction
+    strings were split on commas and/or newlines.
+    """
+    text = text.strip()
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        data = None
+    if isinstance(data, dict) and data:
+        if all(isinstance(v, dict) and "tx" in v for v in data.values()):
+            return ("will", data)
+    parts = [p for p in re.split(r"[,\r\n]+", text) if p.strip()]
+    return ("txs", parts)
+
+
+def audio_bitrates():
+    """The transfer speeds (KB/sec) offered by the ``audio_modem`` plugin."""
+    try:
+        import amodem.config
+    except Exception:
+        return []
+    return sorted(amodem.config.bitrates.keys())
+
+
+def current_kbps(plugin):
+    """The KB/sec the given plugin is configured with (1 when unknown)."""
+    try:
+        return int(round(plugin.modem_config.modem_bps / 1e3))
+    except Exception:
+        return 1
+
+
+class BalQrImage(QWidget):
+    """A widget that renders one QR code, scaled to its own size.
+
+    Electrum's own ``QRCodeWidget`` hard-codes the LOW error-correction level,
+    which is fine for a one-shot payload but risky for long multi-frame will
+    transfers. This widget renders a fresh code on every paint with MEDIUM
+    correction using Electrum's :func:`draw_qr` paint helper.
+    """
+
+    def __init__(self, text="", parent=None):
+        QWidget.__init__(self, parent)
+        self.text = text
+        self.setMinimumSize(240, 240)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
+    def set_text(self, text):
+        self.text = text
+        self.update()
+
+    def paintEvent(self, event):
+        # Imported lazily: qrcode is shipped with Electrum but it is not a Qt
+        # widget, so keeping it out of the hub import keeps dialogs importable
+        # even when qrcode itself is missing at import time.
+        import qrcode
+
+        qr = qrcode.QRCode(
+            error_correction=qrcode.ERROR_CORRECT_M, border=2
+        )
+        qr.add_data(self.text)
+        qr.make(fit=True)
+        draw_qr(
+            qr=qr, paint_device=self, is_enabled=True, min_boxsize=2
+        )
+        QWidget.paintEvent(self, event)
+
+
+class BalQrExportWidget(QWidget):
+    """Self-contained QR export page: view, navigation, autoplay, resolution.
+
+    Renders the will transfer one QR code at a time. The user walks the
+    frames with the Prev/Next arrows, can auto-advance at a chosen speed
+    (with optional looping) and can change the "QR code size" preset live,
+    which is the resolution: how many payload bytes each frame carries.
+    The page (re)displays itself on :meth:`set_tx_strings`.
+    """
+
+    def __init__(self, chunk_size=CHUNK_PRESETS[0][1], parent=None):
+        QWidget.__init__(self, parent)
+        self.chunk_size = chunk_size
+        self.format = "balqr"
+        self.tx_strings = []
+        self.transfer = ""
+        self.frames = []
+        self.index = 0
+        self.auto_timer = QTimer(self)
+        self.auto_timer.timeout.connect(self._auto_step)
+
+        vbox = QVBoxLayout(self)
+
+        self.intro_label = QLabel()
+        vbox.addWidget(self.intro_label)
+
+        self.qr_view = BalQrImage(parent=self)
+        vbox.addWidget(self.qr_view)
+
+        self.progress_label = QLabel()
+        vbox.addWidget(self.progress_label)
+
+        nav = QHBoxLayout()
+        self.prev_btn = QPushButton(_("Previous"))
+        self.prev_btn.clicked.connect(self._prev)
+        nav.addWidget(self.prev_btn)
+        self.next_btn = QPushButton(_("Next"))
+        self.next_btn.clicked.connect(self._next)
+        nav.addWidget(self.next_btn)
+        nav.addStretch(1)
+
+        vbox.addLayout(nav)
+
+        auto_row = QHBoxLayout()
+        self.auto_btn = QPushButton(_("Auto"))
+        self.auto_btn.setToolTip(
+            _("Automatically advance through the QR codes.")
+        )
+        self.auto_btn.clicked.connect(self._toggle_auto)
+        auto_row.addWidget(self.auto_btn)
+        auto_row.addWidget(QLabel(_("QR codes per second:")))
+        self.fps_spin = QSpinBox()
+        self.fps_spin.setRange(1, 10)
+        self.fps_spin.setValue(1)
+        self.fps_spin.setSuffix(_(" /s"))
+        auto_row.addWidget(self.fps_spin)
+        self.loop_check = QCheckBox(_("Loop"))
+        self.loop_check.setToolTip(
+            _(
+                "When the last QR code is reached, keep cycling from the "
+                "first one instead of stopping."
+            )
+        )
+        auto_row.addWidget(self.loop_check)
+        auto_row.addStretch(1)
+        vbox.addLayout(auto_row)
+
+        size_row = QHBoxLayout()
+        size_row.addWidget(QLabel(_("QR code size:")))
+        self.size_combo = QComboBox()
+        self.size_combo.addItems([label for label, _budget in CHUNK_PRESETS])
+        self.size_combo.setCurrentIndex(
+            preset_index_for_chunk_size(self.chunk_size)
+        )
+        self.size_combo.currentIndexChanged.connect(self._on_chunk_change)
+        size_row.addWidget(self.size_combo)
+        size_row.addStretch(1)
+        vbox.addLayout(size_row)
+
+        format_row = QHBoxLayout()
+        format_row.addWidget(QLabel(_("Format:")))
+        self.format_combo = QComboBox()
+        self._format_options = ["balqr"] + list(ANIMATED_QR_FORMATS)
+        self.format_combo.addItems(
+            [
+                format_name(fmt) + ((" (default)") if fmt == "balqr" else "")
+                for fmt in self._format_options
+            ]
+        )
+        self.format_combo.setCurrentIndex(0)
+        self.format_combo.currentIndexChanged.connect(self._on_format_change)
+        format_row.addWidget(self.format_combo)
+        self.format_hint = QLabel()
+        self.format_hint.setWordWrap(True)
+        format_row.addWidget(self.format_hint, 1)
+        vbox.addLayout(format_row)
+
+    def set_tx_strings(self, tx_strings):
+        """Rebuild the transfer frames from the given serialized transactions."""
+        self.tx_strings = list(tx_strings)
+        self._stop_auto()
+        self.transfer = encode_transfer(self.tx_strings, compress=False)
+        # BAL QR now ships compact (best-of) compressed by default: smaller
+        # frames, and the importer reverses it via the per-frame flag. The
+        # other formats keep the raw transfer (they compress internally).
+        self._balqr_transfer, self._balqr_compressed = encode_transfer_best(
+            self.tx_strings
+        )
+        self._refresh_frames()
+        self._update_intro()
+        self._render()
+
+    @property
+    def total_frames(self):
+        return len(self.frames)
+
+    def _refresh_frames(self):
+        if self.format == "balqr":
+            self.frames = split_frames(
+                self._balqr_transfer,
+                self.chunk_size,
+                compressed=self._balqr_compressed,
+            )
+        else:
+            self.frames = encode_animated_frames(
+                self.transfer, self.format, self.chunk_size
+            )
+        self.index = 0
+
+    def _on_format_change(self, index):
+        self._stop_auto()
+        self.format = self._format_options[index]
+        self._refresh_frames()
+        self._render()
+        self._update_intro()
+
+    def _on_chunk_change(self, index):
+        self._stop_auto()
+        self.chunk_size = CHUNK_PRESETS[index][1]
+        self._refresh_frames()
+        self._render()
+
+    def _toggle_auto(self):
+        """Start/stop the automatic QR slideshow."""
+        if self.auto_timer.isActive():
+            self._stop_auto()
+            return
+        if len(self.frames) <= 1:
+            return
+        fps = self.fps_spin.value()
+        if fps <= 0:
+            return
+        self.auto_btn.setText(_("Stop"))
+        self.auto_timer.start(int(1000 / fps))
+
+    def _stop_auto(self):
+        if self.auto_timer.isActive():
+            self.auto_timer.stop()
+        self.auto_btn.setText(_("Auto"))
+
+    def _auto_step(self):
+        if self.index >= len(self.frames) - 1:
+            # Reach the last code: loop back or stop the slideshow.
+            if self.loop_check.isChecked():
+                self.index = 0
+                self._render()
+                return
+            self._stop_auto()
+            return
+        self._next()
+
+    def _update_intro(self):
+        self.format_hint.setText(
+            {
+                "balqr": _(
+                    "Proprietary format; every other BAL wallet understands it."
+                ),
+                "ur1": _("Legacy BC-UR v1 (ur:bytes), compatible with older "
+                         "Blockchain Commons tools."),
+                "ur2": _("Standard BC-UR v2 fountain codes (ur:bytes)."),
+                "bbqr": _("Coinkite BBQR (B$ frames) for BitKit & friends."),
+            }[self.format]
+        )
+        if self.format == "balqr":
+            self.intro_label.setText(
+                _(
+                    "Scan the QR codes below, in order, with the will-opening "
+                    "device.\nFrame 1 of {} carries the total number of codes."
+                ).format(self.total_frames)
+            )
+        else:
+            self.intro_label.setText(
+                _(
+                    "Scan the QR codes below with the will-opening device.\n"
+                    "{} codes carry the whole transfer (any order works, "
+                    "duplicates are ignored)."
+                ).format(self.total_frames)
+            )
+
+    def _prev(self):
+        if self.index > 0:
+            self.index -= 1
+            self._render()
+
+    def _next(self):
+        if self.index < len(self.frames) - 1:
+            self.index += 1
+            self._render()
+
+    def _render(self):
+        if not self.frames:
+            return
+        self.qr_view.set_text(self.frames[self.index])
+        self.progress_label.setText(
+            _("Frame {} of {}").format(self.index + 1, len(self.frames))
+        )
+        self.prev_btn.setEnabled(self.index > 0)
+        self.next_btn.setEnabled(self.index < len(self.frames) - 1)
+
+
+class WillExportDialog(BalDialog):
+    """One window to export a will to a file, QR codes or audio.
+
+    The export filter (All / Valid / Valid NC) sits at the top and applies to
+    every option. Below it the user picks one of the three transports; each
+    option shows its transport-specific settings: the file content mode
+    (whole will item vs only the transactions), the QR resolution (frame
+    size) and autoplay speed, and the audio KB/sec. If the ``audio_modem``
+    plugin is missing only the audio option is disabled - file and QR stay
+    usable.
+    """
+
+    MODE_FILE = 0
+    MODE_QR = 1
+    MODE_AUDIO = 2
+
+    def __init__(self, bal_window, will=None, bal_plugin=None, initial_mode="file"):
+        BalDialog.__init__(self, bal_window.window, bal_plugin, _("Export will"))
+        self.bal_window = bal_window
+        self._source = will if will is not None else bal_window.willitems
+        self._filters = export_filter_options()
+        self._filter_index = 0
+        try:
+            chunk = int(bal_plugin.QR_CHUNK_SIZE.get())
+        except Exception:
+            chunk = CHUNK_PRESETS[0][1]
+        if not self._selected_items():
+            self.show_message(_("No will transaction to export."))
+            self.close()
+            return
+
+        vbox = QVBoxLayout(self)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel(_("Export:")))
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems([label for label, _fn in self._filters])
+        self.filter_combo.currentIndexChanged.connect(self._on_filter_change)
+        filter_row.addWidget(self.filter_combo)
+        # Content scope: whole will items vs only the serialized transactions.
+        # Applies uniformly to every transport (File / QR / Audio).
+        self.content_check = QCheckBox(_("Whole will"))
+        self.content_check.setChecked(True)
+        self.content_check.setToolTip(
+            _(
+                "Export the full will items (all details/statuses) as JSON, "
+                "or only the serialized transactions."
+            )
+        )
+        self.content_check.toggled.connect(self._on_content_toggle)
+        filter_row.addWidget(self.content_check)
+        filter_row.addStretch(1)
+        vbox.addLayout(filter_row)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel(_("Send as:")))
+        self.transport_group = QButtonGroup(self)
+        self.transport_file = QRadioButton(_("File"))
+        self.transport_qr = QRadioButton(_("QR Code"))
+        self.transport_audio = QRadioButton(_("Audio"))
+        self.transport_group.addButton(self.transport_file, self.MODE_FILE)
+        self.transport_group.addButton(self.transport_qr, self.MODE_QR)
+        self.transport_group.addButton(self.transport_audio, self.MODE_AUDIO)
+        for rb in (self.transport_file, self.transport_qr, self.transport_audio):
+            mode_row.addWidget(rb)
+        mode_row.addStretch(1)
+        vbox.addLayout(mode_row)
+        self.transport_group.idClicked.connect(self._on_mode_clicked)
+
+        self.stacked = QStackedWidget()
+        self.file_page = self._build_file_page()
+        self.stacked.addWidget(self.file_page)
+        self.qr_page = BalQrExportWidget(chunk_size=chunk)
+        self.stacked.addWidget(self.qr_page)
+        self.audio_page = self._build_audio_page()
+        self.stacked.addWidget(self.audio_page)
+        vbox.addWidget(self.stacked)
+
+        close_btn = QPushButton(_("Close"))
+        close_btn.clicked.connect(self.close)
+        vbox.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+        mode_ids = {
+            "file": self.MODE_FILE,
+            "qr": self.MODE_QR,
+            "audio": self.MODE_AUDIO,
+        }
+        mode = mode_ids.get(initial_mode, self.MODE_FILE)
+        (self.transport_file, self.transport_qr, self.transport_audio)[
+            mode
+        ].setChecked(True)
+        self.qr_page.set_tx_strings(self._payload_strings())
+        self._on_mode_clicked(mode)
+        self._update_info()
+
+    def _build_file_page(self):
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.addWidget(
+            QLabel(
+                _(
+                    "Export the will as a JSON file. Uncheck \"Whole will\" "
+                    "above to export only the serialized transactions "
+                    "(comma-separated)."
+                )
+            )
+        )
+        self.file_info_label = QLabel()
+        v.addWidget(self.file_info_label)
+        self.file_export_btn = QPushButton(_("Export…"))
+        self.file_export_btn.clicked.connect(self._export_file)
+        v.addWidget(self.file_export_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        return page
+
+    def _build_audio_page(self):
+        page = QWidget()
+        v = QVBoxLayout(page)
+        self.audio_warn_label = QLabel()
+        self.audio_warn_label.setWordWrap(True)
+        self._audio_plugin = self.bal_window.get_audio_modem_plugin()
+        self.bitrates = audio_bitrates()
+        available = self._audio_plugin is not None
+        if available:
+            self.audio_warn_label.hide()
+        else:
+            self.audio_warn_label.setText(
+                _("Audio MODEM plugin is not available.")
+            )
+        v.addWidget(self.audio_warn_label)
+        kbps_row = QHBoxLayout()
+        kbps_row.addWidget(QLabel(_("Speed (KB/sec):")))
+        self.kbps_combo = QComboBox()
+        self.kbps_combo.addItems([str(x) for x in self.bitrates])
+        current = current_kbps(self._audio_plugin)
+        if self.bitrates and current in self.bitrates:
+            self.kbps_combo.setCurrentIndex(self.bitrates.index(current))
+        kbps_row.addWidget(self.kbps_combo)
+        kbps_row.addStretch(1)
+        v.addLayout(kbps_row)
+        self.audio_info_label = QLabel()
+        v.addWidget(self.audio_info_label)
+        self.audio_send_btn = QPushButton(_("Send"))
+        self.audio_send_btn.setEnabled(available)
+        self.audio_send_btn.clicked.connect(self._send_audio)
+        v.addWidget(self.audio_send_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        return page
+
+    def _selected_items(self):
+        return filter_willitems(self._source, self._filters, self._filter_index)
+
+    def _payload_strings(self):
+        """The data handed to the QR page, honouring the content scope.
+
+        ``["<json>"]`` when "Whole will" is checked, otherwise the serialized
+        transaction strings (the QR transfer wraps them independently).
+        """
+        items = self._selected_items()
+        if self.content_check.isChecked():
+            return [self._whole_will_json()]
+        return serialize_tx_list(items)
+
+    def _payload_text(self):
+        """The raw audio payload, honouring the content scope."""
+        if self.content_check.isChecked():
+            return self._whole_will_json()
+        return "\n".join(serialize_tx_list(self._selected_items()))
+
+    def _whole_will_json(self):
+        # Use Electrum's MyEncoder so the ``tx`` Transaction object (and any
+        # datetime fields) are serialized the same way write_json_file does,
+        # otherwise json.dumps raises "Object of type Transaction is not JSON
+        # serializable".
+        return json.dumps(
+            {wid: wi.to_dict() for wid, wi in self._selected_items().items()},
+            cls=MyEncoder,
+        )
+
+    def _on_filter_change(self, index):
+        previous = self._filter_index
+        self._filter_index = index
+        if not self._selected_items():
+            # The selection is empty under the new filter: revert and inform.
+            self.filter_combo.blockSignals(True)
+            self.filter_combo.setCurrentIndex(previous)
+            self.filter_combo.blockSignals(False)
+            self._filter_index = previous
+            self.show_message(_("No will transaction matches the selected filter."))
+            return
+        if self.transport_qr.isChecked():
+            self.qr_page.set_tx_strings(self._payload_strings())
+        self._update_info()
+
+    def _on_content_toggle(self, checked):
+        if self.transport_qr.isChecked():
+            self.qr_page.set_tx_strings(self._payload_strings())
+        self._update_info()
+
+    def _on_mode_clicked(self, mode):
+        if mode == self.MODE_QR:
+            self.qr_page.set_tx_strings(self._payload_strings())
+            self.stacked.setCurrentWidget(self.qr_page)
+        elif mode == self.MODE_AUDIO:
+            self.stacked.setCurrentWidget(self.audio_page)
+        else:
+            self.stacked.setCurrentWidget(self.file_page)
+        self._update_info()
+
+    def _update_info(self):
+        count = len(self._selected_items())
+        noun = _("item(s)") if self.content_check.isChecked() else _("transaction(s)")
+        self.file_info_label.setText(
+            _("{} {} will be exported.").format(count, noun)
+        )
+        self.audio_info_label.setText(
+            _("{} {} will be sent.").format(count, noun)
+        )
+
+    def _export_file(self):
+        items = self._selected_items()
+        if not items:
+            self.show_message(_("No will transaction matches the selected filter."))
+            return
+        if self.content_check.isChecked():
+            exporter = partial(self.bal_window.export_json_file, will=items)
+            title = "will"
+        else:
+            exporter = partial(self.bal_window.export_tx_file, will=items)
+            title = "will_tx"
+        try:
+            export_meta_gui(self.bal_window.window, title, exporter)
+        except Exception as e:
+            self.show_error(str(e))
+            raise e
+
+    def _send_audio(self):
+        try:
+            kbps = int(self.kbps_combo.currentText())
+        except ValueError:
+            self.show_error(_("Invalid audio speed."))
+            return
+        if not self.bitrates or kbps not in self.bitrates:
+            self.show_error(_("Invalid audio speed."))
+            return
+        items = self._selected_items()
+        if not items:
+            self.show_message(_("No will transaction matches the selected filter."))
+            return
+        try:
+            self.bal_window.set_audio_modem_bitrate(kbps)
+        except Exception as e:
+            self.show_error(str(e))
+            return
+        payload = self._payload_text()
+        try:
+            self.bal_window._audio_send_payload(payload)
+        except Exception as e:
+            log_error(e, self)
+            self.show_error(str(e))
+            return
+        self.close()
+
+
+class WillImportDialog(BalDialog):
+    """One window to import a will from a file, QR codes or audio.
+
+    Mirrors :class:`WillExportDialog`: the user picks one of the three
+    transports. File imports are shown in a read-only
+    :class:`WillDetailDialog`; QR and audio captures go through the shared
+    review+sign wizard (:class:`WillTxReviewSignDialog`). The live will is
+    never touched by any of the three flows.
+    """
+
+    MODE_FILE = 0
+    MODE_QR = 1
+    MODE_AUDIO = 2
+
+    def __init__(self, bal_window, bal_plugin=None):
+        BalDialog.__init__(self, bal_window.window, bal_plugin, _("Import will"))
+        self.bal_window = bal_window
+        self.bal_plugin = bal_plugin
+
+        vbox = QVBoxLayout(self)
+        intro = QLabel(
+            _(
+                "Choose how the will was exported: from a file, QR codes or "
+                "audio.\nThe import never touches the live will."
+            )
+        )
+        intro.setWordWrap(True)
+        vbox.addWidget(intro)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel(_("Import from:")))
+        self.transport_group = QButtonGroup(self)
+        self.transport_file = QRadioButton(_("File"))
+        self.transport_qr = QRadioButton(_("QR Code"))
+        self.transport_audio = QRadioButton(_("Audio"))
+        self.transport_group.addButton(self.transport_file, self.MODE_FILE)
+        self.transport_group.addButton(self.transport_qr, self.MODE_QR)
+        self.transport_group.addButton(self.transport_audio, self.MODE_AUDIO)
+        for rb in (self.transport_file, self.transport_qr, self.transport_audio):
+            mode_row.addWidget(rb)
+        mode_row.addStretch(1)
+        vbox.addLayout(mode_row)
+        self.transport_group.idClicked.connect(self._on_mode_clicked)
+
+        self.stacked = QStackedWidget()
+        self.file_page = self._build_file_page()
+        self.stacked.addWidget(self.file_page)
+        self.qr_page = BalQrImportWidget(
+            bal_window, bal_plugin, close_cb=self.close
+        )
+        self.stacked.addWidget(self.qr_page)
+        self.audio_page = self._build_audio_page()
+        self.stacked.addWidget(self.audio_page)
+        vbox.addWidget(self.stacked)
+
+        close_btn = QPushButton(_("Close"))
+        close_btn.clicked.connect(self.close)
+        vbox.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+        self.transport_file.setChecked(True)
+        self._on_mode_clicked(self.MODE_FILE)
+
+    def _build_file_page(self):
+        page = QWidget()
+        v = QVBoxLayout(page)
+        lbl = QLabel(
+            _(
+                "Import the JSON will file written by the Export ▶ File "
+                "option. The will opens in a read-only preview window."
+            )
+        )
+        lbl.setWordWrap(True)
+        v.addWidget(lbl)
+        btn = QPushButton(_("Choose will file…"))
+        btn.clicked.connect(self._import_file)
+        v.addWidget(btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        return page
+
+    def _build_audio_page(self):
+        page = QWidget()
+        v = QVBoxLayout(page)
+        self.audio_warn_label = QLabel()
+        self.audio_warn_label.setWordWrap(True)
+        self._audio_plugin = self.bal_window.get_audio_modem_plugin()
+        self.bitrates = audio_bitrates()
+        available = self._audio_plugin is not None
+        if available:
+            self.audio_warn_label.hide()
+        else:
+            self.audio_warn_label.setText(
+                _("Audio MODEM plugin is not available.")
+            )
+        v.addWidget(self.audio_warn_label)
+        kbps_row = QHBoxLayout()
+        kbps_row.addWidget(QLabel(_("Speed (KB/sec):")))
+        self.kbps_combo = QComboBox()
+        self.kbps_combo.addItems([str(x) for x in self.bitrates])
+        current = current_kbps(self._audio_plugin)
+        if self.bitrates and current in self.bitrates:
+            self.kbps_combo.setCurrentIndex(self.bitrates.index(current))
+        kbps_row.addWidget(self.kbps_combo)
+        kbps_row.addStretch(1)
+        v.addLayout(kbps_row)
+        self.status_label = QLabel(_("Waiting for the audio transfer…"))
+        v.addWidget(self.status_label)
+        btns = QHBoxLayout()
+        self.receive_btn = QPushButton(_("Receive by audio…"))
+        self.receive_btn.setEnabled(available)
+        self.receive_btn.clicked.connect(self._audio_receive)
+        btns.addWidget(self.receive_btn)
+        btns.addStretch(1)
+        v.addLayout(btns)
+        return page
+
+    def _on_mode_clicked(self, mode):
+        if mode == self.MODE_QR:
+            self.stacked.setCurrentWidget(self.qr_page)
+        elif mode == self.MODE_AUDIO:
+            self.stacked.setCurrentWidget(self.audio_page)
+        else:
+            self.stacked.setCurrentWidget(self.file_page)
+
+    def _import_file(self):
+        self.bal_window.import_will_into_details()
+
+    def _audio_receive(self):
+        """Start a receiver thread on the chosen speed and finish the import."""
+        try:
+            kbps = int(self.kbps_combo.currentText())
+        except ValueError:
+            self.show_error(_("Invalid audio speed."))
+            return
+        if not self.bitrates or kbps not in self.bitrates:
+            self.show_error(_("Invalid audio speed."))
+            return
+        try:
+            self.bal_window.set_audio_modem_bitrate(kbps)
+        except Exception as e:
+            self.show_error(str(e))
+            return
+
+        try:
+            import amodem  # noqa: F401  # type: ignore  (guaranteed by is_available)
+        except Exception as e:
+            self.show_error(str(e))
+            return
+        plugin = self._audio_plugin
+        self.status_label.setText(_("Receiving…"))
+        self.receive_btn.setEnabled(False)
+
+        def receiver_thread():
+            with plugin._audio_interface() as interface:
+                src = interface.recorder()
+                dst = io.BytesIO()
+                amodem.main.recv(config=plugin.modem_config, src=src, dst=dst)
+                return dst.getvalue()
+
+        def on_success(blob):
+            self.receive_btn.setEnabled(True)
+            if not blob:
+                return
+            try:
+                text = zlib.decompress(blob).decode("ascii")
+            except Exception as e:
+                self.show_error(str(e))
+                return
+            if not text.strip():
+                self.show_error(_("No transaction data received."))
+                return
+            self.close()
+            _complete_import(
+                self.bal_window,
+                self.bal_plugin,
+                text,
+                show_error=self.show_error,
+                show_warning=self.show_warning,
+                close=lambda: None,
+            )
+
+        def on_error(exec_info):
+            self.receive_btn.setEnabled(True)
+            log_error(exec_info, self)
+
+        WaitingDialog(
+            self,
+            _("Waiting for audio ({:.1f} kbps)…").format(
+                plugin.modem_config.modem_bps / 1e3
+            ),
+            receiver_thread,
+            on_success,
+            on_error,
+        )
+
+
+def _local_validity_pass(bal_window, items):
+    """Local, wallet-only validity check (no server, no expiry raise).
+
+    Mirrors the check that :meth:`BalWindow.merge_will` runs after a merge so
+    the QR / audio import and the file-merge paths behave identically.
+    """
+    date_to_check = getattr(bal_window, "date_to_check", None)
+    if date_to_check is None:
+        date_to_check = resolve_date_to_check(
+            bal_window.bal_plugin.is_basic_mode(),
+            bal_window.will_settings,
+        )
+    history_label = bal_window.bal_plugin.HISTORY_LABEL.get()
+    try:
+        Will.add_willtree(items)
+        all_utxos = Util.get_available_utxos(
+            bal_window.wallet,
+            history_label,
+            Will.get_min_locktime(items, default_value=date_to_check),
+        )
+        Will.check_invalidated(
+            items, Will.utxos_strs(all_utxos), bal_window.wallet
+        )
+        Will.search_rai(
+            Will.get_all_inputs(items, only_valid=True),
+            all_utxos,
+            items,
+            bal_window.wallet,
+        )
+        Will.check_signatures(items, bal_window.wallet)
+    except Exception as e:
+        log_error(e, bal_window)
+
+
+def _complete_import(bal_window, bal_plugin, payload, *, show_error, show_warning, close):
+    """Shared tail of the QR / audio import flows.
+
+    Autodetects the transferred ``payload`` with :func:`decode_will_payload`:
+    a whole-will (JSON of willitems) is shown read-only in a
+    :class:`WillDetailDialog`; a transaction list is parsed into local
+    :class:`WillItem` objects, run through the local validity pass and handed
+    to the review+sign wizard. The live will is never touched.
+    ``show_error`` / ``show_warning`` / ``close`` are callbacks supplied by
+    the per-transport dialog.
+    """
+    kind, data = decode_will_payload(payload)
+    if kind == "will":
+        return _complete_import_will(
+            bal_window, bal_plugin, data, show_error=show_error, close=close
+        )
+    return _complete_import_txs(
+        bal_window, bal_plugin, data, show_error=show_error, show_warning=show_warning, close=close
+    )
+
+
+def _complete_import_will(bal_window, bal_plugin, data, *, show_error, close):
+    """Build local WillItems from whole-will JSON data and open WillDetailDialog."""
+    items = {}
+    for wid, d in data.items():
+        try:
+            d = dict(d)
+            d["tx"] = tx_from_any(d["tx"])
+            items[wid] = WillItem(d, _id=wid, wallet=bal_window.wallet)
+        except Exception as e:
+            show_error(_("Could not parse a transferred will item: {}").format(e))
+            return
+    Will.normalize_will(items, bal_window.wallet)
+    for wi in items.values():
+        wi.set_status("IMPORTED", True)
+    close()
+    from .dialogs import WillDetailDialog
+
+    dlg = WillDetailDialog(bal_window, will=items)
+    show_on_top(dlg)
+
+
+def _complete_import_txs(bal_window, bal_plugin, tx_strings, *, show_error, show_warning, close):
+    """Build local WillItems from serialized transactions and open the review wizard."""
+    items = {}
+    for s in tx_strings:
+        try:
+            wi = WillItem({"tx": s}, wallet=bal_window.wallet)
+        except Exception as e:
+            show_error(
+                _("Could not parse a transferred transaction: {}").format(e)
+            )
+            return
+        items[wi._id] = wi
+    Will.normalize_will(items, bal_window.wallet)
+    _local_validity_pass(bal_window, items)
+    for wi in items.values():
+        wi.set_status("IMPORTED", True)
+    valid = [wid for wid in items if items[wid].get_status("VALID")]
+    if not valid:
+        show_error(
+            _(
+                "The imported will contains no valid transaction in this "
+                "wallet."
+            )
+        )
+        close()
+        return
+    close()
+    skipped = len(items) - len(valid)
+    if skipped:
+        show_warning(
+            _(
+                "{} imported transaction(s) are not valid in this wallet "
+                "and were skipped."
+            ).format(skipped)
+        )
+    wizard = WillTxReviewSignDialog(
+        bal_window, will=items, bal_plugin=bal_plugin
+    )
+    if wizard.aborted:
+        return
+    show_on_top(wizard)
+
+
+def qr_import_accept_frame(
+    state, fmt, session_key, frame_total, index, payload, stable_reads=2
+):
+    """Change/detection policy for hands-free sequential QR frame import.
+
+    The continuous camera loop reads the same displayed code many times per
+    second, so we must decide when a scanned frame is worth storing:
+
+    * frames whose ``(index, payload)`` identity differs from the last
+      accepted one only count as ``pending`` until the same identity has been
+      seen ``stable_reads`` times in a row -- this mirrors the export-side
+      slideshow pacing and swallows transition artifacts;
+    * re-reading the currently accepted frame is ``ignore``d;
+    * a frame whose ``session_key`` (transfer identity, e.g. ``"balqr:3"`` or
+      ``"ur2:2-31-3804692811"``) contradicts the transfer already being built
+      is a ``reset`` (a different transfer was presented).
+
+    ``state`` is a mutable mapping with keys ``last_index``, ``last_payload``,
+    ``pending_index``, ``pending_payload``, ``pending_count`` and ``key``.
+    Returns one of ``"reset"``, ``"accept"``, ``"pending"``, ``"ignore"``.
+    """
+    current_key = state.get("key")
+    if current_key and session_key != current_key:
+        return "reset"
+    if index == state.get("last_index") and payload == state.get("last_payload"):
+        return "ignore"
+    if index == state.get("pending_index") and payload == state.get("pending_payload"):
+        state["pending_count"] = state.get("pending_count", 0) + 1
+    else:
+        state["pending_index"] = index
+        state["pending_payload"] = payload
+        state["pending_count"] = 1
+    if state["pending_count"] >= stable_reads:
+        state["key"] = session_key
+        state["last_index"] = index
+        state["last_payload"] = payload
+        state["pending_index"] = None
+        state["pending_payload"] = None
+        state["pending_count"] = 0
+        return "accept"
+    return "pending"
+
+
+class BalQrImportWidget(QWidget):
+    """Self-contained QR import page: camera or manual frame capture.
+
+    Frames are captured one by one from the camera (or typed manually). The
+    first frame fixes the total frame count and the transfer compression flag;
+    the slot grid shows which frames are still missing. When every frame is
+    present the "Review and Sign" button assembles the transfer, decodes it
+    into transactions and hands them to :class:`WillTxReviewSignDialog`. All
+    work happens on a local copy; the live will is never touched.
+    """
+
+    def __init__(self, bal_window, bal_plugin, parent=None, close_cb=None):
+        QWidget.__init__(self, parent)
+        self.bal_window = bal_window
+        self.bal_plugin = bal_plugin
+        self.close_cb = close_cb or (lambda: None)
+        self._session = None
+        self._fmt = None
+        self._key = None
+        self.frames = {}
+        self.total = 0
+        self.slot_widgets = {}
+        self._scanning = False
+
+        # Continuous camera session (started on demand, then hands-free).
+        self._reader = None
+        self._camera = None
+        self._capture_session = None
+        self._video_sink = None
+        self._latest_image = None
+        self._finish_pending = False
+        self._debounce = {
+            "last_index": None,
+            "last_payload": None,
+            "pending_index": None,
+            "pending_payload": None,
+            "pending_count": 0,
+        }
+        self._scan_timer = QTimer(self)
+        self._scan_timer.setInterval(200)  # ~5 frames analyzed per second
+        self._scan_timer.timeout.connect(self._on_scan_tick)
+
+        vbox = QVBoxLayout(self)
+        intro = QLabel(
+            _(
+                "Show the will QR codes to the camera, one after another.\n"
+                "After the first code, every new code is captured "
+                "automatically.\nThe first frame sets the total number of "
+                "codes; duplicates are ignored."
+            )
+        )
+        intro.setWordWrap(True)
+        vbox.addWidget(intro)
+
+        self.status_label = QLabel(_("Waiting for the first frame…"))
+        vbox.addWidget(self.status_label)
+
+        # Slot grid inside a scroll area (a large will can need many frames).
+        self.slot_widget = QWidget()
+        self.slot_grid = QGridLayout(self.slot_widget)
+        self.slot_grid.setSpacing(4)
+        self.slot_area = QScrollArea()
+        self.slot_area.setWidget(self.slot_widget)
+        self.slot_area.setWidgetResizable(True)
+        self.slot_area.setMaximumHeight(180)
+        self.slot_area.setVisible(False)
+        vbox.addWidget(self.slot_area)
+
+        manual = QHBoxLayout()
+        self.manual_edit = QLineEdit()
+        self.manual_edit.setPlaceholderText(
+            _("…or paste/type the frame text here")
+        )
+        self.manual_edit.returnPressed.connect(self._add_from_manual)
+        manual.addWidget(self.manual_edit)
+        manual_btn = QPushButton(_("Add frame"))
+        manual_btn.clicked.connect(self._add_from_manual)
+        manual.addWidget(manual_btn)
+        vbox.addLayout(manual)
+
+        buttons = QHBoxLayout()
+        self.scan_btn = QPushButton(_("Scan with camera…"))
+        self.scan_btn.setToolTip(
+            _(
+                "Start the live camera. While it runs, every new QR code "
+                "shown to the camera is captured automatically."
+            )
+        )
+        self.scan_btn.clicked.connect(self._toggle_scan)
+        buttons.addWidget(self.scan_btn)
+        self.reset_btn = QPushButton(_("Reset"))
+        self.reset_btn.clicked.connect(self._reset_all)
+        buttons.addWidget(self.reset_btn)
+        buttons.addStretch(1)
+        vbox.addLayout(buttons)
+
+        bottom = QHBoxLayout()
+        self.review_btn = QPushButton(_("Review and Sign…"))
+        self.review_btn.setEnabled(False)
+        self.review_btn.clicked.connect(self._review_and_sign)
+        bottom.addWidget(self.review_btn)
+        bottom.addStretch(1)
+        vbox.addLayout(bottom)
+
+    # -- frame handling -------------------------------------------------------
+
+    def _add_from_manual(self):
+        text = self.manual_edit.text().strip()
+        if text:
+            self.manual_edit.clear()
+            self._add_frame(text, manual=True)
+
+    def _reset_transfer(self, fmt, frame_total):
+        """Wipe the open transfer because an incompatible frame arrived."""
+        self._reset_all()
+        self.show_warning(
+            _(
+                "The scanned code belongs to a different transfer ({} "
+                "frames, {}). The import was reset; scan the first code again."
+            ).format(frame_total, format_name(fmt))
+        )
+
+    def _add_frame(self, frame_text, manual=False):
+        """Feed one scanned/pasted frame string into the receive session.
+
+        ``manual`` controls whether parse/malformed failures raise a visible
+        error (the camera loop fails silently and just keeps scanning).
+        """
+        try:
+            fmt, key, frame_total, index = parse_for_detection(frame_text)
+        except AnimatedQrError as e:
+            if manual:
+                self.show_error(str(e))
+            return "error"
+        if self._key is not None and key != self._key:
+            self._reset_transfer(fmt, frame_total)
+            return "reset"
+        session = self._session if self._session is not None else AnimatedQrSession()
+        try:
+            status = session.add_part(frame_text)
+        except TransferConflictError:
+            self._reset_transfer(fmt, frame_total)
+            return "reset"
+        except SessionLimitError as e:
+            self.show_error(str(e))
+            self._reset_all()
+            return "error"
+        except AnimatedQrError as e:
+            if manual:
+                self.show_error(str(e))
+            return "error"
+        self.total = session.total
+        if self._session is None:
+            self._session = session
+            self._fmt = fmt
+            self._key = key
+            self._init_slots()
+        if status == "ok":
+            # Slot grid is always 1-based even for 0-based wire formats.
+            slot = index + 1 if fmt == "bbqr" else index
+            self.frames[slot] = frame_text
+        self._update_slots()
+        self._update_status()
+        return status
+
+    def show_message(self, msg):
+        """Messagebox shim (this widget is not a dialog)."""
+        MessageBoxMixin.show_message(self, msg)
+
+    def show_warning(self, msg):
+        """Warning shim (this widget is not a dialog)."""
+        MessageBoxMixin.show_warning(self, msg)
+
+    def show_error(self, msg):
+        """Error shim (this widget is not a dialog)."""
+        MessageBoxMixin.show_error(self, msg)
+
+    def _init_slots(self):
+        while self.slot_grid.count():
+            item = self.slot_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            self.slot_grid.removeItem(item)
+        self.slot_widgets = {}
+        for index in range(1, self.total + 1):
+            b = QPushButton(str(index))
+            b.setEnabled(False)
+            row = (index - 1) // 8
+            col = (index - 1) % 8
+            self.slot_grid.addWidget(b, row, col)
+            self.slot_widgets[index] = b
+        self.slot_area.setVisible(True)
+
+    def _update_slots(self):
+        for index, b in self.slot_widgets.items():
+            present = index in self.frames
+            b.setStyleSheet(
+                "QPushButton{background-color:#90ee90;}" if present else ""
+            )
+
+    def _update_status(self):
+        session = self._session
+        have = len(self.frames)
+        done = session is not None and session.done and have >= self.total
+        if done:
+            self.status_label.setText(
+                _("All {} frames stored.").format(self.total)
+            )
+            self.review_btn.setEnabled(True)
+            self._maybe_auto_finish()
+        else:
+            self.status_label.setText(
+                _("Stored {} of {} frames.").format(have, self.total)
+            )
+            self.review_btn.setEnabled(False)
+
+    def _reset_all(self):
+        self._stop_scan()
+        self._finish_pending = False
+        self._session = None
+        self._fmt = None
+        self._key = None
+        self.frames = {}
+        self.total = 0
+        self._reset_debounce()
+        if self.slot_widgets:
+            for b in self.slot_widgets.values():
+                b.deleteLater()
+        self.slot_widgets = {}
+        self.slot_area.setVisible(False)
+        self.review_btn.setEnabled(False)
+        self.status_label.setText(_("Waiting for the first frame…"))
+
+    # -- capture --------------------------------------------------------------
+
+    def _reset_debounce(self):
+        self._debounce.update(
+            {
+                "key": None,
+                "last_index": None,
+                "last_payload": None,
+                "pending_index": None,
+                "pending_payload": None,
+                "pending_count": 0,
+            }
+        )
+
+    def _toggle_scan(self):
+        if self._scanning:
+            self._stop_scan()
+        else:
+            self._start_scan()
+
+    def _start_scan(self):
+        """Open the camera and start the continuous, hands-free frame loop."""
+        if self._scanning:
+            return
+        try:
+            from electrum.qrreader import get_qr_reader
+            from PyQt6.QtMultimedia import (
+                QCamera,
+                QMediaCaptureSession,
+                QMediaDevices,
+                QVideoSink,
+            )
+        except Exception as e:
+            self.show_error(str(e))
+            return
+        try:
+            self._reader = get_qr_reader()
+        except Exception as e:
+            self.show_error(str(e))
+            return
+
+        device = QMediaDevices.defaultVideoInput()
+        if not device or device.isNull():
+            self.show_error(
+                _("Cannot start QR scanner, no usable camera found.")
+            )
+            return
+
+        self._scanning = True
+        self.scan_btn.setText(_("Stop scanning"))
+        self._finish_pending = False
+        self._reset_debounce()
+
+        try:
+            self._camera = QCamera(device)
+            self._camera.errorOccurred.connect(self._on_camera_error)
+            self._capture_session = QMediaCaptureSession()
+            self._capture_session.setCamera(self._camera)
+            self._video_sink = QVideoSink(self)
+            # QVideoSink notifies new frames via videoFrameChanged (videoFrame
+            # is the frame *getter*, not a signal).
+            self._video_sink.videoFrameChanged.connect(self._on_video_frame)
+            self._capture_session.setVideoSink(self._video_sink)
+            self._camera.start()
+            self._scan_timer.start()
+        except Exception as e:
+            self._stop_scan()
+            self.show_error(str(e))
+
+    def _stop_scan(self):
+        """Release the camera and the continuous loop."""
+        self._scanning = False
+        self._scan_timer.stop()
+        if self._camera is not None:
+            try:
+                self._camera.errorOccurred.disconnect(self._on_camera_error)
+            except (RuntimeError, TypeError, AttributeError):
+                pass
+            self._camera.stop()
+        if self._video_sink is not None:
+            try:
+                self._video_sink.videoFrameChanged.disconnect(self._on_video_frame)
+            except (RuntimeError, TypeError, AttributeError):
+                pass
+        self._camera = None
+        self._capture_session = None
+        self._video_sink = None
+        self._reader = None
+        self._latest_image = None
+        self._reset_debounce()
+        self.scan_btn.setText(_("Scan with camera…"))
+
+    def _on_camera_error(self, error, error_str):
+        # A failed camera should not silently drop the hands-free session.
+        if self._scanning:
+            self._stop_scan()
+            self.show_error(_("Camera error: {}").format(error_str or error))
+
+    def _on_video_frame(self, video_frame):
+        if self._scanning and video_frame.isValid():
+            self._latest_image = video_frame.toImage()
+
+    def _on_scan_tick(self):
+        """Analyze the latest camera frame (~5 times per second)."""
+        image = self._latest_image
+        self._latest_image = None
+        if image is None or self._reader is None or not self._scanning:
+            return
+        from PyQt6.QtGui import QImage
+
+        try:
+            gray = image.convertToFormat(QImage.Format.Format_Grayscale8)
+        except Exception:
+            return
+        try:
+            results = self._reader.read_qr_code(
+                gray.constBits().__int__(),
+                gray.sizeInBytes(),
+                gray.bytesPerLine(),
+                gray.width(),
+                gray.height(),
+            )
+        except Exception:
+            return
+        if results:
+            self._handle_scanned_text(results[0].data)
+
+    def _handle_scanned_text(self, text):
+        """Route a decoded QR string through the change/detection policy."""
+        try:
+            fmt, key, frame_total, index = parse_for_detection(text)
+        except AnimatedQrError:
+            return
+        decision = qr_import_accept_frame(
+            self._debounce, fmt, key, frame_total, index, text
+        )
+        if decision == "pending":
+            return
+        if decision == "reset":
+            self._reset_all()
+            self._finish_pending = False
+            self.show_warning(
+                _(
+                    "The scanned code belongs to a different transfer ({} "
+                    "frames, {}). The import was reset; show the first code "
+                    "again."
+                ).format(frame_total, format_name(fmt))
+            )
+            return
+        if decision == "accept":
+            self._add_frame(text, manual=False)
+
+    def _maybe_auto_finish(self):
+        if self._finish_pending:
+            return
+        if not self._scanning:
+            return
+        session = self._session
+        if not self.frames or not self.total:
+            return
+        if session is None or not session.done:
+            return
+        self._finish_pending = True
+        self._stop_scan()
+        # Defer so the widget repaints before the review dialog takes over.
+        QTimer.singleShot(0, self._review_and_sign)
+
+    def hideEvent(self, event):
+        # Leaving the QR page (or closing the dialog) must release the camera.
+        self._stop_scan()
+        super().hideEvent(event)
+
+    # -- finish ---------------------------------------------------------------
+
+    def _review_and_sign(self):
+        session = self._session
+        if session is None or not session.done:
+            return
+        try:
+            transfer, compressed = session.resolve()
+            parts = decode_transfer(transfer, compressed)
+        except (MissingFramesError, QrTransferError, AnimatedQrError) as e:
+            self.show_error(str(e))
+            self._reset_all()
+            return
+        if not parts:
+            self.show_error(_("The transferred will contains no transactions."))
+            return
+        # Join the frames back into an opaque payload; _complete_import
+        # autodetects whether it is a whole will or a transaction list.
+        self._finish_import("\n".join(parts))
+
+    def _finish_import(self, payload):
+        """Hand the transferred payload to the shared import tail."""
+        _complete_import(
+            self.bal_window,
+            self.bal_plugin,
+            payload,
+            show_error=self.show_error,
+            show_warning=self.show_warning,
+            close=self.close_cb,
+        )
+
+class WillTxReviewSignDialog(BalDialog):
+    """Per-transaction review + sign wizard for an imported will.
+
+    Walks the (valid) imported transactions one at a time showing outputs,
+    total outputs and fees, with Sign / Skip / Cancel per page. All signing
+    runs on the local copy of the imported will; the live will and the wallet
+    history are never touched. The final page offers to export the signed
+    transactions as a file and/or as QR codes.
+    """
+
+    def __init__(self, bal_window, will=None, bal_plugin=None):
+        BalDialog.__init__(
+            self, bal_window.window, bal_plugin, _("Review and sign imported will")
+        )
+        self.bal_window = bal_window
+        self.items = will if will is not None else bal_window.willitems
+        self.txids = sorted(Will.only_valid(self.items))
+        self.aborted = False
+        self.i = 0
+        if not self.txids:
+            self.aborted = True
+            self.close()
+            return
+        self.password = bal_window.get_wallet_password(
+            message=_(
+                "Enter your wallet password to sign the imported transactions."
+            )
+        )
+        if self.password is False:
+            self.aborted = True
+            self.close()
+            return
+
+        vbox = QVBoxLayout(self)
+        self.stack = QStackedWidget(self)
+        self.summary_page = self._build_summary_page()
+        # Index 0 = summary page; review pages start at index 1.
+        self.stack.addWidget(self.summary_page)
+        self.review_pages = []
+        for _txid in self.txids:
+            page = self._build_review_page()
+            self.stack.addWidget(page)
+            self.review_pages.append(page)
+        vbox.addWidget(self.stack)
+        self.stack.setCurrentIndex(1)
+        self._render()
+
+    # -- page builders ---------------------------------------------------------
+
+    def _build_review_page(self):
+        page = QWidget()
+        vbox = QVBoxLayout(page)
+        header = QLabel()
+        vbox.addWidget(header)
+        txid_label = QLabel()
+        txid_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        vbox.addWidget(txid_label)
+        outputs_label = QLabel()
+        outputs_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        vbox.addWidget(outputs_label)
+        totals_label = QLabel()
+        vbox.addWidget(totals_label)
+
+        row = QHBoxLayout()
+        sign_btn = QPushButton(_("Sign"))
+        sign_btn.clicked.connect(self._sign_current)
+        row.addWidget(sign_btn)
+        skip_btn = QPushButton(_("Skip"))
+        skip_btn.clicked.connect(self._advance)
+        row.addWidget(skip_btn)
+        cancel_btn = QPushButton(_("Cancel"))
+        cancel_btn.clicked.connect(self.close)
+        row.addWidget(cancel_btn)
+        row.addStretch(1)
+        vbox.addLayout(row)
+        return page
+
+    def _build_summary_page(self):
+        page = QWidget()
+        vbox = QVBoxLayout(page)
+        self.summary_label = QLabel()
+        self.summary_label.setWordWrap(True)
+        vbox.addWidget(self.summary_label)
+        save_btn = QPushButton(_("Save signed file…"))
+        save_btn.clicked.connect(self._save_signed)
+        vbox.addWidget(save_btn)
+        self.qr_btn = QPushButton(_("Show signed QR…"))
+        self.qr_btn.clicked.connect(self._show_signed_qr)
+        vbox.addWidget(self.qr_btn)
+        close_btn = QPushButton(_("Close"))
+        close_btn.clicked.connect(self.close)
+        vbox.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        return page
+
+    # -- rendering -------------------------------------------------------------
+
+    def _page_index(self):
+        return 0 if self.i >= len(self.txids) else self.i + 1
+
+    def _render(self):
+        if self.i >= len(self.txids):
+            self._enter_summary()
+            return
+        txid = self.txids[self.i]
+        wi = self.items[txid]
+        tx = wi.tx
+        page = self.review_pages[self.i]
+
+        headers = page.findChildren(QLabel)
+        headers[0].setText(
+            _("Transaction {} of {}").format(self.i + 1, len(self.txids))
+        )
+        headers[1].setText(_("TXID: {}").format(txid))
+        lines = []
+        for o in tx.outputs():
+            value = o.value if o.value is not None else _("unknown")
+            if isinstance(value, int):
+                value_s = self.bal_window.window.format_amount_and_units(value)
+            else:
+                value_s = value
+            lines.append("{}   {}".format(o.get_ui_address_str(), value_s))
+        headers[2].setText("\n".join(lines) if lines else _("(no outputs)"))
+        total_out = sum(
+            (o.value or 0) for o in tx.outputs() if isinstance(o.value, int)
+        )
+        fee = None
+        try:
+            iv = tx.input_value()
+            if isinstance(iv, int):
+                fee = iv - total_out
+        except Exception:
+            fee = None
+        if fee is not None:
+            fee_s = self.bal_window.window.format_amount_and_units(fee)
+        else:
+            fee_s = _("unknown (partial transaction)")
+        headers[3].setText(
+            _("Total outputs: {}\nFee: {}").format(
+                self.bal_window.window.format_amount_and_units(total_out), fee_s
+            )
+        )
+        self.stack.setCurrentIndex(self._page_index())
+
+    def _enter_summary(self):
+        signed = sum(
+            1 for txid in self.txids if self.items[txid].get_status("COMPLETE")
+        )
+        self.summary_label.setText(
+            _(
+                "Signed {} of {} transactions.\n\nSave a signed file to carry "
+                "to the broadcast device, or show the signed transactions as "
+                "QR codes."
+            ).format(signed, len(self.txids))
+        )
+        self.qr_btn.setEnabled(signed > 0)
+        self.stack.setCurrentIndex(0)
+
+    # -- actions ---------------------------------------------------------------
+
+    def _sign_current(self):
+        txid = self.txids[self.i]
+        try:
+            tx, newly = self.bal_window._prepare_and_sign_tx(
+                self.items, txid, self.password
+            )
+        except Exception as e:
+            log_error(e, self)
+            self.show_error(_("Could not sign the transaction: {}").format(e))
+            return
+        if newly and tx.is_complete():
+            self.items[txid].set_status("COMPLETE", True)
+        self._advance()
+
+    def _advance(self):
+        self.i += 1
+        self._render()
+
+    def _save_signed(self):
+        data = {wid: wi.to_dict() for wid, wi in self.items.items()}
+
+        def _do_save(path):
+            try:
+                write_json_file(path, data)
+            except Exception as e:
+                self.show_error(str(e))
+                return
+            self.show_message(_("Signed will saved."))
+
+        export_meta_gui(self.bal_window.window, "will_signed.json", _do_save)
+
+    def _show_signed_qr(self):
+        signed = {
+            wid: wi
+            for wid, wi in self.items.items()
+            if wid in self.txids and wi.get_status("COMPLETE")
+        }
+        if not signed:
+            self.show_message(_("No signed transaction to show."))
+            return
+        d = WillExportDialog(
+            self.bal_window, will=signed, bal_plugin=self.bal_plugin, initial_mode="qr"
+        )
+        show_on_top(d)
 

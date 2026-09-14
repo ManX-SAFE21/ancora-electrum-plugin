@@ -19,9 +19,8 @@ from electrum.plugin import hook
 from electrum.util import EventListener, event_listener
 from PyQt6.QtWidgets import QLayout
 
+from ...core.qrtransfer import CHUNK_PRESETS, preset_index_for_chunk_size
 from .common import (
-    _,
-    _logger,
     BalPlugin,
     Buttons,
     EnterButton,
@@ -38,6 +37,8 @@ from .common import (
     QWidget,
     UserCancelled,
     Willexecutors,
+    _,
+    _logger,
     add_widget,
     partial,
     read_QIcon_from_bytes,
@@ -531,6 +532,21 @@ class Plugin(BalPlugin, EventListener):
         # users (BASIC and ADVANCED).
         heir_auto_rebuild = BalCheckBox(self.AUTO_REBUILD)
 
+        # QR Code Size selector (will transfer via QR). A 4-standard-size combo
+        # bound to the QR_CHUNK_SIZE config (payload budget in bytes per frame).
+        # Ordered low -> high so the user picks the resolution matching their
+        # camera. Visible to all users (BASIC and ADVANCED).
+        qr_size_combo = QComboBox()
+        qr_size_combo.addItems([label for label, _budget in CHUNK_PRESETS])
+        qr_size_combo.setCurrentIndex(
+            preset_index_for_chunk_size(int(self.QR_CHUNK_SIZE.get()))
+        )
+
+        def on_qr_size_change(index):
+            self.QR_CHUNK_SIZE.set(CHUNK_PRESETS[index][1])
+
+        qr_size_combo.currentIndexChanged.connect(on_qr_size_change)
+
         # USER TYPE selector (SIMPLE / ADVANCED, global). A two-choice combo
         # (not a free-text field) bound to the USER_TYPE config:
         #   index 0 -> "BASIC"    -> stored value "basic"    (DEFAULT)
@@ -646,6 +662,10 @@ class Plugin(BalPlugin, EventListener):
                 elif kind == "user_type":
                     widget.setCurrentIndex(
                         1 if str(cfg.default).lower() == "advanced" else 0
+                    )
+                elif kind == "qr_size":
+                    widget.setCurrentIndex(
+                        preset_index_for_chunk_size(int(cfg.default))
                     )
             btn.clicked.connect(reset)
             return btn
@@ -905,6 +925,25 @@ class Plugin(BalPlugin, EventListener):
         )
         grid.addWidget(reset_btn_auto_rebuild, 15, 3)
 
+        # "QR Code Size" row (always visible, BASIC + ADVANCED). Default QR
+        # size used when exporting a will via QR codes; changeable per export
+        # inside the export dialog itself.
+        lbl_qr_size = QLabel(_("QR Code Size"))
+        help_qr_size = HelpButton(
+            "Payload size of a single QR code when exporting a will via QR.\n\n"
+            "Larger QR codes hold more data (fewer shots) but are easier to "
+            "scan with a high-resolution camera; smaller QR codes scan fine "
+            "even with low-resolution cameras but require more shots.\n"
+            "The same selector is available inside the export dialog."
+        )
+        grid.addWidget(lbl_qr_size, 16, 0)
+        grid.addWidget(qr_size_combo, 16, 1)
+        grid.addWidget(help_qr_size, 16, 2)
+        reset_btn_qr_size = _make_reset_btn(
+            self.QR_CHUNK_SIZE, qr_size_combo, "qr_size"
+        )
+        grid.addWidget(reset_btn_qr_size, 16, 3)
+
         # ----------------------------------------------------------------- #
         # Group C / C4b: "Reset" button that restores the dialog settings to  #
         # their factory defaults. It only resets the settings exposed by THIS #
@@ -938,6 +977,7 @@ class Plugin(BalPlugin, EventListener):
                 (self.HISTORY_LABEL, edit_history_label, "line"),
                 (self.REBUILD_ON_CLOSE, heir_rebuild_on_close, "check"),
                 (self.AUTO_REBUILD, heir_auto_rebuild, "check"),
+                (self.QR_CHUNK_SIZE, qr_size_combo, "qr_size"),
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.
@@ -957,6 +997,10 @@ class Plugin(BalPlugin, EventListener):
                     # Default is "basic" -> combo index 0; "advanced" -> index 1.
                     widget.setCurrentIndex(
                         1 if str(cfg.default).lower() == "advanced" else 0
+                    )
+                elif kind == "qr_size":
+                    widget.setCurrentIndex(
+                        preset_index_for_chunk_size(int(cfg.default))
                     )
             # Re-sync the history-label field's enabled state after a reset: the
             # reset restores SAVE_HISTORY to its default, so the field must

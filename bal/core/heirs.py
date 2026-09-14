@@ -59,7 +59,7 @@ from electrum.util import (
     write_json_file,
 )
 
-from .util import Util
+from .util import Util, copy_structure
 from .willexecutors import Willexecutors
 
 if TYPE_CHECKING:
@@ -321,40 +321,14 @@ def get_change_output(wallet, in_amount, out_amount, fee):
         return out
 
 
-def _json_safe(value, _path="heirs", _depth=0):
-    """Return a JSON-serializable deep copy of *value*.
+def _json_safe(value, _path="heirs"):
+    """Backward-compatible alias of :func:`bal.core.util.copy_structure`.
 
-    The wallet DB persists the heirs dict via ``json_db.put``, which calls
-    ``copy.deepcopy`` on the value.  If any nested element is a live runtime
-    object (e.g. one holding a ``threading.RLock``), deepcopy raises
-    ``TypeError: cannot pickle '_thread.RLock' object`` and the whole
-    "Build will" task fails.
-
-    To make persistence robust we coerce the structure to plain
-    JSON-compatible types (dict / list / str / int / float / bool / None).
-    Anything else is converted to ``str(value)`` and logged with its path so
-    the offending field can be identified, instead of crashing the task.
+    Kept so call sites that imported ``_json_safe`` directly keep working; the
+    actual implementation (a JSON-safe, deepcopy-free clone) lives in
+    ``bal.core.util`` so every copy path shares one code base.
     """
-    # Primitive JSON scalars are kept as-is.
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, dict):
-        return {
-            str(k): _json_safe(v, "{}[{!r}]".format(_path, k), _depth + 1)
-            for k, v in value.items()
-        }
-    if isinstance(value, (list, tuple)):
-        return [
-            _json_safe(v, "{}[{}]".format(_path, i), _depth + 1)
-            for i, v in enumerate(value)
-        ]
-    # Unexpected runtime object: do not let it reach deepcopy.  Log where it
-    # was found so the real source can be fixed, then store a safe string.
-    _logger.error(
-        "heirs.save: non-serializable value at {} (type={}); coercing to str. "
-        "value={!r}".format(_path, type(value).__name__, value)
-    )
-    return str(value)
+    return copy_structure(value, _path=_path)
 
 
 class Heirs(dict, Logger):

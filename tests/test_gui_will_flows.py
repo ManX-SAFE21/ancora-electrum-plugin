@@ -390,6 +390,110 @@ def test_insufficient_funds_warns():
     assert not ctl.willitems
 
 
+def test_guard_not_blocked_by_old_built_will():
+    """Regression: shortening the delivery in the STORED settings (relative
+    "1y"/"30d") while an old, still-VALID built will is frozen at a longer
+    locktime must NOT fire the "locktime is lower than threshold" guard.
+
+    The old guard compared the fresh settings locktime against ``date_to_check``
+    anchored to the built will (see ``resolve_date_to_check``), so a built-will
+    delivery longer than the settings' one made it fire even though the settings
+    are internally consistent (locktime is 30d AFTER the threshold).  The guard
+    must instead compare the stored settings on a single reference frame
+    (``BalWindow.is_locktime_below_threshold``); ``date_to_check`` keeps its
+    built anchor for the expiry/validity checks.
+    """
+    with _no_willexecutors():
+        ctl = make_controller()
+        ctl.bal_plugin.USER_TYPE.set("advanced")  # ADVANCED Check-Alive mode
+        ctl.prepare_will()
+        txid, item = _single(ctl)
+
+        # Freeze the built (VALID) will at a delivery one year longer than the
+        # now-shortened settings: the pre-fix guard would reject the rebuild.
+        item.tx.locktime = item.tx.locktime + 365 * 86400
+        ctl.will_settings = {"locktime": "1y", "threshold": "30d"}
+        Util.fix_will_settings_tx_fees(ctl.will_settings)
+
+        ctl.init_class_variables()
+
+        # date_to_check is anchored to the built will (long delivery)...
+        assert ctl.date_to_check == item.tx.locktime - 30 * 86400
+        # ...and the OLD guard would have fired here:
+        old_locktime = Util.parse_locktime_string(ctl.will_settings["locktime"])
+        assert old_locktime < ctl.date_to_check
+        # but the settings themselves are consistent, so the guard must pass:
+        assert ctl.is_locktime_below_threshold() is False
+        assert not ctl.window.errors
+
+
+def test_anticipated_rebuild_reanchors_date_to_check():
+    """Regression (karen7): rebuilding a SIGNED will whose delivery was
+    anticipated (per-heir recipes shortened from 2y to 1y, ADVANCED mode) must
+    succeed.
+
+    ``date_to_check`` stays anchored to the OLD built delivery for the validity
+    checks, but ``build_will`` must re-anchor it to the NEW (earliest current)
+    delivery as its build filter: before the fix the stale 2028 anchor rejected
+    every "1y" heir (cmp <= 0 in ``fixed_percent_lists_amount``) and the build
+    reported ``NO_FUTURE_DATE``.  The old signed item is then superseded by
+    ``search_rai`` (REPLACED -> no on-chain invalidation) and the rebuilt will
+    is coherent again.
+    """
+    with _no_willexecutors():
+        ctl = make_controller()
+        ctl.bal_plugin.USER_TYPE.set("advanced")
+        # Per-heir deliveries require multiverse mode (the only way heirs can
+        # carry a different recipe than the settings locktime).
+        ctl.bal_plugin.ENABLE_MULTIVERSE.set(True)
+        ctl.will_settings = {"locktime": "2y", "threshold": "150d", "baltx_fees": 20}
+        Util.fix_will_settings_tx_fees(ctl.will_settings)
+        ctl.heirs["alice"][2] = "2y"
+        ctl.heirs["bob"][2] = "2y"
+
+        # Build and sign a 2y will (the old, committed delivery).
+        ctl.prepare_will()
+        old_txid, _old_item = _single(ctl)
+        old_locktime = _old_item.tx.locktime
+        signed = ctl.sign_transactions(None)
+        _old_item.tx = Will.get_tx_from_any(str(signed[old_txid]))
+        Will.check_signatures(ctl.willitems, ctl.wallet)
+        assert _old_item.get_status("COMPLETE")
+
+        # Anticipate: shorten every heir to 1y.
+        ctl.heirs["alice"][2] = "1y"
+        ctl.heirs["bob"][2] = "1y"
+
+        ctl.init_class_variables()
+        # date_to_check stays anchored to the OLD built delivery...
+        assert ctl.date_to_check == old_locktime - 150 * 86400
+        # ...and that stale anchor would reject the anticipated "1y" dates.
+        assert Util.parse_locktime_string("1y") < ctl.date_to_check
+
+        # The rebuild must succeed (re-anchored to the new delivery).
+        willitems = ctl.build_inheritance_transaction()
+
+    assert ctl.heirs.last_build_error is None, "NO_FUTURE_DATE must not fire"
+    new_valid = [
+        it for tid, it in willitems.items()
+        if tid != old_txid and it.get_status("VALID")
+    ]
+    assert new_valid, "the anticipated (1y) will must build and stay VALID"
+    new_item = new_valid[0]
+    assert new_item.tx.locktime < old_locktime, "delivery must be anticipated"
+    # date_to_check was re-anchored to the rebuilt delivery (1y minus 150d).
+    assert abs(ctl.date_to_check - (new_item.tx.locktime - 150 * 86400)) < 3600
+
+    # The old signed item is kept but superseded (REPLACED -> not VALID).
+    assert _old_item.get_status("REPLACED") is True
+    assert _old_item.get_status("VALID") is False
+
+    # The rebuilt will is coherent (plain rebuild, no on-chain invalidation).
+    assert ctl.check_will() is True
+    assert not any("delivery date" in m for m in ctl.window.messages)
+    assert not ctl.window.errors
+
+
 def _run_all():
     tests = [fn for name, fn in sorted(globals().items()) if name.startswith("test_")]
     for fn in tests:

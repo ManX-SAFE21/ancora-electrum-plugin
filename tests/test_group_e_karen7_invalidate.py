@@ -21,7 +21,6 @@ Run:
         python3 -m pytest tests/test_group_e_karen7_invalidate.py -q
 """
 
-import copy
 import json
 import os
 import sys
@@ -46,6 +45,7 @@ from electrum.transaction import (
 from electrum.util import bfh
 
 from bal.core.heirs import Heirs
+from bal.core.util import copy_structure
 from bal.core.will import Will, WillItem
 
 # ------------------------------------------------------------------ #
@@ -219,7 +219,7 @@ def _txs_to_will(txs, heirs_data):
     for txid, tx in txs.items():
         item_dict = {
             "tx": tx,
-            "heirs": copy.deepcopy(heirs_data),
+            "heirs": copy_structure(heirs_data),
             "willexecutor": None,
             "status": "",
             "description": "",

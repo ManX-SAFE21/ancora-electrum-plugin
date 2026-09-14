@@ -7,7 +7,6 @@ but without requiring a full Qt event loop.
 """
 
 import contextlib
-import copy
 import json
 import os
 import sys
@@ -24,6 +23,7 @@ if os.path.isdir(ELECTRUM_DIR):
 
 from bal.core.heirs import Heirs
 from bal.core.plugin_base import BalPlugin, BalTimestamp
+from bal.core.util import copy_structure
 from bal.core.will import (
     NoHeirsException,
     NotCompleteWillException,
@@ -145,11 +145,11 @@ class FakeBalWindow:
                 tx["my_locktime"] = txs[txid].my_locktime
                 tx["heirsvalue"] = txs[txid].heirsvalue
                 tx["description"] = txs[txid].description
-                tx["willexecutor"] = copy.deepcopy(txs[txid].willexecutor)
+                tx["willexecutor"] = copy_structure(txs[txid].willexecutor)
                 tx["status"] = "New"
                 tx["baltx_fees"] = txs[txid].tx_fees
                 tx["time"] = creation_time
-                tx["heirs"] = copy.deepcopy(txs[txid].heirs)
+                tx["heirs"] = copy_structure(txs[txid].heirs)
                 tx["txchildren"] = []
                 will[txid] = WillItem(tx, _id=txid, wallet=self.wallet)
             Will.update_will(self.willitems, will)

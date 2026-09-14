@@ -16,10 +16,9 @@ the Qt button and the OS/subprocess glue.
 import os
 import subprocess
 
+from electrum.gui.qt.util import getSaveFileName
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QInputDialog, QMenu, QToolButton
-
-from electrum.gui.qt.util import getSaveFileName
 
 from ...core.reminders import write_temp_ics
 from .common import _, _logger

@@ -22,7 +22,6 @@ This module is imported lazily (only when a ``bal_*`` command actually runs),
 so a missing wallet or a network-less daemon can still start Electrum.
 """
 
-import copy
 import json
 import time
 
@@ -44,10 +43,11 @@ from ..core.checkalive import (
     CheckAliveError,
     check_alive_expired,
     resolve_date_to_check,
+    resolve_guard_threshold,
 )
 from ..core.heirs import Heirs, is_op_return_address
 from ..core.plugin_base import BalConfig, BalPlugin
-from ..core.util import Util
+from ..core.util import Util, copy_structure
 from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
 
@@ -315,6 +315,28 @@ class BalController:
         executor.
         """
         will = {}
+        # Drop stale wallet-LOCAL will placeholders (mirror of the GUI
+        # build_will) so their coins are available to this build.
+        Will.remove_stale_wallet_history(
+            self.wallet, self.plugin.HISTORY_LABEL.get()
+        )
+        # A (re)build may have anticipated the delivery (shorter heir recipes)
+        # while ``date_to_check`` is still anchored to the OLD built will.
+        # Recompute it for the will being built (earliest future delivery among
+        # the CURRENT heirs), mirroring ``BalWindow.build_will``, so the
+        # anticipated dates pass the build filter.
+        _new_locktime = min(
+            (
+                Util.parse_locktime_string(h[2])
+                for h in self.heirs.values()
+            ),
+            default=None,
+        )
+        if _new_locktime:
+            self.date_to_check = resolve_date_to_check(
+                self.plugin.is_basic_mode(), self.will_settings,
+                built_locktime=_new_locktime,
+            )
         self.willexecutors = Willexecutors.get_willexecutors(
             self.plugin, update=False, task=False
         )
@@ -346,11 +368,11 @@ class BalController:
                 tx["my_locktime"] = txs[txid].my_locktime
                 tx["heirsvalue"] = txs[txid].heirsvalue
                 tx["description"] = txs[txid].description
-                tx["willexecutor"] = copy.deepcopy(txs[txid].willexecutor)
+                tx["willexecutor"] = copy_structure(txs[txid].willexecutor)
                 tx["status"] = _("New")
                 tx["baltx_fees"] = txs[txid].tx_fees
                 tx["time"] = creation_time
-                tx["heirs"] = copy.deepcopy(txs[txid].heirs)
+                tx["heirs"] = copy_structure(txs[txid].heirs)
                 tx["txchildren"] = []
                 will[txid] = WillItem(tx, _id=txid, wallet=self.wallet)
             Will.update_will(self.willitems, will)
@@ -435,7 +457,13 @@ class BalController:
             raise _user_facing(e) from e
 
         locktime = Util.parse_locktime_string(self.will_settings["locktime"])
-        if locktime < date_to_check:
+        threshold_ts = resolve_guard_threshold(
+            self.plugin.is_basic_mode(), self.will_settings
+        )
+        if threshold_ts is not None:
+            if locktime < threshold_ts:
+                raise UserFacingException(_("locktime is lower than threshold"))
+        elif locktime < date_to_check:
             raise UserFacingException(_("locktime is lower than threshold"))
 
         if not self.no_willexecutor:

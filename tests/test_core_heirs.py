@@ -36,6 +36,7 @@ from bal.core.heirs import (
     is_op_return_address,
     validate_op_return_hex,
 )
+from bal.core.util import Util
 
 # ------------------------------------------------------------------ #
 # Constants
@@ -165,6 +166,32 @@ def test_heirs_amount_to_float():
     assert heirs.amount_to_float("50%") == 50.0
     # invalid -> 0.0
     assert heirs.amount_to_float("notanumber") == 0.0
+
+
+def test_fixed_percent_lists_uses_build_anchor_for_relative_heirs():
+    """A relative heir must survive the amount filter when the build anchor
+    (``from_locktime``) is recalculated for the anticipated delivery.
+
+    Before the fix, ``build_will`` kept ``date_to_check`` anchored to the OLD
+    (longer) built will; an "1y" heir resolved before that anchor was excluded
+    by the ``cmp <= 0`` filter and the build reported NO_FUTURE_DATE.  With the
+    anchor recomputed for the new locktime (karen7: 2y -> 1y delivery) the
+    "1y" heir is kept.
+    """
+    wallet = FakeWallet()
+    heirs = Heirs(wallet)
+    heirs["carol"] = ["addr1", "100%", "1y"]
+
+    # Stale anchor (old built 2y will still frozen): "1y" is in the past
+    # relative to it -> excluded from the amount calculation.
+    stale_anchor = Util.parse_locktime_string("2y") - 150 * 86400
+    _, _, percent_heirs, _, _ = heirs.fixed_percent_lists_amount(stale_anchor, 500)
+    assert "carol" not in percent_heirs
+
+    # Recalculated anchor for the new (1y) delivery: the heir is retained.
+    new_anchor = Util.parse_locktime_string("1y") - 150 * 86400
+    _, _, percent_heirs, _, _ = heirs.fixed_percent_lists_amount(new_anchor, 500)
+    assert "carol" in percent_heirs
 
 
 # ------------------------------------------------------------------ #

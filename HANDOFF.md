@@ -111,7 +111,8 @@ Two separate venvs — using the wrong one is the #1 mistake:
 - **Lint venv** (repo-local `venv/`): ruff, black, flake8 only. It cannot
   import `electrum` or `PyQt6`. Do NOT use it to run tests.
 
-Run everything from the repo root.
+Run everything from the repo root (the checkout directory; set
+`BAL_HOME` to its parent to use `$BAL_HOME/electrum`).
 
 **Tests are standalone scripts (not pytest):** each `tests/test_*.py` runs its
 `test_*` functions from `if __name__ == "__main__"`. Run a file directly:
@@ -392,3 +393,85 @@ See Section 5 for details.
    push to `origin/main`, then run `./make-release.sh` to create the Gitea
    **Release** with the ZIP + signatures attached (it becomes the owner's
    "Latest" download). Always give the owner the Release URL.
+
+### In progress: QR / audio will transfer (branch `feature/bal-qr-transfer`)
+
+- The full QR-transfer feature (P0–P6) is implemented, tested and committed on
+  `feature/bal-qr-transfer` (commits `d288b55`, `ce3e36d`, pushed to
+  `origin`). PR creation URL:
+  `https://bitcoin-after.life/gitea/bitcoinafterlife/bal-electrum-plugin/pulls/new/feature/bal-qr-transfer`
+- Included: core scheduler (`bal/core/qrtransfer.py`), `QR_CHUNK_SIZE`
+  setting (4 export presets), export/import dialogs + review/sign wizard +
+  lists/window wiring, export filters, auto slideshow with per-second rate +
+  loop option, audio send/receive buttons, and the crash fixes
+  (`status` default, `invalidate_will` guard). Docs: README, CHANGELOG entry
+  56, QML_PLAN, `AUDIO_MODEM_DEBIAN.md`.
+- Follow-up refactor (CHANGELOG entry 57): all `copy.deepcopy` removed —
+  `copy_structure()` in `bal/core/util.py`, `WillItem.copy()` / ctor
+  serialize/deserialize, `copy_status_table()`. Working tree clean after the
+  branch's three commits.
+- Verification: batch 377 passed / 2 pre-existing `test_bt_to_date_*`
+  failures; ruff no new violations; smoke + `build_zip.py` +
+  external-zip OK; pyright clean. The isolated
+  `test_heir_relative_anchor.py::test_karen7_frozen_delivery_not_expired`
+  failure is pre-existing test pollution (fails identically on clean HEAD,
+  passes inside the full batch) — not caused by entry 57.
+- Remaining: manual on-device walkthrough of the QR path (and, if wanted,
+  the audio path — buttons only appear when the `audio_modem` plugin +
+  `amodem` are installed; see the prerequisites below).
+
+### In progress: animated-QR interop (BC-UR v1/v2, BBQR)
+
+- `bal/core/animated_qr.py` implements stdlib-only codecs for **BC-UR v1**
+  (BC32 + SHA-256 digest; the bech32_bis checksum variant per
+  BCR-2020-004/005), **BC-UR v2** (CBOR part structure, bytewords-minimal,
+  CRC-32, xoshiro256-based fountain with alias-sampled mixing) and **BBQR**
+  (Coinkite `B$…` base32/hex/zlib frames), plus one shared
+  `AnimatedQrSession` with `detect_format` auto-detection and
+  `parse_for_detection` frame identity for the GUI debounce.
+- Current status as of this session: reference parity, GUI, and tests done;
+  not yet committed.
+  - **BC32/bytewords/codec parity:** BC32 reproduces the BCR-2020-004/005
+    test vectors (`Hello, world`, `Hello world`, the long seed vector);
+    bytewords-minimal round-trips with CRC rejection; UR v2 part encode +
+    decode is byte-exact against the reference C++ bc-ur encoder for a
+    single part, seq_len=2 (12 frames) and seq_len=7 (3 sampled mixes),
+    validating CBOR framing, bytewords, alias+ary-threshold sampling,
+    xoshiro256** and the XOR mix.
+  - **Sessions:** UR v2 single-part (no seq header), out-of-order frames,
+    duplicate drops, solve with a missing pure fragment (a second redundant
+    mixed wave is emitted by `ur2_frames`), UR v1 single-part
+    (digest-less `ur:bytes/<bc32>` accepted) and multipart, BBQR full-frame
+    decode in any order for Z/2/H encodings.
+  - **Safety:** `_MAX_SESSION_PARTS = 20000`, `_MAX_MESSAGE_BYTES = 32 MB`,
+    `TransferConflictError` on a frame from a different transfer,
+    `SessionLimitError`, BBQR zlib-bomb guard, UTF-8 payloads only.
+  - **GUI:** `BalQrExportWidget` gained a Format selector (BAL QR default,
+    BC-UR v1, BC-UR v2, BBQR) reusing the QR-size presets; the importer now
+    routes every frame through `detect_format` +
+    `AnimatedQrSession.add_part` with the shared
+    `qr_import_accept_frame(state, fmt, session_key, frame_total, index,
+    payload, stable_reads=2)` debounce (reset on session-key change).
+    `_review_and_sign` resolves the session to the transfer text and decodes
+    parts uniformly across formats.
+  - **Verification:** `tests/test_core_animated_qr.py` (32 tests incl. the
+    C++-reference parity vectors and BC32 spec vectors) and the extended
+    `tests/test_gui_qr_transfer.py` pass; ruff clean on the new/changed
+    files; pyright 0 errors; smoke test, `build_zip.py` and
+    `external_zip_test.py` green. Only the pre-existing failures remain
+    (`test_bt_to_date_*`, fee-exceeds-balance, karen7 pollution).
+  - **Any remaining work:** manual on-device walkthrough of the QR path with
+    the new formats; optionally validate against third-party libraries
+    (`ur`, `bbqr`) once available; add the docstrings/branch notes already
+    captured in `ag1.md`/`ag2.md` context where needed.
+
+**Dev-box audio prerequisites (audio_modem channel):**
+See `AUDIO_MODEM_DEBIAN.md` — the full Debian setup + verification, with the
+two pitfalls (unversioned `libportaudio.so`, numpy>=2 `tostring` removal):
+- `sudo ln -s /usr/lib/x86_64-linux-gnu/libportaudio.so.2 /usr/lib/x86_64-linux-gnu/libportaudio.so`
+  (the unversioned name the plugin loads; Debian ships only `.so.2`).
+- numpy>=2 patch in `electrum/env/.../amodem/common.py`: `tostring()` →
+  `tobytes()` (already applied locally). Both are runtime-env fixes, not repo
+  changes; see CHANGELOG entry 56.
+- To loop-test on one machine without speakers/mic: during receive,
+  `pactl set-default-source <sink>.monitor` (restore after).
