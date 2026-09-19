@@ -612,9 +612,14 @@ class LockTimeDateEdit(QDateTimeEdit, _LockTimeEditor):
             # Use the overflow-safe converter: on Windows datetime.fromtimestamp
             # raises OverflowError for timestamps past 2038 (e.g. NLOCKTIME_MAX).
             _dt = BalTimestamp._safe_fromtimestamp(x)
-            #if self.alarm != dt:
-            self.setDateTime(_dt)
             self.alarm = _dt
+            # Store the LOCAL wall-clock time, not the aware-UTC datetime:
+            # QDateTimeEdit keeps the given wall time with a LocalTime spec, so
+            # an aware-UTC datetime would make get_value() read back a timezone-
+            # shifted epoch. That broke the set_value -> get_value roundtrip and
+            # kept the valueEdited -> update_setting_widgets -> set_value cycle
+            # firing forever (infinite RecursionError on wizard "Next").
+            self.setDateTime(_dt.astimezone().replace(tzinfo=None))
 
 
 

@@ -183,6 +183,22 @@ def test_locktime_raw_edit_get_set_value():
     assert "d" in val
 
 
+def test_locktime_date_edit_get_set_value_roundtrip():
+    """set_value(x) must roundtrip to get_value() == x (same timezone).
+
+    Guards a timezone regression that made the Date editor return the stored
+    wall clock re-read as local time, i.e. ``x + utc_offset``. That broke the
+    set_value/get_value roundtrip and kept the valueEdited ->
+    update_setting_widgets -> set_value signal cycle alive forever, ending in a
+    RecursionError when opening the "Build your will" wizard (Next button).
+    """
+    from bal.gui.qt.widgets import LockTimeDateEdit
+    edit = LockTimeDateEdit()
+    for ts in (1700000000, 1750000000, 2147483647):
+        edit.set_value(ts)
+        assert edit.get_value() == ts
+
+
 # ------------------------------------------------------------------ #
 # PercAmountEdit
 # ------------------------------------------------------------------ #
