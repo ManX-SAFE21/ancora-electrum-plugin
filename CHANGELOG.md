@@ -3327,3 +3327,92 @@ densest frames possible.
   the base36 count fields are 3 chars regardless of how many frames exist.
 
 **Outcome:** DONE.
+
+## 58. i18n phase 1: BAL translation layer (Electrum first, then BAL)
+
+**Date:** 2026-09-26 (branch `feature/i18n`, see `PLAN_I18N.md`)
+
+**Goal (owner request):** make the whole plugin translatable, starting with
+Italian, so that BAL follows the language chosen in Electrum. This phase adds
+the mechanism only: nothing visible changes yet.
+
+**What changed:**
+
+- New `bal/i18n.py`, BAL's own gettext layer (domain `bal`, catalogs in
+  `bal/locale/<lang>/LC_MESSAGES/bal.mo`, read with `plugin.read_file()` so it
+  works from the zip and from a development checkout):
+  - `_()` looks a text up in Electrum's catalog first, then in BAL's, then
+    returns the English source (owner's decision D7: BAL reads like Electrum,
+    and Electrum's translations would take over if BAL ever became an internal
+    plugin). BAL translations whose `{}` fields differ from the source are
+    rejected with the same rules as Electrum's.
+  - `N_()` marks texts defined at import time, translated when shown.
+  - `init_from_config()` repeats Electrum's own language choice (Preferences >
+    Language, else the supported system language, else English) once, in the
+    Qt `Plugin.__init__`. A missing or broken catalog never stops the plugin.
+- `common.py`, `theme.py`, `core/will.py`, `core/willexecutors.py` now import
+  `_` from `bal.i18n`. The CLI keeps Electrum's translator and stays English,
+  like Electrum's own CLI.
+
+**Verification:** new `tests/test_i18n.py`; results in entry 59.
+
+**Outcome:** DONE (delivered in one test ZIP together with entry 59).
+
+## 59. i18n phase 2: translatable texts and language-neutral stored data
+
+**Date:** 2026-09-26 (branch `feature/i18n`, see `PLAN_I18N.md`)
+
+**Goal:** make every user-visible text of the Qt GUI extractable and
+translatable, without changing the English UI, and make sure no stored data
+depends on the GUI language.
+
+**What changed:**
+
+- Texts built with f-strings or `.format()` inside `_()`, or glued together
+  from pieces, are now whole sentences with `{}` fields (Ruff INT clean).
+- Class-level texts (list headers, wizard titles/messages, help texts,
+  download error messages, status labels) are marked with `N_()` and
+  translated when shown: class bodies run before the catalog is loaded.
+- Helpers no longer translate their argument (`add_widget`, `get_window_title`,
+  `msg_set_status`, the will-detail `qlabel`): callers pass translated text.
+  This also stops heir names and URLs from going through the translator.
+- Newly translatable: the settings help texts, the wizard download options,
+  the build report rows, the Ping/Select menu buttons, the QR size presets
+  (marked in `common.QR_PRESET_LABELS`: `core/qrtransfer.py` stays free of
+  Electrum imports because the Android reader ships a copy of it), and the
+  "(reminder i/n)" suffix of the calendar events (`build_ics_reminders` gained
+  `reminder_suffix`, English by default for the CLI).
+- **Stored status history:** `WillItem.set_status` now always writes the
+  English label; the new `format_status_history()` translates it for display
+  (lists and will detail) and keeps unknown tokens as they are, so histories
+  saved by older versions (e.g. `New.Firmato.Pushed`) still display fine.
+- **Calendar defaults:** `EVENT_SUMMARY` / `EVENT_DESCRIPTION` defaults follow
+  the GUI language (`BalConfig(..., translatable=True)`), while the English
+  original is what gets stored; a text written by the user is kept as it is.
+- **Not translated on purpose:** `HISTORY_LABEL` (used by
+  `Util._label_matches_history` to recognise BAL's own local transactions),
+  the "BAL Invalidate/Inheritance transaction" wallet labels,
+  `heirs.TRANSACTION_LABEL` and the will-executor "info" fallback stored in the
+  config.
+- Two small visible fixes: the will detail showed "Transaction fees::" and
+  "Status::" with a double colon.
+- `pyproject.toml`: Ruff now also checks the `INT` (gettext) rules.
+
+**Verification (Electrum 4.8.2, Python 3.14, offscreen):**
+
+- `tests/test_i18n.py`: 20 passed (lookup order, rejected `{}` fields,
+  missing/broken catalogs, language fallback, English status storage and its
+  display translation, translatable config defaults, reminder suffix, QR
+  preset labels).
+- Release-gate batch (as `make-release.sh`): 403 passed, 1 failed; the other
+  offline test files: 213 passed. Identical to the baseline taken before the
+  change; the only failures are pre-existing (`test_e5` and
+  `test_reproduce_none_type` need the local `tests/karen7` wallet,
+  `test_import_start_stop_scan_signal_wiring` fails on `main` too,
+  `test_gui_export_dialogs.py` hangs on `main` too).
+- `smoke_test.py`, `build_zip.py` and `external_zip_test.py`: OK.
+- Ruff: INT clean; no new errors (the only one left is the pre-existing
+  `dialogs.py` I001).
+- Babel extraction (GUI + core): 424 strings (about 3,000 words), was 323.
+
+**Outcome:** DONE, pending the owner's test of the ZIP.

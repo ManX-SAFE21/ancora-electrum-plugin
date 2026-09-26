@@ -29,7 +29,6 @@ The status flags themselves (the source of truth) stay here; only the mapping
 from datetime import datetime, timezone
 
 from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
-from electrum.i18n import _
 from electrum.logging import Logger, get_logger
 from electrum.transaction import (
     PartialTransaction,
@@ -44,6 +43,7 @@ from electrum.util import (
     bfh,
 )
 
+from ..i18n import N_, _
 from .heirs import WillExecutorFeeTooHighException
 from .util import Util, copy_structure
 from .willexecutors import Willexecutors
@@ -1273,6 +1273,34 @@ class Will:
 
 
 
+def format_status_history(status: str) -> str:
+    """Return the saved status history of a will item in the GUI language.
+
+    ``WillItem.status`` is a dot-separated history such as
+    ``".Signed.Pushed.NOT Valid"``. It is stored in English (see
+    ``WillItem.set_status``) and translated only here, for display. A token
+    that is not a known English label is shown unchanged: this keeps working
+    the histories written by older versions, which stored the label already
+    translated (for example ``"Firmato"``).
+    """
+    labels = {label for label, _flag in WillItem.STATUS_DEFAULT.values()}
+    labels.update(WillItem.LEGACY_STATUS_LABELS)
+
+    def translate(token):
+        # "ERROR!!!" is glued to the end of the history when an item has no
+        # id (see WillItem.__init__): keep it, translate what comes before.
+        suffix = ""
+        if token.endswith("ERROR!!!"):
+            token, suffix = token[: -len("ERROR!!!")], "ERROR!!!"
+        if token in labels:
+            token = _(token)
+        elif token.startswith("NOT ") and token[len("NOT "):] in labels:
+            token = _("NOT {}").format(_(token[len("NOT "):]))
+        return token + suffix
+
+    return ".".join(translate(token) for token in status.split("."))
+
+
 class WillItem(Logger):
     # Default status flags for an inheritance transaction.
     # Each entry maps an internal status key to [human-readable label, default
@@ -1286,27 +1314,36 @@ class WillItem(Logger):
     #   * "UPDATED" was added: the transaction was spendable AND valid, and a new
     #     transaction replaces it while keeping the SAME locktime and SAME heirs.
     #     UPDATED keeps the VALID flag (see set_status).
+    #
+    # The labels are marked with N_() but stay English here: they are written
+    # into the saved status history (see set_status) and translated only when
+    # shown, by format_status_history().
     STATUS_DEFAULT = {
-        "ANTICIPATED": ["Anticipated", False],
-        "BROADCASTED": ["Broadcasted", False],
-        "CHECKED": ["Checked", False],
-        "CHECK_FAIL": ["Check Failed", False],
-        "COMPLETE": ["Signed", False],
-        "CONFIRMED": ["Confirmed", False],
-        "ERROR": ["Error", False],
-        "EXPIRED": ["Expired", False],
-        "EXPORTED": ["Exported", False],
-        "IMPORTED": ["Imported", False],
-        "INVALIDATED": ["Invalidated", False],
-        "MEMPOOL": ["Mempool", False],
-        "PUSH_FAIL": ["Push failed", False],
-        "PUSHED": ["Pushed", False],
-        "PARTIALLY_SIGNED": ["Partially Signed", False],
-        "REPLACED": ["Replaced", False],
-        "RESTORED": ["Restored", False],
-        "UPDATED": ["Updated", False],
-        "VALID": ["Valid", True],
+        "ANTICIPATED": [N_("Anticipated"), False],
+        "BROADCASTED": [N_("Broadcasted"), False],
+        "CHECKED": [N_("Checked"), False],
+        "CHECK_FAIL": [N_("Check Failed"), False],
+        "COMPLETE": [N_("Signed"), False],
+        "CONFIRMED": [N_("Confirmed"), False],
+        "ERROR": [N_("Error"), False],
+        "EXPIRED": [N_("Expired"), False],
+        "EXPORTED": [N_("Exported"), False],
+        "IMPORTED": [N_("Imported"), False],
+        "INVALIDATED": [N_("Invalidated"), False],
+        "MEMPOOL": [N_("Mempool"), False],
+        "PUSH_FAIL": [N_("Push failed"), False],
+        "PUSHED": [N_("Pushed"), False],
+        "PARTIALLY_SIGNED": [N_("Partially Signed"), False],
+        "REPLACED": [N_("Replaced"), False],
+        "RESTORED": [N_("Restored"), False],
+        "UPDATED": [N_("Updated"), False],
+        "VALID": [N_("Valid"), True],
     }
+
+    # Labels found in histories saved by older versions but no longer
+    # written: "New" opened every history (e.g. tests/samanta7).
+    # format_status_history() still translates them.
+    LEGACY_STATUS_LABELS = (N_("New"),)
 
     def set_status(self, status, value=True):
         """Set a status flag and apply the related side effects.
@@ -1341,7 +1378,11 @@ class WillItem(Logger):
         if self.STATUS[status][1] == bool(value):
             return None
 
-        self.status += "." + (("NOT " if not value else "") + _(self.STATUS[status][0]))
+        # The history is saved in the wallet, in exported files and in QR
+        # transfers, so it is always written in English: the saved data must
+        # not depend on the GUI language (older versions wrote the translated
+        # label). format_status_history() translates it when it is shown.
+        self.status += "." + (("NOT " if not value else "") + self.STATUS[status][0])
         self.STATUS[status][1] = bool(value)
         if value:
             # NOTE: ANTICIPATED and UPDATED are intentionally NOT in this list,

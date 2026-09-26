@@ -31,6 +31,7 @@ from ...core.reminders import build_ics_reminders, write_temp_ics
 from .calendar import BalCalendar, BalCalendarButton
 from .common import (
     DECIMAL_POINT,
+    N_,
     NLOCKTIME_BLOCKHEIGHT_MAX,
     NLOCKTIME_MAX,
     Any,
@@ -67,6 +68,7 @@ from .common import (
     _logger,
     char_width_in_lineedit,
     datetime,
+    format_status_history,
     getSaveFileName,
     log_error,
     os,
@@ -207,10 +209,10 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
     current_index = None
     default_value = None
 
-    help_text = (
+    help_text = N_(
         "if you choose Raw, you can insert various options based on suffix:\n"
-        + " - d: number of days after current day(ex: 1d means tomorrow)\n"
-        + " - y: number of years after currrent day(ex: 1y means one year from today)\n"
+        " - d: number of days after current day(ex: 1d means tomorrow)\n"
+        " - y: number of years after currrent day(ex: 1y means one year from today)\n"
     )
     label_text = None
     tooltip_text = None
@@ -276,7 +278,9 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
                     ]
                 )
         #hbox.addWidget(QLabel(self.label_text))
-        help_button=HelpButton(self.help_text)
+        # help_text and tooltip_text are class attributes marked with N_():
+        # translate them here, when shown.
+        help_button=HelpButton(_(self.help_text))
         help_button.setText(self.label_text)
         # Show a short label (e.g. "Delivery time" / "Check Alive") when the
         # user hovers the icon, so the emoji button is self-explanatory.
@@ -625,7 +629,7 @@ class LockTimeDateEdit(QDateTimeEdit, _LockTimeEditor):
 
 class ThresholdTimeWidget(BalTimeEditWidget):
     # rich_text=True is used by the HelpButton, so HTML tags (<b>, <br>) render.
-    help_text = (
+    help_text = N_(
         "<b>CHECK ALIVE</b><br><br>"
         "In DATA mode:<br>"
         "set the date for the \u201ccheck alive\u201d parameter.<br>"
@@ -644,7 +648,7 @@ class ThresholdTimeWidget(BalTimeEditWidget):
     )
     label_text = "🚨"
     #label_text = "Check Alive"
-    tooltip_text = "Check Alive"
+    tooltip_text = N_("Check Alive")
     base_field = "threshold"
 
     def __init__(self, bal_window, parent, init_value=None):
@@ -659,7 +663,7 @@ class ThresholdTimeWidget(BalTimeEditWidget):
 
 class LockTimeWidget(BalTimeEditWidget):
     # rich_text=True is used by the HelpButton, so HTML tags (<b>, <br>) render.
-    help_text = (
+    help_text = N_(
         "<b>DELIVERY TIME</b><br><br>"
         "Set Locktime for transactions.<br>"
         "Any time is needed transaction will be anticipated by 1day<br><br>"
@@ -677,7 +681,7 @@ class LockTimeWidget(BalTimeEditWidget):
     #label_text = "Locktime"
     # Hover tooltip for the delivery-time icon; mirrors the style of the fee
     # icon tooltip ("..., click for more information") so the two are consistent.
-    tooltip_text = "Delivery Time, click for more information"
+    tooltip_text = N_("Delivery Time, click for more information")
     base_field = "locktime"
 
     def __init__(self, bal_window, parent, init_value=None):
@@ -1088,9 +1092,12 @@ class WillSettingsWidget(QWidget):
             basic_mode = self.bal_window.bal_plugin.is_basic_mode()
             if basic_mode:
                 # BASIC mode: use factory defaults (the hidden settings are
-                # ignored) and the fixed 30/10/1 offsets.
-                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
-                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
+                # ignored) and the fixed 30/10/1 offsets. The defaults are in
+                # the GUI language (see BalConfig).
+                raw_description = (
+                    self.bal_window.bal_plugin.EVENT_DESCRIPTION.localized_default()
+                )
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.localized_default()
                 threshold = None
                 num_reminders = 3
             else:
@@ -1120,6 +1127,7 @@ class WillSettingsWidget(QWidget):
                 version=self.bal_window.bal_plugin.version,
                 num_reminders=num_reminders,
                 threshold=threshold,
+                reminder_suffix=_("(reminder {idx}/{total})"),
             )
         except Exception as e:
             _logger.error(f"failed to generate .ics: {e}")
@@ -1199,7 +1207,7 @@ class PercAmountEdit(BTCAmountEdit):
                 painter.drawText(
                     text_rect,
                     int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
-                    self.base_unit() + " or perc value",
+                    _("{} or perc value").format(self.base_unit()),
                 )
 
 
@@ -1317,11 +1325,12 @@ class WillWidget(QWidget):
                 creation = str(BalTimestamp(self.will[w].time))
 
                 def qlabel(title, value):
-                    label = "<b>" + _(str(title)) + f":</b>\t{str(value)}"
-                    return QLabel(label)
+                    # ``title`` is shown as it is: callers pass a translated
+                    # label, or data (an heir name, a will-executor URL).
+                    return QLabel("<b>{}:</b>\t{}".format(title, value))
 
-                detaillayout.addWidget(qlabel("Locktime", locktime))
-                detaillayout.addWidget(qlabel("Creation Time", creation))
+                detaillayout.addWidget(qlabel(_("Locktime"), locktime))
+                detaillayout.addWidget(qlabel(_("Creation Time"), creation))
                 try:
                     total_fees = (
                         self.will[w].tx.input_value() - self.will[w].tx.output_value()
@@ -1331,12 +1340,17 @@ class WillWidget(QWidget):
                 decoded_fees = total_fees
                 fee_per_byte = round(total_fees / self.will[w].tx.estimated_size(), 3)
                 fees_str = str(decoded_fees) + " (" + str(fee_per_byte) + " sats/vbyte)"
-                detaillayout.addWidget(qlabel("Transaction fees:", fees_str))
+                detaillayout.addWidget(qlabel(_("Transaction fees"), fees_str))
+                # The saved status history is English: translate it for display.
                 detaillayout.addWidget(
-                    qlabel("Status:", self.will[w].status + signature_suffix(self.will[w]))
+                    qlabel(
+                        _("Status"),
+                        format_status_history(self.will[w].status)
+                        + signature_suffix(self.will[w]),
+                    )
                 )
                 detaillayout.addWidget(QLabel(""))
-                detaillayout.addWidget(QLabel("<b>Heirs:</b>"))
+                detaillayout.addWidget(QLabel("<b>{}</b>".format(_("Heirs:"))))
                 for heir_name in self.will[w].heirs:
                     if 'w!ll3x3c"' in heir_name:
                         continue
@@ -1363,7 +1377,9 @@ class WillWidget(QWidget):
                         )
                 if self.will[w].we:
                     detaillayout.addWidget(QLabel(""))
-                    detaillayout.addWidget(QLabel(_("<b>Willexecutor:</b:")))
+                    detaillayout.addWidget(
+                        QLabel("<b>{}</b>".format(_("Willexecutor:")))
+                    )
                     decoded_amount = Util.decode_amount(
                         self.will[w].we["base_fee"], self._bal_parent.decimal_point
                     )

@@ -22,10 +22,10 @@ from typing import Any
 from aiohttp import ClientResponse
 from electrum import bitcoin, constants
 from electrum.bitcoin import COIN, TOTAL_COIN_SUPPLY_LIMIT_IN_BTC
-from electrum.i18n import _
 from electrum.logging import get_logger
 from electrum.network import Network
 
+from ..i18n import _
 from .plugin_base import BalPlugin, get_version
 
 # Per-request timeout (seconds) for interactive operations (ping / info /

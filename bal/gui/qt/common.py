@@ -52,7 +52,6 @@ from electrum.gui.qt.util import (
     read_QPixmap_from_bytes,
     webopen,
 )
-from electrum.i18n import _
 from electrum.logging import get_logger
 from electrum.network import BestEffortRequestFailed, Network, TxBroadcastError
 from electrum.payment_identifier import PaymentIdentifier
@@ -137,12 +136,16 @@ from ...core.will import (
     WillExpiredException,
     WillItem,
     WillPostponedException,
+    format_status_history,
 )
 from ...core.willexecutors import (  # noqa: F401
     Willexecutors,
     is_onion_url,
     is_tor_active,
 )
+
+# BAL's translator: Electrum's catalog first, then BAL's (see bal/i18n.py).
+from ...i18n import N_, _
 
 # --- Presentation helpers ---
 from .theme import (
@@ -161,6 +164,17 @@ from .window_utils import (
 
 _logger = get_logger(__name__)
 
+# Labels of bal.core.qrtransfer.CHUNK_PRESETS, marked for translation here
+# because qrtransfer.py must stay free of Electrum imports (the Android reader
+# ships a copy of it). The combos show them with _(label);
+# tests/test_i18n.py checks that this list matches CHUNK_PRESETS.
+QR_PRESET_LABELS = (
+    N_("Small - ~150 bytes/QR (low-res cameras)"),
+    N_("Medium - ~400 bytes/QR"),
+    N_("Large - ~900 bytes/QR"),
+    N_("XL - ~1800 bytes/QR (high-res cameras)"),
+)
+
 
 class shown_cv:  # noqa: N801  (intentionally lowercase: mirrors Qt signal naming)
     _type = bool
@@ -178,9 +192,26 @@ class shown_cv:  # noqa: N801  (intentionally lowercase: mirrors Qt signal namin
 
 
 def add_widget(grid, label, widget, row, help_):
-    grid.addWidget(QLabel(_(label)), row, 0)
+    """Add a ``label | widget | help button`` row to ``grid``.
+
+    ``label`` and ``help_`` must already be translated by the caller: a
+    variable passed to _() cannot be extracted into the catalog.
+    """
+    grid.addWidget(QLabel(label), row, 0)
     grid.addWidget(widget, row, 1)
     grid.addWidget(HelpButton(help_), row, 2)
+
+
+
+
+def translated_headers(headers):
+    """Return a translated copy of a list's ``headers`` class attribute.
+
+    The column headers are class attributes marked with N_(): a class body
+    runs at import time, before the catalog is loaded, so they are
+    translated here, each time the headers are (re)built.
+    """
+    return {column: _(text) for column, text in headers.items()}
 
 
 
@@ -222,7 +253,7 @@ def export_meta_gui(electrum_window, title, exporter):
     filter_ = "All files (*)"
     filename = getSaveFileName(
         parent=electrum_window,
-        title=_("Select file to save your {}".format(title)),
+        title=_("Select file to save your {}").format(title),
         filename="BALplugin_{}_{}_{}".format(
             BalPlugin.chainname, str(electrum_window.wallet), title
         ),
@@ -237,7 +268,7 @@ def export_meta_gui(electrum_window, title, exporter):
         electrum_window.show_critical(str(e))
     else:
         electrum_window.show_message(
-            _("Your {0} were exported to '{1}'".format(title, str(filename)))
+            _("Your {0} were exported to '{1}'").format(title, str(filename))
         )
 
 

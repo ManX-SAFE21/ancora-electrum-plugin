@@ -32,6 +32,8 @@ from electrum.plugin import BasePlugin
 from electrum.transaction import tx_from_any
 from electrum.util import classproperty
 
+from ..i18n import N_, _
+
 _logger = get_logger(__name__)
 
 
@@ -134,12 +136,20 @@ class BalConfig:
 
     Wraps ``config.get`` / ``config.set_key`` and supplies a default value
     when the key is missing.
+
+    ``translatable=True`` is for a default *text* (marked with ``N_()``) that
+    should follow the GUI language. The English default is what gets stored,
+    and :meth:`get` translates it when it is read, so the stored value never
+    depends on the GUI language. A text the user wrote is returned unchanged.
+    Only for texts that are shown: a text that is also used to recognise
+    stored data (e.g. ``HISTORY_LABEL``) must stay non-translatable.
     """
 
-    def __init__(self, config, name, default):
+    def __init__(self, config, name, default, translatable=False):
         self.config = config
         self.name = name
         self.default = default
+        self.translatable = translatable
 
     def get(self, default=None):
         """Return the stored value, falling back to ``default`` then ``self.default``."""
@@ -149,10 +159,20 @@ class BalConfig:
                 v = default
             else:
                 v = self.default
+        if self.translatable and v == self.default:
+            return _(v)
         return v
+
+    def localized_default(self):
+        """Return the default value, translated if the setting is translatable."""
+        return _(self.default) if self.translatable else self.default
 
     def set(self, value, save=True):
         """Persist ``value`` for this key."""
+        if self.translatable and value == self.localized_default():
+            # The translated default is stored as its English original, so
+            # it keeps following the GUI language (see get()).
+            value = self.default
         self.config.set_key(self.name, value, save=save)
 
 
@@ -243,6 +263,10 @@ class BalPlugin(BasePlugin):
         # the wallet's local history. May contain the "{willexecutor}" token,
         # which is replaced with the will-executor URL of each will item at
         # save time.
+        # Deliberately NOT translatable: Util._label_matches_history() uses
+        # this text to recognise BAL's own local transactions (stale-history
+        # cleanup, spendable UTXOs). A label that changed with the GUI
+        # language would no longer match the transactions saved before.
         self.HISTORY_LABEL = BalConfig(
             config,
             "bal_history_label",
@@ -328,13 +352,20 @@ class BalPlugin(BasePlugin):
         self.WELIST_SERVER = BalConfig(
             config, "bal_welist_server", "https://welist.bitcoin-after.life/"
         )
+        # Calendar (.ics) texts: only shown, never used to recognise data, so
+        # their defaults follow the GUI language (translatable=True). The
+        # $tokens must survive translation.
         self.EVENT_DESCRIPTION = BalConfig(
             config,
             "bal_event_description",
-            "BAL will execution of $wallet_name\r\n heirs list:  \r\n$heirs_complete",
+            N_("BAL will execution of $wallet_name\r\n heirs list:  \r\n$heirs_complete"),
+            translatable=True,
         )
         self.EVENT_SUMMARY = BalConfig(
-            config, "bal_event_summary", "BAL -Will execution of $wallet_name"
+            config,
+            "bal_event_summary",
+            N_("BAL -Will execution of $wallet_name"),
+            translatable=True,
         )
 
         # Default will-executor servers, keyed by network.  These addresses are

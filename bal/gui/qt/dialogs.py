@@ -62,6 +62,7 @@ from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
     HEIR_REAL_AMOUNT,
+    N_,
     AmountException,
     Any,
     BalTimestamp,
@@ -322,7 +323,9 @@ class BalWizardWidget(QWidget):
         self._bal_parent = parent
         self.on_next = on_next
         self.on_cancel = on_cancel
-        self.titleLabel = QLabel(self.title)
+        # title/message are class attributes marked with N_(): translate them
+        # here, when shown (a class body runs before the catalog is loaded).
+        self.titleLabel = QLabel(_(self.title) if self.title else "")
         self.vbox.addWidget(self.titleLabel)
         self.messageLabel = QLabel(_(self.message))
         self.vbox.addWidget(self.messageLabel)
@@ -377,8 +380,8 @@ class BalWizardWidget(QWidget):
 
 
 class BalWizardHeirsWidget(BalWizardWidget):
-    title = "Bitcoin After Life Heirs"
-    message = (
+    title = N_("Bitcoin After Life Heirs")
+    message = N_(
         "Please add your heirs\n remember that 100% of wallet balance will be spent"
     )
 
@@ -416,18 +419,18 @@ class BalWizardHeirsWidget(BalWizardWidget):
 
 
 class BalWizardWEDownloadWidget(BalWizardWidget):
-    title = _("Bitcoin After Life Will-Executors")
-    message = _("Choose willexecutors download method")
+    title = N_("Bitcoin After Life Will-Executors")
+    message = N_("Choose willexecutors download method")
 
     def get_content(self):
         # question = QLabel()
         self.combo = QComboBox()
         self.combo.addItems(
             [
-                "Automatically download and select willexecutors",
-                "Only download willexecutors list",
-                "Import willexecutor list from file",
-                "Manual",
+                _("Automatically download and select willexecutors"),
+                _("Only download willexecutors list"),
+                _("Import willexecutor list from file"),
+                _("Manual"),
             ]
         )
         # heir_name.setFixedWidth(32 * char_width_in_lineedit())
@@ -524,8 +527,8 @@ class BalWizardWEDownloadWidget(BalWizardWidget):
 
 
 class BalWizardWEWidget(BalWizardWidget):
-    title = "Bitcoin After Life Will-Executors"
-    message = _("Configure and select your willexecutors")
+    title = N_("Bitcoin After Life Will-Executors")
+    message = N_("Configure and select your willexecutors")
 
     def get_content(self):
         # Lazy import to avoid a dialogs<->lists import cycle.
@@ -544,8 +547,8 @@ class BalWizardWEWidget(BalWizardWidget):
 
 
 class BalWizardLocktimeAndFeeWidget(BalWizardWidget):
-    title = "Bitcoin After Life Will Settings"
-    message = _("")
+    title = N_("Bitcoin After Life Will Settings")
+    message = ""
 
     def get_content(self):
         widget = QWidget()
@@ -748,7 +751,7 @@ class BalBuildWillDialog(BalDialog):
             return
         txs = None
         _logger.debug("close plugin phase 1 started")
-        varrow = self.msg_set_status("Checking variables")
+        varrow = self.msg_set_status(_("Checking variables"))
         try:
             self.bal_window.init_class_variables()
         except CheckAliveError as cae:
@@ -766,9 +769,9 @@ class BalBuildWillDialog(BalDialog):
                     "during phase1 CAE: {}, Continue to invalidate".format(cae)
                 )
                 self.msg_set_status(
-                    "Checking variables", varrow,
-                    "Check Alive Threshold Passed: you have to Invalidate "
-                    "your old Will",
+                    _("Checking variables"), varrow,
+                    _("Check Alive Threshold Passed: you have to Invalidate "
+                      "your old Will"),
                     self.COLOR_ERROR,
                 )
             else:
@@ -776,7 +779,7 @@ class BalBuildWillDialog(BalDialog):
             return None, tx
         except NoHeirsException:
             self.msg_set_status(
-                "Checking variables", varrow, self.msg_alert("No Heirs")
+                _("Checking variables"), varrow, self.msg_alert(_("No Heirs"))
             )
             return "no_heirs", None
         except Exception as e:
@@ -799,18 +802,20 @@ class BalBuildWillDialog(BalDialog):
                 max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
             )
             _logger.debug("variables ok")
-            self.msg_set_status("Checking variables", varrow, "Ok", self.COLOR_OK)
+            self.msg_set_status(_("Checking variables"), varrow, _("Ok"), self.COLOR_OK)
         except AmountException:
             self.msg_set_checking(
                 self.msg_warning(
-                    "In the inheritance process, "
-                    + "the entire wallet will always be fully emptied. \n"
-                    + "Your settings require an adjustment of the amounts"
+                    _(
+                        "In the inheritance process, "
+                        "the entire wallet will always be fully emptied. \n"
+                        "Your settings require an adjustment of the amounts"
+                    )
                 )
             )
         except WillExecutorFeeTooHighException as e:
             self.msg_set_checking(
-                self.msg_warning(f"Will-executor fee too high: {e}")
+                self.msg_warning(_("Will-executor fee too high: {}").format(e))
             )
 
         self.msg_set_checking()
@@ -833,7 +838,7 @@ class BalBuildWillDialog(BalDialog):
             # makes the CHECK button and the WIZARD behave identically and fixes
             # the missing-label bug (#03).
             _logger.debug("expired")
-            self.msg_set_checking("Expired")
+            self.msg_set_checking(_("Expired"))
             return "invalidate_classic", None
         except WillPostponedException as e:
             # An already signed/sent will is being postponed.  Like an expired
@@ -856,7 +861,7 @@ class BalBuildWillDialog(BalDialog):
             )
         except NoHeirsException:
             _logger.debug("no heirs")
-            self.msg_set_checking("No Heirs")
+            self.msg_set_checking(_("No Heirs"))
         except NotCompleteWillException as e:
             _logger.debug(f"not complete {e} true")
             message = False
@@ -1051,9 +1056,11 @@ class BalBuildWillDialog(BalDialog):
                     dust_heirs.setdefault(hid, heir[HEIR_DUST_AMOUNT])
         for hid, dust_amount in dust_heirs.items():
             self.msg_set_status(
-                f"{_('Heir')} {hid}",
+                _("Heir {}").format(hid),
                 None,
-                f"{dust_amount} is DUST - excluded (amount below dust limit)",
+                _("{} is DUST - excluded (amount below dust limit)").format(
+                    dust_amount
+                ),
                 self.COLOR_WARNING,
             )
 
@@ -1223,14 +1230,14 @@ class BalBuildWillDialog(BalDialog):
         for i in range(secs, 0, -1):
             if self._stopping:
                 return
-            wait_row = self.msg_edit_row(_(f"Please wait {i}secs"), wait_row)
+            wait_row = self.msg_edit_row(_("Please wait {}secs").format(i), wait_row)
             time.sleep(1)
         self.msg_del_row(wait_row)
 
     def loop_broadcast_invalidating(self, tx):
         if self._stopping:
             return
-        self.msg_set_invalidating("Broadcasting")
+        self.msg_set_invalidating(_("Broadcasting"))
         try:
             tx.add_info_from_wallet(self.bal_window.wallet)
             self.network.run_from_another_thread(tx.add_info_from_network(self.network))
@@ -1341,7 +1348,7 @@ class BalBuildWillDialog(BalDialog):
                 done["count"] += 1
                 # Show the per-server result (Ok/Ko) in bold + color so the
                 # outcome stands out, keeping the server URL in normal weight.
-                result = self.msg_ok("Ok") if ok else self.msg_error("Ko")
+                result = self.msg_ok(_("Ok")) if ok else self.msg_error(_("Ko"))
                 self.msg_edit_row("{} : {}".format(url, result))
                 self.msg_set_pushing(_status_line())
 
@@ -1393,8 +1400,11 @@ class BalBuildWillDialog(BalDialog):
                     if self._stopping:
                         return
                     row = self.msg_edit_row(
-                        "checking {} - {} : <b>{}</b>".format(
-                            self.bal_window.willitems[wid].we["url"], wid, "Waiting"
+                        "{} : <b>{}</b>".format(
+                            _("checking {} - {}").format(
+                                self.bal_window.willitems[wid].we["url"], wid
+                            ),
+                            _("Waiting"),
                         )
                     )
                     w = self.bal_window.willitems[wid]
@@ -1407,9 +1417,10 @@ class BalBuildWillDialog(BalDialog):
                     checked = self.bal_window.willitems[wid].get_status("CHECKED")
                     result = self.msg_ok(checked) if checked else self.msg_error(checked)
                     row = self.msg_edit_row(
-                        "checked {} - {} : {}".format(
-                            self.bal_window.willitems[wid].we["url"],
-                            wid,
+                        "{} : {}".format(
+                            _("checked {} - {}").format(
+                                self.bal_window.willitems[wid].we["url"], wid
+                            ),
                             result,
                         ),
                         row,
@@ -1457,7 +1468,7 @@ class BalBuildWillDialog(BalDialog):
                 raise Exception("not tx")
         except Exception as e:
             (f"exception:{e}")
-            self.msg_set_invalidating(f"Error: {e}")
+            self.msg_set_invalidating(_("Error: {}").format(e))
             raise Exception("Impossible to sign") from e
 
     def on_success_invalidate(self, success):
@@ -1825,8 +1836,11 @@ class BalBuildWillDialog(BalDialog):
 
             basic_mode = self.bal_window.bal_plugin.is_basic_mode()
             if basic_mode:
-                raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.default
-                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.default
+                # Factory defaults, in the GUI language (see BalConfig).
+                raw_description = (
+                    self.bal_window.bal_plugin.EVENT_DESCRIPTION.localized_default()
+                )
+                raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.localized_default()
                 threshold = None
                 num_reminders = 3
             else:
@@ -1863,6 +1877,7 @@ class BalBuildWillDialog(BalDialog):
                 version=self.bal_window.bal_plugin.version,
                 num_reminders=num_reminders,
                 threshold=threshold,
+                reminder_suffix=_("(reminder {idx}/{total})"),
             )
         except Exception as e:
             _logger.error(f"failed to generate .ics: {e}")
@@ -2006,7 +2021,7 @@ class BalBuildWillDialog(BalDialog):
     def on_error_phase1(self, error):
         self.bal_window.update_all()
         a, b, c = error
-        self.msg_edit_row(self.msg_error(f"Error: {b}"))
+        self.msg_edit_row(self.msg_error(_("Error: {}").format(b)))
         import traceback
         _logger.error(f"error phase1: {b}\n{''.join(traceback.format_exception(a, b, c))}")
         button=QPushButton(_("Close"))
@@ -2017,7 +2032,7 @@ class BalBuildWillDialog(BalDialog):
     def on_error_phase2(self, error):
         self.bal_window.upade_all()
         a, b, c = error
-        self.msg_edit_row(self.msg_error(f"Error: {b}"))
+        self.msg_edit_row(self.msg_error(_("Error: {}").format(b)))
         _logger.error(f"error phase2: {b}")
 
     def _executed_inheritance_status(self):
@@ -2203,9 +2218,9 @@ class BalBuildWillDialog(BalDialog):
         }
 
         if reason in messages:
-            return messages[reason] + "\n\n" + _("Skipped")
+            return "{}\n\n{}".format(messages[reason], _("Skipped"))
 
-        return (
+        return "{}\n\n{}".format(
             _(
                 "Could not build the will, and the exact cause could not be "
                 "determined. Please check that:\n"
@@ -2213,12 +2228,14 @@ class BalBuildWillDialog(BalDialog):
                 "- each heir's share is above the minimum (dust limit),\n"
                 "- the Check Alive date is EARLIER than the delivery date,\n"
                 "- at least one will-executor is selected and reachable."
-            )
-            + "\n\n"
-            + _("Skipped")
+            ),
+            _("Skipped"),
         )
 
-    def msg_set_checking(self, status="Waiting", row=None):
+    def msg_set_checking(self, status=None, row=None):
+        # The default is resolved here, not in the signature: a default
+        # argument is evaluated at import time, before the catalog is loaded.
+        status = _("Waiting") if status is None else status
         row = self.check_row if row is None else row
         self.check_row = self.msg_set_status(_("Checking your will"), row, status)
 
@@ -2231,30 +2248,36 @@ class BalBuildWillDialog(BalDialog):
     def msg_set_building(self, status=None, row=None,color=None):
         row = self.build_row if row is None else row
         self.build_row = self.msg_set_status(
-            "Building your will", self.build_row, status, color
+            _("Building your will"), self.build_row, status, color
         )
 
     def msg_set_signing(self, status=None, row=None):
         row = self.sign_row if row is None else row
-        self.sign_row = self.msg_set_status("Signing your will", self.sign_row, status)
+        self.sign_row = self.msg_set_status(
+            _("Signing your will"), self.sign_row, status
+        )
 
     def msg_set_pushing(self, status=None, row=None):
         row = self.push_row if row is None else row
         self.push_row = self.msg_set_status(
-            "Broadcasting your will to executors", self.push_row, status
+            _("Broadcasting your will to executors"), self.push_row, status
         )
 
     def msg_set_waiting(self, status=None, row=None):
         row = self.wait_row if row is None else row
-        self.wait_row = self.msg_edit_row(f"Please wait {status}secs", self.wait_row)
+        self.wait_row = self.msg_edit_row(
+            _("Please wait {}secs").format(status), self.wait_row
+        )
 
     def msg_error(self, e):
         # Results are shown in bold so the outcome stands out from the
         # left-side state label (which stays in normal weight).
         return "<font color='{}'><b>{}</b></font>".format(self.COLOR_ERROR, e)
 
-    def msg_ok(self, e="Ok"):
-        # Results are shown in bold (see msg_error).
+    def msg_ok(self, e=None):
+        # Results are shown in bold (see msg_error). The default "Ok" is
+        # translated here, not in the signature (evaluated at import time).
+        e = _("Ok") if e is None else e
         return "<font color='{}'><b>{}</b></font>".format(self.COLOR_OK, e)
 
     def msg_warning(self, e):
@@ -2283,12 +2306,14 @@ class BalBuildWillDialog(BalDialog):
         # glance.  ``status`` may already contain rich-text emitted by
         # msg_ok/msg_error/msg_warning (which add their own <b>...</b>); wrapping
         # it again in <b> is harmless for those cases.
-        status = "Wait" if status is None else status
+        # ``msg`` must already be translated by the caller: a variable
+        # passed to _() cannot be extracted into the catalog.
+        status = _("Wait") if status is None else status
         if color is None:
-            line = "{}:\t<b>{}</b>".format(_(msg), status)
+            line = "{}:\t<b>{}</b>".format(msg, status)
         else:
             line = "{}:\t<font color={}><b>{}</b></font>".format(
-                _(msg), color, status
+                msg, color, status
             )
         return self.msg_edit_row(line, row)
 
@@ -2416,15 +2441,15 @@ class WillDetailDialog(BalDialog):
 
         self.paint_scroll_area()
         self.vlayout.addWidget(
-            QLabel(_("Expiration date: ") + str(BalTimestamp(self.threshold)))
+            QLabel(_("Expiration date: {}").format(BalTimestamp(self.threshold)))
         )
         self.vlayout.addWidget(self.scrollbox)
         w = QWidget()
         hlayout = QHBoxLayout(w)
         hlayout.addWidget(
-            QLabel(_("Valid Txs:") + str(len(Will.only_valid_list(self.will))))
+            QLabel(_("Valid Txs:{}").format(len(Will.only_valid_list(self.will))))
         )
-        hlayout.addWidget(QLabel(_("Total Txs:") + str(len(self.will))))
+        hlayout.addWidget(QLabel(_("Total Txs:{}").format(len(self.will))))
         self.vlayout.addWidget(w)
         self.setLayout(self.vlayout)
 
@@ -2477,18 +2502,19 @@ class WillDetailDialog(BalDialog):
 
     def toggle_replaced(self):
         self.bal_window.bal_plugin.hide_replaced()
-        toggle = _("Hide")
+        # Whole sentences, so a translation can change the word order.
+        text = _("Hide replaced")
         if self.bal_window.bal_plugin._hide_replaced:
-            toggle = _("Unhide")
-        self.toggle_replace_button.setText(f"{toggle} {_('replaced')}")
+            text = _("Unhide replaced")
+        self.toggle_replace_button.setText(text)
         self.update()
 
     def toggle_invalidated(self):
         self.bal_window.bal_plugin.hide_invalidated()
-        toggle = _("Hide")
+        text = _("Hide invalidated")
         if self.bal_window.bal_plugin._hide_invalidated:
-            toggle = _("Unhide")
-        self.toggle_invalidate_button.setText(_(f"{toggle} {_('invalidated')}"))
+            text = _("Unhide invalidated")
+        self.toggle_invalidate_button.setText(text)
         self.update()
 
     def update(self):
@@ -2768,7 +2794,7 @@ class BalQrExportWidget(QWidget):
         size_row = QHBoxLayout()
         size_row.addWidget(QLabel(_("QR code size:")))
         self.size_combo = QComboBox()
-        self.size_combo.addItems([label for label, _budget in CHUNK_PRESETS])
+        self.size_combo.addItems([_(label) for label, _budget in CHUNK_PRESETS])
         self.size_combo.setCurrentIndex(
             preset_index_for_chunk_size(self.chunk_size)
         )
@@ -2783,7 +2809,8 @@ class BalQrExportWidget(QWidget):
         self._format_options = ["balqr"] + list(ANIMATED_QR_FORMATS)
         self.format_combo.addItems(
             [
-                format_name(fmt) + ((" (default)") if fmt == "balqr" else "")
+                format_name(fmt)
+                + (" {}".format(_("(default)")) if fmt == "balqr" else "")
                 for fmt in self._format_options
             ]
         )

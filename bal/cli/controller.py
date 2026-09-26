@@ -91,17 +91,17 @@ def _user_facing(e):
             _(
                 "In the inheritance process, the entire wallet will always be "
                 "fully emptied. Your settings require an adjustment of the "
-                f"amounts: {e}"
-            )
+                "amounts: {}"
+            ).format(e)
         )
     if isinstance(e, heirs_mod.WillExecutorFeeTooHighException):
-        return UserFacingException(_(f"Will-executor fee too high: {e}"))
+        return UserFacingException(_("Will-executor fee too high: {}").format(e))
     if isinstance(e, heirs_mod.BalanceTooLowException):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.HeirAmountIsDustException):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.NotAnAddress):
-        return UserFacingException(_(f"not an address, {e}"))
+        return UserFacingException(_("not an address, {}").format(e))
     if isinstance(e, heirs_mod.AmountNotValid):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.LocktimeNotValid):

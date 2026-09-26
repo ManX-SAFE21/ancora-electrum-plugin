@@ -225,6 +225,7 @@ Phases 1 and 2 change nothing visible, so they may be delivered as a single ZIP/
   - mark the English defaults with `N_()`;
   - when the stored value is missing **or equal to the English default**, use the translated default at the moment the text is used (calendar export, history label);
   - the tokens must survive translation.
+  - **Changed during Phase 2 (safety):** `HISTORY_LABEL` stays English and is *not* translatable. `Util._label_matches_history()` uses it to recognise BAL's own local transactions (stale-history cleanup, spendable UTXOs), so a label that changed with the GUI language would no longer match the transactions saved before. Only `EVENT_SUMMARY` and `EVENT_DESCRIPTION` follow the language (`BalConfig(..., translatable=True)`). The same rule applies to every stored or compared text (wallet labels, `heirs.TRANSACTION_LABEL`, the status history).
 - **2.10** `pyproject.toml`: add `"INT"` to `[tool.ruff.lint] select`.
   - Ruff's hint suggests `%` formatting: **do not follow it**. Use `.format()`, which is Electrum's rule.
   - `make-release.sh` treats Ruff errors as blocking, so INT must end up clean.

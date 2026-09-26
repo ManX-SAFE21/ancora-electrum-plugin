@@ -147,6 +147,7 @@ def build_ics_reminders(
     num_reminders: int = 3,
     now: Optional[datetime] = None,
     threshold: Optional[datetime] = None,
+    reminder_suffix: str = "(reminder {idx}/{total})",
 ) -> Optional[str]:
     """Build the ``.ics`` content with one VEVENT per reminder date.
 
@@ -169,6 +170,10 @@ def build_ics_reminders(
         num_reminders: requested reminder count (ADVANCED mode only).
         now: "today" reference; defaults to ``datetime.now()``.
         threshold: check-alive date (ADVANCED mode only; required there).
+        reminder_suffix: text appended to each event summary, with the
+            ``{idx}`` and ``{total}`` fields. This module stays free of
+            Electrum imports, so the GUI passes it already translated; the
+            English default keeps the CLI output unchanged.
 
     Returns:
         The ``.ics`` content string, or ``None`` when no reminder falls in the
@@ -210,7 +215,9 @@ def build_ics_reminders(
         # The visible date of this event: "offset" days before the deadline.
         event_dt = format_time(locktime - timedelta(days=offset))
         # Suffix the summary so the N events are easy to tell apart.
-        event_summary = ical_escape(f"{summary_base} (reminder {idx}/{total})")
+        event_summary = ical_escape(
+            "{} {}".format(summary_base, reminder_suffix.format(idx=idx, total=total))
+        )
         lines.extend([
             "BEGIN:VEVENT",
             # Offset in the UID keeps each event unique (no merging).

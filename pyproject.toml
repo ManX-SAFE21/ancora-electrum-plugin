@@ -3,7 +3,7 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-select =["E", "W", "F", "I", "N", "B"]
+select =["E", "W", "F", "I", "N", "B", "INT"]  # INT: gettext rules (see bal/i18n.py)
 ignore = ["E501"]
 
 [tool.ruff.lint.pep8-naming]

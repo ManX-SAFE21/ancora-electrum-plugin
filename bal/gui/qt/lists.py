@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 from PyQt6.QtWidgets import QMessageBox, QStyledItemDelegate
 
 from .common import (
+    N_,
     OP_RETURN_PREFIX,
     BalTimestamp,
     Buttons,
@@ -59,6 +60,7 @@ from .common import (
     datetime,
     enum,
     export_meta_gui,
+    format_status_history,
     getOpenFileName,
     import_meta_gui,
     is_op_return_address,
@@ -69,6 +71,7 @@ from .common import (
     server_status_tooltip,
     signature_suffix,
     status_color,
+    translated_headers,
     tx_from_any,
     write_json_file,
 )
@@ -128,9 +131,9 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         AMOUNT = enum.auto()
 
     headers = {
-        Columns.NAME: _("Name"),
-        Columns.ADDRESS: _("Address"),
-        Columns.AMOUNT: _("Amount"),
+        Columns.NAME: N_("Name"),
+        Columns.ADDRESS: N_("Address"),
+        Columns.AMOUNT: N_("Amount"),
     }
     filter_columns = [Columns.NAME, Columns.ADDRESS]
 
@@ -245,7 +248,7 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
             col=self.Columns.NAME, role=self.ROLE_HEIR_KEY
         )
         self.model().clear()
-        self.update_headers(self.__class__.headers)
+        self.update_headers(translated_headers(self.__class__.headers))
         set_current = None
         for key in sorted(self.bal_window.heirs.keys()):
             heir = self.bal_window.heirs[key]
@@ -337,11 +340,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         SERVER = enum.auto()
 
     headers = {
-        Columns.LOCKTIME: _("Locktime"),
-        Columns.TXID: _("Txid"),
-        Columns.WILLEXECUTOR: _("Will-Executor"),
-        Columns.STATUS: _("Status"),
-        Columns.SERVER: _("Server"),
+        Columns.LOCKTIME: N_("Locktime"),
+        Columns.TXID: N_("Txid"),
+        Columns.WILLEXECUTOR: N_("Will-Executor"),
+        Columns.STATUS: N_("Status"),
+        Columns.SERVER: N_("Server"),
     }
 
     ROLE_HEIR_KEY = Qt.ItemDataRole.UserRole + 2000
@@ -586,7 +589,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         if bal_tx.we:
             we = bal_tx.we["url"]
         labels[self.Columns.WILLEXECUTOR] = we
-        status = bal_tx.status + signature_suffix(bal_tx)
+        status = format_status_history(bal_tx.status) + signature_suffix(bal_tx)
         if len(status) > 53:
             status = "...{}".format(status[-50:])
         labels[self.Columns.STATUS] = status
@@ -644,7 +647,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             col=self.Columns.TXID, role=self.ROLE_HEIR_KEY
         )
         self.model().clear()
-        self.update_headers(self.__class__.headers)
+        self.update_headers(translated_headers(self.__class__.headers))
 
         set_current = None
         for txid, bal_tx in self.will.items():
@@ -676,7 +679,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # The Wizard is the main entry point to create an inheritance, so make
         # it stand out: show a bold label next to a slightly larger icon (the
         # plain icon-only button was too easy to overlook).
-        wizard = QPushButton("  " + _("Build Your Will"))
+        wizard = QPushButton("  {}".format(_("Build Your Will")))
         wizard.setIcon(
             read_QIcon_from_bytes(
                 self.bal_window.bal_plugin.read_file("icons/wizard.png")
@@ -904,12 +907,12 @@ class WillExecutorListWidget(MyTreeView):
         ADDRESS = enum.auto()
 
     headers = {
-        Columns.SELECTED: _(""),
-        Columns.URL: _("Url"),
-        Columns.STATUS: _("S"),
-        Columns.BASE_FEE: _("Base fee"),
-        Columns.INFO: _("Info"),
-        Columns.ADDRESS: _("Default Address"),
+        Columns.SELECTED: "",
+        Columns.URL: N_("Url"),
+        Columns.STATUS: N_("S"),
+        Columns.BASE_FEE: N_("Base fee"),
+        Columns.INFO: N_("Info"),
+        Columns.ADDRESS: N_("Default Address"),
     }
 
     filter_columns = [Columns.URL]
@@ -1091,7 +1094,7 @@ class WillExecutorListWidget(MyTreeView):
                 col=self.Columns.URL, role=self.ROLE_HEIR_KEY
             )
             self.model().clear()
-            self.update_headers(self.__class__.headers)
+            self.update_headers(translated_headers(self.__class__.headers))
 
             set_current = None
 
@@ -1236,13 +1239,14 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         buttonbox.addWidget(b)
 
         def _menu_button(label):
+            # ``label`` must already be translated by the caller.
             btn = QToolButton()
-            btn.setText(_(label))
+            btn.setText(label)
             btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
             buttonbox.addWidget(btn)
             return btn
 
-        export_btn = _menu_button("Export")
+        export_btn = _menu_button(_("Export"))
         export_menu = QMenu(export_btn)
         export_menu.addAction(_("Export all"), lambda: self.export_file())
         export_menu.addAction(
@@ -1253,7 +1257,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         )
         export_btn.setMenu(export_menu)
 
-        ping_btn = _menu_button("Ping All")
+        ping_btn = _menu_button(_("Ping All"))
         ping_menu = QMenu(ping_btn)
         ping_menu.addAction(_("Ping all"), lambda: self.update_willexecutors())
         ping_menu.addAction(
@@ -1261,7 +1265,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         )
         ping_btn.setMenu(ping_menu)
 
-        select_btn = _menu_button("Select All")
+        select_btn = _menu_button(_("Select All"))
         select_menu = QMenu(select_btn)
         select_menu.addAction(_("Select all"), lambda: self.set_select_all(True))
         select_menu.addAction(
@@ -1295,7 +1299,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
 
         url_edit = QLineEdit()
         url_edit.setFixedWidth(32 * char_width_in_lineedit())
-        info_edit = QLineEdit("New Will Executor")
+        info_edit = QLineEdit(_("New Will Executor"))
         info_edit.setFixedWidth(32 * char_width_in_lineedit())
         base_fee_spin = QSpinBox()
         base_fee_spin.setRange(0, 1000000)
@@ -1309,7 +1313,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
 
         if executor:
             url_edit.setText(edit_key)
-            info_edit.setText(str(executor.get("info", "New Will Executor")))
+            info_edit.setText(str(executor.get("info", _("New Will Executor"))))
             base_fee_spin.setValue(int(executor.get("base_fee", 0)))
             address_edit.setText(str(executor.get("address", "")))
 
@@ -1469,7 +1473,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
                 break
             self._add_another = False
             url_edit.clear()
-            info_edit.setText("New Will Executor")
+            info_edit.setText(_("New Will Executor"))
             base_fee_spin.setValue(0)
             address_edit.clear()
 

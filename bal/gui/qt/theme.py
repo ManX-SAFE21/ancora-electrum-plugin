@@ -87,7 +87,7 @@ def server_status_text(will_item) -> str:
     the user always knows whether each inheritance transaction is actually
     stored on the will-executor servers, regardless of the row colour.
     """
-    from electrum.i18n import _
+    from ...i18n import _
 
     if will_item.get_status("CHECK_FAIL") and not will_item.get_status("CHECKED"):
         return _("Not on server")
@@ -105,7 +105,7 @@ def server_status_text(will_item) -> str:
 def server_status_tooltip(will_item) -> str:
     """Return a detailed tooltip for the "Server" column, including the
     will-executor URL (if any) and the current server state."""
-    from electrum.i18n import _
+    from ...i18n import _
 
     url = None
     we = getattr(will_item, "we", None)

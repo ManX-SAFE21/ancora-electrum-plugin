@@ -20,6 +20,7 @@ from electrum.util import EventListener, event_listener
 from PyQt6.QtWidgets import QLayout
 
 from ...core.qrtransfer import CHUNK_PRESETS, preset_index_for_chunk_size
+from ...i18n import init_from_config
 from .common import (
     BalPlugin,
     Buttons,
@@ -67,6 +68,11 @@ class Plugin(BalPlugin, EventListener):
     def __init__(self, parent, config, name):
         _logger.info("INIT BALPLUGIN")
         BalPlugin.__init__(self, parent, config, name)
+        # Load BAL's catalog for the language Electrum's GUI is using, before
+        # any window or dialog builds its texts. It must come after
+        # BalPlugin.__init__: read_file() needs the plugin's parent and name.
+        # The CLI plugin does not call this, so the CLI stays in English.
+        init_from_config(self, config)
         self.bal_windows = {}
         # Status-bar buttons, keyed by id(sb.window()).  Tracking them lets us
         # remove a stale button before creating a fresh one when a wallet is
@@ -298,7 +304,7 @@ class Plugin(BalPlugin, EventListener):
                 pass
         b = StatusBarButton(
             read_QIcon_from_bytes(self.read_file("icons/bal32x32.png")),
-            "Bal " + _("Bitcoin After Life"),
+            "Bal {}".format(_("Bitcoin After Life")),
             lambda: self.settings_dialog(sb.window()),
             sb.height(),
         )
@@ -442,7 +448,7 @@ class Plugin(BalPlugin, EventListener):
 
     def settings_dialog(self, window=None, wallet=None):
 
-        d = BalDialog(window, self, self.get_window_title("Settings"))
+        d = BalDialog(window, self, self.get_window_title(_("Settings")))
         d.setMinimumSize(100, 200)
         qicon = read_QPixmap_from_bytes(self.read_file("icons/bal16x16.png"))
         lbl_logo = QLabel()
@@ -537,7 +543,8 @@ class Plugin(BalPlugin, EventListener):
         # Ordered low -> high so the user picks the resolution matching their
         # camera. Visible to all users (BASIC and ADVANCED).
         qr_size_combo = QComboBox()
-        qr_size_combo.addItems([label for label, _budget in CHUNK_PRESETS])
+        # Labels marked for translation in common.QR_PRESET_LABELS.
+        qr_size_combo.addItems([_(label) for label, _budget in CHUNK_PRESETS])
         qr_size_combo.setCurrentIndex(
             preset_index_for_chunk_size(int(self.QR_CHUNK_SIZE.get()))
         )
@@ -656,9 +663,9 @@ class Plugin(BalPlugin, EventListener):
                 elif kind == "spin":
                     widget.setValue(int(cfg.default))
                 elif kind == "line":
-                    widget.setText(cfg.default)
+                    widget.setText(cfg.localized_default())
                 elif kind == "text":
-                    widget.setPlainText(cfg.default)
+                    widget.setPlainText(cfg.localized_default())
                 elif kind == "user_type":
                     widget.setCurrentIndex(
                         1 if str(cfg.default).lower() == "advanced" else 0
@@ -670,7 +677,7 @@ class Plugin(BalPlugin, EventListener):
             btn.clicked.connect(reset)
             return btn
 
-        heir_repush = QPushButton("Rebroadcast transactions")
+        heir_repush = QPushButton(_("Rebroadcast transactions"))
         heir_repush.clicked.connect(partial(self.broadcast_transactions, True))
         bal_mode = QComboBox()
         options = ["Easy", "Advanced", "Experimental"]
@@ -696,27 +703,27 @@ class Plugin(BalPlugin, EventListener):
         # advanced-only settings, so the user picks basic/advanced first.
         add_widget(
             grid,
-            "Hide Replaced",
+            _("Hide Replaced"),
             heir_hide_replaced,
             0,
-            "Hide replaced transactions from will detail and list",
+            _("Hide replaced transactions from will detail and list"),
         )
         grid.addWidget(_make_reset_btn(self.HIDE_REPLACED, heir_hide_replaced, "check"), 0, 3)
         add_widget(
             grid,
-            "Hide Invalidated",
+            _("Hide Invalidated"),
             heir_hide_invalidated,
             1,
-            "Hide invalidated transactions from will detail and list",
+            _("Hide invalidated transactions from will detail and list"),
         )
         grid.addWidget(_make_reset_btn(self.HIDE_INVALIDATED, heir_hide_invalidated, "check"), 1, 3)
         lbl_auto_sign = QLabel(_("Auto-sign on Check"))
-        help_auto_sign = HelpButton(
+        help_auto_sign = HelpButton(_(
             "When checking, automatically sign and broadcast the will "
             "transactions to their will-executors.\n"
             "The wallet password is requested only if the wallet is "
             "encrypted."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_auto_sign), 2, 0)
         grid.addWidget(_hide_if_basic(heir_auto_sign), 2, 1)
         grid.addWidget(_hide_if_basic(help_auto_sign), 2, 2)
@@ -726,10 +733,10 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_auto_sign), 2, 3)
         add_widget(
             grid,
-            "Panel editable Date and Fee",
+            _("Panel editable Date and Fee"),
             heir_editable_dates,
             3,
-            (
+            _(
                 "When enabled, the delivery-time and check-alive date fields "
                 "can be edited everywhere (toolbar / Heirs tab), not only in "
                 "the will-building wizard.\n"
@@ -741,10 +748,10 @@ class Plugin(BalPlugin, EventListener):
         # will-executor. Visible to all users (BASIC and ADVANCED).
         add_widget(
             grid,
-            "Max Will-Executor Fee (satoshi)",
+            _("Max Will-Executor Fee (satoshi)"),
             heir_max_willexecutor_fee,
             4,
-            (
+            _(
                 "Maximum fee (in satoshi) allowed to be paid to a single "
                 "will-executor. If a will-executor charges more than this, "
                 "the will will not be built.\n"
@@ -756,10 +763,10 @@ class Plugin(BalPlugin, EventListener):
         # user chooses basic/advanced first, then sees the relevant options.
         add_widget(
             grid,
-            "User Type",
+            _("User Type"),
             user_type_combo,
             5,
-            (
+            _(
                 "Choose how much detail the plugin shows.\n\n"
                 "BASIC: simplified interface, safe configuration for most "
                 "users.\n\n"
@@ -774,10 +781,10 @@ class Plugin(BalPlugin, EventListener):
         # only in ADVANCED mode.  In BASIC mode the factory defaults are always
         # used and these settings are hidden.
         lbl_num_reminders = QLabel(_("Number of reminders"))
-        help_num_reminders = HelpButton(
+        help_num_reminders = HelpButton(_(
             "How many reminder alarms the exported calendar (.ics) event "
             "contains.  Range: 1 to 5 (default 3).  Only used in ADVANCED mode."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_num_reminders), 6, 0)
         grid.addWidget(_hide_if_basic(heir_num_reminders), 6, 1)
         grid.addWidget(_hide_if_basic(help_num_reminders), 6, 2)
@@ -785,13 +792,13 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_6), 6, 3)
 
         lbl_event_summary = QLabel(_("Event summary"))
-        help_event_summary = HelpButton(
+        help_event_summary = HelpButton(_(
             "Default message to be used in event summary\n"
             "Variables:\n"
             "  $wallet_name: name of wallet\n"
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_event_summary), 7, 0)
         grid.addWidget(_hide_if_basic(edit_event_summary), 7, 1)
         grid.addWidget(_hide_if_basic(help_event_summary), 7, 2)
@@ -799,13 +806,13 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_7), 7, 3)
 
         lbl_event_description = QLabel(_("Event description"))
-        help_event_description = HelpButton(
+        help_event_description = HelpButton(_(
             "Default message to be used in event description\n"
             "Variables:\n"
             "  $wallet_name: name of wallet\n"
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_event_description), 8, 0)
         grid.addWidget(_hide_if_basic(edit_event_description), 8, 1)
         grid.addWidget(_hide_if_basic(help_event_description), 8, 2)
@@ -814,10 +821,10 @@ class Plugin(BalPlugin, EventListener):
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
         # factory default is always used and the setting is hidden.
         lbl_welist_server = QLabel(_("Welist Server URL"))
-        help_welist_server = HelpButton(
+        help_welist_server = HelpButton(_(
             "URL of the server that provides the will-executor list.  "
             "Only available in ADVANCED mode."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_welist_server), 9, 0)
         grid.addWidget(_hide_if_basic(edit_welist_server), 9, 1)
         grid.addWidget(_hide_if_basic(help_welist_server), 9, 2)
@@ -825,11 +832,11 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_9), 9, 3)
 
         lbl_calendar_app = QLabel(_("Calendar app command"))
-        help_calendar_app = HelpButton(
+        help_calendar_app = HelpButton(_(
             "Command used to open .ics calendar files.\n"
             "Leave empty to use the system default (xdg-open/open/start).\n"
             "Only used in ADVANCED mode."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_calendar_app), 10, 0)
         grid.addWidget(_hide_if_basic(edit_calendar_app), 10, 1)
         grid.addWidget(_hide_if_basic(help_calendar_app), 10, 2)
@@ -840,13 +847,13 @@ class Plugin(BalPlugin, EventListener):
         # label field is disabled while the checkbox is off (see
         # on_save_history_change above).
         lbl_save_history = QLabel(_("Save inheritance transactions in history"))
-        help_save_history = HelpButton(
+        help_save_history = HelpButton(_(
             "After each check, save the valid will transactions into the "
             "wallet's local history (the History tab), each with a label.\n"
             "The label may contain the variable:\n"
             "  {willexecutor}: replaced with the will-executor URL of the item\n"
             "Only used in ADVANCED mode."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_save_history), 11, 0)
         grid.addWidget(_hide_if_basic(heir_save_history), 11, 1)
         grid.addWidget(_hide_if_basic(help_save_history), 11, 2)
@@ -854,13 +861,13 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_11), 11, 3)
 
         lbl_history_label = QLabel(_("History label"))
-        help_history_label = HelpButton(
+        help_history_label = HelpButton(_(
             "Label applied to the will transactions saved into the wallet's "
             "local history.\n"
             "Variables:\n"
             "  {willexecutor}: replaced with the will-executor URL of the item\n"
             "Only used in ADVANCED mode."
-        )
+        ))
         grid.addWidget(_hide_if_basic(lbl_history_label), 12, 0)
         grid.addWidget(_hide_if_basic(edit_history_label), 12, 1)
         grid.addWidget(_hide_if_basic(help_history_label), 12, 2)
@@ -877,7 +884,7 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(heir_repush, 13, 0)
         grid.addWidget(
             HelpButton(
-                "Broadcast all transactions to willexecutors including those already pushed"
+                _("Broadcast all transactions to willexecutors including those already pushed")
             ),
             13,
             2,
@@ -887,12 +894,12 @@ class Plugin(BalPlugin, EventListener):
         # Placed below the rebroadcast button so the existing rows keep their
         # numbers.
         lbl_rebuild_on_close = QLabel(_("Rebuild will on wallet close"))
-        help_rebuild_on_close = HelpButton(
+        help_rebuild_on_close = HelpButton(_(
             "Run the 'Build your will' wizard every time the wallet is closed "
             "or Electrum is quit, so the will is rebuilt and re-validated.\n"
             "When disabled, the will is only rebuilt when you press Check or "
             "Prepare. The last built state is still saved to the wallet."
-        )
+        ))
         grid.addWidget(lbl_rebuild_on_close, 14, 0)
         grid.addWidget(heir_rebuild_on_close, 14, 1)
         grid.addWidget(help_rebuild_on_close, 14, 2)
@@ -905,7 +912,7 @@ class Plugin(BalPlugin, EventListener):
         # BASIC + ADVANCED), right below the "Rebuild will on wallet close"
         # row.
         lbl_auto_rebuild = QLabel(_("Rebuild automatically on new transactions"))
-        help_auto_rebuild = HelpButton(
+        help_auto_rebuild = HelpButton(_(
             "When a new transaction arrives for the wallet, automatically "
             "rebuild the will the same way the wizard does at wallet close: "
             "the delivery date is anticipated by one day so the new will "
@@ -916,7 +923,7 @@ class Plugin(BalPlugin, EventListener):
             "threshold, or when the threshold is already in the past.\n"
             "When disabled (default), the will is only rebuilt on Check / "
             "Prepare / wallet close."
-        )
+        ))
         grid.addWidget(lbl_auto_rebuild, 15, 0)
         grid.addWidget(heir_auto_rebuild, 15, 1)
         grid.addWidget(help_auto_rebuild, 15, 2)
@@ -929,13 +936,13 @@ class Plugin(BalPlugin, EventListener):
         # size used when exporting a will via QR codes; changeable per export
         # inside the export dialog itself.
         lbl_qr_size = QLabel(_("QR Code Size"))
-        help_qr_size = HelpButton(
+        help_qr_size = HelpButton(_(
             "Payload size of a single QR code when exporting a will via QR.\n\n"
             "Larger QR codes hold more data (fewer shots) but are easier to "
             "scan with a high-resolution camera; smaller QR codes scan fine "
             "even with low-resolution cameras but require more shots.\n"
             "The same selector is available inside the export dialog."
-        )
+        ))
         grid.addWidget(lbl_qr_size, 16, 0)
         grid.addWidget(qr_size_combo, 16, 1)
         grid.addWidget(help_qr_size, 16, 2)
@@ -990,9 +997,9 @@ class Plugin(BalPlugin, EventListener):
                 elif kind == "spin":
                     widget.setValue(int(cfg.default))
                 elif kind == "line":
-                    widget.setText(cfg.default)
+                    widget.setText(cfg.localized_default())
                 elif kind == "text":
-                    widget.setPlainText(cfg.default)
+                    widget.setPlainText(cfg.localized_default())
                 elif kind == "user_type":
                     # Default is "basic" -> combo index 0; "advanced" -> index 1.
                     widget.setCurrentIndex(
@@ -1031,7 +1038,7 @@ class Plugin(BalPlugin, EventListener):
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(btn_reset)
         bottom_row.addStretch(1)
-        bottom_row.addWidget(QLabel("<b>" + _("Support:") + "</b>"))
+        bottom_row.addWidget(QLabel("<b>{}</b>".format(_("Support:"))))
         bottom_row.addWidget(lbl_support)
 
         # Outer layout: warning (top) -> settings grid -> bottom button row.
@@ -1083,6 +1090,11 @@ class Plugin(BalPlugin, EventListener):
                         )
 
     def get_window_title(self, title):
-        return _("BAL - ") + _(title)
+        """Return the window title "BAL - <title>".
+
+        ``title`` must already be translated by the caller: a variable passed
+        to _() cannot be extracted into the catalog.
+        """
+        return _("BAL - {}").format(title)
 
 
