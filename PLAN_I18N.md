@@ -274,7 +274,7 @@ Recorded on 2026-09-26 from the owner's answers.
   | invalidate | invalida il piano |
   | invalidation (noun) | invalidazione del piano |
   | anticipate / postpone | anticipa / posticipa |
-  | locktime | locktime (tempo del blocco) |
+  | locktime | locktime (kept in English; owner, 2026-09-26) |
   | fee | commissione (as Electrum) |
   | broadcast | trasmetti il piano |
   | sign / signed | firma / firmato (as Electrum) |

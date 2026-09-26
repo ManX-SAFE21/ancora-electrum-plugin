@@ -34,3 +34,6 @@ tmp*
 # Release artifacts
 bal_v*.zip.*
 tests/karen7
+
+# Compiled translations: build_zip.py rebuilds them from the .po sources
+*.mo

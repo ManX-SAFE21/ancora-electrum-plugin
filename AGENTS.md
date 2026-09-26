@@ -83,6 +83,32 @@ QT_QPA_PLATFORM=offscreen python3 -m pytest tests/test_core_*.py -q
   registration API differs between them (`json_db.register_dict` vs
   `stored_dict.register_name`).
 
+## Translations (i18n)
+
+How it works: `bal/i18n.py` (Electrum's catalog first, then BAL's, then
+English). Plan and decisions: `PLAN_I18N.md`.
+
+- Sources in git: `babel.cfg`, `bal/locale/bal.pot` (template) and
+  `bal/locale/<lang>/LC_MESSAGES/bal.po` (one per language). The compiled
+  `.mo` files are NOT in git: `build_zip.py` builds them into the zip.
+- Writing texts: `_("... {}").format(x)`, never f-strings or `%` inside
+  `_()` (Ruff INT); `N_()` for class attributes/constants, translated with
+  `_()` when shown. Never translate stored or compared text (wallet labels,
+  `HISTORY_LABEL`, the status history).
+- After changing texts, refresh the catalogs (then translate the new
+  entries, e.g. with Poedit):
+  ```bash
+  pybabel extract -F babel.cfg --no-wrap -o bal/locale/bal.pot .
+  pybabel update -i bal/locale/bal.pot -d bal/locale -D bal --no-wrap
+  ```
+- New language: `pybabel init -i bal/locale/bal.pot -d bal/locale -D bal -l <lang>`
+  (use Electrum's language code, e.g. `de_DE`).
+- Dev install (symlink, not the zip): compile once to see the translations,
+  `pybabel compile -d bal/locale -D bal`.
+- `tests/test_translations.py` checks every catalog ({} fields, `$tokens`,
+  no addresses/links/e-mails added by a translation) and prints a summary
+  when run standalone.
+
 ## Build / release
 
 ```bash
@@ -90,6 +116,8 @@ python3 build_zip.py   # -> bal-electrum-plugin.zip (deterministic, prints sha25
 ./make-release.sh [v0.x.y]   # bump manifest version, tag, sign, push Gitea release
 ```
 
+- `build_zip.py` needs **Babel** (`pip install babel`): it compiles the
+  translation catalogs into the zip and stops if Babel is missing.
 - `make-release.sh` requires gpg and Gitea credentials (`~/.git-credentials`
   or `GITEA_USER`/`GITEA_TOKEN`). It bumps `bal/manifest.json` — bump the
   version there, never invent a new source of truth.

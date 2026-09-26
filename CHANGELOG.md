@@ -3416,3 +3416,35 @@ depends on the GUI language.
 - Babel extraction (GUI + core): 424 strings (about 3,000 words), was 323.
 
 **Outcome:** DONE, pending the owner's test of the ZIP.
+
+## 60. i18n phase 3: Italian catalog
+
+**Date:** 2026-09-26 (branch `feature/i18n`, see `PLAN_I18N.md`)
+
+**Goal (owner request):** with Electrum set to Italian, BAL shows in Italian.
+
+**What changed:**
+
+- `babel.cfg` (extraction mapping, CLI and wallet_util excluded),
+  `bal/locale/bal.pot` (template, 424 texts) and the Italian catalog
+  `bal/locale/it_IT/LC_MESSAGES/bal.po`: 43 entries copied from Electrum's
+  own it_IT catalog (same English text), the others drafted following the
+  owner's glossary (D1). Draft to be reviewed by the owner (D2).
+- `build_zip.py` compiles every `bal.po` into `bal.mo` inside the zip
+  (Babel required, the build stops without it); `.po`/`.pot` are not
+  shipped and `*.mo` is ignored by git (D4).
+- New `tests/test_translations.py`: every catalog compiles; `{}` fields and
+  `$tokens` match the English text; no Bitcoin address, e-mail, URL or long
+  letters-and-digits word that the English text does not have (patterns from
+  Electrum's `electrum-locale/update.py`).
+- `AGENTS.md`: how to update the catalogs, add a language, compile for the
+  development install.
+
+**Verification (Electrum 4.8.2, offscreen):** `tests/test_translations.py`
+OK (it_IT: 424 translated, 0 untranslated, 0 fuzzy); all offline tests 640
+passed, only the pre-existing failures of entry 59; the built zip contains
+only `bal/locale/it_IT/LC_MESSAGES/bal.mo` for the translations and
+`external_zip_test.py` loads it; Ruff: no new errors.
+
+**Outcome:** DONE, pending the owner's review of the Italian texts and test
+of the ZIP.
