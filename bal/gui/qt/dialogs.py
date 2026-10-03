@@ -43,8 +43,6 @@ from ...core.animated_qr import (
     bbqr_frames,
     format_name,
     parse_for_detection,
-    ur1_frames,
-    ur2_frames,
 )
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
@@ -54,13 +52,9 @@ from ...core.checkalive import (
 )
 from ...core.qrtransfer import (
     CHUNK_PRESETS,
-    MissingFramesError,
-    QrTransferError,
     decode_transfer,
     encode_transfer,
-    encode_transfer_best,
     preset_index_for_chunk_size,
-    split_frames,
 )
 from ...core.reminders import build_ics_reminders
 from .calendar import BalCalendarButton
@@ -145,29 +139,6 @@ if TYPE_CHECKING:
 
 # NOTE: list views (HeirListWidget, PreviewList, WillExecutorWidget) are
 # imported lazily where needed to avoid a dialogs<->lists import cycle.
-
-
-# Animated-QR formats beyond the legacy BAL QR. Combined with the format
-# selector in :class:`BalQrExportWidget` they give the export page
-# interoperable BC-UR v1/v2 and BBQR output while keeping BAL QR as the
-# default (and the only format understood by older plugin versions).
-ANIMATED_QR_FORMATS = ("ur1", "ur2", "bbqr")
-
-
-def encode_animated_frames(transfer, fmt, budget_chars):
-    """Encode the transfer text into the given animated-QR format.
-
-    ``transfer`` is the BAL QR transfer text (str). ``budget_chars`` is the
-    maximum length of one frame (the exporter's "QR code size" preset).
-    """
-    payload = transfer.encode("utf-8")
-    if fmt == "ur1":
-        return ur1_frames(payload, budget_chars)
-    if fmt == "ur2":
-        return ur2_frames(payload, budget_chars)
-    if fmt == "bbqr":
-        return bbqr_frames(payload, budget_chars, encoding="Z")
-    raise QrTransferError("unknown animated QR format: {}".format(fmt))
 
 
 class BalDialog(QDialog,MessageBoxMixin):
@@ -2764,10 +2735,10 @@ class BalQrExportWidget(QWidget):
     The page (re)displays itself on :meth:`set_tx_strings`.
     """
 
-    def __init__(self, chunk_size=CHUNK_PRESETS[0][1], parent=None):
+    def __init__(self, chunk_size=CHUNK_PRESETS[0][1], parent=None, on_size_change=None):
         QWidget.__init__(self, parent)
         self.chunk_size = chunk_size
-        self.format = "balqr"
+        self._on_size_change = on_size_change
         self.tx_strings = []
         self.transfer = ""
         self.frames = []
@@ -2833,36 +2804,11 @@ class BalQrExportWidget(QWidget):
         size_row.addStretch(1)
         vbox.addLayout(size_row)
 
-        format_row = QHBoxLayout()
-        format_row.addWidget(QLabel(_("Format:")))
-        self.format_combo = QComboBox()
-        self._format_options = ["balqr"] + list(ANIMATED_QR_FORMATS)
-        self.format_combo.addItems(
-            [
-                format_name(fmt)
-                + (" {}".format(_("(default)")) if fmt == "balqr" else "")
-                for fmt in self._format_options
-            ]
-        )
-        self.format_combo.setCurrentIndex(0)
-        self.format_combo.currentIndexChanged.connect(self._on_format_change)
-        format_row.addWidget(self.format_combo)
-        self.format_hint = QLabel()
-        self.format_hint.setWordWrap(True)
-        format_row.addWidget(self.format_hint, 1)
-        vbox.addLayout(format_row)
-
     def set_tx_strings(self, tx_strings):
         """Rebuild the transfer frames from the given serialized transactions."""
         self.tx_strings = list(tx_strings)
         self._stop_auto()
         self.transfer = encode_transfer(self.tx_strings, compress=False)
-        # BAL QR now ships compact (best-of) compressed by default: smaller
-        # frames, and the importer reverses it via the per-frame flag. The
-        # other formats keep the raw transfer (they compress internally).
-        self._balqr_transfer, self._balqr_compressed = encode_transfer_best(
-            self.tx_strings
-        )
         self._refresh_frames()
         self._update_intro()
         self._render()
@@ -2872,30 +2818,18 @@ class BalQrExportWidget(QWidget):
         return len(self.frames)
 
     def _refresh_frames(self):
-        if self.format == "balqr":
-            self.frames = split_frames(
-                self._balqr_transfer,
-                self.chunk_size,
-                compressed=self._balqr_compressed,
-            )
-        else:
-            self.frames = encode_animated_frames(
-                self.transfer, self.format, self.chunk_size
-            )
+        self.frames = bbqr_frames(
+            self.transfer.encode("utf-8"), self.chunk_size, encoding="Z"
+        )
         self.index = 0
-
-    def _on_format_change(self, index):
-        self._stop_auto()
-        self.format = self._format_options[index]
-        self._refresh_frames()
-        self._render()
-        self._update_intro()
 
     def _on_chunk_change(self, index):
         self._stop_auto()
         self.chunk_size = CHUNK_PRESETS[index][1]
         self._refresh_frames()
         self._render()
+        if self._on_size_change is not None:
+            self._on_size_change(self.chunk_size)
 
     def _toggle_auto(self):
         """Start/stop the automatic QR slideshow."""
@@ -2927,32 +2861,13 @@ class BalQrExportWidget(QWidget):
         self._next()
 
     def _update_intro(self):
-        self.format_hint.setText(
-            {
-                "balqr": _(
-                    "Proprietary format; every other BAL wallet understands it."
-                ),
-                "ur1": _("Legacy BC-UR v1 (ur:bytes), compatible with older "
-                         "Blockchain Commons tools."),
-                "ur2": _("Standard BC-UR v2 fountain codes (ur:bytes)."),
-                "bbqr": _("Coinkite BBQR (B$ frames) for BitKit & friends."),
-            }[self.format]
+        self.intro_label.setText(
+            _(
+                "Scan the QR codes below with the will-opening device.\n"
+                "{} codes carry the whole transfer (any order works, "
+                "duplicates are ignored)."
+            ).format(self.total_frames)
         )
-        if self.format == "balqr":
-            self.intro_label.setText(
-                _(
-                    "Scan the QR codes below, in order, with the will-opening "
-                    "device.\nFrame 1 of {} carries the total number of codes."
-                ).format(self.total_frames)
-            )
-        else:
-            self.intro_label.setText(
-                _(
-                    "Scan the QR codes below with the will-opening device.\n"
-                    "{} codes carry the whole transfer (any order works, "
-                    "duplicates are ignored)."
-                ).format(self.total_frames)
-            )
 
     def _prev(self):
         if self.index > 0:
@@ -2994,6 +2909,7 @@ class WillExportDialog(BalDialog):
     def __init__(self, bal_window, will=None, bal_plugin=None, initial_mode="file"):
         BalDialog.__init__(self, bal_window.window, bal_plugin, _("Export will"))
         self.bal_window = bal_window
+        self.bal_plugin = bal_plugin
         self._source = will if will is not None else bal_window.willitems
         self._filters = export_filter_options()
         self._filter_index = 0
@@ -3047,7 +2963,10 @@ class WillExportDialog(BalDialog):
         self.stacked = QStackedWidget()
         self.file_page = self._build_file_page()
         self.stacked.addWidget(self.file_page)
-        self.qr_page = BalQrExportWidget(chunk_size=chunk)
+        self.qr_page = BalQrExportWidget(
+            chunk_size=chunk,
+            on_size_change=self._remember_qr_size,
+        )
         self.stacked.addWidget(self.qr_page)
         self.audio_page = self._build_audio_page()
         self.stacked.addWidget(self.audio_page)
@@ -3057,12 +2976,19 @@ class WillExportDialog(BalDialog):
         close_btn.clicked.connect(self.close)
         vbox.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
+        # The audio transport is only offered when the audio_modem plugin is
+        # available; otherwise its radio button is disabled (file and QR stay
+        # usable).
+        self.transport_audio.setEnabled(self._audio_available)
+
         mode_ids = {
             "file": self.MODE_FILE,
             "qr": self.MODE_QR,
             "audio": self.MODE_AUDIO,
         }
         mode = mode_ids.get(initial_mode, self.MODE_FILE)
+        if mode == self.MODE_AUDIO and not self._audio_available:
+            mode = self.MODE_FILE
         (self.transport_file, self.transport_qr, self.transport_audio)[
             mode
         ].setChecked(True)
@@ -3097,6 +3023,7 @@ class WillExportDialog(BalDialog):
         self._audio_plugin = self.bal_window.get_audio_modem_plugin()
         self.bitrates = audio_bitrates()
         available = self._audio_plugin is not None
+        self._audio_available = available
         if available:
             self.audio_warn_label.hide()
         else:
@@ -3124,6 +3051,14 @@ class WillExportDialog(BalDialog):
 
     def _selected_items(self):
         return filter_willitems(self._source, self._filters, self._filter_index)
+
+    def _remember_qr_size(self, size):
+        """Persist the QR size chosen in the export page for the next export."""
+        if self.bal_plugin is not None:
+            try:
+                self.bal_plugin.QR_CHUNK_SIZE.set(size)
+            except Exception:
+                pass
 
     def _payload_strings(self):
         """The data handed to the QR page, honouring the content scope.
@@ -3296,6 +3231,10 @@ class WillImportDialog(BalDialog):
         close_btn.clicked.connect(self.close)
         vbox.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
+        # The audio transport is only offered when the audio_modem plugin is
+        # available; otherwise its radio button is disabled.
+        self.transport_audio.setEnabled(self._audio_available)
+
         self.transport_file.setChecked(True)
         self._on_mode_clicked(self.MODE_FILE)
 
@@ -3323,6 +3262,7 @@ class WillImportDialog(BalDialog):
         self._audio_plugin = self.bal_window.get_audio_modem_plugin()
         self.bitrates = audio_bitrates()
         available = self._audio_plugin is not None
+        self._audio_available = available
         if available:
             self.audio_warn_label.hide()
         else:
@@ -3563,9 +3503,9 @@ def qr_import_accept_frame(
       seen ``stable_reads`` times in a row -- this mirrors the export-side
       slideshow pacing and swallows transition artifacts;
     * re-reading the currently accepted frame is ``ignore``d;
-    * a frame whose ``session_key`` (transfer identity, e.g. ``"balqr:3"`` or
-      ``"ur2:2-31-3804692811"``) contradicts the transfer already being built
-      is a ``reset`` (a different transfer was presented).
+    * a frame whose ``session_key`` (transfer identity, e.g. ``"bbqr:Z:B:3"``)
+      contradicts the transfer already being built is a ``reset`` (a
+      different transfer was presented).
 
     ``state`` is a mutable mapping with keys ``last_index``, ``last_payload``,
     ``pending_index``, ``pending_payload``, ``pending_count`` and ``key``.
@@ -3751,8 +3691,8 @@ class BalQrImportWidget(QWidget):
             self._key = key
             self._init_slots()
         if status == "ok":
-            # Slot grid is always 1-based even for 0-based wire formats.
-            slot = index + 1 if fmt == "bbqr" else index
+            # Slot grid is always 1-based even for the 0-based BBQR indexes.
+            slot = index + 1
             self.frames[slot] = frame_text
         self._update_slots()
         self._update_status()
@@ -4008,7 +3948,7 @@ class BalQrImportWidget(QWidget):
         try:
             transfer, compressed = session.resolve()
             parts = decode_transfer(transfer, compressed)
-        except (MissingFramesError, QrTransferError, AnimatedQrError) as e:
+        except AnimatedQrError as e:
             self.show_error(str(e))
             self._reset_all()
             return

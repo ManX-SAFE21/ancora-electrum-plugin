@@ -421,50 +421,29 @@ See Section 5 for details.
   the audio path — buttons only appear when the `audio_modem` plugin +
   `amodem` are installed; see the prerequisites below).
 
-### In progress: animated-QR interop (BC-UR v1/v2, BBQR)
+### Animated-QR interop: BBQR only
 
-- `bal/core/animated_qr.py` implements stdlib-only codecs for **BC-UR v1**
-  (BC32 + SHA-256 digest; the bech32_bis checksum variant per
-  BCR-2020-004/005), **BC-UR v2** (CBOR part structure, bytewords-minimal,
-  CRC-32, xoshiro256-based fountain with alias-sampled mixing) and **BBQR**
+- `bal/core/animated_qr.py` implements a stdlib-only codec for **BBQR**
   (Coinkite `B$…` base32/hex/zlib frames), plus one shared
   `AnimatedQrSession` with `detect_format` auto-detection and
-  `parse_for_detection` frame identity for the GUI debounce.
-- Current status as of this session: reference parity, GUI, and tests done;
-  not yet committed.
-  - **BC32/bytewords/codec parity:** BC32 reproduces the BCR-2020-004/005
-    test vectors (`Hello, world`, `Hello world`, the long seed vector);
-    bytewords-minimal round-trips with CRC rejection; UR v2 part encode +
-    decode is byte-exact against the reference C++ bc-ur encoder for a
-    single part, seq_len=2 (12 frames) and seq_len=7 (3 sampled mixes),
-    validating CBOR framing, bytewords, alias+ary-threshold sampling,
-    xoshiro256** and the XOR mix.
-  - **Sessions:** UR v2 single-part (no seq header), out-of-order frames,
-    duplicate drops, solve with a missing pure fragment (a second redundant
-    mixed wave is emitted by `ur2_frames`), UR v1 single-part
-    (digest-less `ur:bytes/<bc32>` accepted) and multipart, BBQR full-frame
-    decode in any order for Z/2/H encodings.
-  - **Safety:** `_MAX_SESSION_PARTS = 20000`, `_MAX_MESSAGE_BYTES = 32 MB`,
-    `TransferConflictError` on a frame from a different transfer,
-    `SessionLimitError`, BBQR zlib-bomb guard, UTF-8 payloads only.
-  - **GUI:** `BalQrExportWidget` gained a Format selector (BAL QR default,
-    BC-UR v1, BC-UR v2, BBQR) reusing the QR-size presets; the importer now
-    routes every frame through `detect_format` +
-    `AnimatedQrSession.add_part` with the shared
-    `qr_import_accept_frame(state, fmt, session_key, frame_total, index,
-    payload, stable_reads=2)` debounce (reset on session-key change).
-    `_review_and_sign` resolves the session to the transfer text and decodes
-    parts uniformly across formats.
-  - **Verification:** `tests/test_core_animated_qr.py` (32 tests incl. the
-    C++-reference parity vectors and BC32 spec vectors) and the extended
-    `tests/test_gui_qr_transfer.py` pass; ruff clean on the new/changed
-    files; pyright 0 errors; smoke test, `build_zip.py` and
-    `external_zip_test.py` green. Only the pre-existing failures remain
-    (`test_bt_to_date_*`, fee-exceeds-balance, karen7 pollution).
-  - **Any remaining work:** manual on-device walkthrough of the QR path with
-    the new formats; optionally validate against third-party libraries
-    (`ur`, `bbqr`) once available; add the docstrings/branch notes already
-    captured in `ag1.md`/`ag2.md` context where needed.
+  `parse_for_detection` frame identity for the GUI debounce. The previously
+  supported **BAL QR**, **BC-UR v1** and **BC-UR v2** wire formats were
+  removed; only BBQR remains.
+- **Sessions:** BBQR full-frame decode in any order for Z/2/H encodings,
+  duplicate drops.
+- **Safety:** `_MAX_SESSION_PARTS = 20000`, `_MAX_MESSAGE_BYTES = 32 MB`,
+  `TransferConflictError` on a frame from a different transfer,
+  `SessionLimitError`, BBQR zlib-bomb guard, UTF-8 payloads only.
+- **GUI:** `BalQrExportWidget` emits BBQR frames using the QR-size presets;
+  the importer routes every frame through `detect_format` +
+  `AnimatedQrSession.add_part` with the shared
+  `qr_import_accept_frame(state, fmt, session_key, frame_total, index,
+  payload, stable_reads=2)` debounce (reset on session-key change).
+  `_review_and_sign` resolves the session to the transfer text and decodes
+  parts uniformly.
+- **Verification:** `tests/test_core_animated_qr.py` (BBQR round-trips,
+  encoding fallback, zlib-bomb guard, detection) and the extended
+  `tests/test_gui_qr_transfer.py` pass.
 
 **Dev-box audio prerequisites (audio_modem channel):**
 See `AUDIO_MODEM_DEBIAN.md` — the full Debian setup + verification, with the

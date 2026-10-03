@@ -4,9 +4,10 @@ Tests for the QR / audio will-transfer dialogs (``bal.gui.qt.dialogs``).
 Covers the unified ``WillExportDialog`` (transport radios, stacked pages,
 QR build/navigation, chunk-size / autoplay, filter revert) and the unified
 ``WillImportDialog`` (QR frame capture, slot grid, complete-review enabling,
-total mismatch reset, frame assembly -> decode). The wizard and the
-camera/audio paths need a live wallet/hardware and are exercised only
-through the shared frame-assembly path here.
+total mismatch reset, frame assembly -> decode). The QR transport now uses
+only the BBQR wire format. The wizard and the camera/audio paths need a live
+wallet/hardware and are exercised only through the shared frame-assembly
+path here.
 
 Run:
     QT_QPA_PLATFORM=offscreen python3 tests/test_gui_qr_transfer.py
@@ -14,6 +15,7 @@ Run:
 
 import base64
 import json
+import os
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -23,7 +25,8 @@ from electrum.transaction import Transaction
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
 import bal.gui.qt.dialogs as dialogs
-from bal.core.qrtransfer import CHUNK_PRESETS, encode_transfer, split_frames
+from bal.core.animated_qr import bbqr_frames
+from bal.core.qrtransfer import CHUNK_PRESETS, encode_transfer
 from bal.core.will import WillItem
 
 _app = QApplication.instance() or QApplication(sys.argv)
@@ -46,6 +49,15 @@ _VALID_TX_HEX = (
 )
 
 
+def _rand_hex(n):
+    """Incompressible lowercase hex string of ``n`` random bytes."""
+    return os.urandom(n).hex()
+
+
+def _bbqr_frames(transfer, budget):
+    return bbqr_frames(transfer.encode("utf-8"), budget, encoding="Z")
+
+
 class _Cfg:
     def __init__(self, value):
         self._value = value
@@ -53,10 +65,14 @@ class _Cfg:
     def get(self):
         return self._value
 
+    def set(self, value, save=True):
+        self._value = value
+
 
 class FakePlugin:
     # Smallest QR preset: long transfers produce several frames.
-    QR_CHUNK_SIZE = _Cfg(CHUNK_PRESETS[0][1])
+    def __init__(self):
+        self.QR_CHUNK_SIZE = _Cfg(CHUNK_PRESETS[0][1])
 
     def read_file(self, path):
         return _PNG_BYTES
@@ -109,7 +125,7 @@ class StubWillItem:
 
 def _make_willitems(n=3, payload_len=120, payloads=None):
     if payloads is None:
-        payloads = ["T{}".format(i) * payload_len for i in range(n)]
+        payloads = [_rand_hex(payload_len) for _ in range(n)]
     return {
         "item{}".format(i): StubWillItem(p)
         for i, p in enumerate(payloads)
@@ -129,8 +145,9 @@ def test_export_dialog_builds():
     assert page.tx_strings
     assert page.frames
     assert len(page.frames) >= 1
-    # Frame 1 is shown.
+    # Frame 1 is shown, and it is a BBQR frame.
     assert page.qr_view.text == page.frames[0]
+    assert page.frames[0].startswith("B$")
     assert "1" in page.progress_label.text()
     d.close()
 
@@ -196,6 +213,7 @@ def test_export_auto_scroll():
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     page = d.qr_page
     assert page.fps_spin is not None
+    assert len(page.frames) > 1
     assert not page.auto_timer.isActive()
 
     page.fps_spin.setValue(2)
@@ -222,6 +240,7 @@ def test_export_auto_scroll_loop():
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     page = d.qr_page
     assert page.loop_check is not None
+    assert len(page.frames) > 1
 
     # Loop on: reaching the last code wraps back to the first and keeps going.
     page.loop_check.setChecked(True)
@@ -244,9 +263,9 @@ def test_export_auto_scroll_loop():
 
 def test_export_filter_valid_and_valid_nc():
     bw = FakeBalWindow()
-    a = StubWillItem("A" * 120, statuses={"VALID": True, "COMPLETE": True})
-    b = StubWillItem("B" * 120, statuses={"VALID": True})
-    c = StubWillItem("C" * 120)
+    a = StubWillItem(_rand_hex(120), statuses={"VALID": True, "COMPLETE": True})
+    b = StubWillItem(_rand_hex(120), statuses={"VALID": True})
+    c = StubWillItem(_rand_hex(120))
     bw.willitems = {"a": a, "b": b, "c": c}
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     page = d.qr_page
@@ -263,11 +282,11 @@ def test_export_filter_valid_and_valid_nc():
 
     # "Valid" filter -> only the valid items (a, b).
     d._on_filter_change(1)
-    assert sorted(page.tx_strings) == ["A" * 120, "B" * 120]
+    assert sorted(page.tx_strings) == sorted([str(a.tx), str(b.tx)])
 
     # "Valid NC" filter -> only the valid, not-complete item (b).
     d._on_filter_change(2)
-    assert sorted(page.tx_strings) == ["B" * 120]
+    assert sorted(page.tx_strings) == [str(b.tx)]
     assert page.qr_view.text == page.frames[0]
     d.close()
 
@@ -276,7 +295,7 @@ def test_export_filter_empty_reverts():
     bw = FakeBalWindow()
     # Only a COMPLETE valid item: "Valid NC" selects nothing -> revert.
     bw.willitems = {
-        "a": StubWillItem("A" * 120, statuses={"VALID": True, "COMPLETE": True})
+        "a": StubWillItem(_rand_hex(120), statuses={"VALID": True, "COMPLETE": True})
     }
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     messages = []
@@ -290,17 +309,11 @@ def test_export_filter_empty_reverts():
 
 
 def test_export_navigation_and_chunk_change():
-    # Low-redundancy serialized transactions resist deflate, so even the
-    # compressed best-of transfer still needs several frames at the default
-    # chunk and navigation across frames is exercised.
-    def noisy(pad):
-        return "".join("{:02x}".format((pad * 31 + j * 101 + j * j) % 256) for j in range(200))
-
+    # Incompressible serialized transactions resist deflate, so the BBQR
+    # transfer still needs several frames at the default chunk and navigation
+    # across frames is exercised.
     bw = FakeBalWindow()
-    bw.willitems = _make_willitems(
-        n=6, payload_len=400,
-        payloads=["{}0{}".format(noisy(i), "T" * 50) for i in range(6)],
-    )
+    bw.willitems = _make_willitems(n=6, payload_len=400)
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     page = d.qr_page
     first_count = len(page.frames)
@@ -322,6 +335,20 @@ def test_export_navigation_and_chunk_change():
     d.close()
 
 
+def test_export_size_change_is_remembered():
+    # Changing the QR size inside the export dialog persists the choice so the
+    # next export starts from the last selected size.
+    bw = FakeBalWindow()
+    bw.willitems = _make_willitems(n=6, payload_len=400)
+    d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
+    page = d.qr_page
+    assert bw.bal_plugin.QR_CHUNK_SIZE.get() == dialogs.CHUNK_PRESETS[0][1]
+
+    page._on_chunk_change(len(dialogs.CHUNK_PRESETS) - 1)
+    assert bw.bal_plugin.QR_CHUNK_SIZE.get() == dialogs.CHUNK_PRESETS[-1][1]
+    d.close()
+
+
 # ------------------------------------------------------------------ #
 # WillImportDialog (QR transport via d.qr_page)
 # ------------------------------------------------------------------ #
@@ -333,8 +360,8 @@ def test_import_frame_flow():
     assert not page.review_btn.isEnabled()
     assert not page.slot_area.isVisible()
 
-    transfer = encode_transfer(["A" * 120, "B" * 120, "C" * 120])
-    frames = split_frames(transfer, 150)
+    transfer = encode_transfer([_rand_hex(120), _rand_hex(120), _rand_hex(120)])
+    frames = _bbqr_frames(transfer, 150)
     assert len(frames) > 1
 
     for frame in frames:
@@ -361,12 +388,14 @@ def test_import_assembles_and_decodes():
         captured["payload"] = payload
 
     page._finish_import = fake_finish
-    transfer = encode_transfer(["P" * 130, "Q" * 130])
-    for frame in split_frames(transfer, 150):
+    tx_a = _rand_hex(130)
+    tx_b = _rand_hex(130)
+    transfer = encode_transfer([tx_a, tx_b])
+    for frame in _bbqr_frames(transfer, 150):
         page._add_frame(frame)
     page._review_and_sign()
     # The payload is rejoined into an opaque string for autodetect.
-    assert captured["payload"].split("\n") == ["P" * 130, "Q" * 130]
+    assert captured["payload"].split("\n") == [tx_a, tx_b]
     d.close()
 
 
@@ -407,7 +436,7 @@ def test_whole_will_qr_roundtrip():
     transfer = encode_transfer(page.tx_strings)
     impl = dialogs.WillImportDialog(bw, bal_plugin=bw.bal_plugin)
     import_page = impl.qr_page
-    for frame in split_frames(transfer, dialogs.CHUNK_PRESETS[0][1]):
+    for frame in _bbqr_frames(transfer, dialogs.CHUNK_PRESETS[0][1]):
         import_page._add_frame(frame)
     assert import_page.review_btn.isEnabled()
     caught = {}
@@ -431,8 +460,10 @@ def test_import_total_mismatch_resets():
     warnings = []
     page.show_warning = lambda msg: warnings.append(msg)  # type: ignore[assignment]
 
-    frames_a = split_frames(encode_transfer(["A" * 120, "B" * 120]), 150)
-    frames_b = split_frames(encode_transfer(["A" * 120, "B" * 120, "C" * 120]), 150)
+    frames_a = _bbqr_frames(encode_transfer([_rand_hex(120), _rand_hex(120)]), 150)
+    frames_b = _bbqr_frames(
+        encode_transfer([_rand_hex(120), _rand_hex(120), _rand_hex(120)]), 150
+    )
     for frame in frames_a:
         page._add_frame(frame)
     assert page.total == len(frames_a)
@@ -451,7 +482,7 @@ def test_import_manual_entry():
     bw = FakeBalWindow()
     d = dialogs.WillImportDialog(bw, bal_plugin=bw.bal_plugin)
     page = d.qr_page
-    frames = split_frames(encode_transfer(["M" * 120]), 150)
+    frames = _bbqr_frames(encode_transfer(["M" * 20]), 150)
     page.manual_edit.setText(frames[0])
     page._add_from_manual()
     assert page.manual_edit.text() == ""
@@ -477,48 +508,48 @@ def _fresh_debounce():
 def test_qr_import_debounce_pending_then_accept():
     s = _fresh_debounce()
     # First sighting of a new identity: pending, not yet stored.
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 1, "PAYLOAD1") == "pending"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 0, "PAYLOAD1") == "pending"
     assert s["pending_count"] == 1
     assert s["last_index"] is None
     # A second stable read of the same identity: accepted.
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 1, "PAYLOAD1") == "accept"
-    assert s["last_index"] == 1
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 0, "PAYLOAD1") == "accept"
+    assert s["last_index"] == 0
     assert s["last_payload"] == "PAYLOAD1"
     assert s["pending_count"] == 0
 
 
 def test_qr_import_debounce_re_reading_last_is_ignored():
     s = _fresh_debounce()
-    dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 1, "P1")
-    dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 1, "P1")  # accepted
-    # The exporter is still showing frame 1: must be ignored, not accepted.
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 1, "P1") == "ignore"
-    assert s["last_index"] == 1
+    dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 0, "P1")
+    dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 0, "P1")  # accepted
+    # The exporter is still showing frame 0: must be ignored, not accepted.
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 0, "P1") == "ignore"
+    assert s["last_index"] == 0
     assert s["pending_count"] == 0
 
 
 def test_qr_import_debounce_transition_pending_resets():
     s = _fresh_debounce()
-    dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 1, "P1")
-    dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 1, "P1")  # accept frame 1
+    dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 0, "P1")
+    dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 0, "P1")  # accept frame 0
     # A new identity interrupts the pending accumulation.
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 2, "P2") == "pending"
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 2, "P2") == "accept"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 1, "P2") == "pending"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 1, "P2") == "accept"
     # Same-index duplicate with different payload is treated as new identity.
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:2", 2, 2, "P2") == "ignore"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:2", 2, 1, "P2") == "ignore"
 
 
 def test_qr_import_debounce_total_mismatch_resets():
     s = _fresh_debounce()
     # In-range frame is accepted even though its declared total is ignored.
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:3", 3, 2, "P2") == "pending"
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:3", 3, 2, "P2") == "accept"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:3", 3, 1, "P2") == "pending"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:3", 3, 1, "P2") == "accept"
     # A frame that belongs to a different transfer.
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:4", 4, 2, "P2B") == "reset"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:4", 4, 1, "P2B") == "reset"
     # Once the policy is rebased on the new transfer, frames resume normally
     # (the widget clears the debounce while wiping the import).
     s["key"] = None
-    assert dialogs.qr_import_accept_frame(s, "balqr", "balqr:4", 4, 2, "P2B") == "pending"
+    assert dialogs.qr_import_accept_frame(s, "bbqr", "bbqr:ZB:4", 4, 1, "P2B") == "pending"
 
 
 def test_qr_import_handle_scanned_text_autofinish():
@@ -528,7 +559,7 @@ def test_qr_import_handle_scanned_text_autofinish():
     reviewed = []
     page._review_and_sign = lambda: reviewed.append(True)  # type: ignore[assignment]
 
-    frames = split_frames(encode_transfer(["A" * 120, "B" * 120]), 150)
+    frames = _bbqr_frames(encode_transfer([_rand_hex(120), _rand_hex(120)]), 150)
     assert len(frames) > 1
 
     # The camera session is running and every frame needs two stable reads.
@@ -557,7 +588,7 @@ def test_qr_import_handle_scanned_text_manual_does_not_autofinish():
     reviewed = []
     page._review_and_sign = lambda: reviewed.append(True)  # type: ignore[assignment]
 
-    frames = split_frames(encode_transfer(["A" * 120, "B" * 120]), 150)
+    frames = _bbqr_frames(encode_transfer([_rand_hex(120), _rand_hex(120)]), 150)
     assert len(frames) > 1
     assert not page._scanning
     for frame in frames:
@@ -570,54 +601,16 @@ def test_qr_import_handle_scanned_text_manual_does_not_autofinish():
 
 
 # ------------------------------------------------------------------ #
-# Animated-QR formats (BC-UR v1/v2, BBQR) via the export/import pages
+# BBQR import/export round trips
 # ------------------------------------------------------------------ #
 
-def test_export_format_combo_switches_codecs():
-    bw = FakeBalWindow()
-    bw.willitems = _make_willitems(n=6, payload_len=400)
-    d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
-    page = d.qr_page
-    assert page.format == "balqr"
-    assert page.frames[0].startswith("BAL1")
-    assert page.format_combo.count() == 4
-
-    page._on_format_change(1)  # BC-UR v1
-    assert page.format == "ur1"
-    assert page.frames[0].startswith("ur:bytes/")
-    assert page.index == 0
-    assert page.qr_view.text == page.frames[0]
-
-    page._on_format_change(2)  # BC-UR v2
-    assert page.format == "ur2"
-    assert page.frames[0].startswith("ur:bytes/")
-
-    page._on_format_change(3)  # BBQR
-    assert page.format == "bbqr"
-    assert page.frames[0].startswith("B$")
-    d.close()
-
-
-def test_export_animated_format_frames_fit_budget():
-    bw = FakeBalWindow()
-    bw.willitems = _make_willitems(n=6, payload_len=400)
-    d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
-    page = d.qr_page
-    for index in range(1, 4):
-        page._on_format_change(index)
-        for frame in page.frames:
-            assert len(frame) <= dialogs.CHUNK_PRESETS[0][1]
-    d.close()
-
-
-def _import_roundtrip_fmt(fmt_index):
+def test_import_bbqr_roundtrip():
     bw = FakeBalWindow()
     bw.willitems = _make_willitems(2)
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     page = d.qr_page
-    page._on_format_change(fmt_index)
     frames = list(page.frames)
-    assert frames
+    assert frames and all(f.startswith("B$") for f in frames)
     d.close()
 
     impl = dialogs.WillImportDialog(bw, bal_plugin=bw.bal_plugin)
@@ -634,24 +627,11 @@ def _import_roundtrip_fmt(fmt_index):
     impl.close()
 
 
-def test_import_ur1_roundtrip():
-    _import_roundtrip_fmt(1)
-
-
-def test_import_ur2_roundtrip():
-    _import_roundtrip_fmt(2)
-
-
-def test_import_bbqr_roundtrip():
-    _import_roundtrip_fmt(3)
-
-
 def test_import_animated_scan_debounce_autofinish():
     bw = FakeBalWindow()
     bw.willitems = _make_willitems(2)
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     page = d.qr_page
-    page._on_format_change(2)  # BC-UR v2 fountain
     frames = list(page.frames)
     d.close()
 
@@ -664,11 +644,8 @@ def test_import_animated_scan_debounce_autofinish():
         for _rep in range(2):
             import_page._handle_scanned_text(frame)
     assert import_page.review_btn.isEnabled()
-    # The fountain transfer's part count is ``len(frames) // 2`` (pure + one
-    # redundant mixed wave).
-    assert import_page.total == len(frames) // 2
+    assert import_page.total == len(frames)
     assert len(import_page.frames) >= import_page.total
-    assert import_page.review_btn.isEnabled()
     _app.processEvents()
     assert reviewed == [True]
     assert not import_page._scanning
@@ -679,7 +656,7 @@ def test_import_garbage_scan_is_ignored():
     bw = FakeBalWindow()
     d = dialogs.WillImportDialog(bw, bal_plugin=bw.bal_plugin)
     page = d.qr_page
-    for garbage in ("hello world", "12345", "B$ZZ", ""):
+    for garbage in ("hello world", "12345", "B$ZZ", "ur:bytes/xyz", ""):
         page._handle_scanned_text(garbage)
         assert not page.frames
         assert page.total == 0
@@ -694,8 +671,10 @@ def test_import_different_animated_transfer_resets():
     warnings = []
     page.show_warning = lambda msg: warnings.append(msg)  # type: ignore[assignment]
 
-    frames_a = split_frames(encode_transfer(["A" * 120, "B" * 120]), 150)
-    frames_b = split_frames(encode_transfer(["A" * 120, "B" * 120, "C" * 120]), 150)
+    frames_a = _bbqr_frames(encode_transfer([_rand_hex(120), _rand_hex(120)]), 150)
+    frames_b = _bbqr_frames(
+        encode_transfer([_rand_hex(120), _rand_hex(120), _rand_hex(120)]), 150
+    )
     for frame in frames_a:
         page._add_frame(frame)
     assert page.total == len(frames_a)

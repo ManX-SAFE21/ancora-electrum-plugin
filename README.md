@@ -26,8 +26,8 @@ bal/                     the installable Electrum plugin package
 │   ├── willexecutors.py
 │   ├── checkalive.py
 │   ├── reminders.py
-│   ├── qrtransfer.py       BAL QR will-transfer wire format / chunk scheduler
-│   ├── animated_qr.py      BC-UR v1/v2 + BBQR codecs (stdlib-only)
+│   ├── qrtransfer.py       transfer-string codec / QR size presets
+│   ├── animated_qr.py      BBQR codec (stdlib-only)
 │   └── input_rules.py
 ├── cli/                 headless command-line layer (no Qt)
 │   ├── commands.py      bal_* daemon commands (@plugin_command)
@@ -94,25 +94,20 @@ exists, then enable it from **Tools → Plugins**.
 From the will list (**Export → QR Codes**) a will can be exported as a
 sequence of QR codes and imported on another device (**Import via QR**). The
 export offers All / Valid / Valid-NC filters plus a QR size preset
-(150–1800 bytes/frame) and ships the default **BAL QR** format already
-compressed whenever that is smaller (best-of zlib, flag per frame); the import
+(150–1800 bytes/frame) and ships the **BBQR** format; the import
 flow reviews and sign each transaction
 one at a time, then proposes exporting the signed transactions. When
 Electrum's `audio_modem` plugin is enabled (optional, requires `amodem` +
 PortAudio) Send/Receive audio buttons complement the QR channel. See
-[`PLAN_QR_TRANSFER.md`](PLAN_QR_TRANSFER.md) for the BAL QR wire-format spec.
+[`PLAN_QR_TRANSFER.md`](PLAN_QR_TRANSFER.md) for the transfer wire-format spec.
 
-### Animated-QR formats (interop)
+### Animated-QR format (BBQR)
 
-BAL QR is the default export format, but the export page's **Format** selector
-also emits **BC-UR v1** (`ur:bytes`, BC32 + SHA-256), **BC-UR v2**
-(`ur:bytes`, CBOR fountain codes) and **BBQR** (`B$…`, Coinkite, used by
-BitKit) animated-QR sequences. The importer auto-detects the format of each
-code it sees, so any of the four formats can be imported on a BAL device, and
-a BAL export can be imported by any tool that understands these standards.
-UR v2 imports tolerate out-of-order and duplicate frames (fountain decoding);
-BBQR frames may arrive in any order. Rotation/redundancy caps and the
-32 MB message limit (zlib-bomb guard) bound untrusted scanner input.
+The export page emits **BBQR** (`B$…`, Coinkite, used by BitKit and Coldcard)
+animated-QR sequences. The importer auto-detects each code it sees, so a BAL
+export can be imported by any tool that understands BBQR. BBQR frames may
+arrive in any order, and duplicates are ignored. The 32 MB message limit
+(zlib-bomb guard) bounds untrusted scanner input.
 
 ## Command-line / headless usage
 

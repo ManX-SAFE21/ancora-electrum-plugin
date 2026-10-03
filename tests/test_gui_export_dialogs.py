@@ -52,9 +52,13 @@ class _Cfg:
     def get(self):
         return self._value
 
+    def set(self, value, save=True):
+        self._value = value
+
 
 class FakePlugin:
-    QR_CHUNK_SIZE = _Cfg(CHUNK_PRESETS[0][1])
+    def __init__(self):
+        self.QR_CHUNK_SIZE = _Cfg(CHUNK_PRESETS[0][1])
 
     def read_file(self, path):
         return _PNG_BYTES
@@ -301,6 +305,7 @@ def test_audio_export_page_send():
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin)
     assert d.audio_send_btn.text() == dialogs._("Send")
     assert d.audio_send_btn.isEnabled()
+    assert d.transport_audio.isEnabled()
     assert d.kbps_combo.count() > 0
 
     kbps = int(d.kbps_combo.currentText())
@@ -334,6 +339,7 @@ def test_audio_export_page_plugin_missing():
     bw.willitems = _make_willitems(2)
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin)
     assert not d.audio_send_btn.isEnabled()
+    assert not d.transport_audio.isEnabled()
     assert "not available" in d.audio_warn_label.text()
     assert len(d.qr_page.frames) >= 1  # QR still usable
     assert d.file_export_btn.isEnabled()
@@ -350,6 +356,7 @@ def test_audio_import_page_build():
     assert d.kbps_combo.count() > 0
     assert d.receive_btn.text() == dialogs._("Receive by audio…")
     assert d.receive_btn.isEnabled()
+    assert d.transport_audio.isEnabled()
     d.close()
 
 
@@ -357,6 +364,7 @@ def test_audio_import_page_plugin_missing():
     bw = FakeBalWindow(audio_plugin=None)
     d = dialogs.WillImportDialog(bw, bal_plugin=bw.bal_plugin)
     assert not d.receive_btn.isEnabled()
+    assert not d.transport_audio.isEnabled()
     assert "not available" in d.audio_warn_label.text()
     assert d.qr_page is not None  # QR import still usable
     d.close()

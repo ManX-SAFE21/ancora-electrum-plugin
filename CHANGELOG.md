@@ -3515,3 +3515,37 @@ delivery; when it is not, the plugin raises an explicit error (see below).
   `tests/test_core_plugin_base.py`, `tests/test_core_input_rules.py`.
 
 **Outcome:** DONE.
+
+## 62. Remove BALQR and BC-UR v1/v2 — keep only BBQR
+
+**Date:** 2026-10-03
+
+**Goal:** Drop the BALQR, BC-UR v1 and BC-UR v2 QR wire formats and keep only
+**BBQR** for will transfer.
+
+**What changed:**
+
+- `bal/core/animated_qr.py`: removed the BC32, bytewords-minimal, CRC-32,
+  CBOR, xoshiro256/fountain codecs and the BALQR / UR v1 / UR v2 receive
+  sessions; the module now implements only the BBQR codec plus the
+  `AnimatedQrSession` facade and `detect_format` / `parse_for_detection`
+  (BBQR-only).
+- `bal/core/qrtransfer.py`: removed the BALQR framing helpers (`split_frames`,
+  `parse_frame`, `assemble`, `encode_transfer_best`, the frame errors);
+  kept the transfer-string codec (`encode_transfer` / `decode_transfer`) and
+  the QR-size presets.
+- `bal/gui/qt/dialogs.py`: the export widget no longer shows a Format selector
+  and always emits BBQR; the import widget treats BBQR indexes as 0-based.
+- Removed the "QR Code Size" setting from the plugin settings dialog; the
+  QR-size selector now lives only in the export dialog, and its chosen value
+  is remembered (persisted to `QR_CHUNK_SIZE`) for the next export.
+- Android reader: `bal/core/*` copies re-synced, `bal/encoder.py` and the
+  Kotlin bridges (`BalDecoder`, `QrEncoder`, `QrSendActivity`, `MainActivity`,
+  `strings.xml`) reduced to BBQR; `tools/emitter.py` and
+  `test_chain/verify_chain.py` updated.
+- Tests: `test_core_animated_qr.py`, `test_core_qr_transfer.py` and
+  `test_gui_qr_transfer.py` rewritten for BBQR only.
+- Docs: README, COMPATIBILITY, HANDOFF and android/README updated; translation
+  catalogs refreshed (removed format strings marked obsolete).
+
+**Outcome:** DONE.

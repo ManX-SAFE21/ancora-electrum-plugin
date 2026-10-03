@@ -305,11 +305,10 @@ class BalPlugin(BasePlugin):
         # stay display-only outside the wizard unless the user opts in.
         self.EDITABLE_DATES = BalConfig(config, "bal_editable_dates", False)
 
-        # QR_CHUNK_SIZE (will transfer via QR): payload budget, in bytes, used
-        # per QR frame when exporting/importing a will through the QR channel.
-        # The settings dialog offers the 4 standard presets of
-        # bal.core.qrtransfer.CHUNK_PRESETS; this stores the selected budget.
-        # Default 150 (small QR, low-resolution cameras).
+        # QR_CHUNK_SIZE (will transfer via QR): payload budget, in characters,
+        # used per QR frame when exporting/importing a will through the QR
+        # channel. The export dialog seeds its own size selector from this
+        # value (default 150, small QR, low-resolution cameras).
         self.QR_CHUNK_SIZE = BalConfig(config, "bal_qr_chunk_size", 150)
 
         # NUM_REMINDERS (Group D / D1): how many SEPARATE reminder events the
