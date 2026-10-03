@@ -17,7 +17,7 @@
 
 **In scope**
 - The Qt GUI of the plugin (`bal/gui/qt/`) and the GUI-free strings it displays (`bal/core/`).
-- One language for now: Italian (`it_IT`).
+- Languages: Italian (`it_IT`) and Spanish (`es_ES`).
 
 **Out of scope** (owner's decisions, or by design)
 - **BAL Easy Heirs**: excluded by the owner.
