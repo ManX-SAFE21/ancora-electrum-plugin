@@ -1572,8 +1572,7 @@ class BalBuildWillDialog(BalDialog):
             # user and let them close the wizard.
             self.bal_window.show_error(
                 _(
-                    "CheckAlive must be after today and before the delivery "
-                    "date please update it"
+                    "Check Alive must be after today and before the delivery date, please update it"
                 )
             )
             self._add_close_button()

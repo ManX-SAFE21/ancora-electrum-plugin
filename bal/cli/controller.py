@@ -111,7 +111,7 @@ def _user_facing(e):
     if isinstance(e, checkalive.CheckAliveAfterDeliveryError):
         return UserFacingException(
             _(
-                "CheckAlive must be after today and before the delivery date"
+                "Check Alive must be after today and before the delivery date, please update it"
             )
         )
     if isinstance(e, checkalive.CheckAliveError):

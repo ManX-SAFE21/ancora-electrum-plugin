@@ -847,7 +847,7 @@ class BalWindow:
             except CheckAliveAfterDeliveryError:
                 self.show_error(
                     _(
-                        "CheckAlive must be after today and before the delivery date please update it"
+                        "Check Alive must be after today and before the delivery date, please update it"
                     )
                 )
                 return
