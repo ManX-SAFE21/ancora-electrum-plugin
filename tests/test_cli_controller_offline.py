@@ -240,7 +240,7 @@ def test_build_will_reanchors_date_to_check_to_new_locktime():
         plugin.USER_TYPE.set("advanced")
         plugin.NO_WILLEXECUTOR.set(True)
         plugin.ENABLE_MULTIVERSE.set(True)
-        plugin.WILL_SETTINGS.set({"threshold": "150d", "locktime": "2y", "baltx_fees": 20})
+        plugin.WILL_SETTINGS.set({"threshold": "-150d", "locktime": "2y", "baltx_fees": 20})
         c = _make_controller(plugin)
         c.no_willexecutor = True
         c.heirs["alice"] = [VALID_ADDRESS, "100%", "1y"]

@@ -20,6 +20,7 @@ Contents:
 
 from typing import TYPE_CHECKING
 
+from ...core.checkalive import resolve_relative_check_alive_date
 from ...core.heirs import get_op_return_hex, is_op_return_address
 from ...core.input_rules import (
     LockTimeEditor,
@@ -217,6 +218,10 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
     label_text = None
     tooltip_text = None
     base_field = None
+    # A leading "-" is accepted by the RAW editor only for the Check Alive
+    # field (its sign selects the anchor date); the delivery field never
+    # accepts a sign. Subclasses override this.
+    allow_negative_raw = False
 
     def __init__(self, bal_window, parent, default_locktime=None):
         super().__init__(parent)
@@ -227,7 +232,9 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(0)
         self.setMinimumWidth(40 * char_width_in_lineedit())
-        self.locktime_raw_e = TimeRawEditWidget(self, time_edit=self)
+        self.locktime_raw_e = TimeRawEditWidget(
+            self, time_edit=self, allow_negative=self.allow_negative_raw
+        )
         self.locktime_date_e = LockTimeDateEdit(self, time_edit=self)
         self.editors = [self.locktime_raw_e, self.locktime_date_e]
         self.combo = QComboBox()
@@ -482,9 +489,9 @@ class TimeRawEditWidget(QWidget):
     def is_acceptable_locktime(self, value):
         return True
 
-    def __init__(self, parent, time_edit=None):
+    def __init__(self, parent, time_edit=None, allow_negative=False):
         super().__init__(parent)
-        self.editor = LockTimeRawEdit(parent, time_edit)
+        self.editor = LockTimeRawEdit(parent, time_edit, allow_negative=allow_negative)
         self.label = QLabel("")
         # Group C / C3: this trailing label shows the ABSOLUTE date computed
         # from the RAW value (e.g. "30d" -> "2027-06-23"), so it needs room for a
@@ -510,7 +517,7 @@ class TimeRawEditWidget(QWidget):
 
 
 class LockTimeRawEdit(QLineEdit, _LockTimeEditor):
-    def __init__(self, parent=None, time_edit=None):
+    def __init__(self, parent=None, time_edit=None, allow_negative=False):
         QLineEdit.__init__(self, parent)
         # Group C / C3: narrow the RAW input to roughly a third of its former
         # width. The accepted values are short relative durations such as "30d"
@@ -520,16 +527,22 @@ class LockTimeRawEdit(QLineEdit, _LockTimeEditor):
         self.textChanged.connect(self.numbify)
         self.isdays = False
         self.isyears = False
+        # The Check Alive field accepts a leading "-" (the sign selects the
+        # anchor date); the delivery field does not.
+        self.allow_negative = allow_negative
         self.time_edit = time_edit
 
     def numbify(self):
-        # Only digits plus the day ("d") and year ("y") suffixes are accepted.
-        # The block-height suffix ("b") was removed (A1): locktimes are always
-        # UNIX timestamps now, so block-relative input is no longer allowed.
+        # Only digits plus the day ("d") and year ("y") suffixes are accepted
+        # (and, for the Check Alive field, a single leading "-"). The
+        # block-height suffix ("b") was removed (A1): locktimes are always UNIX
+        # timestamps now, so block-relative input is no longer allowed.
         # The sanitisation itself lives in bal.core.input_rules.
         text = self.text().strip()
         pos = self.cursorPosition()
-        s, isdays, isyears, pos = normalize_locktime_raw_text(text, pos)
+        s, isdays, isyears, pos = normalize_locktime_raw_text(
+            text, pos, allow_negative=self.allow_negative
+        )
         self.isdays = isdays
         self.isyears = isyears
         self.blockSignals(True)
@@ -643,6 +656,11 @@ class ThresholdTimeWidget(BalTimeEditWidget):
         "if you choose Raw, you can insert various options based on suffix:<br>"
         " - d: number of days after current day(ex: 1d means tomorrow)<br>"
         " - y: number of years after current day(ex: 1y means one year from today)<br>"
+        "The sign selects the reference date:<br>"
+        " - a NEGATIVE value (ex: -30d) counts backwards from the "
+        "<b>delivery</b> date (30 days before the delivery);<br>"
+        " - a POSITIVE value (ex: 30d) counts forward from the "
+        "<b>inheritance creation</b> date (30 days after the will was created).<br>"
         "<br><b>Note:</b> the date/time is expressed in your computer's "
         "<b>Local time</b> (not UTC time).<br>"
     )
@@ -650,6 +668,8 @@ class ThresholdTimeWidget(BalTimeEditWidget):
     #label_text = "Check Alive"
     tooltip_text = N_("Check Alive")
     base_field = "threshold"
+    # The Check Alive field accepts a signed value; the delivery field does not.
+    allow_negative_raw = True
 
     def __init__(self, bal_window, parent, init_value=None):
         if init_value is None:
@@ -1135,18 +1155,23 @@ class WillSettingsWidget(QWidget):
 
     def on_locktime_change(self):
         locktime = self.widgets["locktime"].get_value()
-        threshold = self.widgets["threshold"].get_value()
+        threshold_raw = self.widgets["threshold"].get_value()
         locktime = BalTimestamp(locktime)
-        threshold = BalTimestamp(threshold)
 
         min_locktime = min(
                 Will.get_min_locktime(self.bal_window.willitems, NLOCKTIME_MAX),
                 locktime.to_timestamp(),
         )
-        # Resolved Check Alive date. For relative values this counts BACKWARDS
-        # from the delivery time (reverse=True): "90d" means "90 days BEFORE the
-        # delivery", not "90 days from now".
-        td = threshold.to_date(min_locktime, True)
+        # Resolved Check Alive date. The SIGN of the RAW value selects the
+        # anchor: negative counts backwards from the delivery, positive counts
+        # forward from the inheritance creation date. The rule lives in
+        # ``bal.core.checkalive`` so this display matches every validity check.
+        resolved = resolve_relative_check_alive_date(
+            threshold_raw,
+            delivery_date=min_locktime,
+            creation_date=Will.get_creation_time(self.bal_window.willitems),
+        )
+        td = BalTimestamp._safe_fromtimestamp(resolved)
         self.widgets["threshold"].alarm=td
         self.bal_window.will_settings["real_threshold"]=td.timestamp()
         try:

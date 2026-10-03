@@ -3448,3 +3448,70 @@ only `bal/locale/it_IT/LC_MESSAGES/bal.mo` for the translations and
 
 **Outcome:** DONE, pending the owner's review of the Italian texts and test
 of the ZIP.
+## 61. Signed relative Check Alive (negative = before delivery, positive = after creation)
+
+**Date:** 2026-10-01
+
+**Goal:** Change the meaning of a RELATIVE Check Alive value so that its SIGN
+selects the anchor date:
+
+- NEGATIVE (`-30d` / `-1y`): counted BACKWARDS from the delivery date
+  (`delivery + N days`; `-30d` = 30 days BEFORE the delivery). This preserves
+  the historical meaning of a relative threshold.
+- POSITIVE (`30d` / `1y`): counted FORWARD from the inheritance creation date
+  (`min(WillItem.time)` over the VALID will items, frozen in the wallet DB).
+- When the anchor is unknown (no built will yet, or imported items without a
+  `time`), the reference falls back to *now*.
+
+No migration: existing stored positive values switch to the new meaning. The
+Check Alive must always be strictly AFTER today and strictly BEFORE the
+delivery; when it is not, the plugin raises an explicit error (see below).
+
+**What changed:**
+
+- `bal/core/checkalive.py` (centralised, GUI-free):
+  - new `resolve_delivery_date(will_settings, now, built_locktime)` — the single
+    source of the delivery reference (absolute locktime as-is; relative locktime
+    resolved forward from *now* unless a built will freezes it).
+  - new `resolve_relative_check_alive_date(threshold_raw, delivery_date,
+    creation_date, now)` — the SINGLE calculation rule (sign selects the anchor;
+    `BalTimestamp.to_date` is used forward on both anchors, no more
+    `reverse=True`).
+  - new `is_check_alive_date_valid(date_to_check, delivery_date, now)` and
+    `ensure_check_alive_valid(is_basic_mode, date_to_check, delivery_date, now)`
+    — the SINGLE validity gate: `now < date_to_check < delivery`. BASIC mode is
+    a no-op (Check Alive is inert).
+  - `resolve_date_to_check` / `resolve_guard_threshold`: gain a `creation_date`
+    parameter and delegate to the shared rule; `resolve_guard_threshold` still
+    resolves the delivery from the stored settings alone (no built anchor).
+  - `check_alive_expired` removed (superseded by `ensure_check_alive_valid`).
+  - new `CheckAliveAfterDeliveryError` (a SIBLING of `CheckAliveError`, not a
+    subclass): raised when the Check Alive is on/after the delivery. It must not
+    reuse the `except CheckAliveError` handlers, which invalidate the will
+    on-chain; this is a configuration error that only aborts the action.
+    `CheckAliveError` gained an optional `reason`.
+- `bal/core/will.py`: new `Will.get_creation_time(will)` — the oldest
+  `WillItem.time` among VALID items (`None` when unknown).
+- `bal/core/input_rules.py`: `normalize_locktime_raw_text(..., allow_negative)`
+  keeps a single leading `-` (Check Alive field only).
+- `bal/gui/qt/widgets.py`: the Check Alive RAW editor accepts `-`
+  (`ThresholdTimeWidget.allow_negative_raw`); `on_locktime_change` uses the
+  shared resolver for `real_threshold`; updated help text.
+- `bal/gui/qt/window.py`, `bal/gui/qt/dialogs.py`, `bal/cli/controller.py`: pass
+  `creation_date=Will.get_creation_time(...)`, call
+  `ensure_check_alive_valid`, and handle `CheckAliveAfterDeliveryError` by
+  aborting (never invalidating). The wizard .ics provider and the CLI guard use
+  the shared resolver too.
+- `bal/core/plugin_base.py`: the default relative Check Alive is now `"-30d"`
+  (30 days BEFORE the 1-year delivery), preserving the historical default; the
+  absolute default threshold follows the same sign rule.
+
+**Tests:**
+
+- `tests/test_core_checkalive.py` rewritten (both signs, delivery/creation
+  resolution, validity gate, new exceptions, `Will.get_creation_time`).
+- Updated `tests/test_group_i_basic_checkalive.py`, `tests/test_core_will.py`,
+  `tests/test_gui_will_flows.py`, `tests/test_cli_controller_offline.py`,
+  `tests/test_core_plugin_base.py`, `tests/test_core_input_rules.py`.
+
+**Outcome:** DONE.

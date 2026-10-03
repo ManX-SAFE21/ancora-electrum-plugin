@@ -20,9 +20,11 @@ import threading
 from electrum.util import MyEncoder
 
 from ...core.checkalive import (
+    CheckAliveAfterDeliveryError,
     CheckAliveError,
-    check_alive_expired,
+    ensure_check_alive_valid,
     resolve_date_to_check,
+    resolve_delivery_date,
     resolve_guard_threshold,
 )
 from .common import (
@@ -492,6 +494,7 @@ class BalWindow:
                 self.bal_plugin.is_basic_mode(),
                 self.will_settings,
                 built_locktime=_new_locktime,
+                creation_date=Will.get_creation_time(self.willitems),
             )
         will = {}
         # willtodelete = []
@@ -740,6 +743,7 @@ class BalWindow:
                 self.bal_plugin.is_basic_mode(),
                 self.will_settings,
                 built_locktime=Will.get_min_locktime(self.willitems),
+                creation_date=Will.get_creation_time(self.willitems),
             )
             # found = False
             # NOTE: block-height tracking removed (A1) - locktimes are always
@@ -750,19 +754,20 @@ class BalWindow:
             self.willexecutors = Willexecutors.get_willexecutors(
                 self.bal_plugin, update=True, bal_window=self, task=False
             )
-            # SIMPLE / ADVANCED: in BASIC mode the "Check Alive" parameter must
-            # behave AS IF IT DID NOT EXIST. The check-alive threshold drives
-            # the "you are alive -> postpone the inheritance" prompt; raising
-            # CheckAliveError here is what triggers that postpone/invalidate
-            # flow. In BASIC we therefore SKIP this check entirely, so a passed
-            # check-alive date never forces a postpone/rewrite of the will. The
-            # delivery time (locktime) is unaffected and still fully enforced.
-            # The BASIC/ADVANCED rule lives in
-            # ``bal.core.checkalive.check_alive_expired``.
-            if check_alive_expired(
-                self.bal_plugin.is_basic_mode(), self.date_to_check
-            ):
-                raise CheckAliveError(self.date_to_check)
+            # The Check Alive must be strictly after today and strictly before
+            # the delivery. In BASIC mode the single validity gate below is a
+            # no-op (see ``bal.core.checkalive.ensure_check_alive_valid``), so a
+            # passed check-alive date never forces a postpone/rewrite; the
+            # delivery time (locktime) stays fully enforced.
+            delivery_date = resolve_delivery_date(
+                self.will_settings,
+                built_locktime=Will.get_min_locktime(self.willitems),
+            )
+            ensure_check_alive_valid(
+                self.bal_plugin.is_basic_mode(),
+                self.date_to_check,
+                delivery_date=delivery_date,
+            )
 
             self.init_heirs_to_locktime(self.bal_plugin.ENABLE_MULTIVERSE.get())
 
@@ -787,7 +792,9 @@ class BalWindow:
         """
         locktime = Util.parse_locktime_string(self.will_settings["locktime"])
         threshold_ts = resolve_guard_threshold(
-            self.bal_plugin.is_basic_mode(), self.will_settings
+            self.bal_plugin.is_basic_mode(),
+            self.will_settings,
+            creation_date=Will.get_creation_time(self.willitems),
         )
         if threshold_ts is not None:
             return locktime < threshold_ts
@@ -835,6 +842,13 @@ class BalWindow:
             except WillExecutorFeeTooHighException as e:
                 self.show_error(
                     _("Will-executor fee too high: {}").format(e)
+                )
+                return
+            except CheckAliveAfterDeliveryError:
+                self.show_error(
+                    _(
+                        "CheckAlive must be after today and before the delivery date please update it"
+                    )
                 )
                 return
             except CheckAliveError:
@@ -1298,6 +1312,12 @@ class BalWindow:
             #    means the old will must be invalidated on-chain.
             try:
                 self.init_class_variables()
+            except CheckAliveAfterDeliveryError:
+                _logger.info(
+                    "auto rebuild: check-alive not before the delivery, "
+                    "nothing to rebuild/invalidate"
+                )
+                return False
             except CheckAliveError:
                 _logger.info("auto rebuild: check-alive threshold passed -> invalidate")
                 self._auto_invalidate_will()

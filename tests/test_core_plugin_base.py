@@ -201,7 +201,7 @@ def test_balconfig_set():
 
 def test_default_will_settings_relative():
     rel = BalPlugin.default_will_settings_relative()
-    assert rel["threshold"] == "30d"
+    assert rel["threshold"] == "-30d"
     assert rel["locktime"] == "1y"
 
 

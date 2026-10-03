@@ -40,9 +40,11 @@ from ..core import checkalive
 from ..core import heirs as heirs_mod
 from ..core import will as will_mod
 from ..core.checkalive import (
+    CheckAliveAfterDeliveryError,
     CheckAliveError,
-    check_alive_expired,
+    ensure_check_alive_valid,
     resolve_date_to_check,
+    resolve_delivery_date,
     resolve_guard_threshold,
 )
 from ..core.heirs import Heirs, is_op_return_address
@@ -106,6 +108,12 @@ def _user_facing(e):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.LocktimeNotValid):
         return UserFacingException(str(e))
+    if isinstance(e, checkalive.CheckAliveAfterDeliveryError):
+        return UserFacingException(
+            _(
+                "CheckAlive must be after today and before the delivery date"
+            )
+        )
     if isinstance(e, checkalive.CheckAliveError):
         return UserFacingException(
             _(
@@ -272,13 +280,21 @@ class BalController:
             self.plugin.is_basic_mode(),
             self.will_settings,
             built_locktime=Will.get_min_locktime(self.willitems),
+            creation_date=Will.get_creation_time(self.willitems),
         )
         self.no_willexecutor = bool(self.plugin.NO_WILLEXECUTOR.get())
         self.willexecutors = Willexecutors.get_willexecutors(
             self.plugin, update=True, task=False
         )
-        if check_alive_expired(self.plugin.is_basic_mode(), self.date_to_check):
-            raise CheckAliveError(self.date_to_check)
+        delivery_date = resolve_delivery_date(
+            self.will_settings,
+            built_locktime=Will.get_min_locktime(self.willitems),
+        )
+        ensure_check_alive_valid(
+            self.plugin.is_basic_mode(),
+            self.date_to_check,
+            delivery_date=delivery_date,
+        )
         self._init_heirs_to_locktime(self.plugin.ENABLE_MULTIVERSE.get())
 
     def _init_heirs_to_locktime(self, multiverse=False):
@@ -458,7 +474,9 @@ class BalController:
 
         locktime = Util.parse_locktime_string(self.will_settings["locktime"])
         threshold_ts = resolve_guard_threshold(
-            self.plugin.is_basic_mode(), self.will_settings
+            self.plugin.is_basic_mode(),
+            self.will_settings,
+            creation_date=Will.get_creation_time(self.willitems),
         )
         if threshold_ts is not None:
             if locktime < threshold_ts:
@@ -583,6 +601,11 @@ class BalController:
         except will_mod.NoHeirsException as e:
             _logger.info(f"auto rebuild: no heirs ({e})")
             return {"result": "no_heirs"}
+        except CheckAliveAfterDeliveryError:
+            _logger.info(
+                "auto rebuild: Check Alive not before the delivery, nothing to do"
+            )
+            return {"result": "check_alive_before_delivery"}
         except CheckAliveError:
             _logger.info("auto rebuild: Check Alive already in the past")
             return self._auto_rebuild_invalidate("threshold_passed")
