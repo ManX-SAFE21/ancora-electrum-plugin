@@ -467,22 +467,35 @@ class BalPlugin(BasePlugin):
 
     @staticmethod
     def default_will_settings_absolute():
-        """Convert the default relative dates into absolute timestamps (from today)."""
+        """Convert the default relative dates into absolute timestamps.
+
+        The Check Alive anchor follows its sign (see ``bal.core.checkalive``):
+        a negative default counts back from the delivery, a positive one counts
+        forward from today (the inheritance creation date).
+        """
         relative_dates = BalPlugin.default_will_settings_relative()
         today = datetime.now(tz=timezone.utc).date()
         dt = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=timezone.utc)
-        threshold = (
-            dt + timedelta(days=BalTimestamp(relative_dates["threshold"]).duration_to_days())
-        ).timestamp()
-        locktime = (
-            dt + timedelta(days=BalTimestamp(relative_dates["locktime"]).duration_to_days())
-        ).timestamp()
-        return {"threshold": threshold, "locktime": locktime}
+        locktime_dt = dt + timedelta(
+            days=BalTimestamp(relative_dates["locktime"]).duration_to_days()
+        )
+        threshold = BalTimestamp(relative_dates["threshold"])
+        if threshold.unit is not None and threshold.value < 0:
+            anchor_dt = locktime_dt
+        else:
+            anchor_dt = dt
+        threshold_dt = anchor_dt + timedelta(days=threshold.duration_to_days())
+        return {"threshold": threshold_dt.timestamp(), "locktime": locktime_dt.timestamp()}
 
     @staticmethod
     def default_will_settings_relative():
-        """Default relative dates: 30 days threshold, 1 year locktime."""
-        return {"threshold": "30d", "locktime": "1y"}
+        """Default relative dates: 30 days BEFORE the delivery, 1 year locktime.
+
+        The Check Alive default is NEGATIVE on purpose: it keeps counting back
+        from the delivery date, preserving the historical "check alive 30 days
+        before delivery" behaviour.
+        """
+        return {"threshold": "-30d", "locktime": "1y"}
 
 
 class BalTimestamp:

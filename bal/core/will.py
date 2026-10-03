@@ -972,6 +972,25 @@ class Will:
     def get_min_locktime(will,default_value=None):
         return min((v.tx.locktime for v in will.values() if v.get_status('VALID')), default=default_value)
 
+    @staticmethod
+    def get_creation_time(will):
+        """Return the inheritance creation timestamp (oldest VALID will item).
+
+        A positive relative Check Alive value counts forward from this date.
+        The per-item ``time`` is stamped when the will is built and persisted
+        in the wallet DB, so the anchor does not drift with the clock.  Only
+        VALID items are considered; imported items without a ``time`` are
+        ignored.  Returns ``None`` when no VALID item carries a timestamp.
+        """
+        return min(
+            (
+                v.time
+                for v in will.values()
+                if v.get_status('VALID') and v.time is not None
+            ),
+            default=None,
+        )
+
 
 
     @staticmethod

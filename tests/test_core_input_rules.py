@@ -117,6 +117,30 @@ def test_normalize_locktime_raw_single_suffix():
     assert s == "130d"
 
 
+def test_normalize_locktime_raw_negative_disallowed_by_default():
+    # The delivery field must never accept a sign.
+    s, isdays, isyears, pos = normalize_locktime_raw_text("-30d", 4)
+    assert s == "30d"
+    assert isdays is True
+
+
+def test_normalize_locktime_raw_negative_allowed_keeps_single_sign():
+    s, isdays, isyears, pos = normalize_locktime_raw_text(
+        "-30d", 4, allow_negative=True
+    )
+    assert s == "-30d"
+    assert isdays is True
+    assert pos >= 1
+
+
+def test_normalize_locktime_raw_negative_only_leading():
+    # Extra signs are dropped; a single leading sign survives.
+    s, _isdays, _isyears, _pos = normalize_locktime_raw_text(
+        "--1y", 4, allow_negative=True
+    )
+    assert s == "-1y"
+
+
 # ------------------------------------------------------------------ #
 # Percentage-or-amount normalisation
 # ------------------------------------------------------------------ #

@@ -46,7 +46,12 @@ from ...core.animated_qr import (
     ur1_frames,
     ur2_frames,
 )
-from ...core.checkalive import CheckAliveError, resolve_date_to_check
+from ...core.checkalive import (
+    CheckAliveAfterDeliveryError,
+    CheckAliveError,
+    resolve_date_to_check,
+    resolve_relative_check_alive_date,
+)
 from ...core.qrtransfer import (
     CHUNK_PRESETS,
     MissingFramesError,
@@ -751,6 +756,13 @@ class BalBuildWillDialog(BalDialog):
         varrow = self.msg_set_status("Checking variables")
         try:
             self.bal_window.init_class_variables()
+        except CheckAliveAfterDeliveryError:
+            self.msg_set_status(
+                "Checking variables", varrow,
+                "Check Alive must be after today and before the delivery date",
+                self.COLOR_ERROR,
+            )
+            return "check_alive_before_delivery", None
         except CheckAliveError as cae:
             fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
             tx = Will.invalidate_will(
@@ -1194,10 +1206,11 @@ class BalBuildWillDialog(BalDialog):
                 self.bal_window.update_setting_widgets(
                     min_locktime, "locktime", update_all=True
                 )
-        # A relative "Check Alive" threshold ("N days BEFORE the delivery") is
-        # also PRESERVED: it is anchored on every check by
-        # ``resolve_date_to_check`` / ``resolve_guard_threshold``, so it does
-        # not need to be frozen to an absolute date here.
+        # A relative "Check Alive" threshold is also PRESERVED: it is anchored
+        # on every check by ``resolve_date_to_check`` / ``resolve_guard_threshold``
+        # (negative counts back from the delivery, positive forward from the
+        # inheritance creation date), so it never needs freezing to an absolute
+        # date here.
 
     def on_accept(self):
         try:
@@ -1542,6 +1555,19 @@ class BalBuildWillDialog(BalDialog):
             self._add_no_heirs_buttons()
             return
 
+        if self.have_to_sign == "check_alive_before_delivery":
+            # The Check Alive date is on/after the delivery (a configuration
+            # error, not an expired will): do NOT invalidate, just tell the
+            # user and let them close the wizard.
+            self.bal_window.show_error(
+                _(
+                    "CheckAlive must be after today and before the delivery "
+                    "date please update it"
+                )
+            )
+            self._add_close_button()
+            return
+
         _logger.debug("have to sign {}".format(self.have_to_sign))
         password = None
         if self.have_to_sign is None:
@@ -1830,9 +1856,14 @@ class BalBuildWillDialog(BalDialog):
                 threshold = None
                 num_reminders = 3
             else:
-                threshold_ts = BalTimestamp(
-                    self.bal_window.will_settings["threshold"]
-                ).to_timestamp()
+                # The Check Alive reference shares the same sign rule as the
+                # core: negative counts back from the delivery, positive counts
+                # forward from the inheritance creation date.
+                threshold_ts = resolve_relative_check_alive_date(
+                    self.bal_window.will_settings["threshold"],
+                    delivery_date=locktime_ts,
+                    creation_date=Will.get_creation_time(self.bal_window.willitems),
+                )
                 threshold = datetime.fromtimestamp(threshold_ts)
                 raw_description = self.bal_window.bal_plugin.EVENT_DESCRIPTION.get()
                 raw_summary = self.bal_window.bal_plugin.EVENT_SUMMARY.get()

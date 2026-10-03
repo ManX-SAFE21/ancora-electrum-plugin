@@ -412,7 +412,7 @@ def test_guard_not_blocked_by_old_built_will():
         # Freeze the built (VALID) will at a delivery one year longer than the
         # now-shortened settings: the pre-fix guard would reject the rebuild.
         item.tx.locktime = item.tx.locktime + 365 * 86400
-        ctl.will_settings = {"locktime": "1y", "threshold": "30d"}
+        ctl.will_settings = {"locktime": "1y", "threshold": "-30d"}
         Util.fix_will_settings_tx_fees(ctl.will_settings)
 
         ctl.init_class_variables()
@@ -446,7 +446,7 @@ def test_anticipated_rebuild_reanchors_date_to_check():
         # Per-heir deliveries require multiverse mode (the only way heirs can
         # carry a different recipe than the settings locktime).
         ctl.bal_plugin.ENABLE_MULTIVERSE.set(True)
-        ctl.will_settings = {"locktime": "2y", "threshold": "150d", "baltx_fees": 20}
+        ctl.will_settings = {"locktime": "2y", "threshold": "-150d", "baltx_fees": 20}
         Util.fix_will_settings_tx_fees(ctl.will_settings)
         ctl.heirs["alice"][2] = "2y"
         ctl.heirs["bob"][2] = "2y"

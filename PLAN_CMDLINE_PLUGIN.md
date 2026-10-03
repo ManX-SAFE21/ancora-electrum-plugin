@@ -49,7 +49,7 @@ Ho verificato sul codice reale (`electrum/commands.py`, `electrum/plugin.py`,
   - `willexecutors.py` — `Willexecutors` (config `bal_willexecutors`, chiave per `chainname`), `get_willexecutors`, `save`, `initialize_willexecutor`, `is_selected`, `is_valid`, `ping_servers_parallel`, `push_transactions_parallel`, `check_transactions_parallel`, `check_transaction`, `download_list`, `get_willexecutors_list_from_json`.
   - `will.py` — `Will` (statiche) e `WillItem` (stato per-tx: `VALID/COMPLETE/PUSHED/CHECKED/...`), `is_will_valid`, `check_will`, `check_willexecutors_and_heirs`, `invalidate_will`, `normalize_will`, `get_min_locktime`, `get_tx_from_any`, `set_check_willexecutor`, `save_valid_transactions_to_history`.
   - `plugin_base.py` — `BalPlugin` (tutte le `BalConfig`: chiavi `bal_*`), `BalTimestamp`, `get_version`, registrazione dei dict `heirs`/`will`/`will_settings` nel wallet DB.
-  - `checkalive.py` — `resolve_date_to_check`, `check_alive_expired` (riferimento temporale unico per ogni check).
+  - `checkalive.py` — `resolve_date_to_check`, `resolve_relative_check_alive_date`, `ensure_check_alive_valid` (riferimento temporale unico per ogni check; relativo negativo = prima della delivery, positivo = dopo la creazione).
   - `util.py` — `Util` (locktime, quantità, confronto tx/heirs, `get_available_utxos`, `fix_will_settings_tx_fees`).
 - `bal/gui/qt/window.py` — `BalWindow` contiene i flussi da **replicare in headless** (non riusabile direttamente perché legato a Qt):
   - `init_will` (riga 151), `load_willitems`/`save_willitems` (120/129),
@@ -173,7 +173,7 @@ Metodi principali (replicano le funzioni Qt, senza dialoghi):
 |---|---|---|
 | `load_willitems()` | 120 | Costruisce i `WillItem` dal dict `will` del wallet DB. |
 | `save_willitems()` | 129 | `to_dict()` con `tx` serializzato a stringa, `json.dumps` di prova, scrittura su `wallet.db` + `wallet.save_db()`. |
-| `init_class_variables()` | 618 | `date_to_check`, `no_willexecutor`, `willexecutors`, check `check_alive_expired`. |
+| `init_class_variables()` | 618 | `date_to_check`, `no_willexecutor`, `willexecutors`, check `ensure_check_alive_valid`. |
 | `check_will()` | 473 | `Will.is_will_valid(...)`; le eccezioni di dominio vengono propagate al comando. |
 | `build_inheritance_transaction()` | 678 | Flusso 1/7→2/7 replicato: `Will.check_amounts`, guardie locktime/willexecutor, `check_will()` e rebuild su `NotCompleteWillException`. Le `show_message/show_error` diventano raise (`UserFacingException` con testo chiaro) oppure ritorni `{"status": "postponed", "invalidation": tx}`. |
 | `sign_transactions(password)` | 952 | Firma i `VALID` non completi: fixup input dai willitems padre, `wallet.sign_transaction(tx, password, ignore_warnings=True)`, `set_status("COMPLETE")`, `check_signatures`. |

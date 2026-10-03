@@ -231,7 +231,7 @@ def test_shortened_relative_recipe_on_signed_rebuilds_not_noheirs():
     will = _make_will_with_heirs(will_heirs, lt)
     will["willid_1"].set_status("COMPLETE", True)
     check_date = resolve_date_to_check(
-        False, {"locktime": "2y", "threshold": "150d"}, built_locktime=lt
+        False, {"locktime": "2y", "threshold": "-150d"}, built_locktime=lt
     )
     assert check_date < lt  # the anchored window really precedes the delivery
     raised = None

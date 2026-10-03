@@ -15,7 +15,7 @@ pure policy in ``bal.core.checkalive``:
 
   * ``resolve_date_to_check(is_basic_mode, will_settings)`` - the single
     reference timestamp: "now" in BASIC, the stored threshold in ADVANCED;
-  * ``check_alive_expired(is_basic_mode, date_to_check)`` - whether the
+  * ``ensure_check_alive_valid(is_basic_mode, ...)`` - whether the
     Check-Alive guard should fire (never in BASIC).
 
 These tests exercise the exact code used at runtime (no GUI/Electrum wallet
@@ -33,7 +33,8 @@ sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
 from bal.core.checkalive import (  # noqa: E402  (path insert above)
     CheckAliveError,
-    check_alive_expired,
+    ensure_check_alive_valid,
+    is_check_alive_date_valid,
     resolve_date_to_check,
 )
 
@@ -72,23 +73,29 @@ def test_advanced_mode_parses_relative_threshold():
 def test_basic_mode_never_expired():
     """BASIC mode can never be "expired": a passed check-alive date must never
     force a postpone/rewrite of the will."""
-    assert check_alive_expired(True, time.time() - 10_000) is False
-    assert check_alive_expired(True, 1_000_000_000.0) is False
+    assert ensure_check_alive_valid(True, time.time() - 10_000) is None
+    assert ensure_check_alive_valid(True, 1_000_000_000.0) is None
 
 
 def test_advanced_mode_expired_when_past():
-    assert check_alive_expired(False, time.time() - 10_000) is True
+    assert is_check_alive_date_valid(time.time() - 10_000, None) is False
+    try:
+        ensure_check_alive_valid(False, time.time() - 10_000)
+    except CheckAliveError:
+        pass
+    else:
+        raise AssertionError("expected CheckAliveError")
 
 
 def test_advanced_mode_not_expired_when_future():
-    assert check_alive_expired(False, time.time() + 10_000) is False
+    assert is_check_alive_date_valid(time.time() + 10_000, None) is True
 
 
 def test_basic_mode_never_raises_check_alive_error():
     """Regression guard for the reported bug: whatever the delivery date,
     BASIC mode never raises CheckAliveError (the postpone/invalidate trigger)."""
-    date_to_check = resolve_date_to_check(True, {"threshold": "30d"})
-    assert not check_alive_expired(True, date_to_check)
+    date_to_check = resolve_date_to_check(True, {"threshold": "-30d"})
+    assert ensure_check_alive_valid(True, date_to_check) is None
     # If it did fire, this is the exact exception that would be raised.
     assert issubclass(CheckAliveError, Exception)
 

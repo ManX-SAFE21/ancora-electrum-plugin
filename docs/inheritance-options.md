@@ -32,6 +32,18 @@ you change anything in your will, BAL must decide between three outcomes:
 The whole point of rule 3 is safety: **a will‑executor must never be able to
 broadcast an old transaction that would execute your inheritance too early.**
 
+**Check‑Alive relative values are signed.** A RELATIVE Check‑Alive
+(``-30d`` / ``30d``) is anchored according to its sign:
+
+- **NEGATIVE** (``-30d``) counts **backwards from the delivery date** — the
+  classic "check alive 30 days before the delivery".
+- **POSITIVE** (``30d``) counts **forward from the inheritance creation date**
+  (the date the will was built), so it stays fixed while the will is unchanged.
+
+The Check‑Alive date must always be **after today** and **before the delivery**;
+when it is not, BAL raises `CheckAliveAfterDeliveryError` (a configuration error
+that aborts the action and never invalidates the will).
+
 ---
 
 ## 2. Transaction states (status flags)
@@ -164,6 +176,7 @@ exactly what the will‑executors hold — not the in‑memory copy.
 | **Move date EARLIER, still in the future** (anticipate) | **any** (signed or not) | Plain **rebuild** with the new earlier locktime (`HeirNotFound` fall‑through) — **never** an on‑chain invalidation | **No** |
 | **Move date EARLIER into the past** (new date already passed) | — | Will is genuinely **expired** → **invalidate** (`WillExpired`) | **Yes** |
 | Check‑Alive threshold already passed | — | **Invalidate** (`CheckAliveError`) | **Yes** |
+| Check‑Alive date not before the delivery (config error) | — | **Abort**, no rebuild/invalidate (`CheckAliveAfterDeliveryError`) | **No** |
 
 > **Why postpone needs an on‑chain invalidation:** the will‑executor still holds
 > the *old* transaction with the *earlier* locktime. If you simply re‑signed a

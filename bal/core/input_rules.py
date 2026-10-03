@@ -107,7 +107,7 @@ def _checkbdy(s: str, pos: int, appendix: str) -> Tuple[int, str]:
 
 
 def normalize_locktime_raw_text(
-    text: str, pos: int
+    text: str, pos: int, allow_negative: bool = False
 ) -> Tuple[str, bool, bool, int]:
     """Sanitise the RAW locktime field text.
 
@@ -117,6 +117,9 @@ def normalize_locktime_raw_text(
     Args:
         text: the raw field text.
         pos: the cursor position within ``text``.
+        allow_negative: when ``True`` a single leading ``-`` is kept (used by
+            the Check Alive field, whose sign selects the anchor date). The
+            delivery (locktime) field never accepts a sign.
 
     Returns:
         ``(clean, isdays, isyears, new_pos)`` where ``clean`` is the sanitised
@@ -124,10 +127,16 @@ def normalize_locktime_raw_text(
     """
     text = text.strip()
     chars = "0123456789dy"
+    if allow_negative:
+        chars += "-"
     pos = len("".join([i for i in text[:pos] if i in chars]))
     s = "".join([i for i in text if i in chars])
     isdays = False
     isyears = False
+
+    negative = allow_negative and "-" in s
+    if negative:
+        s = s.replace("-", "")
 
     pos, s = _checkbdy(s, pos, "d")
     pos, s = _checkbdy(s, pos, "y")
@@ -141,6 +150,10 @@ def normalize_locktime_raw_text(
         s = replace_dy_suffixes(s) + "d"
     if isyears:
         s = replace_dy_suffixes(s) + "y"
+
+    if negative:
+        s = "-" + s
+        pos = max(pos, 1)
     return s, isdays, isyears, pos
 
 

@@ -68,7 +68,8 @@ bal/                         <- the plugin package (this is what ships in the ZI
     willexecutors.py         <- remote will-executor services handling (is_selected / is_valid,
                                 parallel push/check).
     util.py                  <- locktime parsing/most helpers (timestamps only).
-    checkalive.py            <- resolve_date_to_check, check_alive_expired (GUI-free).
+    checkalive.py            <- resolve_date_to_check, resolve_relative_check_alive_date,
+                                ensure_check_alive_valid (GUI-free; signed relative rule).
     reminders.py             <- compute_reminder_offsets, BALCalendar .ics generation (GUI-free).
     input_rules.py           <- locktime/threshold data models, Raw/Date selector logic (GUI-free).
   cli/                       <- headless command-line layer (no Qt)
