@@ -37,3 +37,6 @@ tests/karen7
 
 # Compiled translations: build_zip.py rebuilds them from the .po sources
 *.mo
+
+# Android companion app: kept locally only, not part of the plugin repo
+android/
