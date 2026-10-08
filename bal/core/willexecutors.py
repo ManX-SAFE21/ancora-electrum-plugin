@@ -231,6 +231,13 @@ class Willexecutors:
 
     @staticmethod
     def get_willexecutor_transactions(will, force=False):
+        """Group the valid, signed, not-yet-pushed will txs by will-executor.
+
+        Returns ``{url: executor_record}`` where each record gets ``txs`` (the
+        raw txs, one per line) and ``txsids``.
+
+        The returned records are COPIES: the will items are never modified.
+        """
         willexecutors = {}
         for wid, willitem in will.items():
             if willitem.get_status("VALID"):
@@ -240,10 +247,18 @@ class Willexecutors:
                             url = willexecutor["url"]
                             if willexecutor and Willexecutors.is_selected(willexecutor):
                                 if url not in willexecutors:
-                                    willexecutor["txs"] = ""
-                                    willexecutor["txsids"] = []
-                                    willexecutor["broadcast_status"] = _("Waiting...")
-                                    willexecutors[url] = willexecutor
+                                    # Work on a COPY of the record: the item's
+                                    # own ``we`` dict is saved in the wallet, so
+                                    # the transient push fields below (raw txs,
+                                    # txids and the - translated - broadcast
+                                    # status shown in the push dialog) must
+                                    # never end up in it (stored data must not
+                                    # depend on the UI language, see bal/i18n.py).
+                                    record = dict(willexecutor)
+                                    record["txs"] = ""
+                                    record["txsids"] = []
+                                    record["broadcast_status"] = _("Waiting...")
+                                    willexecutors[url] = record
                                 willexecutors[url]["txs"] += str(willitem.tx) + "\n"
                                 willexecutors[url]["txsids"].append(wid)
 

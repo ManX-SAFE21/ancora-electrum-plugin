@@ -6,6 +6,12 @@ target-version = "py312"
 select =["E", "W", "F", "I", "N", "B", "INT"]  # INT: gettext rules (see bal/i18n.py)
 ignore = ["E501"]
 
+[tool.ruff.lint.isort]
+# Classify the plugin package explicitly: otherwise ruff decides from where it
+# is run / how the project root is detected, and the same import block is
+# "sorted" on one machine and I001 on another.
+known-first-party = ["bal"]
+
 [tool.ruff.lint.pep8-naming]
 classmethod-decorators = ["classmethod", "classproperty"]  # electrum.util.classproperty uses cls
 

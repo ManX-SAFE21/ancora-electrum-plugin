@@ -117,7 +117,10 @@ python3 build_zip.py   # -> bal-electrum-plugin.zip (deterministic, prints sha25
 ```
 
 - `build_zip.py` needs **Babel** (`pip install babel`): it compiles the
-  translation catalogs into the zip and stops if Babel is missing.
+  translation catalogs into the zip and stops if Babel is missing. The i18n
+  tests need it too. Install it in the **runtime** env used for releases
+  (`source "$BAL_HOME/electrum/env/bin/activate" && pip install babel`);
+  `make-release.sh` checks it before running anything.
 - `make-release.sh` requires gpg and Gitea credentials (`~/.git-credentials`
   or `GITEA_USER`/`GITEA_TOKEN`). It bumps `bal/manifest.json` — bump the
   version there, never invent a new source of truth.
