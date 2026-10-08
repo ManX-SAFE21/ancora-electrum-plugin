@@ -5,7 +5,7 @@
 #   ./make-release.sh           # read version from bal/manifest.json
 #   ./make-release.sh v0.6.2    # bump manifest to 0.6.2, then release
 #
-# Requires: git, gpg, curl, python3, sha256sum
+# Requires: git, gpg, curl, python3, sha256sum, Babel for python3 (pip install babel)
 # Optional: ruff (lint skipped if not installed)
 # Credentials: ~/.git-credentials or GITEA_USER / GITEA_TOKEN env vars
 
@@ -32,6 +32,12 @@ else
     TAG="v${CURRENT_VER}"
     NEW_VER=""
 fi
+
+# Babel is needed by the i18n tests (step 3) and by build_zip.py, which
+# compiles the translation catalogs into the zip (step 5). Check it up front
+# so a release never stops half-way.
+python3 -c "import babel" 2>/dev/null \
+    || die "Babel is missing for $(command -v python3): pip install babel"
 
 echo "=== Release ${TAG} ==="
 echo "Current manifest version: ${CURRENT_VER}"
@@ -68,6 +74,8 @@ if QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src python3 -m pytest \
       tests/test_group_d_alarms.py tests/test_group_e_mock_karen7.py \
       tests/test_group_f_heir_change_rebuild.py tests/test_group_g_basic_calendar.py \
       tests/test_group_h_v048.py \
+      tests/test_i18n.py tests/test_translations.py \
+      tests/test_cli_*.py tests/test_import_will_details.py \
       -q 2>&1; then
     echo "All tests passed."
 else

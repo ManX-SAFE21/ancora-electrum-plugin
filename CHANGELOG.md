@@ -3549,3 +3549,67 @@ delivery; when it is not, the plugin raises an explicit error (see below).
   catalogs refreshed (removed format strings marked obsolete).
 
 **Outcome:** DONE.
+
+---
+
+## 63. i18n review fixes (Truman's review of the translation PR)
+
+**Date:** 2026-10-07
+
+**What changed:**
+
+- `make-release.sh`
+  - Step 3 now also runs `tests/test_i18n.py`, `tests/test_translations.py`,
+    `tests/test_cli_*.py` and `tests/test_import_will_details.py` (the i18n
+    tests were never run by the release gate; the CLI and will-import tests
+    were not either).
+  - Checks up front that Babel is importable by `python3` and stops with
+    "pip install babel" otherwise: the i18n tests (step 3) and `build_zip.py`
+    (step 5) both need it, so a release no longer stops half-way.
+- `AGENTS.md`: Babel must be installed in the runtime env used for releases.
+- `pyproject.toml`: `[tool.ruff.lint.isort] known-first-party = ["bal"]`.
+  WHY: the reported I001 in `tests/test_translations.py` is not reproducible
+  from the repository root (ruff 0.15.11 and 0.6.9: clean), but it appears as
+  soon as ruff classifies `bal` as third-party (then 20 files report I001).
+  Removing the blank line would break the check where `bal` is first-party;
+  declaring it makes the result the same on every machine.
+- `bal/core/willexecutors.py` - `get_willexecutor_transactions` returns COPIES
+  of the executor records. It used to write `txs`, `txsids` and the
+  translated `broadcast_status` into the will item's own `we` dict, which is
+  saved in the wallet (stored data depended on the UI language).
+- `bal/core/will.py` - `WillItem` drops those transient fields when loading a
+  will saved by an older version, and maps a translated leading "New"
+  ("Nuovo", "Nuevo" - saved by i18n test builds) back to "New".
+- `bal/gui/qt/window.py`, `bal/cli/controller.py`: the status history of a new
+  will item is saved as the literal "New" (was `_("New")`).
+- `tests/test_core_status_language_neutral.py` (new, 7 tests; 5 fail on
+  `main`): English "New" stored, translated "New" mapped back, the mapping
+  covers every catalog's translation of "New", the push helper does not
+  modify the will item, old transient fields dropped on load.
+
+**Scope:** this entry contains ONLY the i18n review fixes. The other fixes
+prepared in the same session (invalidation fee, Check `KeyError`, cascade,
+deselected executor) are not part of it and will be proposed separately.
+
+**Verification (on `main` 827a1d1):**
+
+- New test file `tests/test_core_status_language_neutral.py`: 5 of 7 fail on
+  `main`, 7 of 7 pass with this change.
+- Extended release test list (as above) plus the new test file: 446 passed,
+  1 failed (`main`: 439 passed, same failure). The failure is pre-existing:
+  `test_group_e_mock_karen7::test_e5` needs `tests/karen7`, a wallet file that
+  is not in the repository.
+- Whole `tests/` directory: 609 passed, 26 failed, 3 collection errors
+  (`main`: 602 passed, and the SAME 26 failures and 3 errors, test by test).
+  All pre-existing and unrelated: 5 need `tests/karen7` (2 failures and the
+  3 collection errors); 21 in
+  `test_auto_rebuild_on_new_tx.py`, `test_cli_autorebuild.py` and
+  `test_cli_controller_offline.py` fail only when the whole directory runs
+  together (they pass when each file runs alone); 3 audio tests need an audio
+  device. `test_gui_export_dialogs.py::test_audio_import_receive_wiring` hangs
+  forever, also on `main`, so it was deselected.
+- `ruff check bal/ tests/`: the same 3 pre-existing I001 as on `main`
+  (`dialogs.py`, `test_core_animated_qr.py`, `test_core_qr_transfer.py`),
+  none new.
+
+**Outcome:** DONE (pending Truman's review).

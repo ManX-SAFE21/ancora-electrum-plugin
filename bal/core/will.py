@@ -1364,6 +1364,37 @@ class WillItem(Logger):
     # format_status_history() still translates them.
     LEGACY_STATUS_LABELS = (N_("New"),)
 
+    # Translations of "New" that test builds of the i18n work saved INTO the
+    # status history (window.py / the CLI used ``_("New")`` when building).
+    # They are mapped back to "New" on load so the history is language
+    # neutral again. Keep in sync with the "New" msgstr of every catalog in
+    # bal/locale (tests/test_core_status_language_neutral.py checks it).
+    TRANSLATED_NEW_LABELS = ("Nuovo", "Nuevo")
+
+    # Fields that Willexecutors.get_willexecutor_transactions /
+    # push_transactions_to_willexecutor used to write into the item's own
+    # executor record (older versions); they are transient push data.
+    TRANSIENT_PUSH_FIELDS = ("txs", "txsids", "broadcast_status")
+
+    @staticmethod
+    def _untranslate_new_status(status):
+        """Map a translated leading "New" of a saved history back to "New"."""
+        head, sep, rest = status.partition(".")
+        if head in WillItem.TRANSLATED_NEW_LABELS:
+            return "New" + sep + rest
+        return status
+
+    @staticmethod
+    def _without_transient_push_fields(we):
+        """Return ``we`` without the transient push fields (a copy if needed)."""
+        if not isinstance(we, dict) or not any(
+            k in we for k in WillItem.TRANSIENT_PUSH_FIELDS
+        ):
+            return we
+        return {
+            k: v for k, v in we.items() if k not in WillItem.TRANSIENT_PUSH_FIELDS
+        }
+
     def set_status(self, status, value=True):
         """Set a status flag and apply the related side effects.
 
@@ -1445,8 +1476,10 @@ class WillItem(Logger):
             w = data
         self.tx = Will.get_tx_from_any(w["tx"])
         self.heirs = w.get("heirs", None)
-        self.we = w.get("willexecutor", None)
-        self.status = w.get("status") or ""
+        self.we = WillItem._without_transient_push_fields(
+            w.get("willexecutor", None)
+        )
+        self.status = WillItem._untranslate_new_status(w.get("status") or "")
         self.description = w.get("description", None)
         self.time = w.get("time", None)
         self.change = w.get("change", None)

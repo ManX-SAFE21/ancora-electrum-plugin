@@ -551,7 +551,9 @@ class BalWindow:
                     tx["heirsvalue"] = txs[txid].heirsvalue
                     tx["description"] = txs[txid].description
                     tx["willexecutor"] = copy_structure(txs[txid].willexecutor)
-                    tx["status"] = _("New")
+                    # Stored history: always English (translated only for display by
+                    # format_status_history); never _() here.
+                    tx["status"] = "New"
                     tx["baltx_fees"] = txs[txid].tx_fees
                     tx["time"] = creation_time
                     tx["heirs"] = copy_structure(txs[txid].heirs)
