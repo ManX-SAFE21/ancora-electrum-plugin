@@ -92,6 +92,31 @@ def test_can_delete_none_false():
     assert _can_delete(None) is False
 
 
+def _signed_valid(we="https://we.example", **flags):
+    """A VALID + COMPLETE (signed) item, optionally with a will-executor."""
+    item = FakeWillItem(VALID=True, COMPLETE=True, **flags)
+    item.we = {"url": we, "selected": True} if we else None
+    return item
+
+
+def test_can_delete_signed_but_never_received_by_executor():
+    """Push failed / "Not on server": the executor does not hold it."""
+    assert _can_delete(_signed_valid(PUSH_FAIL=True, CHECK_FAIL=True)) is True
+    assert _can_delete(_signed_valid()) is True  # signed, never sent
+
+
+def test_can_delete_signed_and_pushed_false():
+    """The executor holds it: deleting locally would not cancel it."""
+    assert _can_delete(_signed_valid(PUSHED=True)) is False
+    assert _can_delete(_signed_valid(PUSHED=True, CHECKED=True)) is False
+    assert _can_delete(_signed_valid(CHECKED=True)) is False
+
+
+def test_can_delete_signed_backup_tx_without_executor_false():
+    """Signed txs without a will-executor (backup) stay protected."""
+    assert _can_delete(_signed_valid(we=None)) is False
+
+
 # ------------------------------------------------------------------ #
 # _apply_select_all
 # ------------------------------------------------------------------ #

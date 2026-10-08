@@ -767,7 +767,11 @@ class BalController:
         if not willitems:
             raise UserFacingException(_("No transaction matches the given txids"))
 
-        willexecutors = Willexecutors.get_willexecutor_transactions(willitems, force=force)
+        # Skip executors the user deselected after building the will (the
+        # controller's list is read from the config for every command).
+        willexecutors = Willexecutors.get_willexecutor_transactions(
+            willitems, force=force, current_willexecutors=self.willexecutors
+        )
         if not willexecutors:
             return {}
 

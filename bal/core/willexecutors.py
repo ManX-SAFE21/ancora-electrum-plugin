@@ -230,11 +230,18 @@ class Willexecutors:
         return True
 
     @staticmethod
-    def get_willexecutor_transactions(will, force=False):
+    def get_willexecutor_transactions(will, force=False, current_willexecutors=None):
         """Group the valid, signed, not-yet-pushed will txs by will-executor.
 
         Returns ``{url: executor_record}`` where each record gets ``txs`` (the
         raw txs, one per line) and ``txsids``.
+
+        ``current_willexecutors`` is the CURRENT executor list from the config
+        (``{url: record}``). When given, an executor that is no longer in it or
+        no longer selected is skipped. WHY: every will item keeps its own copy
+        of the executor record taken at build time (``selected`` = True), so
+        without this check a deselected executor would still receive the will.
+        ``None`` keeps the previous behaviour (only the item's own copy).
 
         The returned records are COPIES: the will items are never modified.
         """
@@ -245,6 +252,12 @@ class Willexecutors:
                     if not willitem.get_status("PUSHED") or force:
                         if willexecutor := willitem.we:
                             url = willexecutor["url"]
+                            if current_willexecutors is not None and not (
+                                Willexecutors.is_selected(
+                                    current_willexecutors.get(url)
+                                )
+                            ):
+                                continue
                             if willexecutor and Willexecutors.is_selected(willexecutor):
                                 if url not in willexecutors:
                                     # Work on a COPY of the record: the item's
