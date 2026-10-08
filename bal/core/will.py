@@ -704,6 +704,121 @@ class Will:
                         else:
                             w.set_status("CONFIRMED", True)
 
+    @staticmethod
+    def find_still_active_older_txs(will, wallet, current_locktime=None):
+        """Return the sent txs of an OLDER will that could still be executed.
+
+        Read-only safety check (CHANGELOG #69): it never builds, signs, sends
+        or invalidates anything, and never changes a status.
+
+        A will item is reported when ALL of these hold:
+
+        1. it was sent to a will-executor (``PUSHED``; ``CHECKED`` implies
+           it). Items that only failed to send are not reported (decision W2:
+           the executor most likely does not hold them);
+        2. it is not ``VALID`` (the current will is not a danger), and not
+           ``INVALIDATED``, ``CONFIRMED`` or ``MEMPOOL``;
+        3. its locktime is EARLIER than the current will: the earliest
+           locktime of the ``VALID`` items or, when there is none,
+           ``current_locktime`` (the delivery date of the settings);
+        4. it is still executable: no input is spent by a broadcast
+           transaction (see :meth:`_tx_still_executable`).
+
+        WHY: executors keep every transaction they ever received, and the
+        only way to kill one is to spend its coins on-chain. When a postpone
+        or an invalidation goes wrong (BUG-2 after a Cancel, BUG-3 with
+        several coins), an older transaction stays executable while the panel
+        shows the new, later date. A "Replaced" item with a LATER date is the
+        normal result of a fee or heir change and is not reported.
+
+        Nothing is reported while the wallet is not synchronized
+        (``wallet.is_up_to_date()`` is False, e.g. offline or still syncing):
+        a coin spent by a transaction the wallet has not seen yet would
+        otherwise raise a false alarm.
+
+        Args:
+            will: ``{txid: WillItem}`` (the plugin's ``willitems``).
+            wallet: The Electrum wallet.
+            current_locktime: Fallback reference date (UNIX timestamp) used
+                when the will has no ``VALID`` item.
+
+        Returns:
+            A list of ``(willitem, locktime, executor_url)`` sorted by
+            locktime (earliest first); empty when there is nothing to report.
+            Never raises.
+        """
+        try:
+            if not will or not wallet or not getattr(wallet, "adb", None):
+                return []
+            if not wallet.is_up_to_date():
+                return []
+            reference = Will.get_current_will_locktime(will, current_locktime)
+            if not reference:
+                return []
+            found = []
+            for wid, w in will.items():
+                if (
+                    not w.get_status("PUSHED")
+                    or w.get_status("VALID")
+                    or w.get_status("INVALIDATED")
+                    or w.get_status("CONFIRMED")
+                    or w.get_status("MEMPOOL")
+                ):
+                    continue
+                if int(w.tx.locktime) >= int(reference):
+                    continue
+                if not Will._tx_still_executable(wid, will, wallet):
+                    continue
+                found.append((w, int(w.tx.locktime), (w.we or {}).get("url")))
+            found.sort(key=lambda item: item[1])
+            return found
+        except Exception as e:
+            # A failure of this check must never break the Check wizard.
+            _logger.error(f"still-active check failed: {e!r}")
+            return []
+
+    @staticmethod
+    def get_current_will_locktime(will, fallback=None):
+        """Delivery date of the current will, as used by the still-active check.
+
+        The earliest locktime among the ``VALID`` items (the date the current
+        will can first be executed), or ``fallback`` (normally the delivery
+        date of the settings) when the will has no valid item.
+        """
+        locktimes = [
+            int(w.tx.locktime) for w in (will or {}).values() if w.get_status("VALID")
+        ]
+        return min(locktimes) if locktimes else fallback
+
+    @staticmethod
+    def _tx_still_executable(wid, will, wallet, _seen=None):
+        """True when no input of will tx ``wid`` is spent by a broadcast tx.
+
+        A wallet-local copy of a will tx (saved in the history) does not
+        count as a spender (:meth:`_funding_really_spent`). When an input
+        spends the output of another will tx that is not on-chain or in the
+        mempool, that output only exists if the parent tx can still be
+        executed, so the parent's inputs decide (recursively; ``_seen``
+        guards against loops in corrupted data).
+        """
+        seen = set() if _seen is None else _seen
+        if wid in seen:
+            return False
+        seen.add(wid)
+        for inp in will[wid].tx.inputs():
+            if Will._funding_really_spent(wallet, Util.utxo_to_str(inp)):
+                return False
+            parent_id = inp.prevout.txid.hex()
+            parent = will.get(parent_id)
+            if (
+                parent is not None
+                and not parent.get_status("CONFIRMED")
+                and not parent.get_status("MEMPOOL")
+                and not Will._tx_still_executable(parent_id, will, wallet, seen)
+            ):
+                return False
+        return True
+
     # def reflect_to_children(treeitem):
     #    if not treeitem.get_status("VALID"):
     #        _logger.debug(f"{tree:item._id} status not valid looking for children")

@@ -27,6 +27,7 @@ the few list classes they reference are imported lazily inside the methods that
 use them (see ``lists`` imports below).
 """
 
+import html
 import io
 import json
 import re
@@ -1891,6 +1892,10 @@ class BalBuildWillDialog(BalDialog):
         # the (modal) hint after close() mirrors the previous behaviour where
         # the hint appeared once the auto-closing dialog was gone.
         self.close()
+        # The still-active warning (#69) comes first: it is about funds that
+        # could leave earlier than planned, the hint only about next clicks.
+        if getattr(self, "_still_active_warning", None):
+            self.bal_window.show_warning(self._still_active_warning)
         if self._next_steps_hint:
             self.bal_window.show_message(self._next_steps_hint)
 
@@ -1945,6 +1950,12 @@ class BalBuildWillDialog(BalDialog):
         # result like the other rows have.
         self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_ok()))
 
+        # Safety net (CHANGELOG #69): warn when an executor still holds a
+        # transaction of an OLDER will that could be executed before the
+        # current one. Read-only; shown in basic and advanced mode, also with
+        # auto-sign.
+        self._show_still_active_warning()
+
         # Guide the user through any remaining MANUAL steps.  After the will is
         # (re)built -- e.g. because an heir was removed/added from the Wizard --
         # the new transactions may still need to be SIGNED and/or BROADCAST by
@@ -1954,6 +1965,57 @@ class BalBuildWillDialog(BalDialog):
         # next.  We inspect the real status of the valid wills and tell the user
         # exactly which buttons to press.
         self._show_next_steps_hint()
+
+    def _show_still_active_warning(self):
+        """Add a red warning row when an older will is still executable.
+
+        Uses :meth:`Will.find_still_active_older_txs` (read-only). The plain
+        text is also kept in ``self._still_active_warning`` so
+        :meth:`_on_close_clicked` repeats it in a popup once the dialog is
+        closed: a row at the bottom of a long report is easy to miss, and this
+        is the one message the user must not miss. Never raises.
+        """
+        self._still_active_warning = None
+        try:
+            bw = self.bal_window
+            fallback = (bw.will_settings or {}).get("locktime")
+            found = Will.find_still_active_older_txs(bw.willitems, bw.wallet, fallback)
+            if not found:
+                return
+            current = Will.get_current_will_locktime(bw.willitems, fallback)
+
+            def day(locktime):
+                return BalTimestamp._safe_fromtimestamp(int(locktime)).strftime(
+                    "%Y-%m-%d"
+                )
+
+            # One line per executor and date: an executor may hold several
+            # old transactions with the same date.
+            lines = []
+            for _item, locktime, url in found:
+                line = _(
+                    "The will-executor {url} still holds a transaction from an "
+                    "older will with delivery date {old_date}, earlier than "
+                    "your current will ({current_date})."
+                ).format(
+                    url=url or "?", old_date=day(locktime), current_date=day(current)
+                )
+                if line not in lines:
+                    lines.append(line)
+            title = _("Warning: an older will is still active.")
+            remedy = _(
+                "It could be used first. To cancel it, send your whole balance "
+                "to one of your own addresses (Electrum Send tab, Max), then "
+                "press Check again."
+            )
+            self._still_active_warning = "\n\n".join([title] + lines + [remedy])
+            self.msg_edit_row(
+                self.msg_error(
+                    "<br>".join(html.escape(t) for t in [title] + lines + [remedy])
+                )
+            )
+        except Exception as e:
+            _logger.error(f"still-active warning failed: {e!r}")
 
     def _show_next_steps_hint(self):
         """Append a clear "what to do next" line to the Building Will dialog.
