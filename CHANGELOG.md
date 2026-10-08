@@ -4025,3 +4025,61 @@ transaction already sent to an executor could stay executable (BUG-3 in
 
 **Outcome:** DONE (verified on a private regtest chain instead of the owner's
 ZIP test).
+
+---
+
+## 72. F2 (BUG-2): postponing after a Cancel now invalidates the old sent will
+
+**Date:** 2026-10-09
+
+**Problem (traced in the harness, scenario B5):** a signed will is sent to the
+executors; a fee (or heir) change rebuilds it and the user presses Cancel at
+"Sign your will" (the old sent txs become REPLACED, the new ones stay
+unsigned); then the delivery date is moved LATER and Check is pressed. The
+unsigned txs are dropped (marked INVALIDATED, the mechanism introduced by BAL
+`251fd93`), the will has no VALID tx left and is simply rebuilt at the new
+date. The postpone check (`check_willexecutors_and_heirs`) only looks at
+VALID txs, so the old REPLACED txs, still held by the executors with the
+EARLIER date, were never invalidated. The panel showed the new date.
+
+**What changed:**
+
+- `bal/core/will.py`
+  - New `Will.check_sent_txs_not_postponed(will, heirs, wallet)`: for every
+    item that is not VALID, was sent (`PUSHED`), is not
+    `CONFIRMED`/`MEMPOOL` and is still executable (no input spent by a
+    broadcast tx, `_tx_still_executable` from #69), the delivery date now
+    requested for its heirs is resolved with
+    `Util.resolve_locktime_against_tx` (the same rule as for VALID items,
+    relative recipes included); if it is LATER than the date frozen in the
+    tx, it raises `WillPostponedException`, so the existing postpone path
+    invalidates on-chain first (all coins, #71) and then rebuilds. A status
+    alone (`INVALIDATED` without a real spend) does not exclude a tx. Heirs
+    not in the old tx are skipped. Without a usable wallet nothing is
+    decided.
+  - `Will.is_will_valid` calls it right after `check_will` and before the
+    VALID-only check.
+- New `tests/test_core_postpone_after_cancel.py` (10): the BUG-2 state is a
+  postpone (on `main` it was a plain rebuild: `NotCompleteWillException`);
+  same date, earlier date, spent coin, never sent, confirmed, VALID items
+  are not; status INVALIDATED with an unspent coin still counts; heir added
+  plus later date is a postpone; no wallet, no decision.
+
+**Verification (Electrum 4.8.2 source, Python 3.11, WSL):**
+
+- Scenario matrix, 6 runs: B2, B2adv, B5, B6 now OK 6/6 (were DANGER);
+  every other verdict unchanged. After no Check is an older tx still
+  executable (oracle 0 on 714 Checks), so the #69 warning no longer fires.
+  Remaining DANGER: A7, A9, A13, A7adv (BUG-1, F1).
+- Invalidations per scenario: one more only in the BUG-2 scenarios (B2,
+  B2adv, B5, B5fix, B5fix2, B5self2, B6: exactly one, the needed one); none
+  added to the fee/heir/earlier-date scenarios (no useless fees).
+- Real chain (private regtest Bitcoin Core 31.1 node): the B5fix2 steps,
+  oracle right after the postponing Check: 0 older txs executable in 3/3
+  runs (on `main` before this change: 2 in 3/3). The automatic invalidation
+  was accepted by the node and mined; the new will is `non-final` before its
+  date, accepted after it, and pays the heirs.
+- `ruff check bal/ tests/`: the same 3 pre-existing I001, none new.
+
+**Outcome:** DONE (verified on a private regtest chain; the owner asked
+Claude Code to test instead of a testnet wallet).
