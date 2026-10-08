@@ -1251,6 +1251,9 @@ class Will:
 
         Will.check_will(will, all_utxos, wallet, timestamp_to_check)
         if heirs:
+            # BUG-2 (CHANGELOG #72): a sent tx that is no longer VALID can
+            # still be postponed; checked before the VALID-only check below.
+            Will.check_sent_txs_not_postponed(will, heirs, wallet)
             if not Will.check_willexecutors_and_heirs(
                 will,
                 heirs,
@@ -1392,6 +1395,65 @@ class Will:
             if wi.get_status("VALID") or wi.get_status("REPLACED"):
                 out.append(wid)
         return out
+
+    @staticmethod
+    def check_sent_txs_not_postponed(will, heirs, wallet):
+        """Raise WillPostponedException for a postponed, already SENT old tx.
+
+        Covers the will items that :meth:`check_willexecutors_and_heirs` does
+        not look at: items that are no longer ``VALID`` (``REPLACED``, or
+        marked ``INVALIDATED`` without a real on-chain spend) but were sent to
+        a will-executor (``PUSHED``), are not ``CONFIRMED``/``MEMPOOL`` and
+        are still executable (no input spent by a broadcast transaction, see
+        :meth:`_tx_still_executable`). If the delivery date now requested for
+        one of their heirs is LATER than the date frozen in the transaction,
+        the old transaction would be executed before the new will: it must be
+        invalidated on-chain first, exactly like the postpone of a VALID
+        signed will.
+
+        WHY (BUG-2): after a Cancel at "Sign your will" the will is left with
+        unsigned VALID txs and the old sent txs are REPLACED. When the date is
+        then moved later, the unsigned txs are dropped, the will has no VALID
+        tx and was simply rebuilt at the new date, while the executors kept
+        the old txs with the EARLIER date. A fee or heir change alone is not a
+        postpone: the replaced tx keeps the requested date or a later one.
+
+        The requested date is resolved per heir with
+        :meth:`Util.resolve_locktime_against_tx`, the same rule used for the
+        VALID items (relative "1y"/"30d" recipes included). Heirs that are not
+        in the old transaction (added, or pseudo-heirs of the executor fee) are
+        skipped; the heirs present in both decide.
+
+        Without a usable wallet nothing is decided (an unspent coin cannot be
+        told apart from a spent one).
+        """
+        if not wallet or not getattr(wallet, "adb", None):
+            return
+        for wid, w in will.items():
+            if (
+                w.get_status("VALID")
+                or not w.get_status("PUSHED")
+                or w.get_status("CONFIRMED")
+                or w.get_status("MEMPOOL")
+            ):
+                continue
+            if not Will._tx_still_executable(wid, will, wallet):
+                continue
+            tx_locktime = int(w.tx.locktime)
+            for wheir, their in (w.heirs or {}).items():
+                if 'w!ll3x3c"' == wheir[:9]:
+                    continue
+                heir = heirs.get(wheir, None)
+                if not heir:
+                    continue
+                new_locktime = Util.resolve_locktime_against_tx(
+                    heir[2], their[2], tx_locktime
+                )
+                if new_locktime > tx_locktime:
+                    raise WillPostponedException(
+                        f"{wheir}: locktime postponed {tx_locktime}->"
+                        f"{new_locktime} on a sent, replaced will tx {wid[:8]}"
+                    )
 
     @staticmethod
     def check_willexecutors_and_heirs(
