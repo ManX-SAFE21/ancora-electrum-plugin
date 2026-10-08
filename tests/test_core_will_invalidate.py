@@ -222,14 +222,19 @@ class TestInvalidateWill:
         result, _, _ = _run_invalidate(will, wallet)
         assert result is None
 
-    def test_no_valid_items_returns_none(self):
-        """When all will items are INVALIDATED, returns None."""
+    def test_unspent_coin_of_non_valid_item_is_still_spent(self):
+        """A non-VALID item whose coin is still in the wallet is invalidated.
+
+        Changed by #71 (BUG-3): this used to return None. A status is the
+        plugin's bookkeeping; while the coin is unspent, a transaction an
+        executor holds with it can still be executed, so it is spent too.
+        """
         item = _make_willitem(valid=False)
         will = {"willtxid1": item}
         wallet = _mock_wallet([_make_utxo()])
 
         result, _, _ = _run_invalidate(will, wallet)
-        assert result is None
+        assert result is not None
 
     def test_empty_will_returns_none(self):
         """An empty will dictionary returns None."""

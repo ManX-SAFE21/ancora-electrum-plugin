@@ -3965,3 +3965,63 @@ pass; whole `tests/` directory: same results as `main`; the zip builds and
 loads as an external plugin.
 
 **Outcome:** DONE (pending the owner's check of the ZIP).
+
+---
+
+## 71. F3 (BUG-3): the invalidation spends every coin of every will transaction
+
+**Date:** 2026-10-08
+
+**Problem:** `Will.invalidate_will` took only ONE input per VALID will
+transaction (`filtered_inputs` was keyed by will id) and ignored the
+transactions that were no longer VALID. With two or more coins, which coin was
+left out depended on the coin order: after "Tools > Invalidate" an older
+transaction already sent to an executor could stay executable (BUG-3 in
+`FINDINGS-2026-10-08`, scenario B5fix2 and the two BUG-3 probes).
+
+**What changed (owner's choice "B"):**
+
+- `bal/core/will.py` - `invalidate_will` now spends EVERY wallet coin used as
+  an input by ANY will item (current, replaced, invalidated...). Wallet coins
+  that no will transaction uses are not touched; inputs that spend another
+  will transaction's output are not wallet coins and are skipped. WHY not only
+  the VALID / sent items: the statuses are the plugin's bookkeeping and are
+  wrong exactly in the BUG-2 cases; only spending a coin really kills the
+  transactions that use it. In practice the result is almost always the same
+  as before plus the missing coins, since the will already uses all the
+  wallet's coins.
+- Consequence: when no item is VALID but some will coin is still in the
+  wallet, an invalidation is now built instead of `None` (e.g. Check Alive
+  passed on a will whose items were all marked invalidated without an
+  on-chain spend). `tests/test_core_will_invalidate.py`:
+  `test_no_valid_items_returns_none` became
+  `test_unspent_coin_of_non_valid_item_is_still_spent`.
+- New `tests/test_core_invalidate_all_coins.py` (5): a 2-input transaction
+  spends both coins; the coin of an older sent (REPLACED) item is spent; the
+  coin of an item marked INVALIDATED but still unspent is spent; a wallet
+  coin outside the will is not touched; coins already spent are skipped. 4 of
+  the 5 fail on `main` before this change.
+
+**Verification (Electrum 4.8.2 source, Python 3.11, WSL):**
+
+- BUG-3 probes followed by "Tools > Invalidate", 12 runs each: 24/24 with NO
+  transaction left executable at the executors (before: the "after Cancel"
+  probe left older ones alive in 8 of 12 runs).
+- Scenario matrix, 6 runs: B5fix2 OK 6/6 (before: depended on the coin
+  order); every other verdict unchanged; the #69 warning still matches the
+  oracle on all 714 Checks.
+- Real chain (private regtest Bitcoin Core 31.1 node, no real network or
+  coins; the owner asked Claude Code to test instead of a testnet wallet):
+  real coins, the invalidation sent to the node and mined, the executors'
+  transactions judged by the node's UTXO set. With this change: 12/12 runs
+  with 0 executable transactions left after "Tools > Invalidate". On `main`
+  before it, the same "after Cancel" case left 2 executable in 3 of 6 runs.
+  Then, with the private chain's clock moved past the will date, the new
+  will transaction was refused before the date (`non-final`), accepted
+  after it, executed and paid the heirs (60 % / 40 % as configured); the
+  other executor's copy and every old transaction were refused
+  (`missing-inputs`).
+- `ruff check bal/ tests/`: the same 3 pre-existing I001, none new.
+
+**Outcome:** DONE (verified on a private regtest chain instead of the owner's
+ZIP test).
