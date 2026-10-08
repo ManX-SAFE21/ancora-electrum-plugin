@@ -93,13 +93,27 @@ def _can_broadcast(will_item):
 
 
 def _can_delete(will_item):
-    """True if a will transaction may be deleted (invalid or unsigned).
+    """True if a will transaction may be deleted.
 
-    Valid AND fully-signed transactions are never deletable: removing them
-    would silently drop a committed inheritance.
+    Deletable:
+        * invalid or not fully signed transactions (unchanged rule);
+        * valid AND fully signed transactions that their will-executor NEVER
+          received: not PUSHED and not CHECKED (e.g. "Push failed" /
+          "Not on server", or never sent).
+
+    Not deletable: a valid, signed transaction that the will-executor holds
+    (PUSHED or CHECKED). WHY: deleting it only on this PC would not remove it
+    from the executor's server, so the user would wrongly believe that
+    inheritance was cancelled; that case needs an on-chain invalidation.
+    Signed transactions without a will-executor (backup txs) also stay
+    protected, as before.
     """
-    return bool(will_item) and (
-        not will_item.get_status("VALID") or not will_item.get_status("COMPLETE")
+    if not will_item:
+        return False
+    if not will_item.get_status("VALID") or not will_item.get_status("COMPLETE"):
+        return True
+    return bool(getattr(will_item, "we", None)) and not (
+        will_item.get_status("PUSHED") or will_item.get_status("CHECKED")
     )
 
 

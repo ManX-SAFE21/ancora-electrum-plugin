@@ -3754,3 +3754,49 @@ on `main`, passes with the fix).
 `ruff check` clean.
 
 **Outcome:** DONE (included in the owner's test ZIP of 2026-09-27).
+
+---
+
+## 67. Deselected will-executor: its tx can be deleted and is no longer pushed
+
+**Date:** 2026-09-27
+
+**Problem (owner, mainnet wallet):** the will had a signed tx for
+`we.divinaly.support` whose push had failed ("Push failed", "Not on server").
+After deselecting that executor, Check still reported the will as valid, the
+row stayed, and "delete" in the context menu was disabled (valid + signed
+txs were never deletable). The broadcast also still targeted the deselected
+executor, because each will item keeps its own build-time copy of the
+executor record (`selected` = True).
+
+**What changed (owner chose option "B"):**
+
+- `bal/gui/qt/lists.py` - `_can_delete`: a valid, signed tx is now deletable
+  when its will-executor NEVER received it (not PUSHED and not CHECKED). It
+  stays protected when the executor holds it (deleting it locally would not
+  cancel it on the server) and when it has no executor (backup tx).
+- `bal/core/willexecutors.py` - `get_willexecutor_transactions(...,
+  current_willexecutors=None)`: when the current executor list is given, an
+  executor that is no longer selected (or no longer listed) is skipped.
+- `bal/gui/qt/window.py` (manual broadcast) and `bal/cli/controller.py`
+  (`bal_will_broadcast`) pass the current list read from the config. The
+  wizard already filtered by the current selection.
+- Tests: `tests/test_gui_will_menu.py` (+3: deletable when never received,
+  protected when pushed/checked, protected backup tx) and new
+  `tests/test_core_deselected_executor.py` (4).
+
+**Not changed (proposal for Truman, option "A"):** Check still does not treat
+a tx of a deselected executor as "not coherent" (no automatic rebuild).
+
+**Verification:** 483 passed, 1 failed (pre-existing missing `tests/karen7`);
+`ruff check` clean on the touched files. Live (Electrum 4.8.2 testnet, CLI):
+will built for 2 executors, one deselected → `bal_will_broadcast` targets only
+the selected one (before the fix it targeted both).
+
+**Outcome:** DONE (pending the owner's test of the ZIP).
+
+**Porting note (entries 64-67):** first written on `main` 4a33116 as
+58-61 (numbers then taken by the i18n and Check Alive work), re-applied on
+`main` 827a1d1 on 2026-10-07 together with #63: extended release test list
+489 passed, 1 pre-existing failure (missing `tests/karen7`); `ruff` no new
+errors.

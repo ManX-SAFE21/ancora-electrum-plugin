@@ -1632,7 +1632,15 @@ class BalWindow:
             willitems = {
                 t: willitems[t] for t in txids if t in willitems
             }
-        willexecutors = Willexecutors.get_willexecutor_transactions(willitems, force=force)
+        # Read the CURRENT executor list from the config, so an executor the
+        # user deselected after building the will is not contacted anymore.
+        willexecutors = Willexecutors.get_willexecutor_transactions(
+            willitems,
+            force=force,
+            current_willexecutors=Willexecutors.get_willexecutors(
+                self.bal_plugin, update=False, task=False
+            ),
+        )
 
         def getMsg(willexecutors):
             msg = _("Broadcasting Transactions to Will-Executors:") + "\n"
