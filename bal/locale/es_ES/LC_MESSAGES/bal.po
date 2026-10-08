@@ -24,10 +24,13 @@ msgid ""
 " heirs list:  \r\n"
 "$heirs_complete"
 msgstr ""
+"Safe21 Heartbeat: ejecución del testamento de $wallet_name\r\n"
+" lista de herederos:  \r\n"
+"$heirs_complete"
 
 #: bal/core/plugin_base.py:366
 msgid "Safe21 Heartbeat - Will execution of $wallet_name"
-msgstr ""
+msgstr "Safe21 Heartbeat - Ejecución del testamento de $wallet_name"
 
 #: bal/core/will.py:1536
 #, python-brace-format
@@ -202,7 +205,7 @@ msgstr "Sus {0} se exportaron a '{1}'"
 
 #: bal/gui/qt/dialogs.py:190
 msgid "Safe21 Heartbeat Wizard Setup"
-msgstr ""
+msgstr "Safe21 Heartbeat - Configuración del asistente"
 
 #: bal/gui/qt/dialogs.py:327 bal/gui/qt/dialogs.py:2824
 msgid "Previous"
@@ -218,7 +221,7 @@ msgstr "Cancelar"
 
 #: bal/gui/qt/dialogs.py:361
 msgid "Safe21 Heartbeat - Heirs"
-msgstr ""
+msgstr "Safe21 Heartbeat - Herederos"
 
 #: bal/gui/qt/dialogs.py:363
 #, python-format
@@ -246,7 +249,7 @@ msgstr "Exportar"
 
 #: bal/gui/qt/dialogs.py:400 bal/gui/qt/dialogs.py:508
 msgid "Safe21 Heartbeat - Will-Executors"
-msgstr ""
+msgstr "Safe21 Heartbeat - Will-Executor"
 
 #: bal/gui/qt/dialogs.py:401
 msgid "Choose willexecutors download method"
@@ -278,7 +281,7 @@ msgstr "Configura y selecciona tus Will-Executor"
 
 #: bal/gui/qt/dialogs.py:528
 msgid "Safe21 Heartbeat - Will Settings"
-msgstr ""
+msgstr "Safe21 Heartbeat - Configuración del testamento"
 
 #: bal/gui/qt/dialogs.py:563 bal/gui/qt/dialogs.py:616
 msgid "Please wait"
@@ -1567,11 +1570,11 @@ msgstr "Restablece estos ajustes a sus valores predeterminados"
 
 #: bal/gui/qt/plugin.py:986
 msgid "Open the Safe21 support website"
-msgstr ""
+msgstr "Abrir el sitio web de soporte de Safe21"
 
 #: bal/gui/qt/plugin.py:998
 msgid "Based on Bitcoin After Life (BAL) by Svatantrya — MIT licence"
-msgstr ""
+msgstr "Basado en Bitcoin After Life (BAL) de Svatantrya — licencia MIT"
 
 #: bal/gui/qt/plugin.py:1007
 msgid "Support:"
@@ -1580,7 +1583,7 @@ msgstr "Soporte:"
 #: bal/gui/qt/plugin.py:1065
 #, python-brace-format
 msgid "Safe21 Heartbeat - {}"
-msgstr ""
+msgstr "Safe21 Heartbeat - {}"
 
 #: bal/gui/qt/theme.py:93
 msgid "Not on server"
@@ -1715,7 +1718,7 @@ msgstr "&Will-Executor"
 
 #: bal/gui/qt/window.py:244
 msgid "Please restart Electrum to activate the Safe21 Heartbeat plugin"
-msgstr ""
+msgstr "Reinicia Electrum para activar el plugin Safe21 Heartbeat"
 
 #: bal/gui/qt/window.py:288
 msgid "New heir"

@@ -3943,3 +3943,25 @@ that lost a tx may still be listed; transactions exported by hand are not
 tracked); all checks so far on a simulated wallet, not mainnet.
 
 **Outcome:** DONE (pending the owner's test of the ZIP).
+
+---
+
+## 70. Spanish translations of the rebrand texts
+
+**Date:** 2026-10-08
+
+**Why:** #68 left its 10 new texts untranslated in `es_ES` (English shown),
+waiting for Truman (decision D9). The owner then decided that Claude Code
+translates Spanish too (see #69).
+
+**What changed:** `bal/locale/es_ES/LC_MESSAGES/bal.po` only: the 10 texts
+of #68 (window titles, wizard title, calendar defaults, support-link tooltip,
+credits line, restart message), in the style of the previous BAL Spanish
+translations. The Spanish catalog is now complete (0 untranslated, 0 fuzzy).
+No code change.
+
+**Verification:** `tests/test_translations.py` and `tests/test_i18n.py`
+pass; whole `tests/` directory: same results as `main`; the zip builds and
+loads as an external plugin.
+
+**Outcome:** DONE (pending the owner's check of the ZIP).
