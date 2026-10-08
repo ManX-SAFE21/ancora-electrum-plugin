@@ -3679,3 +3679,54 @@ enabled on the invalidation, so its fee can be raised from Electrum's History
 estimate, so regtest invalidations will pay that rate.
 
 **Outcome:** DONE (pending the owner's test of the ZIP).
+
+---
+
+## 65. Check crashed with `KeyError: '<txid>'` (stale "father" link in the will tree)
+
+**Date:** 2026-09-27
+
+**Symptom (owner's mainnet wallet, 23 will items, Electrum 4.8.2):** the Check
+wizard stopped at "Checking your will" with `Error: 'a65a682f…'`, and the
+window refresh logged "error while updating window" with the same txid:
+
+```
+File "bal/core/will.py", line 657, in check_invalidated
+    or willtree[w.father].get_status("CONFIRMED")
+KeyError: 'a65a682f2975f0dffd9eccce9392833f227badf617fc67815674736d594d4115'
+```
+
+**Root cause:** every will item stores its parent will tx in `father`, which is
+persisted in the wallet (`"Father"` in `WillItem.to_dict`). `Will.add_willtree`
+only ever SET it (`if not father: father = ...`) and never cleared it, so when
+the parent tx was later removed from the will (rebuild, merge, replacement) the
+child kept pointing to a txid that no longer exists. `check_invalidated` then
+indexed the will with it. Reproduced on unmodified `main` (not related to #64).
+
+**What changed:**
+
+- `bal/core/will.py`
+  - `Will.add_willtree`: resets `father` on every item before rebuilding the
+    links, so the tree is always recomputed from the transactions themselves
+    (a stale value loaded from the wallet is discarded). Docstring added.
+  - `Will.check_invalidated`: defensive lookup - a father that is not (or no
+    longer) in the will is treated as "no father" instead of raising.
+- `tests/test_core_willtree_father.py` (new): stale father discarded / replaced
+  by the real parent, no crash in `check_invalidated` (with and without the
+  tree rebuild), real parent/child link built, child of an unconfirmed parent
+  still skipped. 4 of the 6 tests fail on `main` and pass with the fix; the 2
+  "normal behaviour" tests pass on both.
+
+**Verification:** make-release test list + `tests/test_cli_*.py` +
+`tests/test_import_will_details.py`: 458 passed, 1 failed (pre-existing,
+unrelated: `test_group_e_mock_karen7::test_e5` needs the missing `tests/karen7`
+wallet file). `ruff check` clean on the touched files.
+
+**Found while writing the tests, NOT fixed here (reported to the owner):**
+`Will.set_invalidate` iterates `children.items()`, but `add_willtree` builds
+`children` as a LIST, so invalidating an item that has child will txs raises
+`AttributeError: 'list' object has no attribute 'items'` (reproduced on
+`main`). The existing tests in `test_core_will_invalidate.py` set `children` to
+dicts by hand, so they do not see it.
+
+**Outcome:** DONE (pending the owner's test of the ZIP).
