@@ -206,7 +206,7 @@ def build_ics_reminders(
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        f"PRODID:-//Bitcoin After Life//Electrum Plugin/{version}",
+        f"PRODID:-//Safe21//Safe21 Heartbeat Electrum Plugin/{version}",
     ]
 
     # One separate VEVENT per reminder offset (its own date in the calendar).

@@ -1,6 +1,10 @@
-"""BAL - Bitcoin After Life Electrum plugin.
+"""Safe21 Heartbeat Electrum plugin.
 
-Free and decentralized Bitcoin inheritance support for the Electrum wallet.
+Pre-signed, time-locked backup transactions for the Electrum wallet: they send
+your bitcoin to the people you chose only if you stop refreshing them.
+Based on Bitcoin After Life (BAL) by Svatantrya (MIT licence). The package,
+config keys and wallet keys are still named ``bal``: the internal identity is
+renamed in a later, separate step.
 
 This package was reorganized (Approach A: conservative, behavior-preserving)
 to cleanly separate logic from presentation. The original monolithic plugin

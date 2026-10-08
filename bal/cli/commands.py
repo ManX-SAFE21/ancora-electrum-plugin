@@ -2,7 +2,7 @@
 bal.cli.commands
 ================
 
-CLI commands (``bal_*``) for the Bitcoin After Life plugin.
+CLI commands (``bal_*``) for the Safe21 Heartbeat plugin.
 
 This module is the *transport layer* of the command-line front-end: every
 function is a coroutine decorated with ``@plugin_command`` so Electrum exposes

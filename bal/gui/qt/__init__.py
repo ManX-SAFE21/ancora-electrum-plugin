@@ -2,7 +2,7 @@
 bal.gui.qt
 ==========
 
-The PyQt6 graphical interface of the Bitcoin After Life plugin.
+The PyQt6 graphical interface of the Safe21 Heartbeat plugin.
 
 Module map (was previously one 4000-line ``qt.py``):
 

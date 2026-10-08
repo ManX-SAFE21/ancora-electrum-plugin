@@ -137,12 +137,12 @@ def test_reset_restores_all_dialog_settings():
     editable_dates = BalConfig(cfg, "bal_editable_dates", False)
     calendar_app = BalConfig(cfg, "bal_open_app", "xdg-open")
     event_summary = BalConfig(
-        cfg, "bal_event_summary", "BAL -Will execution of $wallet_name"
+        cfg, "bal_event_summary", "Safe21 Heartbeat - Will execution of $wallet_name"
     )
     event_description = BalConfig(
         cfg,
         "bal_event_description",
-        "BAL will execution of $wallet_name\r\n heirs list:  \r\n$heirs_complete",
+        "Safe21 Heartbeat will execution of $wallet_name\r\n heirs list:  \r\n$heirs_complete",
     )
     save_history = BalConfig(cfg, "bal_save_history", True)
     history_label = BalConfig(

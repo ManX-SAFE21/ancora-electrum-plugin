@@ -32,6 +32,7 @@ from .common import (
     QInputDialog,
     QLabel,
     QPushButton,
+    Qt,
     QTimer,
     QVBoxLayout,
     QWidget,
@@ -281,8 +282,8 @@ class Plugin(BalPlugin, EventListener):
 
     @hook
     def create_status_bar(self, sb):
-        # Show the BAL icon in the status bar (bottom-right): it signals that
-        # the Bitcoin After Life plugin is installed and, when clicked, quickly
+        # Show the plugin icon in the status bar (bottom-right): it signals that
+        # the Safe21 Heartbeat plugin is installed and, when clicked, quickly
         # opens the plugin settings (settings_dialog).
         #
         # NOTE: this was NOT the "condensed menu/tabs" bug under the Electrum
@@ -303,7 +304,8 @@ class Plugin(BalPlugin, EventListener):
                 pass
         b = StatusBarButton(
             read_QIcon_from_bytes(self.read_file("icons/bal32x32.png")),
-            "Bal {}".format(_("Bitcoin After Life")),
+            # Product name: a brand, so it is never translated.
+            "Safe21 Heartbeat",
             lambda: self.settings_dialog(sb.window()),
             sb.height(),
         )
@@ -979,15 +981,24 @@ class Plugin(BalPlugin, EventListener):
 
         # Group C / C4c: clickable support link to the project website.
         lbl_support = QLabel(
-            '<a href="https://bitcoin-after.life"><b>bitcoin-after.life</b></a>'
+            '<a href="https://safe21.io"><b>safe21.io</b></a>'
         )
-        lbl_support.setToolTip(_("Open the Bitcoin After Life support website"))
+        lbl_support.setToolTip(_("Open the Safe21 support website"))
         # Open the link in the user's browser via Electrum's helper instead of
         # letting Qt open it directly, so it goes through Electrum's policy.
         lbl_support.setOpenExternalLinks(False)
         lbl_support.linkActivated.connect(
-            lambda _url: webopen("https://bitcoin-after.life")
+            lambda _url: webopen("https://safe21.io")
         )
+
+        # Credits for the original project (MIT licence: the copyright notice
+        # of Bitcoin After Life must stay visible in the fork). On its own
+        # line under the bottom row so the fixed-size dialog does not widen.
+        lbl_credits = QLabel(
+            _("Based on Bitcoin After Life (BAL) by Svatantrya — MIT licence")
+        )
+        lbl_credits.setStyleSheet("color: gray;")
+        lbl_credits.setAlignment(Qt.AlignmentFlag.AlignRight)
 
         # Bottom row: Reset on the left, support link on the right.
         bottom_row = QHBoxLayout()
@@ -1005,6 +1016,7 @@ class Plugin(BalPlugin, EventListener):
         outer.addSpacing(12)
         outer.addLayout(grid)
         outer.addLayout(bottom_row)
+        outer.addWidget(lbl_credits)
 
         if ret := bool(show_modal(d)):
             try:
@@ -1045,11 +1057,11 @@ class Plugin(BalPlugin, EventListener):
                         )
 
     def get_window_title(self, title):
-        """Return the window title "BAL - <title>".
+        """Return the window title "Safe21 Heartbeat - <title>".
 
         ``title`` must already be translated by the caller: a variable passed
         to _() cannot be extracted into the catalog.
         """
-        return _("BAL - {}").format(title)
+        return _("Safe21 Heartbeat - {}").format(title)
 
 

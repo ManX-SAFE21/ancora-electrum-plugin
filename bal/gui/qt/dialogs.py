@@ -185,7 +185,8 @@ class BalWizardDialog(BalDialog):
     def __init__(self, bal_window: "BalWindow"):
         assert bal_window
         BalDialog.__init__(
-            self, bal_window.window, bal_window.bal_plugin, _("Bal Wizard Setup")
+            self, bal_window.window, bal_window.bal_plugin,
+            _("Safe21 Heartbeat Wizard Setup"),
         )
         self.setMinimumSize(800, 400)
         self.bal_window = bal_window
@@ -356,7 +357,7 @@ class BalWizardWidget(QWidget):
 
 
 class BalWizardHeirsWidget(BalWizardWidget):
-    title = N_("Bitcoin After Life Heirs")
+    title = N_("Safe21 Heartbeat - Heirs")
     message = N_(
         "Please add your heirs\n remember that 100% of wallet balance will be spent"
     )
@@ -395,7 +396,7 @@ class BalWizardHeirsWidget(BalWizardWidget):
 
 
 class BalWizardWEDownloadWidget(BalWizardWidget):
-    title = N_("Bitcoin After Life Will-Executors")
+    title = N_("Safe21 Heartbeat - Will-Executors")
     message = N_("Choose willexecutors download method")
 
     def get_content(self):
@@ -503,7 +504,7 @@ class BalWizardWEDownloadWidget(BalWizardWidget):
 
 
 class BalWizardWEWidget(BalWizardWidget):
-    title = N_("Bitcoin After Life Will-Executors")
+    title = N_("Safe21 Heartbeat - Will-Executors")
     message = N_("Configure and select your willexecutors")
 
     def get_content(self):
@@ -523,7 +524,7 @@ class BalWizardWEWidget(BalWizardWidget):
 
 
 class BalWizardLocktimeAndFeeWidget(BalWizardWidget):
-    title = N_("Bitcoin After Life Will Settings")
+    title = N_("Safe21 Heartbeat - Will Settings")
     message = ""
 
     def get_content(self):
@@ -812,7 +813,7 @@ class BalBuildWillDialog(BalDialog):
             # The will is already expired (e.g. the CHECK button is pressed on an
             # expired will). Previously this returned (None, invalidate_tx),
             # which routed to the automatic invalidate path (password prompt +
-            # auto-broadcast) that did NOT set the "BAL Invalidate transaction"
+            # auto-broadcast) that did NOT set the "Safe21 Heartbeat invalidation"
             # history label.
             #
             # We now return the SAME "invalidate_classic" signal used elsewhere,
@@ -935,7 +936,7 @@ class BalBuildWillDialog(BalDialog):
                 # invalidation tx is not yet visible in the mempool, so the will
                 # is still detected as expired and the user is asked to
                 # invalidate again and again (infinite loop). It also never sets
-                # the "BAL Invalidate transaction" history label.
+                # the "Safe21 Heartbeat invalidation" history label.
                 #
                 # Instead we reproduce EXACTLY what the "Tools -> invalidate"
                 # menu does (BalWalletWindow.invalidate_will): open Electrum's
@@ -1077,7 +1078,7 @@ class BalBuildWillDialog(BalDialog):
         """
         for wid in Will.only_valid(self.bal_window.willitems):
             # Label shown in Electrum's History tab for inheritance txs.
-            self.bal_window.wallet.set_label(wid, "BAL Inheritance transaction")
+            self.bal_window.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
         # Keep the plugin's stored delivery date in sync with the (possibly
         # auto-anticipated) transactions, otherwise the next Check would wrongly
         # ask to invalidate. See _sync_locktime_to_built_txs for the full why.
@@ -1232,7 +1233,7 @@ class BalBuildWillDialog(BalDialog):
             # returns None (it only raises on failure). The previous code stored
             # that None into `txid` and put set_label() in the `else: # txid`
             # branch, which was therefore NEVER reached - that is why the
-            # "BAL Invalidate transaction" history label kept missing on this
+            # "Safe21 Heartbeat invalidation" history label kept missing on this
             # automatic ("postpone") path. The transaction is already signed and
             # complete here, so tx.txid() is the correct, stable id - exactly
             # what the working Tools -> Invalidate path uses
@@ -1245,7 +1246,7 @@ class BalBuildWillDialog(BalDialog):
             # the History tab, regardless of how fast the broadcast/notification
             # arrives.
             if txid:
-                self.bal_window.wallet.set_label(txid, "BAL Invalidate transaction")
+                self.bal_window.wallet.set_label(txid, "Safe21 Heartbeat invalidation")
             else:
                 _logger.debug(f"invalidate tx has no txid: {tx}")
 
@@ -1484,7 +1485,7 @@ class BalBuildWillDialog(BalDialog):
         # before the invalidation tx reaches the mempool and loop forever), we
         # behave exactly like the "Tools -> invalidate" menu: open Electrum's
         # classic transaction dialog so the user signs and broadcasts the
-        # invalidation manually, with the "BAL Invalidate transaction" label.
+        # invalidation manually, with the "Safe21 Heartbeat invalidation" label.
         # This runs in the GUI thread (on_success callback), so opening windows
         # is safe. We then stop and close the wizard.
         if self.have_to_sign == "invalidate_classic":
@@ -1500,7 +1501,7 @@ class BalBuildWillDialog(BalDialog):
             #   2. AUTOMATICALLY open Electrum's classic transaction dialog via
             #      BalWalletWindow.invalidate_will() (the same code used by the
             #      Tools -> Invalidate menu). That path already sets the
-            #      "BAL Invalidate transaction" history label - which fixes
+            #      "Safe21 Heartbeat invalidation" history label - which fixes
             #      task #03 (the label was previously missing on the automatic
             #      path).
             #
