@@ -3613,3 +3613,69 @@ deselected executor) are not part of it and will be proposed separately.
   none new.
 
 **Outcome:** DONE (pending Truman's review).
+
+---
+
+## 64. Invalidation pays the current network fee (2 blocks) instead of `baltx_fees`
+
+**Date:** 2026-09-26 (ported to `main` 827a1d1 on 2026-10-07)
+
+**Goal (owner request):** the will's `baltx_fees` (default 20 sat/vbyte) is
+deliberately high because the inheritance transactions may be broadcast by the
+will-executors years from now, when network fees may be much higher. The
+on-chain INVALIDATION, instead, is sent TODAY: it spends the will's coins back
+to the wallet so the old pre-signed inheritance transactions become unusable.
+It must therefore pay the current network fee, not the inheritance rate. After
+the invalidation the plugin rebuilds the new inheritance with `baltx_fees` as
+before (unchanged).
+
+**What changed:**
+
+- `bal/core/will.py`
+  - New constant `INVALIDATION_FEE_ETA_BLOCKS = 2` (owner decision: confirm
+    within 2 blocks, Electrum's own default target).
+  - New `Will.get_invalidation_fee_rate(wallet, fallback_fee_per_byte)`:
+    returns Electrum's live estimate for 2 blocks
+    (`network.fee_estimates.eta_target_to_fee`, sat/kvbyte → sat/vbyte), or
+    the fallback (the will's `baltx_fees`, i.e. the previous behaviour) when
+    there is no usable estimate: offline wallet, estimates not received yet,
+    network error or an invalid value. Never raises.
+  - `Will.invalidate_will`: uses that rate; the total fee is rounded UP to
+    whole satoshis (network rates can be fractional); logs the chosen rate and
+    its source (`network` / `fallback`). The `fees_per_byte` argument is now
+    only the fallback, so every caller (Tools → Invalidate, wizard
+    postpone/expired paths, automatic invalidation, CLI `bal_will_invalidate`)
+    gets the new behaviour without being changed. Docstrings added.
+- `tests/test_core_invalidation_fee.py` (new): rate selection (2-block target,
+  network value used as is also above `baltx_fees`, fractional rates, fallback
+  when offline / no estimate / error / invalid values) and the fee actually
+  deducted by `invalidate_will` (network vs fallback, rounding up).
+
+**Why no special case for an already-expired will:** discussed with the owner
+and intentionally left out. Before its locktime the old inheritance tx cannot
+enter a block or the mempool, so the invalidation has no competitor. RBF stays
+enabled on the invalidation, so its fee can be raised from Electrum's History
+("Increase fee") if it ever gets stuck.
+
+**Verification:**
+
+- `tests/test_core_invalidation_fee.py`: 12 passed (pytest and standalone).
+- `make-release.sh` test list + `tests/test_cli_*.py`: 435 passed, 1 failed.
+  The failure is pre-existing and unrelated: `test_group_e_mock_karen7::test_e5`
+  needs `tests/karen7`, a wallet file that is not in the repository.
+  `tests/test_import_will_details.py`: 17 passed.
+- `ruff check` clean on the touched files.
+- Live, Electrum 4.8.2 testnet, offline daemon: `bal_will_invalidate` →
+  "invalidation fee: 20 sat/vbyte (fallback), total 2200 sat" (unchanged
+  behaviour when offline).
+- Real Electrum wallet + real `FeeTimeEstimates` (1 input, 110 vbytes):
+  market 3 sat/vbyte → 330 sat; 1.5 → 165 sat; 0.4 → 110 sat (Electrum clamps
+  to its 1 sat/vbyte minimum relay fee); 45 → 4950 sat; no 2-block estimate →
+  fallback 20 sat/vbyte (2200 sat).
+- API checked in Electrum 4.7.2, 4.8.0 and 4.8.2
+  (`FeeTimeEstimates.eta_target_to_fee`, `network.fee_estimates`).
+
+**Notes:** on regtest Electrum returns a fixed 150 sat/vbyte when it has no
+estimate, so regtest invalidations will pay that rate.
+
+**Outcome:** DONE (pending the owner's test of the ZIP).

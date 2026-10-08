@@ -26,6 +26,7 @@ The status flags themselves (the source of truth) stay here; only the mapping
 "status -> colour" now lives in the GUI layer.  No behaviour changed.
 """
 
+import math
 from datetime import datetime, timezone
 
 from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
@@ -50,6 +51,13 @@ from .willexecutors import Willexecutors
 
 MIN_LOCKTIME = 1
 MIN_BLOCK = 1
+# Confirmation target (in blocks) for the on-chain INVALIDATION transaction.
+# WHY: the invalidation is sent TODAY (it spends the will's coins so the old
+# pre-signed inheritance txs become unusable), so it must pay the CURRENT
+# network fee for a quick confirmation - not ``baltx_fees``, which is a
+# deliberately high rate reserved for inheritance txs that may be broadcast
+# years from now. 2 blocks is Electrum's own default target (owner decision).
+INVALIDATION_FEE_ETA_BLOCKS = 2
 _logger = get_logger(__name__)
 
 
@@ -439,8 +447,67 @@ class Will:
         return out
 
     @staticmethod
+    def get_invalidation_fee_rate(wallet, fallback_fee_per_byte):
+        """Return ``(fee_rate, source)`` for the on-chain invalidation tx.
+
+        ``fee_rate`` is in sat/vbyte. ``source`` is ``"network"`` when the rate
+        comes from Electrum's live fee estimate, ``"fallback"`` otherwise.
+
+        WHY: the invalidation is broadcast NOW, so it pays the current network
+        fee for a confirmation within ``INVALIDATION_FEE_ETA_BLOCKS`` blocks.
+        The will's ``baltx_fees`` is kept only as a fallback, used when no
+        estimate is available (offline wallet, estimates not received yet,
+        server error), which is exactly the behaviour of previous versions.
+
+        The estimate is read from ``network.fee_estimates.eta_target_to_fee``
+        (Electrum 4.7.2 / 4.8.x), which returns sat/kvbyte and already clamps
+        the value between Electrum's conservative minimum relay fee (1
+        sat/vbyte) and its maximum dynamic fee. This method never raises.
+
+        Args:
+            wallet: The Electrum wallet (its ``network`` may be ``None``).
+            fallback_fee_per_byte: Rate (sat/vbyte) used when there is no
+                usable estimate - normally the will's ``baltx_fees``.
+        """
+        network = getattr(wallet, "network", None) if wallet else None
+        fee_per_kb = None
+        if network is not None:
+            try:
+                fee_per_kb = network.fee_estimates.eta_target_to_fee(
+                    INVALIDATION_FEE_ETA_BLOCKS
+                )
+            except Exception as e:
+                _logger.warning(f"invalidation fee: no network estimate ({e!r})")
+                fee_per_kb = None
+        # Accept only a real positive integer (Electrum's type for sat/kvbyte);
+        # ``bool`` is excluded explicitly because it is a subclass of ``int``.
+        if (
+            isinstance(fee_per_kb, int)
+            and not isinstance(fee_per_kb, bool)
+            and fee_per_kb > 0
+        ):
+            return fee_per_kb / 1000, "network"
+        return fallback_fee_per_byte, "fallback"
+
+    @staticmethod
     def invalidate_will(will, wallet, fees_per_byte, history_label=None,
                         will_locktime=None):
+        """Build the (unsigned) on-chain invalidation transaction.
+
+        The transaction spends every coin used by the valid will items back to
+        one of the wallet's own change addresses, so the pre-signed
+        inheritance transactions held by the will-executors become unusable.
+
+        Fee: the CURRENT network fee for a confirmation within
+        ``INVALIDATION_FEE_ETA_BLOCKS`` blocks (see
+        :meth:`get_invalidation_fee_rate`). ``fees_per_byte`` (the will's
+        ``baltx_fees``) is only the FALLBACK used when no network estimate is
+        available. RBF stays enabled, so the fee can still be raised from
+        Electrum's History ("Increase fee") if the transaction gets stuck.
+
+        Returns the ``PartialTransaction``, or ``None`` when there is nothing
+        to invalidate or the balance does not cover the fee.
+        """
         _logger.debug("invalidate tx in will module")
         will_only_valid = Will.only_valid_list(will)
         inputs = Will.get_all_inputs(will_only_valid)
@@ -477,7 +544,17 @@ class Will:
                 utxo_to_spend, [out], locktime=locktime, version=2
             )
             tx.set_rbf(True)
-            fee = tx.estimated_size() * fees_per_byte
+            fee_rate, fee_source = Will.get_invalidation_fee_rate(
+                wallet, fees_per_byte
+            )
+            # The network rate can be fractional (e.g. 1.5 sat/vbyte): round
+            # the total fee UP to whole satoshis so the output value is an
+            # integer and the rate is never below the one requested.
+            fee = int(math.ceil(tx.estimated_size() * fee_rate))
+            _logger.info(
+                f"invalidation fee: {fee_rate} sat/vbyte ({fee_source}), "
+                f"total {fee} sat"
+            )
             if balance - fee > 0:
                 out = PartialTxOutput.from_address_and_value(
                     change_addresses[0], balance - fee
