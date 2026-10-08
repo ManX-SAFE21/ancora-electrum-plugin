@@ -241,7 +241,7 @@ class BalWindow:
                 except Exception:
                     self.disable_plugin = True
                     self.show_warning(
-                        _("Please restart Electrum to activate the BAL plugin"),
+                        _("Please restart Electrum to activate the Safe21 Heartbeat plugin"),
                         title=_("Success"),
                     )
                     self.close_wallet()
@@ -970,7 +970,7 @@ class BalWindow:
                     self.check_will()
                     for wid, _w in self.willitems.items():
                         # Label shown in Electrum's History tab for inheritance txs.
-                        self.wallet.set_label(wid, "BAL Inheritance transaction")
+                        self.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
                     rebuilt_ok = True
                 except WillExpiredException as e:
                     self.invalidate_will()
@@ -1070,7 +1070,7 @@ class BalWindow:
                     )
                 )
                 # Label shown in Electrum's History tab for invalidate txs.
-                self.wallet.set_label(result.txid(), "BAL Invalidate transaction")
+                self.wallet.set_label(result.txid(), "Safe21 Heartbeat invalidation")
                 self.show_transaction(result)
             else:
                 self.show_message(_("No transactions to invalidate"))
@@ -1451,7 +1451,7 @@ class BalWindow:
             if txid:
                 # Label BEFORE broadcasting so the History tab shows it the
                 # moment the tx appears (matches the wizard behaviour).
-                self.wallet.set_label(txid, "BAL Invalidate transaction")
+                self.wallet.set_label(txid, "Safe21 Heartbeat invalidation")
             network.run_from_another_thread(
                 network.broadcast_transaction(tx, timeout=120), timeout=120
             )

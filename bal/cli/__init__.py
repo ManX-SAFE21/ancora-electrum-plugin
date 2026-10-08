@@ -2,7 +2,8 @@
 bal.cli
 =======
 
-Headless command-line layer of the Bitcoin After Life (BAL) Electrum plugin.
+Headless command-line layer of the Safe21 Heartbeat Electrum plugin (based on
+Bitcoin After Life, BAL).
 
 This sub-package implements the ``"cmdline"`` front-end: it exposes the
 plugin's functionality through Electrum ``bal_*`` commands while reusing only

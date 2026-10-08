@@ -1,9 +1,9 @@
 {
     "name": "bal",
-    "fullname": "Bitcoin After Life",
+    "fullname": "Safe21 Heartbeat",
     "version": "0.7.0",
-    "description": "Provides free and decentralized Bitcoin inheritance support. Build time-locked 'will' transactions that transfer funds to your heirs if you stop refreshing them (dead-man's switch), optionally relayed by will-executor servers.",
-    "author": "Svatantrya",
+    "description": "As long as you're here, your bitcoin stays yours. Safe21 Heartbeat builds pre-signed, time-locked backup transactions, optionally kept by independent will-executor servers. While you keep refreshing them (your heartbeat), nothing happens; if you stop, from the date you chose they send your bitcoin to the people you chose.",
+    "author": "Safe21 (based on Bitcoin After Life by Svatantrya)",
     "licence": "MIT",
     "available_for": [
         "qt",

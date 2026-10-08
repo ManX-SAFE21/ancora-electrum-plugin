@@ -3800,3 +3800,79 @@ the selected one (before the fix it targeted both).
 `main` 827a1d1 on 2026-10-07 together with #63: extended release test list
 489 passed, 1 pre-existing failure (missing `tests/karen7`); `ruff` no new
 errors.
+
+---
+
+## 68. Visible rebrand: Safe21 Heartbeat (name, icon, links, credits)
+
+**Date:** 2026-10-08
+
+**Goal (owner, PLAN Phase 3):** the plugin shows itself as **Safe21
+Heartbeat**, a fork of Bitcoin After Life (BAL). Only what the user sees
+changes; the will logic and the internal identity (`bal` package, `bal_*`
+config keys, wallet keys, data folder, CLI `bal_*` commands) do not.
+
+**What changed:**
+
+- `bal/manifest.json`: `fullname` "Safe21 Heartbeat"; `author` "Safe21
+  (based on Bitcoin After Life by Svatantrya)"; new English `description`
+  (backup wording chosen by the owner). Version unchanged (0.7.0).
+- `bal/LICENSE`: keeps `Copyright (c) 2024 svatantrya` and adds
+  `Copyright (c) 2026 Safe21` (MIT text unchanged).
+- Icons `bal/icons/bal16x16.png`, `bal32x32.png` (same file names): teal
+  rounded square, white heart, teal "21" with the glyphs of the Safe21
+  wordmark (owner's choice "F"). Source SVG kept outside the repository
+  (`brand/safe21-heartbeat-icon.svg` in the Safe21 project folder).
+- Window titles: "Safe21 Heartbeat - Heirs / - Will-Executors / - Will
+  Settings", the `get_window_title` prefix "Safe21 Heartbeat - {}", "Safe21
+  Heartbeat Wizard Setup"; status-bar tooltip "Safe21 Heartbeat" (a brand,
+  not translated); restart message.
+- Settings dialog: support link `https://safe21.io` (was
+  `bitcoin-after.life`) and a new grey line "Based on Bitcoin After Life
+  (BAL) by Svatantrya — MIT licence" under the bottom row.
+- Wallet labels written in Electrum's History: "Safe21 Heartbeat backup
+  transaction" (was "BAL Inheritance transaction") and "Safe21 Heartbeat
+  invalidation" (was "BAL Invalidate transaction"), in the GUI and the CLI.
+  Checked: these labels are only written, never read back to recognise a
+  transaction. Labels already in a wallet stay as they are.
+- Calendar (.ics) defaults: "Safe21 Heartbeat - Will execution of
+  $wallet_name" and "Safe21 Heartbeat will execution of $wallet_name ...";
+  `PRODID` "-//Safe21//Safe21 Heartbeat Electrum Plugin/<version>". A value
+  the user already saved in the config is kept.
+- `bal/wallet_util/bal_wallet_utils_qt.py` (standalone helper): window title
+  and its three messages.
+- Module docstrings, `README.md`, `bal/README.md`: new name, tagline and the
+  credit "Based on Bitcoin After Life (BAL) by Svatantrya — MIT licence".
+- Catalogs: `pybabel extract` + `pybabel update --no-fuzzy-matching` (new
+  texts start empty instead of inheriting an old translation marked fuzzy;
+  the catalogs carry no fuzzy entries). Italian: the 10 new texts
+  translated. Spanish: left untranslated (English shown) until Truman is
+  asked (decision D9). Most of the catalog diff is updated source line
+  references.
+- Tests updated to the new defaults: `test_gui_will_flows.py` (history label
+  of a rebuilt will), `test_group_c_settings.py` (calendar defaults).
+
+**Not changed on purpose:** welist and default executor URLs
+(`bitcoin-after.life`), the executor description "Bitcoin After Life Will
+Executor" (it describes BAL's own server), the `HISTORY_LABEL` default
+"BitcoinAfterLife inheritance transaction - {willexecutor}" (stored text used
+by `Util._label_matches_history`, moves with the internal identity), CLI
+texts and command names, log messages, `make-release.sh`, `docs/`, the
+catalog header comments.
+
+**Warning:** until the internal identity is renamed, this build and BAL use
+the same package name and wallet keys: do not install both in the same
+Electrum.
+
+**Verification (Electrum 4.8.2 source, Python 3.11, WSL):**
+
+- `ruff check bal/ tests/`: the same 3 pre-existing I001, none new.
+- Whole `tests/` directory: 634 passed, 27 failed, 3 errors; the failure
+  list is identical, test by test, to `main` before this change (all
+  pre-existing: missing `tests/karen7`, tests that fail only when the whole
+  directory runs, no audio/camera device).
+- Scenario harness `A1`: OK.
+- `build_zip.py` + `tests/external_zip_test.py`: the zip loads the way
+  Electrum loads an external plugin.
+
+**Outcome:** DONE (pending the owner's test of the ZIP).

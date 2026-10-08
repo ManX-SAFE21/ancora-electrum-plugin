@@ -298,7 +298,7 @@ def test_prepare_will_builds_and_persists():
 
     # The rebuilt, ready-to-sign will is labelled for Electrum's History tab and
     # the user is guided to the next manual step (sign).
-    assert ctl.wallet.labels[txid] == "BAL Inheritance transaction"
+    assert ctl.wallet.labels[txid] == "Safe21 Heartbeat backup transaction"
     assert any("sign" in m.lower() for m in ctl.window.messages)
     assert not ctl.window.warnings, "a clean build must not warn"
 

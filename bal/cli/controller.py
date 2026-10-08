@@ -420,7 +420,7 @@ class BalController:
         )
         if tx is not None:
             try:
-                self.wallet.set_label(tx.txid(), "BAL Invalidate transaction")
+                self.wallet.set_label(tx.txid(), "Safe21 Heartbeat invalidation")
             except Exception as e:
                 _logger.debug(f"invalidate_will set_label failed: {e}")
         return tx
@@ -540,7 +540,7 @@ class BalController:
                 self.check_will()
                 for wid, _w in self.willitems.items():
                     try:
-                        self.wallet.set_label(wid, "BAL Inheritance transaction")
+                        self.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
                     except Exception as label_err:
                         _logger.debug(f"prepare_will set_label failed: {label_err}")
                 rebuilt_ok = True

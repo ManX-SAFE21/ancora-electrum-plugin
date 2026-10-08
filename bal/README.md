@@ -1,10 +1,13 @@
-# BalPlugin
-Bitcoin After Life Electrum Plugin
+# Safe21 Heartbeat
+Safe21 Heartbeat Electrum Plugin
 
-Free and decentralized Bitcoin inheritance support for Electrum: build
-time-locked "will" transactions that transfer your funds to your heirs if you
-stop refreshing them (dead-man's switch), optionally relayed by will-executor
-servers.
+*As long as you're here, your bitcoin stays yours.* Pre-signed, time-locked
+backup transactions, optionally kept by independent will-executor servers:
+while you keep refreshing them nothing happens; if you stop, from the date you
+chose they send your bitcoin to the people you chose.
+
+Designed by Safe21 (https://safe21.io). Based on Bitcoin After Life (BAL) by
+Svatantrya — MIT licence (see `LICENSE`).
 
 ## Key behaviours
 

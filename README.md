@@ -1,12 +1,20 @@
-# BAL — Bitcoin After Life (Electrum plugin)
+# Safe21 Heartbeat (Electrum plugin)
 
-Free and decentralized **Bitcoin inheritance** support for the
-[Electrum](https://electrum.org) wallet. Build time-locked "will" transactions
-that transfer your funds to your heirs if you stop refreshing them
-(dead-man's switch), optionally relayed by will-executor servers.
+*As long as you're here, your bitcoin stays yours.*
+
+Safe21 Heartbeat is a plugin for the [Electrum](https://electrum.org) wallet.
+It builds pre-signed, time-locked backup transactions, optionally kept by
+independent will-executor servers. While you keep refreshing them (your
+heartbeat), nothing happens; if you stop, from the date you chose they send
+your bitcoin to the people you chose.
+
+Designed by [Safe21](https://safe21.io). Based on
+[Bitcoin After Life (BAL)](https://bitcoin-after.life) by Svatantrya — MIT
+licence (see [`bal/LICENSE`](bal/LICENSE)). The internal package name is still
+`bal`.
 
 This repository contains a **refactored and extended** version of the original
-plugin. The logic was reorganized to cleanly separate **business logic** from the
+BAL plugin. The logic was reorganized to cleanly separate **business logic** from the
 **PyQt GUI**, and new features have been added including a headless CLI,
 auto-rebuild on new transactions, OP_RETURN heirs, and configurable calendar
 reminders.
@@ -57,7 +65,7 @@ tests/                   smoke + external-zip regression tests
 
 ## Wallet compatibility
 
-BAL currently supports **standard (single-signature) wallets** and
+Safe21 Heartbeat currently supports **standard (single-signature) wallets** and
 **hardware wallets** supported by Electrum. **Multisig wallets** and
 **Electrum TrustedCoin (2FA) wallets** are **not yet supported** — see
 [`COMPATIBILITY.md`](COMPATIBILITY.md) for the full compatibility matrix and
@@ -79,7 +87,7 @@ portable builds.
 ### Install as an external plugin (zip)
 
 1. Electrum → **Tools → Plugins** → install from file → pick the built zip.
-2. Enable **Bitcoin After Life** and restart Electrum.
+2. Enable **Safe21 Heartbeat** and restart Electrum.
 3. (Recommended) verify the downloaded zip's SHA-256 matches the value printed
    by `build_zip.py`.
 
