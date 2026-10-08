@@ -3730,3 +3730,27 @@ wallet file). `ruff check` clean on the touched files.
 dicts by hand, so they do not see it.
 
 **Outcome:** DONE (pending the owner's test of the ZIP).
+
+---
+
+## 66. Invalidation cascade crashed on real will trees (`children` is a list)
+
+**Date:** 2026-09-27
+
+**Problem (found while fixing #65, reproduced on `main`):**
+`Will.set_invalidate` iterated `children.items()`, but `Will.add_willtree`
+builds `children` as a LIST of `[child_id, input_idx, prevout_idx]`, so
+invalidating a will tx that has child will txs raised
+`AttributeError: 'list' object has no attribute 'items'`. The existing tests
+set `children` to dicts by hand, so they never saw it.
+
+**What changed:** `bal/core/will.py` - `set_invalidate` accepts both shapes
+(list from `add_willtree`, dict from older data/tests) and only recurses into
+children that are still in the will. `tests/test_core_willtree_father.py`: new
+test `test_set_invalidate_cascades_to_children_built_by_add_willtree` (fails
+on `main`, passes with the fix).
+
+**Verification:** 459 passed, 1 failed (pre-existing missing `tests/karen7`);
+`ruff check` clean.
+
+**Outcome:** DONE (included in the owner's test ZIP of 2026-09-27).
