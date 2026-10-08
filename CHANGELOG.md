@@ -3876,3 +3876,70 @@ Electrum.
   Electrum loads an external plugin.
 
 **Outcome:** DONE (pending the owner's test of the ZIP).
+
+---
+
+## 69. Warning "an older will is still active" (read-only safety net)
+
+**Date:** 2026-10-08
+
+**Problem:** executors keep every transaction they ever received; the only way
+to kill one is to spend its coins on-chain. When a postpone or an
+invalidation goes wrong (BUG-2: Cancel at "Sign your will", then postpone;
+BUG-3: "Tools > Invalidate" with several coins spends only some of them), an
+executor still holds a transaction of an OLDER will with an EARLIER date that
+can still be executed, while the panel shows the new, later date. Until now
+nothing told the user.
+
+**What changed (owner decisions W1–W5, all as proposed):**
+
+- `bal/core/will.py`
+  - New `Will.find_still_active_older_txs(will, wallet, current_locktime)`:
+    returns the items that were sent (`PUSHED`/`CHECKED`; failed pushes are
+    not reported, W2), are not `VALID`/`INVALIDATED`/`CONFIRMED`/`MEMPOOL`,
+    are dated EARLIER than the current will, and are still executable. It
+    reports nothing while `wallet.is_up_to_date()` is False (offline or
+    still syncing: avoids false alarms) and never raises.
+  - New `Will.get_current_will_locktime` (earliest `VALID` locktime, else
+    the settings date) and `Will._tx_still_executable` (no input spent by a
+    broadcast tx; a child follows its parent will tx).
+  - Read-only: nothing is built, signed, sent, invalidated, and no status
+    changes.
+- `bal/gui/qt/dialogs.py` (Check dialog): at the end of every Check (W1),
+  after "All done", a red row "Warning: an older will is still active."
+  with executor, old date, current date and the remedy; the same text in a
+  popup when the dialog is closed (before the next-steps hint). Basic and
+  advanced mode, also with auto-sign. No "fix now" button (W3).
+- Catalogs: 3 new texts, translated in Italian and Spanish (the owner asked
+  to translate Spanish too; this replaces decision W4/D9 from now on).
+- Tests: `tests/test_core_still_active_warning.py` (14: BUG-2 state
+  reported; correct postpone, fee change with later date, spent coin, failed
+  push, confirmed/mempool, current tx not reported; settings date when no
+  valid item; child follows parent; not synchronized is silent; never
+  raises; sorting) and `tests/test_gui_still_active_warning.py` (4: row,
+  popup, duplicate lines, HTML escaping, failure swallowed).
+
+**Verification (Electrum 4.8.2 source, Python 3.11, WSL):**
+
+- Scenario matrix (35 scenarios, 119 Checks per run) with an oracle check
+  after EVERY Check: "an executor holds a still-executable tx dated earlier
+  than the current will" vs "the warning is shown". 6 runs (2-coin
+  scenarios depend on the coin order): 714 Checks, 0 mismatches. The
+  warning appears in B2, B5, B6, B5fix, B5fix2 (also when it fails by
+  chance), B5self2 (the Check before "Send Max"), B2adv; in none of the OK
+  checks; not in the BUG-1 scenarios (A7, A9, A13, A7adv), as expected.
+  With the wallet not synchronized: never shown.
+- BUG-3 probes plus a final Check, 12 runs each: 24/24 correct ("after
+  Cancel": warning in the 8 runs where older txs survived, silent in the 4
+  where the invalidation worked; "without Cancel": surviving txs are dated
+  later than the current will, no warning).
+- Remedy in the message verified on this code: B5self2 (2 coins) — after
+  sending the whole balance to an own address and pressing Check, the
+  warning disappears and the real delivery date equals the intended one.
+- `ruff check bal/ tests/`: the same 3 pre-existing I001, none new.
+
+**Known limits:** the plugin only knows what the wallet knows (an executor
+that lost a tx may still be listed; transactions exported by hand are not
+tracked); all checks so far on a simulated wallet, not mainnet.
+
+**Outcome:** DONE (pending the owner's test of the ZIP).
