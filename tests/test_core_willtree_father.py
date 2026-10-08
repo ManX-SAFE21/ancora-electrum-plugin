@@ -126,6 +126,17 @@ def test_child_of_unconfirmed_parent_is_not_checked_against_utxos():
     assert checked == [parent.tx]
 
 
+def test_set_invalidate_cascades_to_children_built_by_add_willtree():
+    """add_willtree builds children as a LIST: invalidation must cascade."""
+    parent = _item()
+    child = _item(_CHILD_TX_HEX)
+    will = {parent._id: parent, child._id: child}
+    Will.add_willtree(will)
+    Will.set_invalidate(parent._id, will)
+    assert parent.get_status("INVALIDATED") is True
+    assert child.get_status("INVALIDATED") is True
+
+
 if __name__ == "__main__":
     for name in sorted(dir()):
         if name.startswith("test_"):

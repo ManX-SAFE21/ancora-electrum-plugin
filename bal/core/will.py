@@ -655,9 +655,15 @@ class Will:
     def set_invalidate(wid, will=None):
         will = will if will is not None else {}
         will[wid].set_status("INVALIDATED", True)
-        if will[wid].children:
-            for c in will[wid].children.items():
-                Will.set_invalidate(c[0], will)
+        children = will[wid].children or []
+        # add_willtree builds a LIST of [child_id, input_idx, prevout_idx];
+        # a dict keyed by child id is still accepted (older data / tests).
+        child_ids = children.keys() if isinstance(children, dict) else [
+            c[0] for c in children
+        ]
+        for child_id in child_ids:
+            if child_id in will:
+                Will.set_invalidate(child_id, will)
 
     @staticmethod
     def check_tx_height(tx, wallet):
