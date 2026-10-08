@@ -510,9 +510,20 @@ class Will:
                         will_locktime=None):
         """Build the (unsigned) on-chain invalidation transaction.
 
-        The transaction spends every coin used by the valid will items back to
-        one of the wallet's own change addresses, so the pre-signed
-        inheritance transactions held by the will-executors become unusable.
+        The transaction spends, back to one of the wallet's own change
+        addresses, EVERY wallet coin used as an input by ANY will item
+        (current, replaced, invalidated...), so no pre-signed inheritance
+        transaction held by a will-executor stays usable. Wallet coins that no
+        will transaction uses are not touched.
+
+        WHY every item and every input (BUG-3, CHANGELOG #71): this used to
+        take only ONE input per VALID item. With several coins the coin left
+        out depended on the coin order, and an older transaction already sent
+        to an executor (REPLACED, or wrongly marked INVALIDATED, see BUG-2)
+        could stay executable after "Tools > Invalidate". The item statuses
+        are the plugin's bookkeeping; only spending a coin really kills the
+        transactions that use it. Inputs that spend the output of another
+        will transaction are not wallet coins and are naturally skipped.
 
         Fee: the CURRENT network fee for a confirmation within
         ``INVALIDATION_FEE_ETA_BLOCKS`` blocks (see
@@ -525,21 +536,13 @@ class Will:
         to invalidate or the balance does not cover the fee.
         """
         _logger.debug("invalidate tx in will module")
-        will_only_valid = Will.only_valid_list(will)
-        inputs = Will.get_all_inputs(will_only_valid)
+        # Every outpoint used by any will item (see the docstring: BUG-3).
+        prevout_to_spend = set(Will.get_all_inputs(will))
         if history_label is not None and will_locktime is not None:
             utxos = Util.get_available_utxos(wallet, history_label, will_locktime)
         else:
             utxos = wallet.get_utxos()
-        filtered_inputs = []
-        prevout_to_spend = []
         current_height = Util.get_current_height(wallet.network)
-        for prevout_str, ws in inputs.items():
-            for w in ws:
-                if w[0] not in filtered_inputs:
-                    filtered_inputs.append(w[0])
-                    if prevout_str not in prevout_to_spend:
-                        prevout_to_spend.append(prevout_str)
         balance = 0
         utxo_to_spend = []
         for utxo in utxos:
