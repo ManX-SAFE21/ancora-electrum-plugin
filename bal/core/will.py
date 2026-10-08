@@ -76,6 +76,22 @@ class Will:
     # build a tree with parent transactions
     @staticmethod
     def add_willtree(will):
+        """(Re)build the parent/child links between the will transactions.
+
+        Every item gets ``children`` (the will txs spending its outputs) and,
+        when it spends the output of another will tx, a ``father``.
+
+        WHY the reset below: ``father`` is persisted in the wallet (the
+        ``"Father"`` field of ``WillItem.to_dict``) and was only ever set,
+        never cleared. When the father tx was later removed from the will
+        (rebuild, merge, replacement) the child kept pointing to a txid that
+        no longer exists, and ``check_invalidated`` crashed with a
+        ``KeyError`` on that txid (reported on a real wallet: the Check
+        wizard and the window refresh both failed). The tree is therefore
+        always recomputed from scratch from the transactions themselves.
+        """
+        for willid in will:
+            will[willid].father = None
         for willid in will:
             will[willid].children = Will.get_children(will, willid)
             for child in will[willid].children:
@@ -652,10 +668,15 @@ class Will:
     @staticmethod
     def check_invalidated(willtree, utxos_list, wallet):
         for wid, w in willtree.items():
+            # Defensive: a father that is not (or no longer) part of the will
+            # is treated as "no father" instead of raising KeyError, so the
+            # item's inputs are checked against the wallet UTXOs like any
+            # root transaction. See add_willtree for the root cause.
+            father = willtree.get(w.father) if w.father else None
             if (
-                not w.father
-                or willtree[w.father].get_status("CONFIRMED")
-                or willtree[w.father].get_status("MEMPOOL")
+                father is None
+                or father.get_status("CONFIRMED")
+                or father.get_status("MEMPOOL")
             ):
                 for inp in w.tx.inputs():
                     inp_str = Util.utxo_to_str(inp)
