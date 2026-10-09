@@ -1439,21 +1439,42 @@ class Will:
                 continue
             if not Will._tx_still_executable(wid, will, wallet):
                 continue
-            tx_locktime = int(w.tx.locktime)
-            for wheir, their in (w.heirs or {}).items():
-                if 'w!ll3x3c"' == wheir[:9]:
-                    continue
-                heir = heirs.get(wheir, None)
-                if not heir:
-                    continue
-                new_locktime = Util.resolve_locktime_against_tx(
-                    heir[2], their[2], tx_locktime
+            postponed = Will._postponed_heir(w, heirs)
+            if postponed:
+                wheir, tx_locktime, new_locktime = postponed
+                raise WillPostponedException(
+                    f"{wheir}: locktime postponed {tx_locktime}->"
+                    f"{new_locktime} on a sent, replaced will tx {wid[:8]}"
                 )
-                if new_locktime > tx_locktime:
-                    raise WillPostponedException(
-                        f"{wheir}: locktime postponed {tx_locktime}->"
-                        f"{new_locktime} on a sent, replaced will tx {wid[:8]}"
-                    )
+
+    @staticmethod
+    def _postponed_heir(w, heirs):
+        """Return ``(heir, tx_locktime, new_locktime)`` if ``w`` is postponed.
+
+        For every heir present both in the will item ``w`` and in the current
+        ``heirs`` settings (by name; pseudo-heirs of the executor fee are
+        skipped), the requested delivery date is resolved with
+        :meth:`Util.resolve_locktime_against_tx` against the locktime frozen
+        in ``w.tx`` (relative "1y"/"30d" recipes included). The first heir
+        whose requested date is LATER than the tx locktime is returned;
+        ``None`` when no heir is postponed. Address or amount changes do not
+        matter here: a later date alone makes the frozen tx execute before
+        the new will. Shared by the VALID check (#73) and the sent-but-replaced
+        check (#72).
+        """
+        tx_locktime = int(w.tx.locktime)
+        for wheir, their in (w.heirs or {}).items():
+            if 'w!ll3x3c"' == wheir[:9]:
+                continue
+            heir = heirs.get(wheir, None)
+            if not heir:
+                continue
+            new_locktime = Util.resolve_locktime_against_tx(
+                heir[2], their[2], tx_locktime
+            )
+            if new_locktime > tx_locktime:
+                return wheir, tx_locktime, new_locktime
+        return None
 
     @staticmethod
     def check_willexecutors_and_heirs(
@@ -1466,6 +1487,23 @@ class Will:
         will_only_valid = Will.only_valid_list(will)
         if len(will_only_valid) < 1:
             return False
+        # BUG-1 (CHANGELOG #73): detect the postpone of a signed/sent tx FIRST.
+        # The loop below stops at the first difference it meets (fee rate,
+        # heir address/amount) and used to report it as a plain update, so a
+        # date moved later TOGETHER with a fee or heir change was rebuilt one
+        # day before the old tx (overwriting the requested date) and the old
+        # signed tx stayed in force. A later date on a signed/sent tx must be
+        # invalidated on-chain first, whatever else changed with it.
+        for w in will_only_valid.values():
+            if not (w.get_status("COMPLETE") or w.get_status("PUSHED")):
+                continue
+            postponed = Will._postponed_heir(w, heirs)
+            if postponed:
+                wheir, tx_locktime, new_locktime = postponed
+                raise WillPostponedException(
+                    f"{wheir}: locktime postponed {tx_locktime}->"
+                    f"{new_locktime} on a signed/sent will"
+                )
         for wid in Will.only_valid_list(will):
             w = will[wid]
             if w.tx_fees != tx_fees:
