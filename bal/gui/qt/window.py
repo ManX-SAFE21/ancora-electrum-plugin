@@ -27,6 +27,7 @@ from ...core.checkalive import (
     resolve_delivery_date,
     resolve_guard_threshold,
 )
+from ...core.messages import will_change_message
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -934,30 +935,21 @@ class BalWindow:
                     "REBUILD needed (no on-chain fee)"
                 )
                 _logger.info("{}:{}".format(type(e), e))
-                message = False
-                if isinstance(e, HeirChangeException):
-                    message = _("Heirs changed:")
-                elif isinstance(e, WillExecutorNotPresent):
-                    message = _("Will-Executor not present:")
-                elif isinstance(e, WillexecutorChangeException):
-                    message = _("Will-Executor changed")
-                elif isinstance(e, TxFeesChangedException):
-                    message = _("Txfees are changed")
-                elif isinstance(e, HeirNotFoundException):
-                    # Task #01b: replace the misleading "Heir not found" text.
-                    # This branch is most often hit because the delivery date
-                    # was anticipated, not because an heir is missing, so we use
-                    # a clear message that covers both the DATE and the HEIRS
-                    # cases (kept consistent with dialogs.py / the CHECK window).
-                    message = _(
-                        "Found CHANGES to the DATE or the HEIRS,\n"
-                        "a NEW WILL must be prepared."
-                    )
-
-                if message:
-                    self.show_message(
-                        "{}:\n {}\n{}".format(message, e, _("will have to be built"))
-                    )
+                # CHANGELOG #78: the same sentence as the Check dialog and the
+                # command line (bal.core.messages), instead of a vague title
+                # followed by the raw exception text. The popup is still shown
+                # only for the cases that showed one before.
+                if isinstance(
+                    e,
+                    (
+                        HeirChangeException,
+                        WillExecutorNotPresent,
+                        WillexecutorChangeException,
+                        TxFeesChangedException,
+                        HeirNotFoundException,
+                    ),
+                ):
+                    self.show_message(will_change_message(e))
 
                 _logger.info("build will")
                 self.build_will(ignore_duplicate, keep_original)

@@ -4345,3 +4345,57 @@ the matrix: in C2adv the Check stops after the Check Alive invalidation
 `tests/` directory (same failures as `main`); zip builds and loads.
 
 **Outcome:** DONE.
+
+## 78. F4/4: command line and "Prepare" popup name the real reason
+
+**Date:** 2026-10-09
+
+**Problem:** #77 made the Check dialog name the real reason a will must be
+prepared again, but two other places still used the old generic texts:
+
+- the command line: `bal_will_check` answered "Found CHANGES to the DATE or
+  the HEIRS, a new WILL must be prepared", "Transaction fees are changed" or
+  "Will-Executor not present" (without saying which), and `bal_will_prepare`
+  rebuilt the will without saying why;
+- the main window ("Prepare"): a popup with a vague title ("Txfees are
+  changed", "Found CHANGES to the DATE or the HEIRS") followed by the raw
+  exception text (e.g. "14:  13") and "will have to be built".
+
+**What changed (approved by the owner):**
+
+- New `bal/core/messages.py` (GUI-free): `will_change_message(e)` and
+  `no_valid_transaction(e)`, moved unchanged from the Check dialog, so the
+  dialog, the main window and the command line share one set of sentences
+  (the existing Italian and Spanish translations apply as they are).
+- `bal/gui/qt/dialogs.py`: `_check_failure_message` and
+  `_no_valid_transaction` delegate to it; four imports no longer used removed.
+- `bal/gui/qt/window.py`: the "Prepare" popup shows the same sentence, for
+  the same cases as before (heirs, fee rate, will-executor); no popup is
+  added for the other cases.
+- `bal/cli/controller.py`: `_user_facing` uses the same sentence for the
+  "will no longer coherent" family; `NoWillExecutorNotPresent` keeps its CLI
+  text, because `build_will` raises it too for "nothing selected", where the
+  Check sentence would be wrong. `prepare_will` adds a `reason` field to the
+  `rebuilt` result (an extra field: existing callers are not affected). The
+  two dialog-only reasons of #77 (after an invalidation, after a Cancel at
+  signing) do not exist on the command line.
+- Catalogs refreshed (texts moved, old popup texts removed).
+- New tests: `tests/test_cli_clear_reasons.py` (7; they pin the mainnet
+  network, see 5c), `tests/test_gui_prepare_reason.py` (3).
+- `tests/test_gui_will_flows.py`: the anticipated-rebuild test looked for
+  any message containing "delivery date" to catch the NO_FUTURE_DATE error;
+  the popup now rightly says "The delivery date of heir ... changed", so it
+  looks for the error text itself.
+
+**Verification:** command line - `bal_will_check` after an heir is added answers 'Heir
+"carol" was added: preparing a new will.'; `bal_will_prepare` returns the
+same `reason`, and "The wallet contains funds that the current will does not
+cover yet..." after a new coin. Main window - the Prepare popup shows the
+same sentences (heir added, both fee rates); no popup for new funds, as
+before. Check dialog - the #77 harness cases show the same texts as before.
+Scenario matrix x6 (119 Checks per run): verdicts unchanged (only the known
+B2, B2adv, C3adv), #69 oracle 0 mismatches. `ruff` (same 3 pre-existing
+I001); whole `tests/` directory (same failures as `main`); zip builds
+and loads.
+
+**Outcome:** DONE.

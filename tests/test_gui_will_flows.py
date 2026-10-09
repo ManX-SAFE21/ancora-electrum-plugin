@@ -490,7 +490,10 @@ def test_anticipated_rebuild_reanchors_date_to_check():
 
     # The rebuilt will is coherent (plain rebuild, no on-chain invalidation).
     assert ctl.check_will() is True
-    assert not any("delivery date" in m for m in ctl.window.messages)
+    # The NO_FUTURE_DATE build error must not appear. Since CHANGELOG #78 the
+    # rebuild popup legitimately says "The delivery date of heir ... changed",
+    # so look for the error text itself, not for "delivery date".
+    assert not any("No delivery date left" in m for m in ctl.window.messages)
     assert not ctl.window.errors
 
 
