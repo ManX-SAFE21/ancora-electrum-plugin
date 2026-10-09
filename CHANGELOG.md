@@ -5062,3 +5062,52 @@ dialog rendered in Italian at wallet close after new funds arrived
 complete; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 90. 5d/10: no "new transactions" notification for the will's local copies
+
+**Date:** 2026-10-10
+
+**Problem (owner's report, with screenshots):** Electrum's desktop
+notification said "4 new transactions: Total amount sent 2.12291 mBTC" (and
+"New transaction: sent 0.5388 mBTC" after adding a will-executor), but the
+History tab showed nothing real. Nothing had been sent: the plugin saves the
+unsigned copies of the will (one per will-executor) into the wallet's local
+history (setting "Save inheritance transactions in history", ON by
+default, shown only in ADVANCED mode), and Electrum announces every
+transaction added to the wallet, local ones too, summing their amounts.
+Once signed, the copies leave the history, so the owner found nothing
+there. A user reading "sent 2 mBTC" is alarmed.
+
+**What changed (plan approved by the owner):**
+
+- `bal/core/will.py` (`Will._add_transaction_to_history`): the copies are
+  added with `is_new=False`, which is what Electrum itself uses when it
+  re-adds a stored transaction (same parameter in Electrum 4.7.2 and
+  4.8.x). The copy is stored exactly as before; only Electrum's "new
+  transaction" event, which feeds the notification, is not raised. The one
+  other thing that event did for the wallet, clearing its tx-parents cache,
+  is now done by the plugin; the History tab was already refreshed by the
+  plugin itself. The setting and the copies are unchanged: whoever signs
+  them elsewhere (multisig, hardware wallet, Electrum's transaction window)
+  still finds them in the history.
+- Side effects: with the "Rebuild automatically on new transactions"
+  setting, saving the copies no longer re-triggers that rebuild; a local
+  copy no longer makes Electrum re-check the paid status of invoices.
+- New tests: `tests/test_history_no_notification.py` (5: the parameter
+  exists in the Electrum we run on; new copy, "unrelated" fallback and
+  signature merge are all added silently; the cache is cleared).
+
+**Not changed (seen while checking, Electrum's own behaviour):** the copies
+of the will spend the same coins, so Electrum keeps only the last one added
+in the history; and while an unsigned copy is in the history Electrum counts
+its coins as spent in the balance.
+
+**Verification:** on a real in-process Electrum wallet (scenario harness,
+Cancel at signing): `main` raised 2 "new_transaction" events for the will
+copies, this change 0; the same copy kept in the history (LOCAL, with its
+label) and the same balance in both. `ruff` (same 3 pre-existing I001);
+whole `tests/` directory: same failures as before; the scenario matrix 6
+times on `main` and on this branch: same verdicts (0 differences; B2/B2adv
+end one day earlier, known and accepted); zip builds and loads.
+
+**Outcome:** DONE.

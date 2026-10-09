@@ -1328,6 +1328,18 @@ class Will:
         one before saving. ``allow_unrelated`` is retried as a fallback so that
         self-created txs (which are not yet part of the wallet's UTXO set) are
         still accepted.
+
+        The tx is added with ``is_new=False`` (CHANGELOG #90). With the
+        default ``is_new=True`` Electrum announces every added tx as a new
+        transaction: its desktop notification said "4 new transactions: Total
+        amount sent 2.12 mBTC" for the unsigned copies of the will (one per
+        will-executor, their amounts summed), although nothing was sent and
+        the copies leave the history once signed (owner's report).
+        ``is_new=False`` is what Electrum itself uses when it re-adds a stored
+        tx (same in 4.7.2 and 4.8.x): the tx is stored the same way, only the
+        "new transaction" event is not raised. That event also cleared the
+        wallet's tx-parents cache, so that is done here; the History tab is
+        refreshed by the caller (``BalWindow._schedule_history_refresh``).
         """
         adb = wallet.adb
         existing = None
@@ -1342,14 +1354,18 @@ class Will:
                 and isinstance(tx, PartialTransaction)
             ):
                 existing.combine_with_other_psbt(tx)
-                adb.add_transaction(existing)
+                adb.add_transaction(existing, is_new=False)
             else:
                 try:
-                    adb.add_transaction(tx)
+                    adb.add_transaction(tx, is_new=False)
                 except UnrelatedTransactionException:
-                    adb.add_transaction(tx, allow_unrelated=True)
+                    adb.add_transaction(tx, allow_unrelated=True, is_new=False)
         except Exception as e:
             raise RuntimeError(f"add_transaction failed for {txid}: {e}") from e
+        try:
+            wallet.clear_tx_parents_cache()
+        except Exception as e:
+            _logger.debug(f"clear_tx_parents_cache not done: {e!r}")
 
     @staticmethod
     def _wallet_labels(wallet):
