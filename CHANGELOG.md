@@ -4616,3 +4616,56 @@ B2 and B2adv, one day earlier, accepted), #69 oracle 0 mismatches. `ruff`
 `main`; no new texts to translate; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 82. 5d/2: the heirs' amounts are always explained
+
+**Date:** 2026-10-09
+
+**Problems (seen in the owner's ZIP test, then traced in the harness):**
+
+1. **The "percentages add up to 40%" row disappeared** on the owner's wallet
+   (two heirs at 20 % each). When no coin is visible at the moment of the
+   Check (e.g. right after a Cancel, the unsigned will in the local history
+   holds the coins), `check_amounts` fails on its first, balance-based test
+   ("fixed amounts >= balance", true with 0 >= 0); #76 rightly treats that
+   as a false alarm, but it then said nothing at all, also about the
+   percentages, which depend only on the settings. Harness: the row was
+   missing on the Check after a Cancel.
+2. **Only fixed amounts** (e.g. 300,000 + 200,000 sat on a 1,000,000 sat
+   wallet): the will empties the wallet, so they are paid in proportion
+   (598,058 / 398,705 sat, 60 % / 40 %). The only warning ("the entire
+   wallet will always be fully emptied...") was overwritten a moment later
+   by the next row, and "Checking variables" stayed on "Wait".
+3. The same "Wait" happened with "Will-executor fee too high".
+
+**What changed (text approved by the owner):**
+
+- `bal/core/will.py` `describe_amounts`: never reports "fixed amounts
+  exceed" with no coin visible (balance 0); new kind `fixed_scaled` (only
+  fixed amounts: the shares they are paid in; dust heirs and OP_RETURN
+  outputs left out, as in the build).
+- `bal/gui/qt/dialogs.py`:
+  - the explanation is computed in every case, also when the check is a
+    false alarm, so the percentage row always appears;
+  - new message "All the heirs have a fixed amount: the will always empties
+    the whole wallet, so the amounts are increased in proportion (alice
+    60%, bob 40%).";
+  - every warning of this step is on its own row (never overwritten) and the
+    first row ends on "Ok" (or "Stopped" for fixed amounts that exceed the
+    balance, unchanged from #76).
+- Catalogs: the new text in Italian and Spanish.
+- New tests: `tests/test_msg_amounts_always_explained.py` (9).
+
+**Verification:** harness - owner's case (heirs "1" and "pocket manuel" at 20 %
+each, fee 4 -> 6, Cancel at signing, Check again, then a Check with the
+will in force): the percentage row ("add up to 40% ... (1 50%, pocket
+manuel 50%)") now appears in all four Checks (was missing after the
+Cancel); only fixed amounts (300,000 + 200,000 sat): "Checking variables:
+Ok" and the new row "(alice 60%, bob 40%)", paid 598,058 / 398,705 sat.
+Scenario matrix x6 (119 Checks per run, all with 60 % + 40 %): no amount
+row appears, no first row left on "Wait", verdicts unchanged (only the
+known B2 and B2adv), #69 oracle 0 mismatches. `ruff` (same 3
+pre-existing I001); whole `tests/` directory: same failures as `main`;
+translations complete; zip builds and loads.
+
+**Outcome:** DONE.

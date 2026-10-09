@@ -832,50 +832,59 @@ class BalBuildWillDialog(BalDialog):
             _logger.debug("variables ok")
             self.msg_set_status(_("Checking variables"), varrow, _("Ok"), self.COLOR_OK)
         except AmountException as e:
-            if self._amount_warning_is_false_alarm(available_utxos):
+            # The explanation is computed in every case (CHANGELOG #82): the
+            # rescaled percentages / proportional fixed amounts depend only on
+            # the settings, not on the coins visible right now. With no coin
+            # visible (e.g. after a Cancel) check_amounts fails on its first,
+            # balance-based test, which used to hide the explanation too.
+            info = Will.describe_amounts(
+                self.bal_window.heirs,
+                self.bal_window.willexecutors,
+                available_utxos,
+                self.bal_window.date_to_check,
+                self.bal_window.window.wallet.dust_threshold(),
+            )
+            text = self._amounts_message(info)
+            false_alarm = self._amount_warning_is_false_alarm(available_utxos)
+            if info and info["kind"] == "fixed_exceeds":
+                # Owner decision (CHANGELOG #76): the build would silently
+                # leave the percentage heirs out, so stop and let the user
+                # correct the fixed amounts. Own row: never overwritten.
+                self.msg_set_status(
+                    _("Checking variables"), varrow, _("Stopped"), self.COLOR_ERROR
+                )
+                self.msg_edit_row(self.msg_error(text))
+                return "fixed_amounts_exceed", None
+            # Every other case ends with "Ok" on the first row (it used to stay
+            # on "Wait" when the warning below was overwritten, #82) and the
+            # explanation, if any, on its own row the next steps never
+            # overwrite.
+            self.msg_set_status(
+                _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
+            )
+            if text:
+                self.msg_edit_row(self.msg_alert(text))
+            elif false_alarm:
                 # BUG-5 (CHANGELOG #76): not an amount problem, see the helper.
                 _logger.debug(f"amount check skipped (not an amount problem): {e!r}")
-                self.msg_set_status(
-                    _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
-                )
             else:
-                info = Will.describe_amounts(
-                    self.bal_window.heirs,
-                    self.bal_window.willexecutors,
-                    available_utxos,
-                    self.bal_window.date_to_check,
-                    self.bal_window.window.wallet.dust_threshold(),
-                )
-                text = self._amounts_message(info)
-                if info and info["kind"] == "fixed_exceeds":
-                    # Owner decision (CHANGELOG #76): the build would silently
-                    # leave the percentage heirs out, so stop and let the user
-                    # correct the fixed amounts. Own row: never overwritten.
-                    self.msg_set_status(
-                        _("Checking variables"), varrow, _("Stopped"), self.COLOR_ERROR
-                    )
-                    self.msg_edit_row(self.msg_error(text))
-                    return "fixed_amounts_exceed", None
-                if text:
-                    # Percentages rescaled: say what happens, on its own row
-                    # so the following steps do not overwrite it.
-                    self.msg_set_status(
-                        _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
-                    )
-                    self.msg_edit_row(self.msg_alert(text))
-                else:
-                    self.msg_set_checking(
-                        self.msg_warning(
-                            _(
-                                "In the inheritance process, "
-                                "the entire wallet will always be fully emptied. \n"
-                                "Your settings require an adjustment of the amounts"
-                            )
+                self.msg_edit_row(
+                    self.msg_alert(
+                        _(
+                            "In the inheritance process, "
+                            "the entire wallet will always be fully emptied. \n"
+                            "Your settings require an adjustment of the amounts"
                         )
                     )
+                )
         except WillExecutorFeeTooHighException as e:
-            self.msg_set_checking(
-                self.msg_warning(_("Will-executor fee too high: {}").format(e))
+            # Own row, never overwritten; the first row no longer stays on
+            # "Wait" (CHANGELOG #82).
+            self.msg_set_status(
+                _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
+            )
+            self.msg_edit_row(
+                self.msg_alert(_("Will-executor fee too high: {}").format(e))
             )
 
         self.msg_set_checking()
@@ -2407,6 +2416,13 @@ class BalBuildWillDialog(BalDialog):
         shares = ", ".join(
             "{} {}%".format(name, pct(share)) for name, share in info["shares"]
         )
+        if info["kind"] == "fixed_scaled":
+            # Text approved by the owner (CHANGELOG #82).
+            return _(
+                "All the heirs have a fixed amount: the will always empties the "
+                "whole wallet, so the amounts are increased in proportion "
+                "({shares})."
+            ).format(shares=shares)
         if info["with_fixed"]:
             return _(
                 "The heirs' percentages add up to {total}%: the will always "
