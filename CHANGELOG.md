@@ -4276,3 +4276,72 @@ unchanged. `ruff` (same 3 pre-existing I001); whole `tests/` directory (same
 failures as `main`); zip builds and loads.
 
 **Outcome:** DONE.
+
+## 77. F4/3: "Checking your will" row — name the real reason
+
+**Date:** 2026-10-09
+
+**Problems (traced in the scenario harness):**
+
+1. **Heirs.** One sentence covered every heir change: 'Heir "x" is not
+   covered by the current will (it was added or removed, or its delivery
+   date changed)'. It was wrong for an amount change (A12 said "its delivery
+   date changed"), and with an heir added together with new shares for the
+   others (A10: carol added, alice and bob 40 %) it named alice, the first
+   heir whose share changed, not carol.
+2. **After an invalidation** (postpone A4, B4, B6): once the old will is
+   invalidated the Check runs again and said "The will contains no valid
+   transaction: a new will must be prepared." True, but alarming.
+3. **After a Cancel at signing** the next Check discards the unsigned will
+   and said "The will contains no valid transaction" (B1) or 'Will-executor
+   "https://we0.test" is not covered by the current will' (B4): misleading.
+4. **New funds received** were reported as "no valid transaction" instead of
+   "The wallet contains funds that the current will does not cover yet": the
+   dialog told the two apart with `e.args`, but `WillException` never fills
+   `e.args`, so that branch never ran.
+
+**What changed (texts approved by the owner; owner decision: distinct heir
+messages, replacing the earlier "too fine-grained" choice):**
+
+- `bal/core/will.py`
+  - `HeirNotFoundException(heir, change=None)`: `change` is one of
+    `removed`, `added`, `address`, `amount`, `date` (constants on the
+    class); `str(e)` is still the heir name, so the other callers (main
+    window, CLI) are unchanged.
+  - New `Will._heir_change(name, heir, will_only_valid)`: compares the
+    settings entry with the first VALID item carrying the heir.
+  - `check_willexecutors_and_heirs`: among the heirs not covered, an added
+    heir is reported before a changed one. Same exception as before, same
+    order with respect to `NoHeirsException`; nothing else changes.
+- `bal/gui/qt/dialogs.py`
+  - `_check_failure_message`: 'Heir "bob" was removed / Heir "carol" was
+    added: preparing a new will.', 'The delivery date / amount / address of
+    heir "alice" changed: preparing a new will.'; the generic sentence stays
+    for an exception without `change`.
+  - New `_rebuild_reason_message(e)`, used before `_check_failure_message`:
+    right after this dialog broadcast an invalidation, "Old will
+    invalidated: preparing the new will with the new date." (postpone) or
+    "... with the time period you set." (Check Alive threshold); after a
+    Cancel at signing, "The will prepared earlier was not signed: preparing
+    it again." — only in place of the two misleading sentences above (for
+    will-executors, only one the unsigned will had); a real change (fee,
+    heirs, new will-executor, new funds) keeps its own message.
+  - New `_unsigned_will_executors()` (snapshot taken before `check_will`,
+    which discards the unsigned items) and `_no_valid_transaction(e)` (fixes
+    problem 4).
+- Catalogs: the new texts in Italian and Spanish.
+- New tests: `tests/test_msg_rebuild_reasons.py` (14).
+
+**Verification:** harness — A10 'Heir "carol" was added', A11 'Heir "bob" was
+removed', A12 'The amount of heir "alice" changed', A5 'The delivery date of
+heir "alice" changed', A4 / B4 / B6 "Old will invalidated: preparing the new
+will with the new date.", B1 / B4 after the Cancel "The will prepared earlier
+was not signed: preparing it again.", a second coin received "The wallet
+contains funds that the current will does not cover yet". Scenario matrix x6
+(119 Checks per run): verdicts unchanged (only the known B2, B2adv, C3adv),
+#69 oracle 0 mismatches. The "time period you set" text is not reached in
+the matrix: in C2adv the Check stops after the Check Alive invalidation
+(unchanged behaviour, Phase 5b). `ruff` (same 3 pre-existing I001); whole
+`tests/` directory (same failures as `main`); zip builds and loads.
+
+**Outcome:** DONE.

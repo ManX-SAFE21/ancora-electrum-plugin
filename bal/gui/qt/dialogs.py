@@ -705,6 +705,12 @@ class BalBuildWillDialog(BalDialog):
         # and over (the reported loop). When this flag is set and a postpone is
         # STILL detected, we STOP with a clear message instead of re-prompting.
         self._invalidation_broadcast = False
+        # CHANGELOG #77: why the old will was invalidated (a later date, or
+        # the Check Alive threshold) and the will-executors of a will prepared
+        # earlier but never signed. Only used to word the "Checking your will"
+        # row; see _rebuild_reason_message.
+        self._postpone_invalidation = False
+        self._unsigned_executors = None
         self.network = Network.get_instance()
         self._stopping = False
         self.thread = TaskThread(self)
@@ -840,6 +846,9 @@ class BalBuildWillDialog(BalDialog):
 
         self.msg_set_checking()
         have_to_build = False
+        # Snapshot BEFORE check_will: it discards the unsigned items, after
+        # which they can no longer be told apart (CHANGELOG #77).
+        self._unsigned_executors = self._unsigned_will_executors()
         try:
             self.bal_window.check_will()
             self.msg_set_checking(self.msg_ok())
@@ -869,6 +878,7 @@ class BalBuildWillDialog(BalDialog):
             # the invalidation; afterwards the user presses Prepare again to
             # rebuild the new (postponed) inheritance.
             _logger.debug(f"postponed {e}")
+            self._postpone_invalidation = True
             self.msg_set_checking(_("Postponed: invalidating old will"))
             fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
             return None, Will.invalidate_will(
@@ -927,7 +937,13 @@ class BalBuildWillDialog(BalDialog):
             # carries (heir name, will-executor URL, old/new fee rate).
             # A delivery date in the past is the real cause of whatever the
             # core reports here (BUG-4, CHANGELOG #75): say that instead.
-            message = self._past_date_message() or self._check_failure_message(e)
+            # CHANGELOG #77: right after an invalidation, or after a Cancel at
+            # signing, the core's sentence is true but misleading: say why.
+            message = (
+                self._past_date_message()
+                or self._rebuild_reason_message(e)
+                or self._check_failure_message(e)
+            )
             _logger.debug(f"message: {message}")
             self.msg_set_checking(message)
 
@@ -2185,6 +2201,75 @@ class BalBuildWillDialog(BalDialog):
             _logger.debug(f"_executed_inheritance_status error: {_err}")
         return "MEMPOOL" if has_mempool else None
 
+    def _unsigned_will_executors(self):
+        """Will-executor URLs of a will prepared earlier but never signed.
+
+        Returns the set of URLs of the VALID items that are neither signed
+        (``COMPLETE``) nor sent (``PUSHED``) - typically left by a Cancel at
+        the signing step (an item without will-executor adds ``None``) - or
+        ``None`` when there is no such item. Read-only; never raises.
+        """
+        try:
+            urls = {
+                (w.we or {}).get("url")
+                for w in self.bal_window.willitems.values()
+                if w.get_status("VALID")
+                and not w.get_status("COMPLETE")
+                and not w.get_status("PUSHED")
+            }
+            return urls or None
+        except Exception as e:
+            _logger.debug(f"unsigned will check failed: {e!r}")
+            return None
+
+    @staticmethod
+    def _no_valid_transaction(e):
+        """True for the core's argument-less NotCompleteWillException.
+
+        ``Will.is_will_valid`` raises it with no argument when the will holds
+        no VALID transaction, and with a message when a wallet coin is not
+        covered. ``WillException`` keeps only ``msg`` (default
+        ``"WillException"``) and never fills ``e.args``, so the default
+        message is what tells the two apart.
+        """
+        return type(e) is NotCompleteWillException and str(e) == "WillException"
+
+    def _rebuild_reason_message(self, e):
+        """Name the real reason when the core's sentence would mislead.
+
+        Texts approved by the owner (CHANGELOG #77):
+
+        * right after this dialog broadcast an invalidation, the old items
+          are all INVALIDATED and the core reports "no valid transaction";
+          the real news is that the old will is gone and the new one comes
+          (with the new date for a postpone, else the time period set);
+        * after a Cancel at signing, the next Check discards the unsigned
+          items and reports "no valid transaction" or "will-executor not
+          covered" (for an executor of those items): say the will was not
+          signed. Any other cause (fee, heirs...) keeps its own message.
+
+        Returns ``None`` when neither applies.
+        """
+        plain = self._no_valid_transaction(e)
+        if plain and self._invalidation_broadcast:
+            if self._postpone_invalidation:
+                return _(
+                    "Old will invalidated: preparing the new will with the "
+                    "new date."
+                )
+            return _(
+                "Old will invalidated: preparing the new will with the "
+                "time period you set."
+            )
+        unsigned = self._unsigned_executors
+        if unsigned and (
+            plain or (isinstance(e, WillExecutorNotPresent) and str(e) in unsigned)
+        ):
+            return _(
+                "The will prepared earlier was not signed: preparing it again."
+            )
+        return None
+
     def _check_failure_message(self, e):
         """Return a precise explanation of why the will is no longer coherent.
 
@@ -2229,10 +2314,26 @@ class BalBuildWillDialog(BalDialog):
                 "transaction: a new will must be prepared."
             )
         if isinstance(e, HeirNotFoundException):
-            # Raised when an heir was added, removed, or had its delivery date
-            # changed.  We deliberately do NOT try to tell those three apart
-            # (owner request: too fine-grained); naming the heir is what makes
-            # the message actionable.
+            # Owner decision (CHANGELOG #77): one sentence per kind of change,
+            # as reported by the core (Will._heir_change). The generic
+            # sentence stays for an exception without that detail.
+            change = getattr(e, "change", None)
+            if change == HeirNotFoundException.HEIR_REMOVED:
+                return _('Heir "{}" was removed: preparing a new will.').format(str(e))
+            if change == HeirNotFoundException.HEIR_ADDED:
+                return _('Heir "{}" was added: preparing a new will.').format(str(e))
+            if change == HeirNotFoundException.HEIR_DATE:
+                return _(
+                    'The delivery date of heir "{}" changed: preparing a new will.'
+                ).format(str(e))
+            if change == HeirNotFoundException.HEIR_AMOUNT:
+                return _(
+                    'The amount of heir "{}" changed: preparing a new will.'
+                ).format(str(e))
+            if change == HeirNotFoundException.HEIR_ADDRESS:
+                return _(
+                    'The address of heir "{}" changed: preparing a new will.'
+                ).format(str(e))
             return _(
                 'Heir "{}" is not covered by the current will (it was added '
                 "or removed, or its delivery date changed): a new will must "
@@ -2250,9 +2351,11 @@ class BalBuildWillDialog(BalDialog):
         # places, told apart STRUCTURALLY (not by matching message text, which
         # would be fragile): with no argument when the will holds no valid
         # transaction, and with one argument when a wallet utxo is not
-        # included in the will.
+        # included in the will.  WillException drops its arguments (e.args is
+        # always empty), so the check is on the default message instead; the
+        # old e.args test always said "no valid transaction" (CHANGELOG #77).
         if type(e) is NotCompleteWillException:
-            if e.args:
+            if not self._no_valid_transaction(e):
                 return _(
                     "The wallet contains funds that the current will does not "
                     "cover yet: a new will must be prepared."

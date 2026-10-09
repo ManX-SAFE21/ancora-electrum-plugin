@@ -1554,6 +1554,27 @@ class Will:
         return None
 
     @staticmethod
+    def _heir_change(name, heir, will_only_valid):
+        """Say what changed for an heir the VALID will items do not cover.
+
+        Used only to word the Check message (CHANGELOG #77), never to decide
+        anything. The first VALID item that carries ``name`` is compared with
+        the settings entry ``heir`` ([address, amount, locktime]): a different
+        address, then a different amount, else the delivery date. When no
+        VALID item carries ``name`` the heir was added.
+        """
+        for w in will_only_valid.values():
+            their = (w.heirs or {}).get(name)
+            if not their:
+                continue
+            if heir[0] != their[0]:
+                return HeirNotFoundException.HEIR_ADDRESS
+            if heir[1] != their[1]:
+                return HeirNotFoundException.HEIR_AMOUNT
+            return HeirNotFoundException.HEIR_DATE
+        return HeirNotFoundException.HEIR_ADDED
+
+    @staticmethod
     def check_willexecutors_and_heirs(
         will, heirs, willexecutors, self_willexecutor, check_date, tx_fees
     ):
@@ -1658,7 +1679,9 @@ class Will:
                             f"heir removed, transaction is not valid:"
                             f"{wheir} {wid}, {w}"
                         )
-                        raise HeirNotFoundException(wheir)
+                        raise HeirNotFoundException(
+                            wheir, HeirNotFoundException.HEIR_REMOVED
+                        )
 
             if willexecutor := w.we:
                 count = willexecutors_found.get(willexecutor["url"], 0)
@@ -1669,14 +1692,23 @@ class Will:
 
             else:
                 no_willexecutor += 1
+        # CHANGELOG #77: report an ADDED heir before a CHANGED one, so that
+        # "carol added" (with the others' shares adjusted) names carol, not
+        # the first heir whose share changed.
+        missing = [h for h in heirs if h not in heirs_found]
+        if missing:
+            changes = {
+                h: Will._heir_change(h, heirs[h], will_only_valid) for h in missing
+            }
+            added = [h for h in missing
+                     if changes[h] == HeirNotFoundException.HEIR_ADDED]
+            h = added[0] if added else missing[0]
+            _logger.debug(f"heir: {h} not found ({changes[h]})")
+            raise HeirNotFoundException(h, changes[h])
         count_heirs = 0
         for h in heirs:
-
             if Util.parse_locktime_string(heirs[h][2]) >= check_date:
                 count_heirs += 1
-            if h not in heirs_found:
-                _logger.debug(f"heir: {h} not found")
-                raise HeirNotFoundException(h)
         if not count_heirs:
             raise NoHeirsException("there are not valid heirs")
         if self_willexecutor and no_willexecutor == 0:
@@ -2045,7 +2077,26 @@ class TxFeesChangedException(NotCompleteWillException):
 
 
 class HeirNotFoundException(NotCompleteWillException):
-    pass
+    """An heir in the settings is not matched by the current will.
+
+    ``str(e)`` is still the heir name (callers rely on it). ``change`` says
+    what happened to that heir, so the Check dialog can name it (CHANGELOG
+    #77): one of :data:`HEIR_REMOVED`, :data:`HEIR_ADDED`,
+    :data:`HEIR_ADDRESS`, :data:`HEIR_AMOUNT`, :data:`HEIR_DATE`, or
+    ``None`` when unknown.
+    """
+
+    HEIR_REMOVED = "removed"
+    HEIR_ADDED = "added"
+    HEIR_ADDRESS = "address"
+    HEIR_AMOUNT = "amount"
+    HEIR_DATE = "date"
+
+    def __init__(self, heir, change=None):
+        """Keep ``heir`` as the only arg so ``str(e)`` stays the heir name."""
+        super().__init__(heir)
+        self.heir = heir
+        self.change = change
 
 
 class WillPostponedException(NotCompleteWillException):
