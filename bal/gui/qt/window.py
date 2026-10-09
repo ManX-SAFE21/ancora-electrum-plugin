@@ -25,6 +25,7 @@ from ...core.checkalive import (
     CheckAliveError,
     check_alive_renewal,
     ensure_check_alive_valid,
+    normalize_check_alive,
     resolve_date_to_check,
     resolve_delivery_date,
     resolve_guard_threshold,
@@ -249,6 +250,9 @@ class BalWindow:
                     )
                     self.close_wallet()
                     return
+        # The will items are known now: convert an old Check Alive value
+        # against the delivery the will really uses (#80).
+        self._normalize_check_alive()
 
         # if not self.will_settings:
         #    self.will_settings = self.wallet.db.get_dict("will_settings")
@@ -736,6 +740,26 @@ class BalWindow:
         except Exception as e:
             _logger.debug(f"refresh invalidated items failed: {e!r}")
 
+    def _normalize_check_alive(self):
+        """Convert an old Check Alive value to "-Nd" and save it (#80).
+
+        Runs when the will is loaded and before every check: a no-op once
+        the value is "-Nd". The rules (same date kept) live in
+        ``bal.core.checkalive.normalize_check_alive``. Never raises.
+        """
+        try:
+            old = self.will_settings.get("threshold")
+            new = normalize_check_alive(
+                self.will_settings,
+                built_locktime=Will.get_min_locktime(self.willitems),
+                creation_date=Will.get_creation_time(self.willitems),
+            )
+            if new != old:
+                _logger.info(f"check alive converted: {old!r} -> {new}")
+                self.update_setting_widgets(new, "threshold", update_all=True)
+        except Exception as e:
+            _logger.debug(f"check alive conversion failed: {e!r}")
+
     def check_alive_info(self):
         """``check_alive_renewal`` for this wallet (None: nothing to do).
 
@@ -815,6 +839,7 @@ class BalWindow:
         if not self.heirs:
             raise NoHeirsException(_("Heirs are not defined"))
         self._refresh_invalidated_items()
+        self._normalize_check_alive()
         try:
             # SIMPLE / ADVANCED root behaviour of the "Check Alive" (threshold).
             #

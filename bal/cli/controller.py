@@ -44,6 +44,7 @@ from ..core.checkalive import (
     CheckAliveError,
     check_alive_renewal,
     ensure_check_alive_valid,
+    normalize_check_alive,
     resolve_date_to_check,
     resolve_delivery_date,
     resolve_guard_threshold,
@@ -315,11 +316,29 @@ class BalController:
             _logger.debug(f"check alive info failed: {e!r}")
             return None
 
+    def _normalize_check_alive(self):
+        """Mirror of ``BalWindow._normalize_check_alive`` (#80)."""
+        try:
+            old = self.will_settings.get("threshold")
+            new = normalize_check_alive(
+                self.will_settings,
+                built_locktime=Will.get_min_locktime(self.willitems),
+                creation_date=Will.get_creation_time(self.willitems),
+            )
+            if new != old:
+                _logger.info(f"check alive converted: {old!r} -> {new}")
+                self.will_settings["threshold"] = new
+                self.plugin.WILL_SETTINGS.set(self.will_settings)
+        except Exception as e:
+            _logger.debug(f"check alive conversion failed: {e!r}")
+
     def init_class_variables(self):
         if not self.heirs:
             raise will_mod.NoHeirsException(_("Heirs are not defined"))
         # Items already invalidated on-chain must not anchor the dates (#79).
         self._refresh_invalidated_items()
+        # An old Check Alive value becomes "N days before the delivery" (#80).
+        self._normalize_check_alive()
         self.date_to_check = resolve_date_to_check(
             self.plugin.is_basic_mode(),
             self.will_settings,

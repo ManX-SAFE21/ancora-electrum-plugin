@@ -4492,3 +4492,67 @@ versions in that list; they pass when run alone, like before - see 5c);
 zip builds and loads.
 
 **Outcome:** DONE.
+
+## 80. 5b/2 (D14): Check Alive as "N days before the delivery"
+
+**Date:** 2026-10-09
+
+**Problem:** in advanced mode the Check Alive could be a fixed date, a
+positive "N days after the will was created" or a negative "N days before
+the delivery" (RAW). Only the last one follows the delivery when it moves;
+the other two stayed behind, and scenario C3adv (a will expired, then a later
+delivery chosen) ended with NO will in force. The default value was itself a
+fixed date (30 days before a delivery one year ahead, saved as a date), so
+most advanced users had the problematic form. The RAW field also asked the
+user to type a sign.
+
+**What changed (owner decisions D14, D1 = spin box in days, D2 = keep the
+same date):**
+
+- `bal/core/checkalive.py`: new `check_alive_days(...)` and
+  `normalize_check_alive(...)`: the saved value becomes `"-Nd"` keeping the
+  same Check Alive date, expressed as days before the delivery the will
+  really uses (`"-1y"` -> `"-365d"`; a fixed date or a positive value ->
+  `delivery - date`, rounded to whole days); a date already passed but before
+  the delivery is kept (it is a passed Check Alive: the owner is asked to
+  renew, #79); anything that cannot be expressed so (on/after the delivery,
+  more than 3650 days, unreadable) becomes the default. New
+  `will_executable_now(...)`. Constants: default 180 days, maximum 3650.
+- `bal/core/plugin_base.py`: default Check Alive `"-180d"` (about six
+  months) instead of a fixed date 30 days before the delivery.
+- `bal/gui/qt/window.py`, `bal/cli/controller.py`: the conversion runs when
+  the will is loaded and before every check, and is saved once (a no-op for
+  a `"-Nd"` value).
+- `bal/gui/qt/widgets.py`: `ThresholdTimeWidget` is now one spin box: "180
+  days before the delivery (≈ 6 months) → 2027-04-19"; arrows step 30 days,
+  1..3650, the number can be typed; the date is red when already past; new
+  help text and tooltip. No Raw/Date selector and no sign to type any more.
+  It keeps the old interface (`get_value()` returns `"-Nd"`), so the
+  toolbars, the wizard and the calendar reminders are unchanged.
+- `bal/gui/qt/dialogs.py`: with the Check Alive following the delivery, a
+  delivery moved later than the Check Alive margin made the old will read as
+  "expired" against the new Check Alive date: the Check said "Your will has
+  expired", opened Electrum's invalidation window and needed a second Check.
+  When the old will cannot be executed yet (advanced mode) this is now the
+  postpone path: invalidate and prepare the new will in the same Check
+  ("Old will invalidated: preparing the new will with the new date."). A
+  will really past its delivery is still invalidated at once as before.
+- Catalogs: the new texts in Italian and Spanish.
+- Tests: new `tests/test_check_alive_days.py` (19); the two default-value
+  tests of `tests/test_core_plugin_base.py` now expect `"-180d"`.
+
+**Verification:** spin box rendered offscreen: "180 days before the delivery (≈ 6
+months) → 2027-04-19", a past date in red, read-only without arrows.
+Scenario matrix x6 (119 Checks per run): C3adv is now OK (its fixed Check
+Alive is converted to "-30d" and follows the later delivery); A4adv/A7adv
+postpone in one Check with the right message; the only verdicts not OK are
+the known B2 and B2adv (one day earlier, accepted); #69 oracle 0
+mismatches. Check Alive scenarios of #79 unchanged, and a fixed delivery
+moved later after a passed Check Alive now renews in one Check (was the
+classic window plus a second Check). Private regtest node (`real_renew.py`):
+renewal again accepted and mined, old txs dead, new will non-final before its
+date, accepted after it, pays the heirs 60/40. `ruff` (same 3 pre-existing
+I001); whole `tests/` directory: same failures as `main`; zip builds and
+loads.
+
+**Outcome:** DONE.

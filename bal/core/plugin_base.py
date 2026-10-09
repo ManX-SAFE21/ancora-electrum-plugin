@@ -490,9 +490,18 @@ class BalPlugin(BasePlugin):
 
     @staticmethod
     def default_will_settings():
-        """Default will settings: a fee rate plus absolute threshold/locktime."""
-        will_settings: dict[str, float] = {"baltx_fees": 20}
+        """Default will settings: a fee rate, an absolute locktime and the
+        Check Alive as "N days before the delivery".
+
+        Since CHANGELOG #80 the Check Alive is never a fixed date (owner
+        decision D14): a fixed date does not follow the delivery when it
+        moves. Default: 180 days (about six months) before the delivery.
+        """
+        will_settings: dict[str, float | str] = {"baltx_fees": 20}
         will_settings.update(BalPlugin.default_will_settings_absolute())
+        will_settings["threshold"] = BalPlugin.default_will_settings_relative()[
+            "threshold"
+        ]
         return will_settings
 
     @staticmethod
@@ -519,13 +528,14 @@ class BalPlugin(BasePlugin):
 
     @staticmethod
     def default_will_settings_relative():
-        """Default relative dates: 30 days BEFORE the delivery, 1 year locktime.
+        """Default relative dates: Check Alive 180 days BEFORE the delivery,
+        1 year locktime.
 
-        The Check Alive default is NEGATIVE on purpose: it keeps counting back
-        from the delivery date, preserving the historical "check alive 30 days
-        before delivery" behaviour.
+        The Check Alive is always negative, i.e. counted back from the
+        delivery date; owner decision (CHANGELOG #80): 180 days, about six
+        months, so a renewal (one on-chain fee) is rarely needed.
         """
-        return {"threshold": "-30d", "locktime": "1y"}
+        return {"threshold": "-180d", "locktime": "1y"}
 
 
 class BalTimestamp:

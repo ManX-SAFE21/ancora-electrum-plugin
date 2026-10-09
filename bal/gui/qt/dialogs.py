@@ -50,6 +50,7 @@ from ...core.checkalive import (
     CheckAliveError,
     resolve_date_to_check,
     resolve_relative_check_alive_date,
+    will_executable_now,
 )
 from ...core.qrtransfer import (
     CHUNK_PRESETS,
@@ -899,6 +900,27 @@ class BalBuildWillDialog(BalDialog):
             # Electrum's classic transaction window (which sets the label). This
             # makes the CHECK button and the WIZARD behave identically and fixes
             # the missing-label bug (#03).
+            if not self.bal_window.bal_plugin.is_basic_mode() and not will_executable_now(
+                Will.get_min_locktime(self.bal_window.willitems)
+            ):
+                # CHANGELOG #80: the will cannot be executed yet; it is only
+                # "expired" against a Check Alive that moved later with the
+                # delivery ("N days before"): the delivery was postponed
+                # beyond the Check Alive margin. Same as a postpone: invalidate
+                # and prepare the new will in this Check, instead of the false
+                # "Your will has expired" and a second Check.
+                _logger.debug("expired against the Check Alive only: postpone")
+                self._postpone_invalidation = True
+                self.msg_set_checking(_("Postponed: invalidating old will"))
+                fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
+                return None, Will.invalidate_will(
+                    self.bal_window.willitems, self.bal_window.wallet, fee_per_byte,
+                    history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
+                    will_locktime=Will.get_min_locktime(
+                        self.bal_window.willitems,
+                        default_value=self.bal_window.date_to_check,
+                    ),
+                )
             _logger.debug("expired")
             self.msg_set_checking(_("Expired"))
             return "invalidate_classic", None

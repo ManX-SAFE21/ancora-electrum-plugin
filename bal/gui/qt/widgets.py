@@ -20,7 +20,13 @@ Contents:
 
 from typing import TYPE_CHECKING
 
-from ...core.checkalive import resolve_relative_check_alive_date
+from ...core.checkalive import (
+    CHECK_ALIVE_DEFAULT_DAYS,
+    CHECK_ALIVE_MAX_DAYS,
+    check_alive_days,
+    normalize_check_alive,
+    resolve_relative_check_alive_date,
+)
 from ...core.heirs import get_op_return_hex, is_op_return_address
 from ...core.input_rules import (
     LockTimeEditor,
@@ -640,44 +646,178 @@ class LockTimeDateEdit(QDateTimeEdit, _LockTimeEditor):
 
 
 
-class ThresholdTimeWidget(BalTimeEditWidget):
+class ThresholdTimeWidget(QWidget):
+    """The Check Alive field: "N days before the delivery" (CHANGELOG #80).
+
+    Owner decisions (D14): a single spin box in days (arrows step 30 days,
+    1..3650, default 180), the word "days" instead of "d", the minus sign
+    added by the plugin, an approximate number of months and the resulting
+    date next to it (red when already past). The Raw/Date selector and the
+    fixed-date / "after creation" forms are gone: they did not follow the
+    delivery when it moved (scenario C3adv).
+
+    The value exchanged with the rest of the plugin is unchanged in form:
+    ``get_value()`` returns ``"-Nd"`` (what ``bal.core.checkalive`` and BAL
+    understand), and the interface of the old composite is kept
+    (``valueEdited``, ``prefix_widget``, ``editor.label``, ``alarm``,
+    ``set_value``, ``set_read_only``, ``set_index``...), so the toolbars,
+    the wizard and the calendar keep working untouched.
+    """
+
+    valueEdited = pyqtSignal()
     # rich_text=True is used by the HelpButton, so HTML tags (<b>, <br>) render.
     help_text = N_(
         "<b>CHECK ALIVE</b><br><br>"
-        "In DATA mode:<br>"
-        "set the date for the \u201ccheck alive\u201d parameter.<br>"
-        "When you open the wallet, if the \u201ccheck alive\u201d date has passed, "
-        "the plugin will ask if you want to postpone the inheritance, since it "
-        "assumes you still have control of the wallet and that you are still "
-        "alive.<br><br>"
-        "In RAW mode:<br>"
-        "When less than this time is missing, ask to invalidate.<br>"
-        "If you fail to invalidate during this time, your transactions will be delivered to your heirs.<br><br>"
-        "if you choose Raw, you can insert various options based on suffix:<br>"
-        " - d: number of days after current day(ex: 1d means tomorrow)<br>"
-        " - y: number of years after current day(ex: 1y means one year from today)<br>"
-        "The sign selects the reference date:<br>"
-        " - a NEGATIVE value (ex: -30d) counts backwards from the "
-        "<b>delivery</b> date (30 days before the delivery);<br>"
-        " - a POSITIVE value (ex: 30d) counts forward from the "
-        "<b>inheritance creation</b> date (30 days after the will was created).<br>"
-        "<br><b>Note:</b> the date/time is expressed in your computer's "
-        "<b>Local time</b> (not UTC time).<br>"
+        "How many days before the delivery date the plugin asks if you are "
+        "still here.<br><br>"
+        "From that day on, when you open the wallet or press Check, the "
+        "plugin asks you to <b>renew</b> the will: the old will is "
+        "invalidated (one miner fee) and a new one is prepared with a later "
+        "delivery date.<br>"
+        "If you do not renew, nothing changes: at the delivery date the "
+        "transactions are delivered to your heirs.<br><br>"
+        "Default: 180 days (about six months). The date next to the field is "
+        "the resulting Check Alive date; it turns red when it is already "
+        "past.<br>"
     )
     label_text = "🚨"
-    #label_text = "Check Alive"
-    tooltip_text = N_("Check Alive")
+    tooltip_text = N_("Check Alive: days before the delivery date")
     base_field = "threshold"
-    # The Check Alive field accepts a signed value; the delivery field does not.
-    allow_negative_raw = True
 
     def __init__(self, bal_window, parent, init_value=None):
+        """Build the spin box; ``init_value`` is any saved Check Alive value."""
+        super().__init__(parent)
+        self.bal_window = bal_window
+        self.alarm = None
+        self.current_value = None
+        hbox = QHBoxLayout()
+        self.setLayout(hbox)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(4)
+        help_button = HelpButton(_(self.help_text))
+        help_button.setText(self.label_text)
+        help_button.setToolTip(_(self.tooltip_text))
+        hbox.addWidget(help_button)
+        self.prefix_widget = help_button
+        self.spin = QSpinBox()
+        self.spin.setRange(1, CHECK_ALIVE_MAX_DAYS)
+        self.spin.setSingleStep(30)
+        self.spin.setSuffix(" " + _("days"))
+        # Only an arrow click, Enter or leaving the field changes the value:
+        # typing "180" must not save 1, 18 and 180 in turn.
+        self.spin.setKeyboardTracking(False)
+        self.spin.setToolTip(_(self.tooltip_text))
+        hbox.addWidget(self.spin)
+        self.hint = QLabel("")
+        hbox.addWidget(self.hint)
+        # Kept under the old name: on_locktime_change used ``editor.label``.
+        self.label = QLabel("")
+        self.editor = self
+        hbox.addWidget(self.label)
+        hbox.addStretch(1)
         if init_value is None:
-            init_value = bal_window.bal_plugin.WILL_SETTINGS.get()["threshold"]
-        super().__init__(bal_window, parent, init_value)
-        self.default_value = self.bal_window.bal_plugin.default_will_settings()[
-            "threshold"
-        ]
+            init_value = bal_window.bal_plugin.WILL_SETTINGS.get().get("threshold")
+        self.spin.setValue(self._days_for_display(init_value))
+        self.current_value = self.get_value()
+        self._update_hint()
+        self.spin.valueChanged.connect(self._on_spin_changed)
+        self.valueEdited.connect(self.update_will_settings)
+
+    def _days_for_display(self, value):
+        """Days to show for any saved value (old forms converted, #80).
+
+        Display only: the conversion is SAVED by
+        ``BalWindow._normalize_check_alive`` once the will is loaded, against
+        the delivery the will really uses.
+        """
+        days = check_alive_days(value)
+        if days is not None:
+            return days
+        try:
+            settings = dict(getattr(self.bal_window, "will_settings", None) or {})
+            settings["threshold"] = value
+            normalized = normalize_check_alive(
+                settings,
+                built_locktime=Will.get_min_locktime(
+                    getattr(self.bal_window, "willitems", None) or {}
+                ),
+            )
+            return check_alive_days(normalized) or CHECK_ALIVE_DEFAULT_DAYS
+        except Exception:
+            return CHECK_ALIVE_DEFAULT_DAYS
+
+    def _update_hint(self):
+        """Show "before the delivery (≈ 6 months) →" next to the spin box."""
+        days = self.spin.value()
+        months = round(days / 30.44)
+        if months >= 2:
+            extra = " " + _("(≈ {} months)").format(months)
+        elif months == 1:
+            extra = " " + _("(≈ 1 month)")
+        else:
+            extra = ""
+        self.hint.setText(_("before the delivery") + extra + " →")
+
+    def _on_spin_changed(self, _days):
+        self._update_hint()
+        self.valueEdited.emit()
+
+    def update_will_settings(self):
+        """Save the value and sync the other settings widgets."""
+        self.current_value = self.get_value()
+        self.bal_window.update_setting_widgets(
+            self.current_value, self.base_field, True
+        )
+
+    def get_value(self) -> str:
+        """The Check Alive as saved: ``"-Nd"``."""
+        return "-{}d".format(self.spin.value())
+
+    def set_value(self, x: Any, force=None, update_all=False,
+                  update_will_dialog=False, update_heirs_dialog=False) -> None:
+        """Show ``x`` (any saved form); save it only when it is "-Nd"."""
+        days = self._days_for_display(x)
+        if days == self.spin.value():
+            return
+        self.spin.blockSignals(True)
+        self.spin.setValue(days)
+        self.spin.blockSignals(False)
+        self._update_hint()
+        self.current_value = self.get_value()
+        if check_alive_days(x) is not None:
+            self.bal_window.update_setting_widgets(self.current_value, self.base_field)
+
+    def show_resolved_date(self, td, now=None):
+        """Show the resulting Check Alive date, red when already past."""
+        self.alarm = td
+        self.label.setText(td.strftime("%Y-%m-%d"))
+        current = now if now is not None else datetime.now(tz=td.tzinfo).timestamp()
+        past = td.timestamp() < current
+        self.label.setStyleSheet("color:#ff0000;" if past else "")
+        self.label.setToolTip(
+            _("This Check Alive date has already passed") if past else ""
+        )
+
+    def set_read_only(self, read_only=True):
+        """Show the value but make it non-editable (outside the wizard)."""
+        self.spin.setReadOnly(read_only)
+        self.spin.setButtonSymbols(
+            QAbstractSpinBox.ButtonSymbols.NoButtons
+            if read_only
+            else QAbstractSpinBox.ButtonSymbols.UpDownArrows
+        )
+        self.spin.setStyleSheet(
+            "QSpinBox{background-color:#f0f0f0;}" if read_only else ""
+        )
+
+    def set_index(self, index):
+        """No Raw/Date selector any more (kept for the shared callers)."""
+
+    def apply_user_type_visibility(self):
+        """No Raw/Date selector any more (kept for the shared callers)."""
+
+    def apply_user_type_editor_default(self):
+        """No Raw/Date selector any more (kept for the shared callers)."""
 
 
 
@@ -1185,7 +1325,8 @@ class WillSettingsWidget(QWidget):
         self.widgets["threshold"].alarm=td
         self.bal_window.will_settings["real_threshold"]=td.timestamp()
         try:
-            self.widgets["threshold"].editor.label.setText(td.strftime("%Y-%m-%d"))
+            # Red when already past (CHANGELOG #80).
+            self.widgets["threshold"].show_resolved_date(td)
         except Exception as _e:
             pass
 
