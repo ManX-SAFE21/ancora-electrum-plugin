@@ -1675,7 +1675,20 @@ class Will:
                             new_locktime = Util.resolve_locktime_against_tx(
                                 heir[2], their[2], tx_locktime
                             )
-                            if new_locktime == tx_locktime:
+                            unanchored = (
+                                Util._relative_days(heir[2]) is not None
+                                and Util._relative_days(their[2]) is None
+                            )
+                            if new_locktime == tx_locktime and unanchored:
+                                # CHANGELOG #81: the will was built from a
+                                # FIXED date and the setting is now a period
+                                # giving the same date TODAY ("365d"). A period
+                                # can only be anchored to a will built from a
+                                # period: tomorrow it would read one day later,
+                                # i.e. a postpone (a paid invalidation). Rebuild
+                                # now instead (no fee; anticipation rule).
+                                pass
+                            elif new_locktime == tx_locktime:
                                 # Unchanged: this heir is still coherent.
                                 count = heirs_found.get(wheir, 0)
                                 heirs_found[wheir] = count + 1

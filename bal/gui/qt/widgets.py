@@ -18,6 +18,7 @@ Contents:
     * WillWidget                                            - single will-tx box
 """
 
+from datetime import timezone
 from typing import TYPE_CHECKING
 
 from ...core.checkalive import (
@@ -210,6 +211,25 @@ class _LockTimeEditor(LockTimeEditor):
 
 
 class BalTimeEditWidget(QWidget, _LockTimeEditor):
+    """The delivery date field: a Raw period ("1y") or a Date (CHANGELOG #81).
+
+    Owner rule (#81): the saved delivery date changes ONLY when the user
+    edits it - types a period, picks a date, or explicitly switches Raw/Date.
+    Building the widget, switching BASIC/ADVANCED, refreshing or syncing
+    another panel never change it. Before #81 each of those replaced it with
+    a default ("1y" in ADVANCED, today + 1 year in BASIC): switching mode
+    silently moved the owner's delivery date.
+
+    * The editor follows the FORM of the saved value: a period opens the Raw
+      editor, a fixed date the Date editor (BASIC always shows the Date
+      editor; a period is then shown as its real date, nothing is saved).
+    * An explicit Raw/Date switch keeps the same delivery written the other
+      way: Raw -> Date shows the date the will really uses
+      (``Will.planned_delivery``), Date -> Raw the days from today to it.
+    * ``save_to_settings=False`` (the heir dialog) never writes the will's
+      delivery setting; the dialog reads ``get_value()`` itself.
+    """
+
     valueEdited = pyqtSignal()
     _setting_locktime = False
     current_value = None
@@ -224,14 +244,18 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
     label_text = None
     tooltip_text = None
     base_field = None
-    # A leading "-" is accepted by the RAW editor only for the Check Alive
-    # field (its sign selects the anchor date); the delivery field never
-    # accepts a sign. Subclasses override this.
+    # The Raw editor never accepts a sign for the delivery (the Check Alive,
+    # which used one, has its own spin box since CHANGELOG #80).
     allow_negative_raw = False
 
-    def __init__(self, bal_window, parent, default_locktime=None):
+    def __init__(self, bal_window, parent, default_locktime=None, save_to_settings=True):
         super().__init__(parent)
         self.bal_window = bal_window
+        self.save_to_settings = save_to_settings
+        # Nothing is saved while the widget is being built (#81), and a
+        # programmatic editor switch only changes how the value is shown.
+        self._quiet = True
+        self._programmatic = False
 
         hbox = QHBoxLayout()
         self.setLayout(hbox)
@@ -250,95 +274,103 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
             1: self.locktime_date_e,
         }
         self.combo.addItems(options)
-        # SIMPLE / ADVANCED (task: hide the Raw/Date selector in BASIC mode).
-        #
-        # In BASIC mode the user must not see or use the Raw/Date selector:
-        # every date field is forced to the calendar ("Date") editor and the
-        # combo is hidden. We keep a flag so the rest of __init__ can force the
-        # Date editor regardless of the stored value's format.
+        # BASIC mode: the Raw/Date selector is hidden and the Date editor is
+        # always used (owner request).
         self._basic_mode = self.bal_window.bal_plugin.is_basic_mode()
-        # Tracks whether the user PICKED an editor by hand from the Raw/Date
-        # selector (set only on the combo's `activated` signal, i.e. real user
-        # interaction). It lets the runtime BASIC<->ADVANCED switch respect a
-        # manual "Date" choice in ADVANCED instead of forcing RAW back. It stays
-        # False for programmatic changes (defaults, switches).
+        # True once the user picked an editor by hand (combo ``activated``):
+        # a later BASIC<->ADVANCED switch then keeps that choice.
         self._user_picked_editor = False
-        default_index = 0
         if not default_locktime:
             default_locktime = self.bal_window.bal_plugin.WILL_SETTINGS.get()[self.base_field]
-        # Default editor per mode (owner request):
-        #   * BASIC   -> Date editor (index 1); the Raw/Date selector is hidden,
-        #               so the user always picks a date and never sees RAW.
-        #   * ADVANCED -> RAW editor (index 0) by default; the selector stays
-        #               visible so the user can switch to Date manually.
-        if self._basic_mode:
-            default_index = 1
-        else:
-            default_index = 0
-            # In ADVANCED we default to RAW. If the stored value is an absolute
-            # timestamp (a bare number), showing it in RAW would display that
-            # raw number; substitute the relative default ("1y"/"30d") so the
-            # RAW editor opens with a human-readable duration instead.
-            try:
-                int(default_locktime)
-                is_absolute = True
-            except Exception:
-                is_absolute = False
-            if is_absolute:
-                default_locktime = (
-                    self.bal_window.bal_plugin.default_will_settings_relative()[
-                        self.base_field
-                    ]
-                )
-        #hbox.addWidget(QLabel(self.label_text))
+        # #81: the editor follows the form of the saved value; the value is
+        # never replaced by a default (that is what moved the delivery date).
+        default_index = self._index_for(default_locktime)
         # help_text and tooltip_text are class attributes marked with N_():
         # translate them here, when shown.
         help_button=HelpButton(_(self.help_text))
         help_button.setText(self.label_text)
-        # Show a short label (e.g. "Delivery time" / "Check Alive") when the
-        # user hovers the icon, so the emoji button is self-explanatory.
+        # Show a short label (e.g. "Delivery time") when the user hovers the
+        # icon, so the emoji button is self-explanatory.
         if self.tooltip_text:
             help_button.setToolTip(_(self.tooltip_text))
-        #help_button.setStyleSheet("font-size: 155555);
         hbox.addWidget(help_button)
         # Expose the leading icon (prefix) so the parent WillSettingsWidget can
         # align all rows on a common left edge (see its vertical layout).
         self.prefix_widget = help_button
         self.combo.currentIndexChanged.connect(self.on_current_index_changed)
-        # `activated` fires ONLY on real user interaction with the selector (not
-        # on programmatic setCurrentIndex), so we use it to remember that the
-        # user picked the editor by hand. This is what lets the runtime
-        # BASIC<->ADVANCED switch respect a manual "Date" choice in ADVANCED.
+        # `activated` fires ONLY on real user interaction with the selector.
         self.combo.activated.connect(self._on_user_picked_editor)
 
         for w in self.editors:
             w.setVisible(False)
             w.setEnabled(False)
 
+        self.current_value = default_locktime
         self.editor = self.option_index_to_editor_map[default_index]
         self.editor.setVisible(True)
         self.editor.setEnabled(True)
         self.set_index(default_index)
-        #self.on_current_index_changed(default_index)
-        self.set_value(default_locktime)
-        self.current_value=default_locktime
+        self.current_index = default_index
+        self._show(default_locktime)
         hbox.addWidget(self.combo)
-        # In BASIC mode hide the Raw/Date selector entirely: the field stays
-        # locked on the calendar editor chosen above, so the user only ever
-        # picks a Date and cannot switch to RAW.
         if self._basic_mode:
             self.combo.setVisible(False)
         for w in self.editors:
             hbox.addWidget(w)
 
         hbox.addStretch(1)
-        # spssscer_widget = QWidget()
-        # spacer_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        # hbox.addWidget(spacer_widget)
         self.valueEdited.connect(lambda: self.update_will_settings(True))
         self.locktime_raw_e.editingFinished.connect(self.valueEdited.emit)
         self.locktime_date_e.dateTimeChanged.connect(self.valueEdited.emit)
-        #self.combo.currentIndexChanged.connect(self.valueEdited.emit)
+        self._quiet = False
+
+    # ---------------------------------------------------------------- helpers
+
+    def _index_for(self, value):
+        """Editor for ``value``: Date (1) in BASIC or for a fixed date, else Raw (0)."""
+        if self.bal_window.bal_plugin.is_basic_mode():
+            return 1
+        return 0 if Util._relative_days(value) is not None else 1
+
+    def _planned_timestamp(self, value):
+        """The delivery date ``value`` really gives (see Will.planned_delivery)."""
+        try:
+            return int(Will.planned_delivery(
+                getattr(self.bal_window, "willitems", None) or {}, value
+            )[0])
+        except Exception:
+            try:
+                return int(BalTimestamp(value).to_timestamp())
+            except Exception:
+                return None
+
+    def _value_for_editor(self, index, value):
+        """The same delivery written for editor ``index`` (0 Raw, 1 Date)."""
+        relative = Util._relative_days(value) is not None
+        if index == 1:
+            return value if not relative else self._planned_timestamp(value)
+        if relative:
+            return value
+        ts = self._planned_timestamp(value)
+        if ts is None:
+            return value
+        today = datetime.now(tz=timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp()
+        return "{}d".format(max(1, round((ts - today) / 86400)))
+
+    def _show(self, value):
+        """Show ``value`` in the active editor without emitting an edit."""
+        shown = self._value_for_editor(self.current_index, value)
+        if shown is None:
+            return
+        self.editor.blockSignals(True)
+        try:
+            self.editor.set_value(shown)
+        finally:
+            self.editor.blockSignals(False)
+
+    # ------------------------------------------------------------------ edits
 
     def update_will_settings(
         self,
@@ -346,8 +378,14 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         update_will_dialog=False,
         update_heirs_dialog=False,
     ):
+        """A user edit: remember it and (unless disabled) save it."""
+        if self._quiet:
+            return
+        self.current_value = self.get_value()
+        if not self.save_to_settings:
+            return
         self.bal_window.update_setting_widgets(
-            self.get_value(),
+            self.current_value,
             self.base_field,
             update_all,
             update_will_dialog,
@@ -359,67 +397,55 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
 
         Connected to the combo's ``activated`` signal, which only fires on real
         user interaction (not on programmatic ``setCurrentIndex``). Used by the
-        runtime BASIC<->ADVANCED switch to respect a manual "Date" choice in
-        ADVANCED instead of forcing RAW back.
+        runtime BASIC<->ADVANCED switch to respect a manual choice.
         """
         self._user_picked_editor = True
 
     def on_current_index_changed(self, i):
+        """Switch editor, keeping the same delivery (#81).
+
+        A programmatic switch (``set_index``: mode change, sync) only shows
+        the saved value in the other editor. A switch made by the user saves
+        the same delivery written the other way; before #81 both put a
+        default value in the field and saved it.
+        """
         self.current_index = i
         for w in self.editors:
             w.setVisible(False)
             w.setEnabled(False)
-        # prev_locktime = self.editor.get_value()
         self.editor = self.option_index_to_editor_map[i]
-        if i==0:
-            self.editor.set_value(self.bal_window.bal_plugin.default_will_settings_relative()[self.base_field])
-        else:
-            self.editor.set_value(self.bal_window.bal_plugin.default_will_settings_absolute()[self.base_field])
-        self.valueEdited.emit()
-        # if self.editor.is_acceptable_locktime(prev_locktime):
-        #    self.editor.set_value(prev_locktime, force=False)
+        self._show(self.current_value)
         self.editor.setVisible(True)
         self.editor.setEnabled(True)
-        self.bal_window.update_combo_setting_widgets(i, self.base_field,True)
+        if self._programmatic or self._quiet:
+            return
+        self.valueEdited.emit()
+        self.bal_window.update_combo_setting_widgets(i, self.base_field, True)
 
     def get_value(self) -> Optional[str]:
         val = self.editor.get_value()
-        #return self.current_value
         return val
 
     def set_index(self, index):
+        """Programmatic editor switch: changes the display only (#81)."""
         if self.current_index != index:
-            self.combo.setCurrentIndex(index)
-            #self.on_current_index_changed(index, force)
+            self._programmatic = True
+            try:
+                self.combo.setCurrentIndex(index)
+            finally:
+                self._programmatic = False
 
     def apply_user_type_visibility(self):
         """Re-apply the BASIC/ADVANCED visibility of the Raw/Date selector.
 
-        WHY this is needed (bug reported by the owner, task #04): the Raw/Date
-        combo is hidden in BASIC mode and shown in ADVANCED mode. That visibility
-        used to be decided ONLY in ``__init__`` (see the ``self._basic_mode``
-        block there). The WILL and HEIR tab toolbars are created once and then
-        REUSED for the whole session (they are not rebuilt when the user switches
-        USER TYPE), so after switching from BASIC to ADVANCED the combo stayed
-        hidden there and the user could only use the "Date" editor. The same
-        happened when a RAW value was pushed from the wizard: the raw number
-        showed (the active editor was updated) but the selector box stayed hidden
-        because nothing ever re-showed it. The wizard worked only because it is
-        recreated every time it is opened.
-
-        This method re-reads ``is_basic_mode()`` and shows/hides ONLY the combo.
-        It deliberately does NOT change the current value or the active editor
-        (owner request: keep the current value to avoid confusing the delivery
-        date with the inheritance). It is called from
-        ``WillSettingsWidget.apply_user_type_visibility()`` (triggered by
-        ``BalWindow.update_all()``, which also runs on every CHECK/refresh), so
-        it must be side-effect free on the editor - otherwise pressing CHECK
-        would reset a manual Date/RAW choice back to the default. The actual
-        per-mode editor default lives in ``apply_user_type_editor_default()``,
-        which is called ONLY on a real USER TYPE change.
-
-        It is safe to call repeatedly and on either layout (horizontal toolbar or
-        vertical wizard): it only flips the visibility of the Raw/Date combo.
+        WHY this is needed (bug reported by the owner, task #04): the WILL and
+        HEIR tab toolbars are created once and then REUSED for the whole
+        session, so after switching from BASIC to ADVANCED the combo stayed
+        hidden there. This method re-reads ``is_basic_mode()`` and shows/hides
+        ONLY the combo; it never changes the value or the active editor (it
+        runs on every ``update_all()``/CHECK refresh). The per-mode editor
+        choice lives in ``apply_user_type_editor_default()``, which runs ONLY
+        on a real USER TYPE change.
         """
         try:
             basic = self.bal_window.bal_plugin.is_basic_mode()
@@ -430,19 +456,15 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         self.combo.setVisible(not basic)
 
     def apply_user_type_editor_default(self):
-        """Set the ACTIVE Raw/Date editor to the per-mode default.
+        """Pick the editor for the new USER TYPE, never changing the value.
 
-        Split out from ``apply_user_type_visibility`` (Opzione 2) so it runs
-        ONLY on a real BASIC<->ADVANCED USER TYPE change, not on every
-        ``update_all()``/CHECK refresh. That is what stopped pressing CHECK from
-        resetting a manual Date choice back to RAW.
-
-        Behaviour:
-          * BASIC    -> always the Date editor (index 1); the selector is hidden,
-                       so the field must not stay on RAW.
-          * ADVANCED -> RAW by default (index 0), UNLESS the user previously
-                       picked an editor by hand (``_user_picked_editor``), in
-                       which case their choice is left untouched.
+        Runs ONLY on a real BASIC<->ADVANCED change:
+          * BASIC    -> the Date editor (the selector is hidden);
+          * ADVANCED -> the editor that matches the saved value (Raw for a
+                       period, Date for a fixed date), unless the user picked
+                       one by hand (``_user_picked_editor``).
+        The switch is programmatic: only the display changes (#81; it used to
+        save "1y" or today + 1 year and so move the delivery date).
         """
         try:
             basic = self.bal_window.bal_plugin.is_basic_mode()
@@ -451,9 +473,8 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         try:
             if basic:
                 self.set_index(1)
-            else:
-                if not self._user_picked_editor:
-                    self.set_index(0)
+            elif not self._user_picked_editor:
+                self.set_index(self._index_for(self.current_value))
         except Exception:
             # Never let a cosmetic editor switch break mode toggling.
             pass
@@ -466,15 +487,17 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         update_will_dialog=False,
         update_heirs_dialog=False,
     ) -> None:
+        """Show a value saved elsewhere (sync between panels); never saves.
+
+        Before #81 this saved the value again, which made building a
+        widget (e.g. the heir dialog with that heir's own date) overwrite the
+        will's delivery setting.
+        """
         if not x:
-            if self.current_index == 0:
-                x = self.bal_window.bal_plugin.default_will_settings_relative()[self.base_field]
-            elif self.current_index == 1:
-                x = self.bal_window.bal_plugin.default_will_settings_absolute()[self.base_field]
-        if x != self.get_value():
-            self.editor.set_value(x)
-            self.current_value = x
-            self.bal_window.update_setting_widgets(x, self.base_field)
+            return
+        self.current_value = x
+        if self._value_for_editor(self.current_index, x) != self.get_value():
+            self._show(x)
 
     def set_read_only(self, read_only=True):
         """Show the value but make it non-editable.
@@ -844,10 +867,12 @@ class LockTimeWidget(BalTimeEditWidget):
     tooltip_text = N_("Delivery Time, click for more information")
     base_field = "locktime"
 
-    def __init__(self, bal_window, parent, init_value=None):
+    def __init__(self, bal_window, parent, init_value=None, save_to_settings=True):
+        """``save_to_settings=False``: an heir's own date (heir dialog), never
+        written to the will's delivery setting (#81)."""
         if init_value is None:
             init_value = bal_window.bal_plugin.WILL_SETTINGS.get()["locktime"]
-        super().__init__(bal_window, parent, init_value)
+        super().__init__(bal_window, parent, init_value, save_to_settings)
         self.default_value = self.bal_window.bal_plugin.default_will_settings()[
             "locktime"
         ]

@@ -4556,3 +4556,63 @@ I001); whole `tests/` directory: same failures as `main`; zip builds and
 loads.
 
 **Outcome:** DONE.
+
+## 81. 5d/1: the delivery date never changes by itself
+
+**Date:** 2026-10-09
+
+**Problems (found in the owner's ZIP test, then traced in the code and the
+scenario harness; all present in BAL too):**
+
+1. **Switching BASIC/ADVANCED moved the delivery date.** On the switch the
+   delivery field put a default value in place of the saved one and saved
+   it: "1y" in ADVANCED (the owner's 05/10/2028 became 09/10/2027), today +
+   1 year back in BASIC. The next Check, or the wizard at wallet close,
+   would then have prepared a will one year earlier than intended. Building
+   the field in ADVANCED with a fixed date saved stored did the same.
+2. **An explicit Raw/Date switch** also replaced the value with a default
+   instead of the same delivery written the other way.
+3. **The heir dialog wrote the heir's own date into the will's delivery
+   setting** when it opened (and relied on that to read the heir's date
+   back when confirmed).
+4. **Fixed date -> equivalent period.** A will built from a fixed date
+   (09/10/2027) and a setting changed to the period giving the same date
+   today ("365d"): "Ok" that day, but the next day the period read one day
+   later, i.e. a postpone: the plugin paid an invalidation (1,430 sat at 13
+   sat/vB) and moved the delivery one day.
+
+**What changed (owner rule: the delivery date changes only when the user
+edits it):**
+
+- `bal/gui/qt/widgets.py` `BalTimeEditWidget`: the editor follows the form
+  of the saved value (Raw for a period, Date for a fixed date; BASIC always
+  Date, a period then shown as its real date); nothing is saved while the
+  field is built, on a mode switch (`apply_user_type_editor_default`) or
+  when another panel syncs it (`set_value` now only shows the value); a
+  Raw/Date switch made by the user saves the same delivery written the
+  other way (Raw -> Date: the date the will really uses,
+  `Will.planned_delivery`; Date -> Raw: the days from today to it). New
+  option `save_to_settings=False`. Note: in ADVANCED a fixed date now opens
+  in the Date editor (it always opened in Raw with "1y").
+- `bal/gui/qt/window.py`: the heir dialog uses `save_to_settings=False` and
+  reads the heir's date from its own field.
+- `bal/core/will.py` `check_willexecutors_and_heirs`: a will built from a
+  fixed date whose setting is now a period giving the same date today is
+  rebuilt at once (no invalidation, the usual message 'The delivery date of
+  heir "..." changed: preparing a new will.'): a period can be anchored
+  only to a will built from a period.
+- New tests: `tests/test_delivery_field_keeps_value.py` (13).
+
+**Verification:** field tests (offscreen): a fixed date and a period are kept
+when the field is built, on BASIC -> ADVANCED -> BASIC and when another
+panel syncs it (nothing saved); a user Raw/Date switch saves the same
+delivery ("1y" -> today + 365 days; a date 400 days ahead -> "400d"); the
+heir field never writes the will's setting. Harness, fixed date then "365d"
+(basic and advanced): rebuilt the same day without an invalidation, the
+next day "Ok" with no invalidation (was a paid invalidation and +1 day).
+Scenario matrix x6 (119 Checks per run): verdicts unchanged (only the known
+B2 and B2adv, one day earlier, accepted), #69 oracle 0 mismatches. `ruff`
+(same 3 pre-existing I001); whole `tests/` directory: same failures as
+`main`; no new texts to translate; zip builds and loads.
+
+**Outcome:** DONE.

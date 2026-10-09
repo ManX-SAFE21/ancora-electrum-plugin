@@ -324,10 +324,17 @@ class BalWindow:
                 heir_amount.setText(
                     str(Util.decode_amount(heir[1], self.window.get_decimal_point()))
                 )
-            self.heir_locktime = LockTimeWidget(self, self.window, heir[2])
+            # #81: the heir's own date; the widget never writes the will's
+            # delivery setting (opening this dialog used to overwrite it).
+            self.heir_locktime = LockTimeWidget(
+                self, self.window, heir[2], save_to_settings=False
+            )
         else:
             heir_address.setText("")
-            self.heir_locktime = LockTimeWidget(self, self.window, self.will_settings["locktime"])
+            self.heir_locktime = LockTimeWidget(
+                self, self.window, self.will_settings["locktime"],
+                save_to_settings=False,
+            )
 
         def _update_op_return_from_message():
             msg = op_return_message.text()
@@ -407,11 +414,13 @@ class BalWindow:
                 amount = "0"
             else:
                 amount = Util.encode_amount(heir_amount.text(), self.window.get_decimal_point())
+            # #81: the date of this dialog's field (multiverse); without
+            # multiverse set_heir uses the will's delivery anyway.
             heir = [
                 heir_name.text(),
                 raw_address,
                 amount,
-                str(self.will_settings["locktime"]),
+                str(self.heir_locktime.get_value()),
             ]
             try:
                 self.set_heir(heir)
