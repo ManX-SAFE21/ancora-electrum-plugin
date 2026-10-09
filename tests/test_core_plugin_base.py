@@ -201,7 +201,8 @@ def test_balconfig_set():
 
 def test_default_will_settings_relative():
     rel = BalPlugin.default_will_settings_relative()
-    assert rel["threshold"] == "-30d"
+    # CHANGELOG #80: Check Alive 180 days before the delivery (was -30d).
+    assert rel["threshold"] == "-180d"
     assert rel["locktime"] == "1y"
 
 
@@ -210,8 +211,9 @@ def test_default_will_settings():
     assert settings["baltx_fees"] == 20
     assert "threshold" in settings
     assert "locktime" in settings
-    # threshold/locktime should be absolute timestamps
-    assert isinstance(settings["threshold"], float)
+    # The locktime is an absolute timestamp; since CHANGELOG #80 the Check
+    # Alive is never a fixed date: "N days before the delivery".
+    assert settings["threshold"] == "-180d"
     assert isinstance(settings["locktime"], float)
 
 

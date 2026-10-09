@@ -6,15 +6,17 @@ The "Check Alive" policy: the single reference timestamp (``date_to_check``)
 against which every will-validity check is evaluated, and the BASIC/ADVANCED
 mode rules that decide it.
 
-A RELATIVE Check Alive value is anchored according to its SIGN:
+Since CHANGELOG #80 (owner decision D14) the Check Alive is saved only as
+``"-Nd"``: N days BEFORE the delivery date. Older saved values (a fixed date,
+a positive "after creation" value) are converted once by
+:func:`normalize_check_alive`, keeping the same date. The resolvers below
+still accept the old forms, so a value read before the conversion behaves as
+it always did:
 
 * NEGATIVE (``"-30d"`` / ``"-1y"``): counted BACKWARDS from the delivery date,
-  i.e. ``delivery + N days`` (``-30d`` = 30 days BEFORE the delivery). This is
-  the historical meaning of a relative threshold.
-* POSITIVE (``"30d"`` / ``"1y"``): counted FORWARD from the inheritance
-  creation date (``min(WillItem.time)`` of the valid will items), i.e.
-  ``creation + N days``. The creation date is frozen in the wallet DB, so the
-  reference never drifts with the clock.
+  i.e. ``delivery + N days`` (``-30d`` = 30 days BEFORE the delivery).
+* POSITIVE (``"30d"`` / ``"1y"``, old form): counted FORWARD from the
+  inheritance creation date (``min(WillItem.time)`` of the valid will items).
 * When the anchor is unknown (no built will yet, or imported items without a
   ``time``). The reference falls back to *now*.
 
@@ -245,6 +247,103 @@ def resolve_guard_threshold(
     )
 
 
+#: Owner decisions D14/#80: the Check Alive is "N days before the delivery".
+CHECK_ALIVE_DEFAULT_DAYS = 180
+CHECK_ALIVE_MAX_DAYS = 3650
+_DAY = 86400
+
+
+def check_alive_days(threshold_raw: Any) -> int | None:
+    """Days before the delivery of a ``"-Nd"`` / ``"-Ny"`` value, else None.
+
+    Returns ``None`` for every other form (a fixed date, a positive "after
+    creation" value, garbage) and for values outside 1..3650 days.
+    """
+    s = str(threshold_raw).strip()
+    if len(s) < 3 or s[0] != "-" or s[-1].lower() not in ("d", "y"):
+        return None
+    try:
+        n = int(s[1:-1])
+    except ValueError:
+        return None
+    days = n * 365 if s[-1].lower() == "y" else n
+    if 1 <= days <= CHECK_ALIVE_MAX_DAYS:
+        return days
+    return None
+
+
+def normalize_check_alive(
+    will_settings: Any,
+    built_locktime: float | int | None = None,
+    creation_date: float | None = None,
+    now: float | None = None,
+) -> str:
+    """Return the Check Alive as ``"-Nd"`` (N days before the delivery).
+
+    Owner decision D14 (CHANGELOG #80): the Check Alive is only "N days
+    before the delivery"; the fixed date and the positive "after creation"
+    forms are gone because they do not follow the delivery when it moves
+    (scenario C3adv). Old values keep the SAME Check Alive date (decision
+    D2 = A), expressed as days before the delivery the will really uses
+    (``resolve_delivery_date`` with ``built_locktime``):
+
+    * ``"-30d"`` / ``"-1y"``: the same, in days (``"-30d"`` / ``"-365d"``);
+    * a fixed date, or a positive value (anchored to ``creation_date``, or
+      to *now* when unknown): ``delivery - date`` in days, rounded;
+    * anything that cannot be expressed so (no delivery, a date on/after
+      the delivery, more than 3650 days, unreadable): the default
+      ``"-180d"``.
+
+    A date already in the past but before the delivery is KEPT: it is a
+    Check Alive that has passed, and the owner is then asked to renew
+    (#79). The ``"-Nd"`` form is also what BAL understands. Pure: the
+    caller saves the result.
+    """
+    default = f"-{CHECK_ALIVE_DEFAULT_DAYS}d"
+    raw = will_settings.get("threshold") if will_settings else None
+    days = check_alive_days(raw)
+    if days is not None:
+        return f"-{days}d"
+    try:
+        threshold = BalTimestamp(raw)
+        if threshold.unit is not None and threshold.value < 0:
+            return default            # negative but out of range
+        current = (
+            now if now is not None else datetime.now(tz=timezone.utc).timestamp()
+        )
+        if threshold.unit is None:
+            check = float(threshold.value)
+        else:
+            anchor = creation_date if creation_date else current
+            check = threshold.to_timestamp(anchor)
+        delivery = resolve_delivery_date(
+            will_settings, now=current, built_locktime=built_locktime
+        )
+    except Exception:
+        return default
+    if delivery is None:
+        return default
+    days = round((delivery - check) / _DAY)
+    if 1 <= days <= CHECK_ALIVE_MAX_DAYS:
+        return f"-{days}d"
+    return default
+
+
+def will_executable_now(built_locktime: float | int | None, now: float | None = None) -> bool:
+    """True when the will in force is already past its delivery date.
+
+    Tells a will that can really be executed now (truly EXPIRED: invalidate
+    it at once) from one that is only "expired" with respect to a Check
+    Alive moved later together with the delivery, i.e. a POSTPONE beyond the
+    Check Alive margin (CHANGELOG #80). Uses the same clock as the rest of
+    ``bal.core``.
+    """
+    if not built_locktime:
+        return False
+    current = now if now is not None else datetime.now(tz=timezone.utc).timestamp()
+    return built_locktime <= current
+
+
 def check_alive_renewal(
     is_basic_mode: bool,
     will_settings: Any,
@@ -307,7 +406,7 @@ def check_alive_renewal(
         "period": None,
         "delivery": built_locktime,
     }
-    if built_locktime and built_locktime <= current:
+    if will_executable_now(built_locktime, now=current):
         # The will in force is already past its delivery date: it can be
         # executed now. That is the EXPIRED case (invalidate at once), not a
         # Check Alive one; the callers route it there (scenario C3adv).
