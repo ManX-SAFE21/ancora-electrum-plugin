@@ -85,6 +85,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDateTimeEdit,
     QDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QInputDialog,

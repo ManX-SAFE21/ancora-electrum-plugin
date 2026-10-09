@@ -31,6 +31,7 @@ from ...core.checkalive import (
     resolve_guard_threshold,
 )
 from ...core.messages import check_alive_message, will_change_message
+from ...core.summary import busy_summary, will_summary
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -103,7 +104,7 @@ from .dialogs import (
     decode_will_payload,
 )
 from .lists import HeirListWidget, PreviewList
-from .widgets import LockTimeWidget, PercAmountEdit
+from .widgets import LockTimeWidget, PercAmountEdit, WillSummaryWidget
 
 
 class BalWindow:
@@ -253,6 +254,8 @@ class BalWindow:
         # The will items are known now: convert an old Check Alive value
         # against the delivery the will really uses (#80).
         self._normalize_check_alive()
+        # ...and the will summary can describe them (#84a).
+        self.update_will_summary()
 
         # if not self.will_settings:
         #    self.will_settings = self.wallet.db.get_dict("will_settings")
@@ -288,7 +291,96 @@ class BalWindow:
         self.will_list_widget = PreviewList(self, self.window, None)
         tab = self.window.create_list_tab(self.will_list_widget)
         tab.is_shown_cv = shown_cv(True)
+        # CHANGELOG #84a: the will summary goes between the toolbar and the
+        # transaction list (Electrum's list tab is a plain QVBoxLayout).
+        self.will_summary_widget = WillSummaryWidget(self.on_will_summary_action)
+        layout = tab.layout()
+        index = layout.indexOf(self.will_list_widget)
+        layout.insertWidget(max(index, 0), self.will_summary_widget)
+        self.update_will_summary()
         return tab
+
+    def update_will_summary(self):
+        """Refresh the will summary box of the Will tab (CHANGELOG #84a).
+
+        Called whenever the transaction list or the heirs list is redrawn
+        and when the delivery / Check Alive settings change, so the box
+        always matches what the list shows. Read-only; never raises.
+        """
+        widget = getattr(self, "will_summary_widget", None)
+        if widget is None:
+            return
+        if getattr(self, "_will_summary_busy", 0) > 0:
+            widget.show_summary(busy_summary())
+            return
+        try:
+            summary = will_summary(
+                self.willitems,
+                len(self.heirs or {}),
+                self.will_settings,
+                self.bal_plugin.is_basic_mode(),
+                still_active=self._still_active_for_summary(),
+            )
+        except Exception as e:
+            _logger.debug(f"will summary failed: {e!r}")
+            summary = None
+        widget.show_summary(summary)
+
+    def _still_active_for_summary(self):
+        """Sent txs still executable on-chain although none is VALID (#84a).
+
+        The plugin's records can be wrong (owner's wallet: after "later date
+        -> Cancel" the sent txs were marked Replaced while their coin was
+        never spent). The same on-chain check as the #69 warning
+        (``Will.find_still_active_older_txs``) keeps the summary truthful.
+        Only needed when no item is VALID; never raises.
+        """
+        try:
+            if Will.only_valid_list(self.willitems):
+                return []
+            # No will in force by the records: every sent tx still
+            # executable counts, whatever its date.
+            return Will.find_still_active_older_txs(
+                self.willitems, self.wallet, current_locktime=2**32
+            )
+        except Exception as e:
+            _logger.debug(f"still-active check for the summary failed: {e!r}")
+            return []
+
+    def set_will_summary_busy(self, busy):
+        """A working dialog was shown (True) or hidden (False), see BalDialog.
+
+        While at least one is on screen the summary says "operation in
+        progress"; when the last one closes it shows the result.
+        """
+        count = getattr(self, "_will_summary_busy", 0) + (1 if busy else -1)
+        self._will_summary_busy = max(count, 0)
+        self.update_will_summary()
+
+    def on_will_summary_action(self, action):
+        """Run the button of the will summary box with the EXISTING commands.
+
+        "check" is the Check button of the toolbar; "renew" the Check Alive
+        question of #79 (Renew / Not now, with its fee warning); "wizard"
+        the "Build Your Will" wizard. "sign_send" / "send" use the Check too
+        when it signs and sends by itself (BASIC mode or "auto sign"), else
+        the Sign and Broadcast menu commands, as the owner chose to sign by
+        hand.
+        """
+        auto = self.bal_plugin.is_basic_mode() or self.bal_plugin.AUTO_SIGN.get()
+        if action == "wizard":
+            self.init_wizard()
+        elif action == "renew":
+            self.offer_check_alive_renewal()
+        elif action == "check" or (action in ("sign_send", "send") and auto):
+            self.will_list_widget.check()
+        elif action == "sign_send":
+            self.ask_password_and_sign_transactions(
+                callback=self.broadcast_transactions
+            )
+        elif action == "send":
+            self.broadcast_transactions()
+        self.update_will_summary()
 
     def new_heir_dialog(self, heir_key=None):
         heir = self.heirs.get(heir_key)

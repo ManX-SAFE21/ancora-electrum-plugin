@@ -670,6 +670,12 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             self.will_settings_widget.on_locktime_change()
         except Exception as _e:
             pass
+        # CHANGELOG #84a: the summary box above the list says the same thing
+        # in words; redraw it with the list.
+        try:
+            self.bal_window.update_will_summary()
+        except Exception as _e:
+            pass
 
     def create_toolbar(self, config):
         toolbar, menu = self.create_toolbar_with_menu("")
