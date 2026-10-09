@@ -33,6 +33,7 @@ import json
 import re
 import zlib
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from electrum.util import MyEncoder
 
@@ -1452,23 +1453,29 @@ class BalBuildWillDialog(BalDialog):
             already_present = []
             total = len(selected)
             done = {"count": 0}
+            # CHANGELOG #85: the will-executors that have not answered yet,
+            # named on the status line (owner: the dialog waited up to 20s
+            # and looked broken without saying who it was waiting for).
+            pending = set(selected)
 
             deadline = Willexecutors.PUSH_GLOBAL_DEADLINE
 
             def _status_line():
-                # e.g. "Broadcasting your will to executors: 2/3 (5s / 30s)".
-                # The "/ 30s" makes the maximum wait explicit, so the user knows
+                # e.g. "Broadcasting 2/3 (5s / 20s) — waiting for: we.x.org".
+                # The "/ 20s" makes the maximum wait explicit, so the user knows
                 # the wizard will proceed by then (the global deadline) instead
                 # of wondering how long the counter will keep climbing.
-                return "{} {}/{} ({}s / {}s)".format(
-                    _("Broadcasting"), done["count"], total,
+                return self.push_status_text(
+                    done["count"], total,
                     min(int(time.time() - push_start), deadline), deadline,
+                    pending,
                 )
 
             def on_each(url, willexecutor, ok, exc):
                 # Runs from a worker thread.  Do only thread-safe book-keeping
                 # plus a signal-based UI update (msg_edit_row emits a pyqtSignal,
                 # which is marshalled to the GUI thread).
+                pending.discard(url)
                 if isinstance(exc, Willexecutors.AlreadyPresentException):
                     already_present.append(url)
                 elif ok:
@@ -1490,6 +1497,7 @@ class BalBuildWillDialog(BalDialog):
                 # The global deadline elapsed before this server answered. Mark
                 # its txs as failed and move on (one-shot: no automatic retry).
                 # The user can broadcast them manually later if desired.
+                pending.discard(url)
                 for wid in willexecutor.get("txsids", []):
                     self.bal_window.willitems[wid].set_status("PUSH_FAIL", True)
                 self.msg_edit_row(
@@ -1604,6 +1612,25 @@ class BalBuildWillDialog(BalDialog):
             (f"exception:{e}")
             self.msg_set_invalidating(_("Error: {}").format(e))
             raise Exception("Impossible to sign") from e
+
+    @staticmethod
+    def push_status_text(done, total, elapsed, deadline, pending=()):
+        """The "Broadcasting" status line, naming who is still awaited (#85).
+
+        "Broadcasting 0/1 (3s / 20s) — waiting for: we.example.org". Only the
+        host name is shown, at most three of them ("(+N more)" for the
+        rest), so the line stays short with many will-executors.
+        """
+        text = "{} {}/{} ({}s / {}s)".format(
+            _("Broadcasting"), done, total, elapsed, deadline
+        )
+        hosts = sorted(urlparse(u).hostname or u for u in pending)
+        if hosts:
+            names = ", ".join(hosts[:3])
+            if len(hosts) > 3:
+                names += " " + _("(+{} more)").format(len(hosts) - 3)
+            text += " — " + _("waiting for: {}").format(names)
+        return text
 
     def on_success_invalidate(self, success):
         self.thread.add(

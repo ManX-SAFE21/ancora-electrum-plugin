@@ -4883,3 +4883,30 @@ widgets stayed painted at their place.
 directory: same failures as `main`; harness A1 OK; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 85. 5d/7: the "Broadcasting" line names the will-executors still awaited
+
+**Date:** 2026-10-09
+
+**Problem (owner's remark during the #84a tests):** while the will was sent
+to the will-executors the dialog showed only "Broadcasting 0/1 (3s / 20s)"
+for up to 20 seconds (the global deadline), without saying which server it
+was waiting for: it looked as if something was broken.
+
+**What changed (approved by the owner):**
+
+- `bal/gui/qt/dialogs.py`: new `BalBuildWillDialog.push_status_text(...)`;
+  the line now ends with "— waiting for: we.divinaly.support" (host name
+  only, sorted, at most three plus "(+N more)"). A server leaves the list
+  when it answers or when the deadline expires (the existing "Timeout - no
+  answer" row is unchanged). The deadline and the push logic are unchanged.
+- Catalogs: the two new texts in Italian ("in attesa di: {}", "(+ altri
+  {})") and Spanish.
+- New tests: `tests/test_push_waiting_for.py` (4).
+
+**Verification:** harness A2 shows "Broadcasting 0/2 ... — waiting for:
+we0.test, we1.test", then "1/2 ... — waiting for: we1.test", then "2/2";
+`ruff` (same 3 pre-existing I001); whole `tests/` directory: same failures
+as `main`; translations complete; zip builds and loads.
+
+**Outcome:** DONE.
