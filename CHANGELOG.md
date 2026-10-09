@@ -5111,3 +5111,68 @@ times on `main` and on this branch: same verdicts (0 differences; B2/B2adv
 end one day earlier, known and accepted); zip builds and loads.
 
 **Outcome:** DONE.
+
+## 91. 5d/11: funds received, the new will is dated one day earlier
+
+**Date:** 2026-10-10
+
+**Problem (found while preparing the report, confirmed on regtest):** when
+funds arrived, the Check (or the wallet close) built a new will that spends
+the old coins plus the new ones, but with a will-executor it kept the OLD
+date. Each executor then held two wills, both valid, sent and verified,
+executable on the same day: the old one (coin 1) and the new one (coins 1
+and 2). Only one can be mined (they spend coin 1); if an executor broadcast
+the old one first, coin 2 would never reach the heirs. On a private regtest
+Bitcoin Core node, at the delivery date the node accepted all four copies,
+and executing an old one left 250,000 sats out (3 runs out of 3).
+
+Cause: BAL's `Will.check_anticipate` dates a new will one day earlier when
+the heirs, the miner fee or the executor's fee change, and, without a
+will-executor, when the amounts change; with the same will-executor it did
+not look at the coins. Unchanged since BAL's first commit, with no stated
+reason, and against the plugin's own promise ("the delivery date is
+anticipated by one day so the new will replaces the previous one", help of
+"Rebuild automatically on new transactions") and the owner's model of the
+protocol (funds received -> one day earlier).
+
+**What changed (plan approved by the owner):**
+
+- `bal/core/will.py`: `Will.check_anticipate` also dates the new will one
+  day earlier when, for the same will-executor, it spends every coin of the
+  old will and more (`Will.covers_more_coins`). The old will then becomes
+  "Replaced" and, at the delivery date, the complete will is the only one
+  the network accepts. Identical copies, a coin spent, another executor:
+  unchanged.
+- Wallets already in that state (wills built before this change): new
+  `Will.find_same_date_copies` and `SameDateCopiesException`. The Check
+  (and the wallet close, the Prepare action, the command line) now says
+  "Will-executor "<url>" holds two wills that can be executed on the same
+  day, and one of them does not include all your coins: preparing a new
+  will, dated one day earlier." and rebuilds; nothing is asked twice.
+- `bal/core/messages.py`: that sentence (`will_change_message`), in Italian
+  and Spanish too.
+- Side effect, accepted by the owner: every time funds arrive the delivery
+  moves one day earlier (as it already did for fee and heir changes).
+- New tests: `tests/test_new_funds_anticipate.py` (8).
+- Scenario harness (outside the repository): a new oracle, the will
+  executed first must spend every wallet coin (the date-only oracle missed
+  this case); new scenarios A17 (2nd coin received), A18 (2 coins, a Check
+  after each), A19 (the state left by the old rule, then Check); new
+  regtest check `real_newfunds.py`.
+
+**Verification:** regtest (Bitcoin Core 31.1, private node), 3 runs each:
+`main` - all four copies accepted at the delivery date, executing an old
+one leaves 250,000 sats out; this change - the old copies are `non-final`
+when the complete one (one day earlier) becomes valid, 0 sats left out.
+Harness: A17, A18, A19 OK (`main`: delivery date unchanged and the first
+will leaves coins out); A19 shows the new sentence, rebuilds once, the next
+Check finds nothing. `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as `main`; the scenario matrix 6 times on `main`
+and on this branch: only A17, A18 and A19 differ (`main`: date
+unchanged and the first will leaves coins out, 6 runs out of 6; this
+change: OK 6/6); every other scenario has the same verdict, and the new
+oracle finds no coin left out in them (B2/B2adv end one day earlier,
+known and accepted); translations complete; zip builds and
+loads.
+
+**Outcome:** DONE.

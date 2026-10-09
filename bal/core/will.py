@@ -222,6 +222,14 @@ class Will:
 
     @staticmethod
     def check_anticipate(ow: "WillItem", nw: "WillItem"):
+        """The locktime the new item ``nw`` needs against the old item ``ow``.
+
+        They spend at least one coin in common. When the new will differs
+        (heirs, fees, or, since #91, more coins) it must be dated one day
+        EARLIER, so it is executed first and the old one becomes invalid on
+        the blockchain; an identical copy keeps the old date; ``2**32``
+        (above any locktime) means no constraint.
+        """
         anticipate = Util.anticipate_locktime(ow.tx.locktime, days=1)
         if int(nw.tx.locktime) >= int(anticipate):
             if Util.cmp_heirs_by_values(
@@ -232,6 +240,15 @@ class Will:
                         if int(ow.we["base_fee"]) > int(nw.we["base_fee"]):
                             return anticipate
                         elif int(ow.tx_fees) != int(nw.tx_fees):
+                            return anticipate
+                        elif Will.covers_more_coins(ow, nw):
+                            # CHANGELOG #91: funds received. The new will
+                            # spends the old coins plus the new ones; with the
+                            # same date the executor would hold two wills
+                            # executable together, and if the old one were
+                            # mined the new coins would never reach the heirs.
+                            # (Without a will-executor BAL already anticipated
+                            # here, on the changed amounts: see below.)
                             return anticipate
                 else:
                     if nw.we == ow.we:
@@ -244,6 +261,40 @@ class Will:
             else:
                 return anticipate
         return 4294967295 + 1
+
+    @staticmethod
+    def covers_more_coins(ow: "WillItem", nw: "WillItem"):
+        """True when ``nw`` spends every coin ``ow`` spends, and more (#91)."""
+        old = {i.prevout.to_str() for i in ow.tx.inputs()}
+        new = {i.prevout.to_str() for i in nw.tx.inputs()}
+        return old < new
+
+    @staticmethod
+    def find_same_date_copies(will):
+        """The will-executor that holds an incomplete will not dated later (#91).
+
+        Wills built before #91: after funds were received, the executor got
+        a new will with the old coins plus the new ones, dated like the old
+        one (or later), and both stayed VALID. At the delivery date both can
+        be executed; if the old one is mined the new coins never reach the
+        heirs. Returns the URL of the first executor in that state (the
+        caller then rebuilds: the new will is dated one day earlier), or
+        ``None``. Items without a will-executor are left out: BAL already
+        dates them earlier when the amounts change. Read-only.
+        """
+        valid = [w for w in will.values() if w.get_status("VALID")]
+        for old in valid:
+            url = (old.we or {}).get("url")
+            if not url:
+                continue
+            for new in valid:
+                if new is old or (new.we or {}).get("url") != url:
+                    continue
+                if Will.covers_more_coins(old, new) and int(old.tx.locktime) <= int(
+                    new.tx.locktime
+                ):
+                    return url
+        return None
 
     @staticmethod
     def change_input(will, otxid, idx, change, others_inputs, to_delete, to_append):
@@ -1500,6 +1551,12 @@ class Will:
                             "Some utxo in the wallet is not included"
                         )
 
+        # CHANGELOG #91: every coin is covered, but maybe by a will that an
+        # executor holds next to an older, incomplete one with the same date.
+        url = Will.find_same_date_copies(will)
+        if url is not None:
+            raise SameDateCopiesException(url)
+
         _logger.info("will ok")
         return True
 
@@ -2274,6 +2331,15 @@ class WillPostponedException(NotCompleteWillException):
 
 
 class WillexecutorChangeException(NotCompleteWillException):
+    pass
+
+
+class SameDateCopiesException(NotCompleteWillException):
+    """A will-executor holds an incomplete will not dated later (#91).
+
+    ``str(e)`` is the executor URL. See ``Will.find_same_date_copies``.
+    """
+
     pass
 
 
