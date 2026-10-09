@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-09 18:54+0200\n"
+"POT-Creation-Date: 2026-10-09 19:22+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -178,7 +178,7 @@ msgstr ""
 msgid "Confirmed"
 msgstr ""
 
-#: bal/core/will.py:1864 bal/gui/qt/lists.py:1368 bal/gui/qt/lists.py:1382
+#: bal/core/will.py:1864 bal/gui/qt/lists.py:1364 bal/gui/qt/lists.py:1378
 msgid "Error"
 msgstr ""
 
@@ -345,18 +345,18 @@ msgid ""
 " remember that 100% of wallet balance will be spent"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:374 bal/gui/qt/lists.py:1243
+#: bal/gui/qt/dialogs.py:374 bal/gui/qt/lists.py:1239
 msgid "Add"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:376 bal/gui/qt/dialogs.py:2928 bal/gui/qt/lists.py:325
-#: bal/gui/qt/lists.py:687 bal/gui/qt/lists.py:1251
+#: bal/gui/qt/dialogs.py:376 bal/gui/qt/dialogs.py:2928 bal/gui/qt/lists.py:323
+#: bal/gui/qt/lists.py:683 bal/gui/qt/lists.py:1247
 msgid "Import"
 msgstr ""
 
 #: bal/gui/qt/dialogs.py:378 bal/gui/qt/dialogs.py:2764
-#: bal/gui/qt/dialogs.py:2932 bal/gui/qt/lists.py:326 bal/gui/qt/lists.py:686
-#: bal/gui/qt/lists.py:1263
+#: bal/gui/qt/dialogs.py:2932 bal/gui/qt/lists.py:324 bal/gui/qt/lists.py:682
+#: bal/gui/qt/lists.py:1259
 msgid "Export"
 msgstr ""
 
@@ -384,7 +384,7 @@ msgstr ""
 msgid "Manual"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:443 bal/gui/qt/lists.py:1573
+#: bal/gui/qt/dialogs.py:443 bal/gui/qt/lists.py:1569
 msgid "willexecutors"
 msgstr ""
 
@@ -473,7 +473,7 @@ msgid "Skipped"
 msgstr ""
 
 #: bal/gui/qt/dialogs.py:1039 bal/gui/qt/dialogs.py:1870
-#: bal/gui/qt/lists.py:359 bal/gui/qt/theme.py:116
+#: bal/gui/qt/lists.py:358 bal/gui/qt/theme.py:134
 msgid "Will-Executor"
 msgstr ""
 
@@ -761,19 +761,19 @@ msgid "Will Details"
 msgstr ""
 
 #: bal/gui/qt/dialogs.py:2756 bal/gui/qt/dialogs.py:4376
-#: bal/gui/qt/lists.py:682
+#: bal/gui/qt/lists.py:678
 msgid "Sign"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:2760 bal/gui/qt/lists.py:689
+#: bal/gui/qt/dialogs.py:2760 bal/gui/qt/lists.py:685
 msgid "Broadcast"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:2767 bal/gui/qt/lists.py:691
+#: bal/gui/qt/dialogs.py:2767 bal/gui/qt/lists.py:687
 msgid "Invalidate"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:2772 bal/gui/qt/lists.py:688
+#: bal/gui/qt/dialogs.py:2772 bal/gui/qt/lists.py:684
 msgid "Merge"
 msgstr ""
 
@@ -812,7 +812,7 @@ msgstr ""
 msgid "Will-Executor Service List"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:2924 bal/gui/qt/lists.py:328
+#: bal/gui/qt/dialogs.py:2924 bal/gui/qt/lists.py:326
 msgid "New Heir"
 msgstr ""
 
@@ -1157,271 +1157,267 @@ msgstr ""
 msgid "No signed transaction to show."
 msgstr ""
 
-#: bal/gui/qt/lists.py:148 bal/gui/qt/window.py:384
+#: bal/gui/qt/lists.py:146 bal/gui/qt/window.py:384
 msgid "Name"
 msgstr ""
 
-#: bal/gui/qt/lists.py:149 bal/gui/qt/lists.py:1446 bal/gui/qt/widgets.py:1602
+#: bal/gui/qt/lists.py:147 bal/gui/qt/lists.py:1442 bal/gui/qt/widgets.py:1602
 #: bal/gui/qt/window.py:388
 msgid "Address"
 msgstr ""
 
-#: bal/gui/qt/lists.py:150 bal/gui/qt/window.py:316
+#: bal/gui/qt/lists.py:148 bal/gui/qt/window.py:316
 msgid "Amount"
 msgstr ""
 
-#: bal/gui/qt/lists.py:246
+#: bal/gui/qt/lists.py:244
 #, python-brace-format
 msgid "Copy {}"
 msgstr ""
 
-#: bal/gui/qt/lists.py:254 bal/gui/qt/lists.py:1021
+#: bal/gui/qt/lists.py:252 bal/gui/qt/lists.py:1017
 #, python-brace-format
 msgid "Edit {}"
 msgstr ""
 
-#: bal/gui/qt/lists.py:257
+#: bal/gui/qt/lists.py:255
 msgid "Delete"
 msgstr ""
 
-#: bal/gui/qt/lists.py:324
+#: bal/gui/qt/lists.py:322
 msgid "&New Heir"
 msgstr ""
 
-#: bal/gui/qt/lists.py:357 bal/gui/qt/widgets.py:1539 bal/gui/qt/window.py:399
+#: bal/gui/qt/lists.py:356 bal/gui/qt/widgets.py:1539 bal/gui/qt/window.py:399
 msgid "Locktime"
 msgstr ""
 
-#: bal/gui/qt/lists.py:358
+#: bal/gui/qt/lists.py:357
 msgid "Txid"
 msgstr ""
 
-#: bal/gui/qt/lists.py:360 bal/gui/qt/widgets.py:1554
+#: bal/gui/qt/lists.py:359 bal/gui/qt/widgets.py:1554
 msgid "Status"
 msgstr ""
 
-#: bal/gui/qt/lists.py:361
-msgid "Server"
-msgstr ""
-
-#: bal/gui/qt/lists.py:423
+#: bal/gui/qt/lists.py:421
 msgid "details"
 msgstr ""
 
-#: bal/gui/qt/lists.py:427
+#: bal/gui/qt/lists.py:425
 msgid "sign"
 msgstr ""
 
-#: bal/gui/qt/lists.py:433
+#: bal/gui/qt/lists.py:431
 msgid "broadcast"
 msgstr ""
 
-#: bal/gui/qt/lists.py:439
+#: bal/gui/qt/lists.py:437
 msgid "check "
 msgstr ""
 
-#: bal/gui/qt/lists.py:445
+#: bal/gui/qt/lists.py:443
 msgid "copy id"
 msgstr ""
 
-#: bal/gui/qt/lists.py:449
+#: bal/gui/qt/lists.py:447
 msgid "copy"
 msgstr ""
 
-#: bal/gui/qt/lists.py:453
+#: bal/gui/qt/lists.py:451
 msgid "merge from txn"
 msgstr ""
 
-#: bal/gui/qt/lists.py:459 bal/gui/qt/lists.py:1031
+#: bal/gui/qt/lists.py:457 bal/gui/qt/lists.py:1027
 msgid "delete"
 msgstr ""
 
-#: bal/gui/qt/lists.py:518
+#: bal/gui/qt/lists.py:516
 msgid "Transaction IDs"
 msgstr ""
 
-#: bal/gui/qt/lists.py:524
+#: bal/gui/qt/lists.py:522
 msgid "Transactions"
 msgstr ""
 
-#: bal/gui/qt/lists.py:538
+#: bal/gui/qt/lists.py:536
 msgid "Open transaction file"
 msgstr ""
 
-#: bal/gui/qt/lists.py:550
+#: bal/gui/qt/lists.py:548
 #, python-brace-format
 msgid "Invalid transaction file: {}"
 msgstr ""
 
-#: bal/gui/qt/lists.py:680
+#: bal/gui/qt/lists.py:676
 msgid "Prepare"
 msgstr ""
 
-#: bal/gui/qt/lists.py:681
+#: bal/gui/qt/lists.py:677
 msgid "Display"
 msgstr ""
 
-#: bal/gui/qt/lists.py:690
+#: bal/gui/qt/lists.py:686
 msgid "Check"
 msgstr ""
 
-#: bal/gui/qt/lists.py:696
+#: bal/gui/qt/lists.py:692
 msgid "Build Your Will"
 msgstr ""
 
-#: bal/gui/qt/lists.py:706
+#: bal/gui/qt/lists.py:702
 msgid "Wizard - Build your will"
 msgstr ""
 
-#: bal/gui/qt/lists.py:720
+#: bal/gui/qt/lists.py:716
 msgid "Check Inheritance"
 msgstr ""
 
-#: bal/gui/qt/lists.py:925
+#: bal/gui/qt/lists.py:921
 msgid "Url"
 msgstr ""
 
-#: bal/gui/qt/lists.py:926
+#: bal/gui/qt/lists.py:922
 msgid "S"
 msgstr ""
 
-#: bal/gui/qt/lists.py:927
+#: bal/gui/qt/lists.py:923
 msgid "Base fee"
 msgstr ""
 
-#: bal/gui/qt/lists.py:928 bal/gui/qt/lists.py:1428
+#: bal/gui/qt/lists.py:924 bal/gui/qt/lists.py:1424
 msgid "Info"
 msgstr ""
 
-#: bal/gui/qt/lists.py:929
+#: bal/gui/qt/lists.py:925
 msgid "Default Address"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1004
+#: bal/gui/qt/lists.py:1000
 msgid "Copy"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1009
+#: bal/gui/qt/lists.py:1005
 msgid "deselect"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1014
+#: bal/gui/qt/lists.py:1010
 msgid "select"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1026
+#: bal/gui/qt/lists.py:1022
 msgid "Ping"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1230
+#: bal/gui/qt/lists.py:1226
 msgid "Add transactions without willexecutor"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1247
+#: bal/gui/qt/lists.py:1243
 msgid "Download List"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1265
+#: bal/gui/qt/lists.py:1261
 msgid "Export all"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1267
+#: bal/gui/qt/lists.py:1263
 msgid "Export selected"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1270
+#: bal/gui/qt/lists.py:1266
 msgid "Export only valid"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1274
+#: bal/gui/qt/lists.py:1270
 msgid "Ping All"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1276
+#: bal/gui/qt/lists.py:1272
 msgid "Ping all"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1278
+#: bal/gui/qt/lists.py:1274
 msgid "Ping selected"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1282
+#: bal/gui/qt/lists.py:1278
 msgid "Select All"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1284
+#: bal/gui/qt/lists.py:1280
 msgid "Select all"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1286
+#: bal/gui/qt/lists.py:1282
 msgid "Select only valid"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1288
+#: bal/gui/qt/lists.py:1284
 msgid "Deselect all"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1290
+#: bal/gui/qt/lists.py:1286
 msgid "Deselect only invalid"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1302 bal/gui/qt/window.py:297
+#: bal/gui/qt/lists.py:1298 bal/gui/qt/window.py:297
 #, python-brace-format
 msgid "Edit: {}"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1304 bal/gui/qt/lists.py:1316 bal/gui/qt/lists.py:1330
-#: bal/gui/qt/lists.py:1490
+#: bal/gui/qt/lists.py:1300 bal/gui/qt/lists.py:1312 bal/gui/qt/lists.py:1326
+#: bal/gui/qt/lists.py:1486
 msgid "New Will Executor"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1337 bal/gui/qt/lists.py:1463
+#: bal/gui/qt/lists.py:1333 bal/gui/qt/lists.py:1459
 msgid "URL is required"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1369
+#: bal/gui/qt/lists.py:1365
 #, python-brace-format
 msgid "Could not reach server at {}"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1383
+#: bal/gui/qt/lists.py:1379
 #, python-brace-format
 msgid "Error contacting server: {}"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1404
+#: bal/gui/qt/lists.py:1400
 msgid "Add another"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1417
+#: bal/gui/qt/lists.py:1413
 msgid "URL"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1422
+#: bal/gui/qt/lists.py:1418
 msgid "Will executor server URL (e.g. http://192.168.1.100:8080)"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1431
+#: bal/gui/qt/lists.py:1427
 msgid "A short description or name for this executor"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1437
+#: bal/gui/qt/lists.py:1433
 msgid "Base Fee (sats)"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1440
+#: bal/gui/qt/lists.py:1436
 msgid "Base fee in satoshis"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1449
+#: bal/gui/qt/lists.py:1445
 msgid "Bitcoin address for fee payments (optional)"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1510
+#: bal/gui/qt/lists.py:1506
 msgid "No will-executor matches the selected filter"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1566
+#: bal/gui/qt/lists.py:1562
 msgid "No will-executor is selected"
 msgstr ""
 
@@ -1649,32 +1645,57 @@ msgstr ""
 msgid "Safe21 Heartbeat - {}"
 msgstr ""
 
-#: bal/gui/qt/theme.py:93
-msgid "Not on server"
-msgstr ""
-
-#: bal/gui/qt/theme.py:95
-msgid "Confirmed on server"
-msgstr ""
-
 #: bal/gui/qt/theme.py:97
-msgid "Send failed"
+msgid "Invalidated on-chain"
 msgstr ""
 
 #: bal/gui/qt/theme.py:99
-msgid "Sent (not checked)"
+msgid "Replaced by a newer will"
 msgstr ""
 
 #: bal/gui/qt/theme.py:101
-msgid "Signed (not sent)"
+msgid "Executed"
 msgstr ""
 
-#: bal/gui/qt/theme.py:102
-msgid "Not sent"
+#: bal/gui/qt/theme.py:103
+msgid "Being executed (mempool)"
+msgstr ""
+
+#: bal/gui/qt/theme.py:105
+msgid "Not valid"
+msgstr ""
+
+#: bal/gui/qt/theme.py:107 bal/gui/qt/theme.py:111
+msgid "Not received by the executor"
+msgstr ""
+
+#: bal/gui/qt/theme.py:109
+msgid "In force, verified"
+msgstr ""
+
+#: bal/gui/qt/theme.py:113
+msgid "In force, to be verified"
 msgstr ""
 
 #: bal/gui/qt/theme.py:117
+msgid "In force"
+msgstr ""
+
+#: bal/gui/qt/theme.py:118
+msgid "Signed, to be sent"
+msgstr ""
+
+#: bal/gui/qt/theme.py:119
+msgid "To sign"
+msgstr ""
+
+#: bal/gui/qt/theme.py:134
 msgid "No will-executor"
+msgstr ""
+
+#: bal/gui/qt/theme.py:136
+#, python-brace-format
+msgid "History: {}"
 msgstr ""
 
 #: bal/gui/qt/widgets.py:116
