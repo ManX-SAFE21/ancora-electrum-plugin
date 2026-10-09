@@ -15,6 +15,7 @@ and cached in ``self.bal_windows``.
 """
 
 from electrum.gui.qt.main_window import StatusBarButton
+from electrum.gui.qt.util import read_QIcon
 from electrum.plugin import hook
 from electrum.util import EventListener, event_listener
 from PyQt6.QtWidgets import QLayout
@@ -434,8 +435,21 @@ class Plugin(BalPlugin, EventListener):
         return widget
 
     def password_dialog(self, msg=None, parent=None):
+        """Ask the wallet password with Electrum's own password window.
+
+        Owner's decision (CHANGELOG #84b): the window shows Electrum's icon,
+        as Electrum's own windows do. It IS Electrum's dialog
+        (``PasswordDialog``), Electrum checks the password and signs; Qt gave
+        it the icon of the plugin window that opened it, which hid that from
+        the user. ``msg`` (e.g. "Sign your will") still tells the user why
+        the password is asked.
+        """
         parent = parent or self
         d = PasswordDialog(parent, msg)
+        try:
+            d.setWindowIcon(read_QIcon("electrum.png"))
+        except Exception as e:
+            _logger.debug(f"electrum icon not set on the password window: {e!r}")
         return d.run()
 
     def get_seed(self):

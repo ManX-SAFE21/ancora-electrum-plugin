@@ -17,11 +17,13 @@ Contents:
     * PercAmountEdit                                        - amount-or-percentage editor
     * WillWidget                                            - single will-tx box
     * WillSummaryWidget                                     - will summary box (#84a)
+    * BuildReportView                                       - Building Will report (#84b)
 """
 
 import html
 from datetime import timezone
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from ...core.checkalive import (
     CHECK_ALIVE_DEFAULT_DAYS,
@@ -1768,3 +1770,231 @@ class WillSummaryWidget(QFrame):
             )
         self.button.setVisible(bool(self.action))
         self.setVisible(True)
+
+
+class BuildReportView(QWidget):
+    """The top part of the Building Will dialog (CHANGELOG #84b).
+
+    Draws a :meth:`bal.core.build_report.BuildReport.snapshot`: the bar of
+    the five steps, the result sentence and the boxes (what changed,
+    warnings, problems, heirs, will-executors, the will in force). Mockup
+    approved by the owner. Explicit colours on text and background, like
+    the will summary of the Will tab, so it stays readable with the dark
+    theme. ``format_amount(satoshi)`` formats the heirs' amounts in the
+    wallet's unit.
+    """
+
+    # state -> (symbol, text and border colour, background)
+    _STEP_STYLE = {
+        "todo": ("–", "#8a8a8a", "#f1f1f1"),
+        "skip": ("–", "#8a8a8a", "#f1f1f1"),
+        "run": ("●", "#1565c0", "#e3f2fd"),
+        "ok": ("✔", "#2e7d32", "#e8f5e9"),
+        "warn": ("⚠", "#b26a00", "#fff3e0"),
+        "err": ("✖", "#c62828", "#fdecec"),
+    }
+    # result kind -> (colour, background, icon)
+    _RESULT_STYLE = {
+        "ok": ("#2e7d32", "#eef7ee", "✔"),
+        "warn": ("#b26a00", "#fff5e5", "⚠"),
+        "err": ("#c62828", "#fdecec", "✖"),
+        "run": ("#1565c0", "#eef5fd", "↻"),
+        "info": ("#555555", "#f2f2f2", "ℹ"),
+    }
+    # will-executor state -> (symbol, colour)
+    _EXECUTOR_STYLE = {
+        "waiting": ("↻", "#b26a00"),
+        "received": ("✔", "#2e7d32"),
+        "verifying": ("↻", "#1565c0"),
+        "verified": ("✔", "#2e7d32"),
+        "to_verify": ("✔", "#2e7d32"),
+        "failed": ("✖", "#c62828"),
+        "timeout": ("✖", "#c62828"),
+        "to_sign": ("–", "#8a8a8a"),
+        "to_send": ("–", "#8a8a8a"),
+    }
+
+    def __init__(self, format_amount=None, parent=None):
+        super().__init__(parent)
+        self.format_amount = format_amount
+        self.box = QVBoxLayout(self)
+        self.box.setContentsMargins(0, 0, 0, 0)
+        self.box.setSpacing(10)
+
+    @staticmethod
+    def executor_text(state, seconds=None):
+        """What the will-executors box says for ``state``."""
+        if state == "timeout":
+            if seconds:
+                return _("no answer ({} s)").format(seconds)
+            return _("no answer")
+        return {
+            "waiting": _("waiting…"),
+            "received": _("received"),
+            "verifying": _("received, verifying…"),
+            "verified": _("received and verified"),
+            "to_verify": _("received, to be verified"),
+            "failed": _("not received"),
+            "to_sign": _("to sign"),
+            "to_send": _("to send"),
+        }.get(state, "")
+
+    def _clear(self):
+        """Remove what the previous snapshot drew (at once, see #87)."""
+        while self.box.count():
+            item = self.box.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def _steps_bar(self, steps):
+        """The five steps with their state and word, joined by arrows."""
+        from ...core.build_report import step_label
+
+        bar = QWidget()
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+        for i, (step, state, note) in enumerate(steps):
+            symbol, fg, bg = self._STEP_STYLE.get(state, self._STEP_STYLE["todo"])
+            cell = QFrame()
+            cell.setObjectName("balStep")
+            cell.setStyleSheet(
+                "#balStep{{background:{};border:1px solid {};border-radius:6px;}}"
+                "#balStep QLabel{{background:transparent;}}".format(bg, fg)
+            )
+            column = QVBoxLayout(cell)
+            column.setContentsMargins(6, 4, 6, 4)
+            column.setSpacing(0)
+            top = QLabel("{}  {}".format(symbol, step_label(step)))
+            top.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            top.setStyleSheet("color:{};font-weight:bold;".format(fg))
+            column.addWidget(top)
+            sub = QLabel(note or " ")
+            sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sub.setStyleSheet("color:#555555;font-size:11px;")
+            column.addWidget(sub)
+            row.addWidget(cell, 1)
+            if i < len(steps) - 1:
+                arrow = QLabel("→")
+                arrow.setStyleSheet("color:#999999;")
+                row.addWidget(arrow)
+        return bar
+
+    def _result_line(self, kind, text):
+        """The result sentence (rich text), coloured like the will summary."""
+        fg, bg, icon = self._RESULT_STYLE.get(kind, self._RESULT_STYLE["info"])
+        frame = QFrame()
+        frame.setObjectName("balResult")
+        frame.setStyleSheet(
+            "#balResult{{background:{};border-left:6px solid {};border-radius:4px;}}"
+            "#balResult QLabel{{background:transparent;}}".format(bg, fg)
+        )
+        row = QHBoxLayout(frame)
+        row.setContentsMargins(12, 8, 12, 8)
+        sign = QLabel(icon)
+        sign.setStyleSheet("color:{};font-size:20px;".format(fg))
+        sign.setAlignment(Qt.AlignmentFlag.AlignTop)
+        row.addWidget(sign)
+        label = QLabel(text)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setWordWrap(True)
+        label.setStyleSheet("color:#111111;font-size:13px;")
+        row.addWidget(label, 1)
+        return frame
+
+    def _group(self, title, rows, accent="#777777"):
+        """A titled white box; ``rows``: ``[(left, right or None, colour)]``.
+
+        The texts are plain and escaped here.
+        """
+        frame = QFrame()
+        frame.setObjectName("balGroup")
+        frame.setStyleSheet(
+            "#balGroup{background:#ffffff;border:1px solid #d6d6d6;border-radius:6px;}"
+            "#balGroup QLabel{background:transparent;color:#222222;}"
+        )
+        column = QVBoxLayout(frame)
+        column.setContentsMargins(12, 8, 12, 10)
+        column.setSpacing(4)
+        head = QLabel(title)
+        head.setStyleSheet("color:{};font-weight:bold;".format(accent))
+        column.addWidget(head)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(3)
+        grid.setColumnStretch(0, 1)
+        for r, (left, right, colour) in enumerate(rows):
+            text = QLabel(html.escape(left).replace("\n", "<br>"))
+            text.setTextFormat(Qt.TextFormat.RichText)
+            text.setWordWrap(True)
+            grid.addWidget(text, r, 0)
+            if right is not None:
+                value = QLabel(html.escape(right))
+                if colour:
+                    value.setStyleSheet("color:{};".format(colour))
+                grid.addWidget(value, r, 1, Qt.AlignmentFlag.AlignRight)
+        column.addLayout(grid)
+        return frame
+
+    def _amount(self, satoshi):
+        """``satoshi`` in the wallet's unit, or in sat without a formatter."""
+        if self.format_amount:
+            try:
+                return self.format_amount(satoshi)
+            except Exception as e:
+                _logger.debug(f"amount format failed: {e!r}")
+        return "{} sat".format(satoshi)
+
+    @staticmethod
+    def _percent(pct):
+        """``50%`` / ``33.3%`` with the decimal separator of the language."""
+        from ...i18n import number_separators
+
+        text = "{:.1f}".format(pct)
+        if text.endswith(".0"):
+            text = text[:-2]
+        return text.replace(".", number_separators()[0]) + "%"
+
+    def render(self, snapshot):
+        """Draw ``snapshot`` (see ``BuildReport.snapshot``)."""
+        self._clear()
+        self.box.addWidget(self._steps_bar(snapshot["steps"]))
+        if snapshot.get("result"):
+            self.box.addWidget(self._result_line(*snapshot["result"]))
+        boxes = snapshot.get("boxes") or {}
+        titles = (
+            ("changes", _("What changed"), "#777777"),
+            ("warnings", _("Attention"), "#b26a00"),
+            ("problems", _("What went wrong"), "#c62828"),
+        )
+        for key, title, accent in titles:
+            lines = boxes.get(key) or []
+            if lines:
+                self.box.addWidget(
+                    self._group(title, [(t, None, None) for t in lines], accent)
+                )
+        heirs = snapshot.get("heirs")
+        if heirs:
+            rows = [
+                (name, "{}  ({})".format(self._amount(sats), self._percent(pct)), None)
+                for name, sats, pct in heirs
+            ]
+            self.box.addWidget(self._group(_("Heirs"), rows))
+        executors = snapshot.get("executors")
+        if executors:
+            rows = []
+            for url, (state, seconds) in executors:
+                symbol, colour = self._EXECUTOR_STYLE.get(state, ("", None))
+                host = urlparse(url).hostname or url
+                rows.append(
+                    (host, "{} {}".format(symbol, self.executor_text(state, seconds)),
+                     colour)
+                )
+            self.box.addWidget(self._group(_("Will-Executor"), rows))
+        if snapshot.get("will_now"):
+            self.box.addWidget(
+                self._group(_("Your will now"), [(snapshot["will_now"], None, None)])
+            )

@@ -51,7 +51,6 @@ from .common import (
     QWidget,
     TaskThread,
     Util,
-    Will,
     Willexecutors,
     WillItem,
     _,
@@ -772,23 +771,16 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         self.update()
 
     def check(self):
+        """The Check button: check, prepare, sign, send and verify the will.
+
+        The will-executors are verified by the Building Will dialog itself,
+        as its last step (CHANGELOG #84b-2), for every sent item not yet
+        verified (``Will.needs_server_check``). Before, this method ran that
+        check after the dialog had closed, in a separate "Check Transaction"
+        window.
+        """
         close_window = BalBuildWillDialog(self.bal_window)
         close_window.build_will_task()
-
-        will = {}
-        for wid, w in self.bal_window.willitems.items():
-            # Query the will-executor server for every valid will that HAS a
-            # will-executor assigned and is not yet CHECKED.  Previously only
-            # transactions already marked PUSHED were checked, so a will that
-            # had actually been sent in the past but whose saved status still
-            # read "New" (not PUSHED) was skipped and the Check button reported
-            # "nothing to do".  Will.needs_server_check now also includes such
-            # non-PUSHED wills, so the server can confirm the transaction is
-            # present and correct the status (see set_check_willexecutor).
-            if Will.needs_server_check(w):
-                will[wid] = w
-        if will:
-            self.bal_window.check_transactions(will)
         self.update()
         # NOTE (Group B / B2): signing + broadcasting is already performed
         # automatically by BalBuildWillDialog.build_will_task() above (called at
