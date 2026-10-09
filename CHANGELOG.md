@@ -4152,3 +4152,25 @@ without it two versions of the will stayed VALID.
 
 **Outcome:** DONE (verified on a private regtest chain; the owner asked
 Claude Code to test instead of a testnet wallet).
+
+---
+
+## 74. F5: typo in the Check dialog's phase-2 error handler
+
+**Date:** 2026-10-09
+
+**Problem:** `BalBuildWillDialog.on_error_phase2` (`bal/gui/qt/dialogs.py`)
+called `self.bal_window.upade_all()`. `BalWindow` has no such method: an
+error while signing or sending the will raised `AttributeError` inside the
+error handler itself, so the error row was never shown and the window was
+not refreshed. Found by reading (BUG-8 in the scenarios report). Also present
+in BAL `main` 346aeee (2026-10-08) and in the released v0.6.0 and v0.6.1.
+
+**What changed:** `upade_all()` -> `update_all()`, docstring added. New
+`tests/test_gui_phase2_error.py`: the handler refreshes the window and shows
+the error row (it failed with `AttributeError: ... 'upade_all'` before).
+
+**Verification:** `ruff` (same 3 pre-existing I001), whole `tests/` directory
+(same failures as `main`), scenario matrix (unchanged), zip builds and loads.
+
+**Outcome:** DONE.

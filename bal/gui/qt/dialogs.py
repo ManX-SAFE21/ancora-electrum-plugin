@@ -2094,7 +2094,13 @@ class BalBuildWillDialog(BalDialog):
         self.resize(self.vbox.sizeHint()+button.sizeHint()*2)
         self.repaint()
     def on_error_phase2(self, error):
-        self.bal_window.upade_all()
+        """Show an error raised while signing/sending the will (phase 2).
+
+        Refreshes the wallet window and adds the error row. ``update_all``
+        was misspelled ``upade_all`` (CHANGELOG #74), which raised
+        AttributeError inside this handler and hid the original error.
+        """
+        self.bal_window.update_all()
         a, b, c = error
         self.msg_edit_row(self.msg_error(_("Error: {}").format(b)))
         _logger.error(f"error phase2: {b}")
