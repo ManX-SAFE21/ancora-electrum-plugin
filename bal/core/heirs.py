@@ -526,11 +526,13 @@ class Heirs(dict, Logger):
             percent_amount,
             fixed_amount_with_dust,
         ) = self.fixed_percent_lists_amount(from_locktime, wallet.dust_threshold())
-        if fixed_amount > newbalance:
-            fixed_amount = self.normalize_perc(
-                fixed_heirs, newbalance, fixed_amount, wallet
-            )
-            onlyfixed = True
+        # Fixed amounts that do not fit (or that leave nothing for the
+        # percentage heirs) stop the build (CHANGELOG #76, owner decision).
+        # The old code scaled them down here (normalize_perc), which silently
+        # dropped the percentage heirs, or paid fixed-only heirs ~71 % and
+        # returned the rest to the wallet as change.
+        if fixed_amount > newbalance or (percent_heirs and fixed_amount >= newbalance):
+            raise FixedAmountsExceedBalanceException(fixed_amount, newbalance)
 
         heir_list.update(fixed_heirs)
 
@@ -620,7 +622,7 @@ class Heirs(dict, Logger):
         #
         # Codes: NO_HEIRS, NO_UTXO, NO_WILLEXECUTOR_USABLE, NO_FUTURE_DATE,
         # WILLEXECUTOR_FEE, WILLEXECUTOR_FEE_TOO_HIGH, TX_BUILD_FAILED,
-        # WILLEXECUTOR_TX_ERROR.
+        # WILLEXECUTOR_TX_ERROR, FIXED_EXCEEDS_BALANCE (#76).
         self.last_build_error = None
         _before = list(self.keys())
         Heirs._validate(self, persist=False)
@@ -704,6 +706,13 @@ class Heirs(dict, Logger):
                     continue
                 except WillExecutorFeeTooHighException:
                     self.last_build_error = "WILLEXECUTOR_FEE_TOO_HIGH"
+                    i = 10
+                    continue
+                except FixedAmountsExceedBalanceException as e:
+                    # Stop for this executor (#76): the other executors see
+                    # the same amounts, so the build ends with no will.
+                    self.last_build_error = "FIXED_EXCEEDS_BALANCE"
+                    _logger.info(f"build stopped: {e}")
                     i = 10
                     continue
                 if locktimes:
@@ -970,6 +979,26 @@ class WillExecutorFeeException(Exception):
         return "WillExecutorFeeException: {} fee:{}".format(
             self.willexecutor["url"], self.willexecutor["base_fee"]
         )
+
+class FixedAmountsExceedBalanceException(Exception):
+    """The fixed heir amounts do not fit in the balance left for the heirs.
+
+    Raised by :meth:`Heirs.prepare_lists` (CHANGELOG #76, owner decision:
+    stop instead of building). Before, the build scaled the fixed amounts
+    down and then left out the percentage heirs, or, with fixed heirs only,
+    paid them about 71 % and sent the rest back to the owner's wallet as
+    change (verified in the scenario harness).
+    """
+
+    def __init__(self, fixed_amount, available):
+        self.fixed_amount = fixed_amount
+        self.available = available
+
+    def __str__(self):
+        return "fixed amounts {} >= available {}".format(
+            self.fixed_amount, self.available
+        )
+
 
 class WillExecutorFeeTooHighException(Exception):
     def __init__(self, willexecutor, max_fee):

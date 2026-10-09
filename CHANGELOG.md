@@ -4204,3 +4204,75 @@ verdicts unchanged; `ruff` (same 3 pre-existing I001); whole `tests/`
 directory (same failures as `main`); zip builds and loads.
 
 **Outcome:** DONE.
+
+---
+
+## 76. F4/2 (BUG-5): heirs' amounts — no false alarm, say what happens, stop when fixed amounts do not fit
+
+**Date:** 2026-10-09
+
+**Problems (all traced in the scenario harness):**
+
+1. **False alarm.** "In the inheritance process, the entire wallet will
+   always be fully emptied. Your settings require an adjustment of the
+   amounts" flashed in 12 Checks of the scenario matrix (A6, B1, B2, B4, B5,
+   B5fix, B6, B7, C1, B2adv) although no amount had changed: with a delivery
+   date in the past the heirs are left out of the percentage sum (0 % instead
+   of 100 %, `PercAmountException`); right after a Cancel no spendable coin is
+   visible for a moment (the wallet-local copy of the unsigned will still
+   holds the coins; the build frees them just after), so the fixed-amount
+   check fails with a balance of 0.
+2. **Misleading text.** With percentages that do not add up to 100 % (e.g.
+   50 % + 40 %) the build already rescales them in proportion (55.6 % /
+   44.4 %) and empties the wallet; the warning told the user to adjust the
+   amounts, and was overwritten a moment later.
+3. **Silent loss.** With fixed amounts larger than the balance the build
+   scaled them down and then left the percentage heirs out (2,000,000 sat +
+   50 % on a 1,000,000 sat wallet: one heir got everything, the other
+   nothing), or with fixed heirs only (800,000 + 600,000 sat) paid them about
+   71 % and sent 284,628 sat back to the owner's wallet as change, where no
+   heir could use it. The Check ended with "Building your will: Ok".
+
+**What changed (texts and the stop approved by the owner):**
+
+- `bal/gui/qt/dialogs.py`
+  - `_amount_warning_is_false_alarm(available_utxos)`: no warning when the
+    delivery date is in the past (explained by #75) or no spendable coin is
+    visible (an empty wallet is reported by the build step).
+  - `_amounts_message(info)`: one sentence on its own row (not overwritten):
+    "The heirs' percentages add up to 90%: the will always empties the whole
+    wallet, so the shares are recalculated in proportion (alice 55.6%, bob
+    44.4%)." (variant "of what remains after the fixed amounts" when fixed
+    heirs exist); and, red, "The fixed amounts (2,000,000 sat) exceed the
+    balance available for the heirs (999,000 sat): the heirs with a percentage
+    (bob) would receive nothing. Reduce the fixed amounts." (variant without
+    percentage heirs). The balance shown is the wallet balance minus the
+    highest will-executor base fee, the amount the check really compares.
+  - Fixed amounts that do not fit: "Checking variables: Stopped", the red
+    row, and the Check ends with the Close button (new phase-1 signal
+    `fixed_amounts_exceed`), no will is built.
+  - New build-failure text for `FIXED_EXCEEDS_BALANCE` (see below).
+- `bal/core/will.py`: new `Will.describe_amounts(...)` (GUI-free): what the
+  build does with the amounts (`percent` rescaled / `fixed_exceeds` / None).
+- `bal/core/heirs.py`: new `FixedAmountsExceedBalanceException`;
+  `Heirs.prepare_lists` raises it instead of scaling the fixed amounts down
+  when they exceed the balance left for the heirs (or leave nothing for the
+  percentage heirs); `buildTransactions` records `FIXED_EXCEEDS_BALANCE`.
+  So the automatic rebuilds (new coin, wallet close) and the CLI stop too.
+- `bal/i18n.py`: `number_separators()` — "55,6%" / "2.000.000" for
+  Italian, Spanish and other decimal-comma languages, "55.6%" / "2,000,000"
+  otherwise.
+- Catalogs: the new texts in Italian and Spanish.
+- New tests: `tests/test_msg_amounts_false_alarm.py` (4),
+  `tests/test_core_amounts_explained.py` (16: the stop in `prepare_lists`,
+  `describe_amounts`, the messages and their number format).
+
+**Verification:** harness cases — 50 % + 40 % and 60 % + 60 %: rescaled,
+new message kept visible; fixed 100,000 + 50 %: message with "what remains
+after the fixed amounts"; fixed 100,000 + 100 %: no message; fixed 2,000,000
++ 50 % and 800,000 + 600,000: "Stopped", red message, no will built. Scenario
+matrix: the false alarm no longer appears (0 of 119 Checks, was 12), verdicts
+unchanged. `ruff` (same 3 pre-existing I001); whole `tests/` directory (same
+failures as `main`); zip builds and loads.
+
+**Outcome:** DONE.
