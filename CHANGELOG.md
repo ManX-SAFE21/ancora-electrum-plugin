@@ -4083,3 +4083,72 @@ EARLIER date, were never invalidated. The panel showed the new date.
 
 **Outcome:** DONE (verified on a private regtest chain; the owner asked
 Claude Code to test instead of a testnet wallet).
+
+---
+
+## 73. F1 (BUG-1): a postpone made together with a fee or heir change is detected
+
+**Date:** 2026-10-09
+
+**Problem (traced in the harness, scenarios A7 and A13):**
+`check_willexecutors_and_heirs` stopped at the first difference it met in a
+VALID tx: a changed fee rate (`TxFeesChangedException`) or a changed heir
+address/amount (`HeirNotFoundException`) was reported BEFORE the delivery
+date was compared. When the date was moved LATER together with a fee or heir
+change, the will was rebuilt as a normal update, one day before the old
+signed tx (the anticipate mechanism), and the settings date was overwritten
+with that date. The old signed tx stayed in force; on the real chain the
+node accepted transactions dated 2032 while the user had asked for 2033.
+
+**What changed:**
+
+- `bal/core/will.py`
+  - New `Will._postponed_heir(w, heirs)`: for every heir present both in a
+    will item and in the current settings (by name), the requested date is
+    resolved with `Util.resolve_locktime_against_tx` (relative recipes
+    included); returns the first heir whose requested date is LATER than
+    the tx locktime. Address or amount changes do not matter here.
+  - `check_willexecutors_and_heirs` first checks every VALID item that is
+    signed (`COMPLETE`) or sent (`PUSHED`) with it and raises
+    `WillPostponedException`: the old tx is invalidated on-chain first (all
+    coins, #71), then the will is rebuilt with the new date and the new fee
+    or heirs.
+  - `check_sent_txs_not_postponed` (#72) uses the same helper.
+- New `tests/test_core_postpone_with_other_changes.py` (9): fee change plus
+  later date, heir amount change plus later date, signed-not-sent plus later
+  date are postpones (the first three failed on `main`: wrong exception);
+  fee change alone, heir change alone, fee change plus earlier date, an
+  unsigned will with a later date are not; a plain postpone and an
+  unchanged will keep working.
+
+**Known side effect (accepted by the owner):** scenario B2 (fee and date
+later, Cancel at "Sign your will", then the fee set back, Check). The first
+Check now correctly invalidates the old will and prepares the new one at the
+later date; the user cancels the signature. The second Check sees a fee
+change on that unsigned will and applies the plugin's normal "one day
+earlier" anticipation, so the will ends at the requested date MINUS ONE DAY
+(2033-09-22 instead of 2033-09-23). No older tx stays executable, the amounts
+are correct, no extra fee; the panel shows the new date and the Check says
+the date was moved one day earlier. In practice: if the user stops
+refreshing, the heirs can receive the funds one day earlier. Removing the
+anticipation for unsigned wills was tried in a scratch copy and rejected:
+the anticipation is how the plugin decides which tx replaces which, and
+without it two versions of the will stayed VALID.
+
+**Verification (Electrum 4.8.2 source, Python 3.11, WSL):**
+
+- Scenario matrix, 6 runs: A7, A9, A13, A7adv now OK 6/6 (were DANGER); B2
+  and B2adv "DANGER" by one day as described above; every other verdict
+  unchanged; after no Check is an older tx executable (oracle 0 on 714
+  Checks). One invalidation more only in the BUG-1/BUG-2 scenarios, none in
+  the fee/heir/earlier-date ones.
+- Real chain (private regtest Bitcoin Core 31.1 node): A7 with this change:
+  invalidation accepted and mined, nothing executable before the requested
+  date, settings kept at 2033-09-23, the new will executes and pays the
+  heirs (2/2 runs); on `main` before it: txs dated 2032-09-22 and
+  2032-09-23 executable, settings overwritten (2/2). B2: one day earlier as
+  described (2/2), nothing older executable.
+- `ruff check bal/ tests/`: the same 3 pre-existing I001, none new.
+
+**Outcome:** DONE (verified on a private regtest chain; the owner asked
+Claude Code to test instead of a testnet wallet).
