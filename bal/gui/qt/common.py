@@ -149,10 +149,10 @@ from ...i18n import N_, _
 
 # --- Presentation helpers ---
 from .theme import (
-    server_status_text,
-    server_status_tooltip,
     signature_suffix,
     status_color,
+    will_status_text,
+    will_status_tooltip,
 )
 from .window_utils import (
     bring_to_front,

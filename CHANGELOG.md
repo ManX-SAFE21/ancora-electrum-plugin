@@ -4669,3 +4669,55 @@ pre-existing I001); whole `tests/` directory: same failures as `main`;
 translations complete; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 83. 5d/3: one clear "Status" column, coherent with the row colour
+
+**Date:** 2026-10-09
+
+**Problem (owner's remarks during the ZIP tests):** the "Status" column of
+the transaction list showed the whole status history on one line
+("New.Signed.Pushed.Checked", cut to its last 50 characters when long),
+next to a separate "Server" column. A first version showed only the will
+state ("In force"), but each row is the copy held by ONE will-executor and
+the row colour tells where that executor stands: a red row whose executor
+never received the will still said "In force", and the text did not change
+when the executor verified it while the colour did.
+
+**What changed (texts approved by the owner):**
+
+- `bal/gui/qt/theme.py`: new `will_status_text(...)`, with the SAME priority
+  as the row colour (`status_color`): "In force, verified" (bright green),
+  "In force, to be verified" (teal), "Not received by the executor" (red:
+  sending or verification failed), "Signed, to be sent" (blue), "To sign"
+  (white; "(1/2)" when signatures are missing in a multisig wallet), "In
+  force" (a backup transaction without will-executor), "Replaced by a newer
+  will", "Invalidated on-chain", "Being executed (mempool)", "Executed",
+  otherwise "Not valid" (Italian: In vigore, verificato / In vigore, da
+  verificare / Non ricevuto dall'executor / Firmato, da inviare / Da
+  firmare / In vigore / Sostituita / Invalidata / In esecuzione (mempool) /
+  Eseguita / Non valida). New `will_status_tooltip(...)`: the row's
+  will-executor and the whole history, translated ("Will-Executor: https://…
+  / History: New → Signed → Pushed → Checked"). The English texts of the
+  column are a little longer than the history labels so that the Italian
+  and Spanish ones can be feminine (a transaction) while the history keeps
+  its own translations. `server_status_text` / `server_status_tooltip`
+  removed (no longer used).
+- `bal/gui/qt/lists.py`: the "Server" column is removed (its information is
+  now in the Status column and its tooltip); the saved history and the row
+  colours are unchanged.
+- Catalogs: the new texts in Italian and Spanish (the old "Server" texts
+  are gone).
+- New tests: `tests/test_status_column.py` (9), including "text and colour
+  agree".
+
+The separate "Checking transactions" window that opens after the build
+window closes (owner's remark) is planned inside the new build window
+(#84b, step "Verify").
+
+**Verification:** one test per state, text/colour agreement, tooltip,
+columns, unchanged saved history. Display only (the scenario harness does
+not draw the list): harness A1 OK; `ruff` (same 3 pre-existing I001); whole
+`tests/` directory: same failures as `main`; translations complete; zip
+builds and loads.
+
+**Outcome:** DONE.

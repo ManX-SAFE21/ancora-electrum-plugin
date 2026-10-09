@@ -60,19 +60,17 @@ from .common import (
     datetime,
     enum,
     export_meta_gui,
-    format_status_history,
     getOpenFileName,
     import_meta_gui,
     is_op_return_address,
     partial,
     read_json_file,
     read_QIcon_from_bytes,
-    server_status_text,
-    server_status_tooltip,
-    signature_suffix,
     status_color,
     translated_headers,
     tx_from_any,
+    will_status_text,
+    will_status_tooltip,
     write_json_file,
 )
 from .dialogs import BalBuildWillDialog, BalDialog
@@ -351,14 +349,14 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         TXID = enum.auto()
         WILLEXECUTOR = enum.auto()
         STATUS = enum.auto()
-        SERVER = enum.auto()
 
+    # CHANGELOG #83: no separate "Server" column any more; the Status column
+    # says where this row's will-executor stands (see will_status_text).
     headers = {
         Columns.LOCKTIME: N_("Locktime"),
         Columns.TXID: N_("Txid"),
         Columns.WILLEXECUTOR: N_("Will-Executor"),
         Columns.STATUS: N_("Status"),
-        Columns.SERVER: N_("Server"),
     }
 
     ROLE_HEIR_KEY = Qt.ItemDataRole.UserRole + 2000
@@ -603,13 +601,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         if bal_tx.we:
             we = bal_tx.we["url"]
         labels[self.Columns.WILLEXECUTOR] = we
-        status = format_status_history(bal_tx.status) + signature_suffix(bal_tx)
-        if len(status) > 53:
-            status = "...{}".format(status[-50:])
-        labels[self.Columns.STATUS] = status
-        # Dedicated, always-readable label describing whether the inheritance
-        # transaction is actually stored on the will-executor servers.
-        labels[self.Columns.SERVER] = server_status_text(bal_tx)
+        # CHANGELOG #83: what this row is for the will today, coherent with
+        # its colour (where its will-executor stands); the executor and the
+        # whole history (it used to fill this column, cut to its last 50
+        # characters) are in the tooltip set below.
+        labels[self.Columns.STATUS] = will_status_text(bal_tx)
 
         items = []
         for e in labels:
@@ -633,12 +629,12 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         except Exception as bold_err:
             _logger.debug(f"locktime bold error: {bold_err}")
 
-        # Tooltip on the Server column: shows the will-executor URL (if any)
-        # plus the current server state, so the user can always inspect details.
+        # Tooltip on the Status column: the will-executor URL (if any) and the
+        # whole status history, so the user can always inspect the details.
         try:
-            items[self.Columns.SERVER].setToolTip(server_status_tooltip(bal_tx))
+            items[self.Columns.STATUS].setToolTip(will_status_tooltip(bal_tx))
         except Exception as tip_err:
-            _logger.debug(f"server tooltip error: {tip_err}")
+            _logger.debug(f"status tooltip error: {tip_err}")
 
         row_count = self.model().rowCount()
         self.model().insertRow(row_count, items)

@@ -79,39 +79,58 @@ def signature_suffix(will_item) -> str:
     return " ({}/{})".format(added, required)
 
 
-def server_status_text(will_item) -> str:
-    """Return a short, human-readable label describing the state of a will
-    item on the will-executor servers (the online inheritance backup).
+def will_status_text(will_item) -> str:
+    """What this row is for the will TODAY, in plain words (CHANGELOG #83).
 
-    This is shown in the dedicated "Server" column of the transaction list so
-    the user always knows whether each inheritance transaction is actually
-    stored on the will-executor servers, regardless of the row colour.
+    Each row of the transaction list is the copy of the will held by ONE
+    will-executor, and its colour (:func:`status_color`) tells where that
+    executor stands. The text follows the SAME priority as the colour, so
+    the two never disagree (owner's remark: "In force" on a red row whose
+    executor never received the will). It replaced the whole status history
+    ("New.Signed.Pushed.Checked"), now in the tooltip
+    (:func:`will_status_tooltip`), and the separate "Server" column. Texts
+    approved by the owner.
     """
     from ...i18n import _
 
+    if will_item.get_status("INVALIDATED"):
+        return _("Invalidated on-chain")
+    if will_item.get_status("REPLACED") or will_item.get_status("UPDATED"):
+        return _("Replaced by a newer will")
+    if will_item.get_status("CONFIRMED"):
+        return _("Executed")
+    if will_item.get_status("MEMPOOL"):
+        return _("Being executed (mempool)")
+    if not will_item.get_status("VALID"):
+        return _("Not valid")
     if will_item.get_status("CHECK_FAIL") and not will_item.get_status("CHECKED"):
-        return _("Not on server")
+        return _("Not received by the executor")
     if will_item.get_status("CHECKED"):
-        return _("Confirmed on server")
+        return _("In force, verified")
     if will_item.get_status("PUSH_FAIL"):
-        return _("Send failed")
+        return _("Not received by the executor")
     if will_item.get_status("PUSHED"):
-        return _("Sent (not checked)")
+        return _("In force, to be verified")
     if will_item.get_status("COMPLETE"):
-        return _("Signed (not sent)")
-    return _("Not sent")
+        # A backup transaction has no will-executor: nothing to send.
+        if not getattr(will_item, "we", None):
+            return _("In force")
+        return _("Signed, to be sent")
+    return _("To sign") + signature_suffix(will_item)
 
 
-def server_status_tooltip(will_item) -> str:
-    """Return a detailed tooltip for the "Server" column, including the
-    will-executor URL (if any) and the current server state."""
+def will_status_tooltip(will_item) -> str:
+    """The row's will-executor and its whole status history (CHANGELOG #83).
+
+    "Will-Executor: https://... / History: New → Signed → Pushed → Checked".
+    The saved history is unchanged (English, dot separated, see
+    ``WillItem.set_status``); only its display changes.
+    """
+    from ...core.will import format_status_history
     from ...i18n import _
 
-    url = None
     we = getattr(will_item, "we", None)
-    if we:
-        url = we.get("url")
-    state = server_status_text(will_item)
-    if url:
-        return "{}: {}\n{}".format(_("Will-Executor"), url, state)
-    return "{}\n{}".format(_("No will-executor"), state)
+    url = we.get("url") if we else None
+    head = "{}: {}".format(_("Will-Executor"), url) if url else _("No will-executor")
+    steps = [s for s in format_status_history(will_item.status).split(".") if s]
+    return head + "\n" + _("History: {}").format(" → ".join(steps))
