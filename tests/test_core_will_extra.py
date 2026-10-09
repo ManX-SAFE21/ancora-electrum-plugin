@@ -810,11 +810,21 @@ def test_get_available_utxos_does_not_restore_unlabeled_spend():
     assert result == []
 
 
-def test_get_available_utxos_does_not_restore_not_later_locktime():
-    # The stored spender's locktime equals the will's locktime (same will):
-    # its spend is NOT ignored.
+def test_get_available_utxos_restores_same_locktime():
+    # CHANGELOG #86: the stored spender's locktime equals the will's locktime:
+    # it is the local copy of the will being checked, which spends nothing,
+    # so its coin is given back (it used to stay hidden, and the next Check
+    # marked the will "Invalidated" with nothing broadcast).
     wallet, utxo = _wallet_with_local_spend(locktime=1000)
     result = Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1000)
+    assert [u.prevout.to_str() for u in result] == [utxo.prevout.to_str()]
+
+
+def test_get_available_utxos_does_not_restore_earlier_locktime():
+    # An EARLIER local will is a different (newer) will: its spend still
+    # hides the coin.
+    wallet, utxo = _wallet_with_local_spend(locktime=1000)
+    result = Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1001)
     assert result == []
 
 
@@ -847,21 +857,22 @@ def test_get_available_utxos_none_locktime_is_raw_view():
 # Will.remove_stale_wallet_history (pre-build history purge)
 # ------------------------------------------------------------------ #
 
-def test_remove_stale_wallet_history_frees_equal_locktime_spend():
-    # The stale placeholders (saved by a previous prepare) have the SAME
-    # locktime as the will being rebuilt, so get_available_utxos does NOT
-    # restore their coins (see test_...does_not_restore_not_later_locktime).
-    # The pre-build purge deletes them and the coins become available again.
+def test_remove_stale_wallet_history_frees_earlier_locktime_spend():
+    # A stale placeholder (saved by a previous prepare) dated BEFORE the will
+    # being rebuilt still hides its coin in get_available_utxos (see
+    # test_...does_not_restore_earlier_locktime; since #86 a placeholder with
+    # the same date no longer does). The pre-build purge deletes it and the
+    # coin becomes available again.
     wallet, utxo = _wallet_with_local_spend(locktime=1000)
     spender = "ab" * 32
-    assert Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1000) == []
+    assert Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1001) == []
     removed = Will.remove_stale_wallet_history(wallet, _HISTORY_TEMPLATE)
     assert removed == [spender]
     assert wallet.adb.removed == [spender]
     assert spender not in wallet.labels
     assert [
         u.prevout.to_str()
-        for u in Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1000)
+        for u in Util.get_available_utxos(wallet, _HISTORY_TEMPLATE, 1001)
     ] == [utxo.prevout.to_str()]
 
 

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: BAL Electrum plugin VERSION\n"
 "Report-Msgid-Bugs-To: info@bitcoin-after.life\n"
-"POT-Creation-Date: 2026-10-09 20:40+0200\n"
+"POT-Creation-Date: 2026-10-09 21:00+0200\n"
 "PO-Revision-Date: 2026-09-26 22:02+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: it_IT\n"
@@ -385,88 +385,88 @@ msgstr "Il plugin lo segna come sostituito o invalidato, ma le sue monete non so
 msgid "Operation in progress: follow the window in front"
 msgstr "Operazione in corso: segui la finestra in primo piano"
 
-#: bal/core/will.py:1834
+#: bal/core/will.py:1865
 #, python-brace-format
 msgid "NOT {}"
 msgstr "NON {}"
 
-#: bal/core/will.py:1858
+#: bal/core/will.py:1889
 msgid "Anticipated"
 msgstr "Anticipato"
 
-#: bal/core/will.py:1859
+#: bal/core/will.py:1890
 msgid "Broadcasted"
 msgstr "Trasmesso"
 
-#: bal/core/will.py:1860
+#: bal/core/will.py:1891
 msgid "Checked"
 msgstr "Verificato"
 
-#: bal/core/will.py:1861
+#: bal/core/will.py:1892
 msgid "Check Failed"
 msgstr "Verifica fallita"
 
-#: bal/core/will.py:1862
+#: bal/core/will.py:1893
 msgid "Signed"
 msgstr "Firmato"
 
-#: bal/core/will.py:1863
+#: bal/core/will.py:1894
 msgid "Confirmed"
 msgstr "Confermato"
 
-#: bal/core/will.py:1864 bal/gui/qt/lists.py:1370 bal/gui/qt/lists.py:1384
+#: bal/core/will.py:1895 bal/gui/qt/lists.py:1370 bal/gui/qt/lists.py:1384
 msgid "Error"
 msgstr "Errore"
 
-#: bal/core/will.py:1865 bal/gui/qt/dialogs.py:807 bal/gui/qt/dialogs.py:965
+#: bal/core/will.py:1896 bal/gui/qt/dialogs.py:807 bal/gui/qt/dialogs.py:965
 msgid "Expired"
 msgstr "Scaduto"
 
-#: bal/core/will.py:1866
+#: bal/core/will.py:1897
 msgid "Exported"
 msgstr "Esportato"
 
-#: bal/core/will.py:1867
+#: bal/core/will.py:1898
 msgid "Imported"
 msgstr "Importato"
 
-#: bal/core/will.py:1868
+#: bal/core/will.py:1899
 msgid "Invalidated"
 msgstr "Invalidato"
 
-#: bal/core/will.py:1869
+#: bal/core/will.py:1900
 msgid "Mempool"
 msgstr "Mempool"
 
-#: bal/core/will.py:1870
+#: bal/core/will.py:1901
 msgid "Push failed"
 msgstr "Invio fallito"
 
-#: bal/core/will.py:1871
+#: bal/core/will.py:1902
 msgid "Pushed"
 msgstr "Inviato"
 
-#: bal/core/will.py:1872
+#: bal/core/will.py:1903
 msgid "Partially Signed"
 msgstr "Parzialmente firmato"
 
-#: bal/core/will.py:1873
+#: bal/core/will.py:1904
 msgid "Replaced"
 msgstr "Sostituito"
 
-#: bal/core/will.py:1874
+#: bal/core/will.py:1905
 msgid "Restored"
 msgstr "Ripristinato"
 
-#: bal/core/will.py:1875
+#: bal/core/will.py:1906
 msgid "Updated"
 msgstr "Aggiornato"
 
-#: bal/core/will.py:1876 bal/gui/qt/dialogs.py:2998
+#: bal/core/will.py:1907 bal/gui/qt/dialogs.py:2998
 msgid "Valid"
 msgstr "Valido"
 
-#: bal/core/will.py:1882
+#: bal/core/will.py:1913
 msgid "New"
 msgstr "Nuovo"
 
