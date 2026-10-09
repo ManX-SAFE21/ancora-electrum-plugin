@@ -32,6 +32,12 @@ class _Dialog:
     msg_error = BalBuildWillDialog.msg_error
     _show_still_active_warning = BalBuildWillDialog._show_still_active_warning
     _on_close_clicked = BalBuildWillDialog._on_close_clicked
+    # CHANGELOG #84b: the row goes to the log only and the text to the
+    # dialog's report ("Attention" box), see tests/test_build_report.py.
+    _log_only = BalBuildWillDialog._log_only
+    _report = BalBuildWillDialog._report
+    _auto_box_off = False
+    _build_report = None
 
     def __init__(self):
         self.labels = []
@@ -76,6 +82,8 @@ def test_warning_row_and_popup():
     text = dlg._still_active_warning
     assert text.startswith("Warning: an older will is still active.")
     assert "Max" in text
+    # #84b: the same text in the "Attention" box of the dialog's report.
+    assert dlg._report().snapshot()["boxes"]["warnings"] == [text]
     dlg._on_close_clicked()
     assert dlg.closed
     dlg.bal_window.show_warning.assert_called_once_with(text)

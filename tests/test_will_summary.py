@@ -434,16 +434,27 @@ def test_dialog_show_hide_keeps_the_counter_balanced():
         (True,), (False,)]
 
 
-def test_still_active_check_only_without_a_valid_will():
+def test_still_active_check_asks_the_chain_for_every_sent_will():
+    """#84b: any sent will still executable, whatever its date."""
     fake = MagicMock()
     fake.willitems = {"a": _item(*VERIFIED)}
-    with patch.object(win_mod.Will, "find_still_active_older_txs") as find:
-        assert BalWindow._still_active_for_summary(fake) == []
-        assert not find.called
-        fake.willitems = {"a": _item(*VERIFIED, "REPLACED")}
-        find.return_value = ["x"]
+    with patch.object(win_mod.Will, "sent_still_executable") as sent:
+        sent.return_value = ["x"]
         assert BalWindow._still_active_for_summary(fake) == ["x"]
-        assert find.call_args.kwargs["current_locktime"] == 2**32
+        sent.assert_called_once_with(fake.willitems, fake.wallet)
+        sent.side_effect = RuntimeError("boom")
+        assert BalWindow._still_active_for_summary(fake) == []
+
+
+def test_to_sign_names_the_will_sent_before():
+    """#84b: after a Cancel at signing the will sent before stays in force."""
+    old = _item(*VERIFIED, "REPLACED", locktime=DELIVERY + 86400)
+    s = _summary({"new": _item(), "old": old},
+                 still_active=[(old, DELIVERY + 86400, "https://we0.test")])
+    assert s["state"] == "to_sign"
+    assert s["note"] == ("Until you sign and send it, the will sent before stays "
+                         "in force: delivery on 2028-10-02.")
+    assert _summary({"new": _item()})["note"] is None      # first will: no note
 
 
 def test_buttons_run_the_existing_commands():

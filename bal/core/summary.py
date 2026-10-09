@@ -108,11 +108,12 @@ def _executor_state(w):
     return "to_sign"
 
 
-def executor_counts(valid):
-    """``{state: number of will-executors}`` for the VALID items ``valid``.
+def executor_states(valid):
+    """``{url: state}`` for the VALID items ``valid``, at each executor's worst copy.
 
-    One entry per executor URL, at its worst copy. Items without a
-    will-executor (backup transactions) are not counted.
+    States: ``failed``, ``to_sign``, ``to_send``, ``to_verify``,
+    ``verified``. Items without a will-executor (backup transactions) are
+    left out. Also used by the Building Will dialog (#84b).
     """
     worst = {}
     for w in valid.values():
@@ -123,8 +124,16 @@ def executor_counts(valid):
         old = worst.get(url)
         if old is None or _EXECUTOR_ORDER.index(state) < _EXECUTOR_ORDER.index(old):
             worst[url] = state
+    return worst
+
+
+def executor_counts(valid):
+    """``{state: number of will-executors}`` for the VALID items ``valid``.
+
+    One entry per executor URL, at its worst copy (:func:`executor_states`).
+    """
     counts = {state: 0 for state in _EXECUTOR_ORDER}
-    for state in worst.values():
+    for state in executor_states(valid).values():
         counts[state] += 1
     return counts
 
@@ -317,13 +326,15 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
     if any(not w.get_status("COMPLETE") for w in valid.values()):
         return _summary(
             "to_sign", "warn", _("Will prepared: it must be signed and sent"),
-            rows=rows, action="sign_send", action_text=_("Sign and send"),
+            rows=rows, note=_previous_will_note(still_active),
+            action="sign_send", action_text=_("Sign and send"),
         )
     if counts["to_send"]:
         return _summary(
             "to_send", "warn",
             _("Will signed: it must be sent to the will-executors"),
-            rows=rows, action="send", action_text=_("Send"),
+            rows=rows, note=_previous_will_note(still_active),
+            action="send", action_text=_("Send"),
         )
     failed = counts["failed"]
     if failed:
@@ -349,6 +360,23 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         # that day the wallet asks "Renew / Not now" when it opens).
         check_row["text"] += " — " + _("from that day the wallet asks you to renew it")
     return _summary("ok", "ok", _("Your will is in force"), rows=rows)
+
+
+def _previous_will_note(still_active):
+    """The will sent before, still in force until the new one is sent (#84b).
+
+    After a Cancel at signing (or before sending) the executors still hold
+    the will sent before, and it can be executed: say so, with its date,
+    instead of letting "it must be signed" suggest there is no will. None
+    when no sent will can still be executed.
+    """
+    if not still_active:
+        return None
+    delivery = min(int(locktime) for _item, locktime, _url in still_active)
+    return _(
+        "Until you sign and send it, the will sent before stays in force: "
+        "delivery on {}."
+    ).format(_day(delivery))
 
 
 def _still_active_summary(still_active, heirs_count, now):

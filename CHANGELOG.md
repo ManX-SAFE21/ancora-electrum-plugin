@@ -4910,3 +4910,74 @@ we0.test, we1.test", then "1/2 ... — waiting for: we1.test", then "2/2";
 as `main`; translations complete; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 88. 5d/8 (#84b-1): the Building Will dialog with a steps bar and boxes
+
+**Date:** 2026-10-09
+
+**Problem (owner's remark):** the Building Will dialog printed one text row
+per step ("Checking variables: Ok", "Building your will: Wait", ...): the
+content was right but "highly disordered", hard to follow for the user.
+
+**What changed (mockup and decisions approved by the owner):**
+
+- New `bal/core/build_report.py` (no Qt): `BuildReport`, the dialog's
+  structured content (thread-safe), and `heir_shares(...)`.
+- `bal/gui/qt/widgets.py`: new `BuildReportView` draws, from top to bottom:
+  - a bar with the five steps Checking -> Preparation -> Signature ->
+    Sending -> Verification, each done / running / attention / error / not
+    needed, with one word under it ("updated", "signed", "2/2",
+    "interrupted"...);
+  - one result sentence, coloured like the will summary of the Will tab:
+    on a normal ending it IS that summary (#84a), so the two always agree;
+    after an error or a Cancel it names the step ("The new will was not
+    prepared.", "Interrupted: the new will was not signed.") and a box "Your
+    will now" says which will is in force;
+  - boxes only when needed: "What changed", "Attention", "What went wrong",
+    "Heirs" (amount in the wallet's unit and percentage, owner's choice),
+    "Will-Executor" (one line per executor, updated live while sending:
+    waiting / received / no answer (20 s) / not received / verified).
+- `bal/gui/qt/dialogs.py` (`BalBuildWillDialog`): the existing steps are
+  unchanged; the rows they write feed the report (the step comes from the
+  row label, the state from the colour of the status) and become a
+  collapsible "Details (log)" with the time of each row, closed by default
+  and opened by itself on an error (owner's decision). The next-steps hint
+  is shown in the "Attention" box and no longer as a popup after Close;
+  only the still-active warning (#69) is still repeated in a popup (owner's
+  decision). The Signature step shows "running" while the password is
+  asked (it stayed grey). The dialog opens at least 560 px tall and grows
+  with its content up to 85% of the screen's available height (a notebook
+  1366x768: about 620 px), then scrolls with the buttons always visible; it
+  never shrinks while open (owner: it was too short and the buttons covered
+  the will-executors box). The verification by the will-executors stays in
+  its own window for now (#84b-2 moves it into this dialog).
+- `bal/gui/qt/plugin.py` (`password_dialog`): Electrum's password window
+  shows Electrum's icon (owner's decision). It IS Electrum's own dialog,
+  Electrum checks the password and signs; Qt gave it the icon of the plugin
+  window that opened it. The text that tells why the password is asked
+  ("Sign your will") is kept.
+- `bal/core/will.py`: new `Will.sent_still_executable(...)` (the sent txs
+  still executable on-chain, any date); `find_still_active_older_txs` now
+  uses it and keeps its result. `bal/core/summary.py`: new
+  `executor_states(...)`; "Will prepared: it must be signed and sent" and
+  "Will signed: it must be sent" now add "Until you sign and send it, the
+  will sent before stays in force: delivery on ..." when that will can still
+  be executed (after a Cancel at signing the box did not say it).
+- Catalogs: the new texts in Italian and Spanish.
+- New tests: `tests/test_build_report.py` (18, including the real Qt dialog);
+  `tests/test_will_summary.py` updated (+1). The light fake dialogs of
+  `tests/test_gui_still_active_warning.py` and `tests/test_gui_phase2_error.py`
+  now also carry the new helpers (`_log_only`, `_report`, `_finish_report`).
+
+Two defects found by the new tests and fixed before the ZIP: the "Details
+(log)" link had no text until the first row, and the dialog redrew before
+the report knew the new step (the bar was always one step behind).
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as `main`; the scenario matrix 6 times on `main`
+and on this branch: same verdicts; the real dialog rendered in Italian on
+harness scenarios (nothing to do, fee changed, Cancel at signing, Cancel at
+the invalidation) matches the approved mockup; translations complete; zip
+builds and loads.
+
+**Outcome:** DONE.

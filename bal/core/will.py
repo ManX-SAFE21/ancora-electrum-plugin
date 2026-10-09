@@ -759,12 +759,41 @@ class Will:
             Never raises.
         """
         try:
-            if not will or not wallet or not getattr(wallet, "adb", None):
-                return []
-            if not wallet.is_up_to_date():
+            if not will:
                 return []
             reference = Will.get_current_will_locktime(will, current_locktime)
             if not reference:
+                return []
+            return [
+                found for found in Will.sent_still_executable(will, wallet)
+                if found[1] < int(reference)
+            ]
+        except Exception as e:
+            # A failure of this check must never break the Check wizard.
+            _logger.error(f"still-active check failed: {e!r}")
+            return []
+
+    @staticmethod
+    def sent_still_executable(will, wallet):
+        """The sent txs that are not VALID but can still be executed, any date.
+
+        Conditions 1, 2 and 4 of :meth:`find_still_active_older_txs`
+        (which adds "dated earlier than the current will"): sent to a
+        will-executor, not ``VALID``/``INVALIDATED``/``CONFIRMED``/
+        ``MEMPOOL``, no input spent by a broadcast tx. Read-only, nothing
+        while the wallet is not synchronized, never raises.
+
+        WHY (CHANGELOG #84b): after a Cancel at signing the records hold an
+        unsigned will (VALID) and the will sent before (now "Replaced"),
+        which the executors still hold and can execute: the will summary
+        must say that this one stays in force until the new one is signed.
+
+        Returns ``[(willitem, locktime, executor_url)]``, earliest first.
+        """
+        try:
+            if not will or not wallet or not getattr(wallet, "adb", None):
+                return []
+            if not wallet.is_up_to_date():
                 return []
             found = []
             for wid, w in will.items():
@@ -776,16 +805,13 @@ class Will:
                     or w.get_status("MEMPOOL")
                 ):
                     continue
-                if int(w.tx.locktime) >= int(reference):
-                    continue
                 if not Will._tx_still_executable(wid, will, wallet):
                     continue
                 found.append((w, int(w.tx.locktime), (w.we or {}).get("url")))
             found.sort(key=lambda item: item[1])
             return found
         except Exception as e:
-            # A failure of this check must never break the Check wizard.
-            _logger.error(f"still-active check failed: {e!r}")
+            _logger.error(f"sent-still-executable check failed: {e!r}")
             return []
 
     @staticmethod

@@ -38,6 +38,11 @@ class _Dialog:
     def msg_edit_row(self, line, row=None):
         self.labels.append(line)
 
+    def _finish_report(self):
+        # CHANGELOG #84b: the dialog's report is filled on every ending;
+        # tested in tests/test_build_report.py.
+        self.report_finished = True
+
 
 def test_phase2_error_refreshes_and_shows_the_error():
     dlg = _Dialog()
@@ -47,6 +52,7 @@ def test_phase2_error_refreshes_and_shows_the_error():
     assert len(dlg.labels) == 1
     assert "signing failed" in dlg.labels[0]
     assert BalBuildWillDialog.COLOR_ERROR in dlg.labels[0]
+    assert dlg.report_finished
 
 
 if __name__ == "__main__":

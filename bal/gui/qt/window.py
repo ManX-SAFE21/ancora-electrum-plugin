@@ -327,22 +327,17 @@ class BalWindow:
         widget.show_summary(summary)
 
     def _still_active_for_summary(self):
-        """Sent txs still executable on-chain although none is VALID (#84a).
+        """Sent txs, not VALID, still executable on-chain, any date (#84a/#84b).
 
         The plugin's records can be wrong (owner's wallet: after "later date
         -> Cancel" the sent txs were marked Replaced while their coin was
-        never spent). The same on-chain check as the #69 warning
-        (``Will.find_still_active_older_txs``) keeps the summary truthful.
-        Only needed when no item is VALID; never raises.
+        never spent), and after a Cancel at signing the will sent before
+        stays in force until the new one is signed. The on-chain check
+        (``Will.sent_still_executable``, the same rules as the #69 warning)
+        keeps the summary truthful. Never raises.
         """
         try:
-            if Will.only_valid_list(self.willitems):
-                return []
-            # No will in force by the records: every sent tx still
-            # executable counts, whatever its date.
-            return Will.find_still_active_older_txs(
-                self.willitems, self.wallet, current_locktime=2**32
-            )
+            return Will.sent_still_executable(self.willitems, self.wallet)
         except Exception as e:
             _logger.debug(f"still-active check for the summary failed: {e!r}")
             return []
