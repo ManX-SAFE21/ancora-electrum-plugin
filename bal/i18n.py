@@ -65,6 +65,13 @@ DOMAIN = "bal"
 # catalog). Set by set_language().
 _catalog: Optional[gettext.GNUTranslations] = None
 
+# Language code requested by set_language() (e.g. "it_IT"), or None.
+_language: Optional[str] = None
+
+# Languages that write decimals with a comma (and group thousands with a
+# dot). Only used to format numbers inside messages, e.g. "55,6%".
+_DECIMAL_COMMA_LANGUAGES = ("it", "es", "de", "fr", "pt", "nl")
+
 # Source texts whose BAL translation was rejected: the warning is logged once,
 # not at every repaint of the widget that shows the text.
 _rejected: set = set()
@@ -150,9 +157,10 @@ def set_language(plugin, lang: Optional[str]) -> None:
     and BAL stays in English: a translation problem must never stop the
     plugin.
     """
-    global _catalog
+    global _catalog, _language
     _catalog = None
     _rejected.clear()
+    _language = lang if isinstance(lang, str) else None
     if not isinstance(lang, str) or not lang or lang.startswith("en_"):
         return
     codes = [lang]
@@ -174,6 +182,18 @@ def set_language(plugin, lang: Optional[str]) -> None:
         _logger.info(f"BAL catalog loaded: {path}")
         return
     _logger.info(f"no BAL catalog for {lang!r}, using English")
+
+
+def number_separators() -> tuple:
+    """Return ``(decimal, thousands)`` separators for the current language.
+
+    ``(",", ".")`` for the languages in ``_DECIMAL_COMMA_LANGUAGES`` (Italian
+    "55,6%", "2.000.000"), else ``(".", ",")``. A tiny local rule instead of
+    a locale library: Babel is only a build-time dependency and Python's
+    ``locale`` depends on what the OS has installed.
+    """
+    code = (_language or "").split("_", 1)[0].lower()
+    return (",", ".") if code in _DECIMAL_COMMA_LANGUAGES else (".", ",")
 
 
 def init_from_config(plugin, config) -> None:

@@ -886,6 +886,60 @@ class Will:
                     )
 
     @staticmethod
+    def describe_amounts(heirs, willexecutors, all_utxos, timestamp_to_check, dust):
+        """Explain what the build will do with the heirs' amounts.
+
+        Same inputs as :meth:`check_amounts`, but instead of raising it says
+        WHAT happens (CHANGELOG #76, verified in the scenario harness):
+
+        * ``{"kind": "fixed_exceeds", "fixed": int, "balance": int,
+          "percent_heirs": [names]}`` — the fixed amounts are not below the
+          balance left for the heirs (wallet balance minus the highest base
+          fee of the selected, valid will-executors). The build would pay the
+          fixed heirs and silently leave the percentage heirs out;
+        * ``{"kind": "percent", "total": float, "shares": [(name, share)],
+          "with_fixed": bool}`` — the percentages do not add up to 100: the
+          will always empties the wallet, so they are rescaled in proportion
+          (of what remains after the fixed amounts, if any);
+        * ``None`` — nothing to explain.
+
+        Never raises (``None`` on error).
+        """
+        try:
+            fixed_heirs, fixed_amount, perc_heirs, perc_amount, _dust = (
+                heirs.fixed_percent_lists_amount(timestamp_to_check, dust, reverse=True)
+            )
+            balance = sum(u.value_sats() for u in (all_utxos or []))
+            base_fees = [
+                int(we.get("base_fee", 0))
+                for we in (willexecutors or {}).values()
+                if Willexecutors.is_selected(we)
+                and Willexecutors.is_valid(we, dust=dust)
+            ]
+            left = balance - (max(base_fees) if base_fees else 0)
+            if fixed_heirs and fixed_amount >= left:
+                return {
+                    "kind": "fixed_exceeds",
+                    "fixed": int(fixed_amount),
+                    "balance": int(left),
+                    "percent_heirs": list(perc_heirs),
+                }
+            if perc_heirs and perc_amount and abs(perc_amount - 100) > 1e-9:
+                shares = [
+                    (name, float(entry[1][:-1]) * 100 / perc_amount)
+                    for name, entry in perc_heirs.items()
+                ]
+                return {
+                    "kind": "percent",
+                    "total": float(perc_amount),
+                    "shares": shares,
+                    "with_fixed": bool(fixed_heirs),
+                }
+        except Exception as e:
+            _logger.debug(f"describe_amounts: {e!r}")
+        return None
+
+    @staticmethod
     def _funding_really_spent(wallet, inp_str):
         """True when a broadcast transaction really spends the ``txid:n`` outpoint.
 

@@ -58,6 +58,7 @@ from ...core.qrtransfer import (
     preset_index_for_chunk_size,
 )
 from ...core.reminders import build_ics_reminders
+from ...i18n import number_separators
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -769,35 +770,69 @@ class BalBuildWillDialog(BalDialog):
             return "no_heirs", None
         except Exception as e:
             raise e
+        available_utxos = []
         try:
             _logger.debug("checking variables")
+            available_utxos = Util.get_available_utxos(
+                self.bal_window.window.wallet,
+                self.bal_window.bal_plugin.HISTORY_LABEL.get(),
+                Will.get_min_locktime(
+                    self.bal_window.willitems,
+                    default_value=self.bal_window.date_to_check,
+                ),
+            )
             Will.check_amounts(
                 self.bal_window.heirs,
                 self.bal_window.willexecutors,
-                Util.get_available_utxos(
-                    self.bal_window.window.wallet,
-                    self.bal_window.bal_plugin.HISTORY_LABEL.get(),
-                    Will.get_min_locktime(
-                        self.bal_window.willitems,
-                        default_value=self.bal_window.date_to_check,
-                    ),
-                ),
+                available_utxos,
                 self.bal_window.date_to_check,
                 self.bal_window.window.wallet.dust_threshold(),
                 max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
             )
             _logger.debug("variables ok")
             self.msg_set_status(_("Checking variables"), varrow, _("Ok"), self.COLOR_OK)
-        except AmountException:
-            self.msg_set_checking(
-                self.msg_warning(
-                    _(
-                        "In the inheritance process, "
-                        "the entire wallet will always be fully emptied. \n"
-                        "Your settings require an adjustment of the amounts"
-                    )
+        except AmountException as e:
+            if self._amount_warning_is_false_alarm(available_utxos):
+                # BUG-5 (CHANGELOG #76): not an amount problem, see the helper.
+                _logger.debug(f"amount check skipped (not an amount problem): {e!r}")
+                self.msg_set_status(
+                    _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
                 )
-            )
+            else:
+                info = Will.describe_amounts(
+                    self.bal_window.heirs,
+                    self.bal_window.willexecutors,
+                    available_utxos,
+                    self.bal_window.date_to_check,
+                    self.bal_window.window.wallet.dust_threshold(),
+                )
+                text = self._amounts_message(info)
+                if info and info["kind"] == "fixed_exceeds":
+                    # Owner decision (CHANGELOG #76): the build would silently
+                    # leave the percentage heirs out, so stop and let the user
+                    # correct the fixed amounts. Own row: never overwritten.
+                    self.msg_set_status(
+                        _("Checking variables"), varrow, _("Stopped"), self.COLOR_ERROR
+                    )
+                    self.msg_edit_row(self.msg_error(text))
+                    return "fixed_amounts_exceed", None
+                if text:
+                    # Percentages rescaled: say what happens, on its own row
+                    # so the following steps do not overwrite it.
+                    self.msg_set_status(
+                        _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
+                    )
+                    self.msg_edit_row(self.msg_alert(text))
+                else:
+                    self.msg_set_checking(
+                        self.msg_warning(
+                            _(
+                                "In the inheritance process, "
+                                "the entire wallet will always be fully emptied. \n"
+                                "Your settings require an adjustment of the amounts"
+                            )
+                        )
+                    )
         except WillExecutorFeeTooHighException as e:
             self.msg_set_checking(
                 self.msg_warning(_("Will-executor fee too high: {}").format(e))
@@ -1541,6 +1576,13 @@ class BalBuildWillDialog(BalDialog):
             self._add_no_heirs_buttons()
             return
 
+        if self.have_to_sign == "fixed_amounts_exceed":
+            # Fixed amounts larger than the balance (#76): the reason is
+            # already on its own red row; stop here, so the dialog does not
+            # go on to "Nothing to do" / "All done: Ok".
+            self._add_close_button()
+            return
+
         if self.have_to_sign == "check_alive_before_delivery":
             # The Check Alive date is on/after the delivery (a configuration
             # error, not an expired will): do NOT invalidate, just tell the
@@ -2226,6 +2268,83 @@ class BalBuildWillDialog(BalDialog):
             "reason could not be determined."
         )
 
+    @staticmethod
+    def _amounts_message(info):
+        """Turn :meth:`Will.describe_amounts` into one plain sentence.
+
+        Texts approved by the owner (CHANGELOG #76). Percentages are shown
+        with one decimal (none when whole) and amounts in satoshi with the
+        separators of the current language (``bal.i18n.number_separators``).
+        Returns ``None`` when ``info`` is ``None``.
+        """
+        if not info:
+            return None
+        decimal, thousands = number_separators()
+
+        def pct(x):
+            s = "{:.1f}".format(x)
+            if s.endswith(".0"):
+                s = s[:-2]
+            return s.replace(".", decimal)
+
+        def sats(n):
+            return "{:,}".format(int(n)).replace(",", thousands)
+
+        if info["kind"] == "fixed_exceeds":
+            if info["percent_heirs"]:
+                return _(
+                    "The fixed amounts ({fixed} sat) exceed the balance available "
+                    "for the heirs ({balance} sat): the heirs with a percentage "
+                    "({names}) would receive nothing. Reduce the fixed amounts."
+                ).format(
+                    fixed=sats(info["fixed"]), balance=sats(info["balance"]),
+                    names=", ".join(info["percent_heirs"]),
+                )
+            return _(
+                "The fixed amounts ({fixed} sat) exceed the balance available "
+                "for the heirs ({balance} sat). Reduce the fixed amounts."
+            ).format(fixed=sats(info["fixed"]), balance=sats(info["balance"]))
+        shares = ", ".join(
+            "{} {}%".format(name, pct(share)) for name, share in info["shares"]
+        )
+        if info["with_fixed"]:
+            return _(
+                "The heirs' percentages add up to {total}%: the will always "
+                "empties the whole wallet, so the shares of what remains after "
+                "the fixed amounts are recalculated in proportion ({shares})."
+            ).format(total=pct(info["total"]), shares=shares)
+        return _(
+            "The heirs' percentages add up to {total}%: the will always "
+            "empties the whole wallet, so the shares are recalculated in "
+            "proportion ({shares})."
+        ).format(total=pct(info["total"]), shares=shares)
+
+    def _amount_warning_is_false_alarm(self, available_utxos):
+        """True when an AmountException is not a real amount problem.
+
+        WHY (BUG-5, CHANGELOG #76): the "adjust the amounts" warning flashed
+        in 12 Checks of the scenario matrix while no amount had changed. The
+        two causes, traced in the harness:
+
+        * the delivery date is in the past: heirs dated before the reference
+          are left out of the percentage sum, so it is 0 % instead of 100 %
+          (the past date is explained by :meth:`_past_date_message`);
+        * no spendable coin is visible at this moment (e.g. right after a
+          Cancel the wallet-local copy of the unsigned will still holds the
+          coins; the build frees them just after): with a balance of 0 the
+          fixed-amount check fails. A really empty wallet is reported by the
+          build step ("no spendable funds").
+
+        Never raises; on error the warning is shown (previous behaviour).
+        """
+        try:
+            if self._past_date_message():
+                return True
+            return sum(u.value_sats() for u in (available_utxos or [])) <= 0
+        except Exception as _err:
+            _logger.debug(f"_amount_warning_is_false_alarm: {_err}")
+            return False
+
     def _past_date_message(self):
         """Return the "delivery date already passed" message, or ``None``.
 
@@ -2306,6 +2425,10 @@ class BalBuildWillDialog(BalDialog):
             "TX_BUILD_FAILED": _(
                 "The inheritance transactions could not be assembled from the "
                 "available funds (the balance may not cover the miner fees)."
+            ),
+            "FIXED_EXCEEDS_BALANCE": _(
+                "The heirs' fixed amounts exceed the wallet balance left after "
+                "the miner and will-executor fees: reduce the fixed amounts."
             ),
             "WILLEXECUTOR_TX_ERROR": _(
                 "An unexpected error stopped the transactions being prepared "
