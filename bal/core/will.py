@@ -637,6 +637,14 @@ class Will:
                             if spender_height is None:
                                 if stored:
                                     continue
+                                # CHANGELOG #86: a coin hidden only by a
+                                # wallet-LOCAL tx (an unsigned will copy saved
+                                # in the history) is not spent: INVALIDATED
+                                # means a broadcast tx spent it. Marking it here
+                                # made a will that was never invalidated look
+                                # dead (owner's wallet).
+                                if Will._funding_spent_only_locally(wallet, inp):
+                                    continue
                                 wi.set_status("INVALIDATED", True)
                             elif spender_height == 0:
                                 wi.set_status("MEMPOOL", True)
@@ -983,6 +991,29 @@ class Will:
             return wallet.adb.get_spender(inp_str) is not None
         except Exception as e:
             _logger.error(f"get_spender failed for {inp_str}: {e}")
+            return False
+
+    @staticmethod
+    def _funding_spent_only_locally(wallet, inp_str):
+        """True when ``txid:n`` is "spent" only by a wallet-LOCAL/future tx.
+
+        ``adb.get_spender`` hides such spenders (it returns None, like for a
+        coin nobody spends); this looks at the raw spender recorded in the
+        wallet DB. A local spender is never broadcast, so the coin is still
+        unspent on-chain (CHANGELOG #86). False when nothing is recorded or
+        on any lookup failure (then the caller keeps its old behaviour).
+        """
+        if not wallet or not getattr(wallet, "adb", None):
+            return False
+        try:
+            prev_txid, index = inp_str.split(":")
+            raw = wallet.db.get_spent_outpoint(prev_txid, int(index))
+            if not raw:
+                return False
+            height = int(wallet.adb.get_tx_height(raw).height())
+            return height in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE)
+        except Exception as e:
+            _logger.debug(f"local spender lookup failed for {inp_str}: {e!r}")
             return False
 
     @staticmethod

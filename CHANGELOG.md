@@ -4799,3 +4799,61 @@ real delivery; Cancel at sign after the invalidation: "to be signed");
 zip builds and loads.
 
 **Outcome:** DONE.
+
+## 86. 5d/5: a local copy of the will never makes it "Invalidated"
+
+**Date:** 2026-10-09
+
+**Problem (owner's wallet, found with the will summary of #84a):** fee
+changed -> Check -> Cancel at signing, then a later delivery date -> Check
+-> Cancel at the invalidation. Afterwards the unsigned will was marked
+"Invalidated" and the will already sent "Replaced": the records said "no
+will in force", while three will-executors held a will (2028-09-29) whose
+coin was never spent, so still executable. Reproduced with the harness and
+on the private regtest chain.
+
+**Cause (two rules, verified step by step):**
+
+1. After a Cancel at signing, the unsigned will is saved in the wallet's
+   history as a LOCAL transaction, and Electrum then treats its coin as
+   spent. `Util.get_available_utxos` gives such a coin back only when the
+   local copy is dated strictly LATER than the will being checked; here the
+   copy IS the will being checked (same date), so its own copy hid its coin.
+2. `Will.search_rai` then found the coin missing with no broadcast spender
+   and marked the item "Invalidated", against the meaning of the status
+   ("an input is spent by a mempool/confirmed tx").
+
+Fixing only rule 2 would break the next postpone (the invalidation would
+not find the coin), so both are fixed together.
+
+**What changed:**
+
+- `bal/core/util.py`: a coin hidden by a local BAL will copy is given back
+  when the copy is dated ON OR AFTER the will being checked (was: strictly
+  after). Broadcast spenders, non-BAL labels and earlier local wills still
+  hide the coin, as before.
+- `bal/core/will.py`: new `Will._funding_spent_only_locally`; `search_rai`
+  no longer marks "Invalidated" an item whose coin is "spent" only by a
+  local/future transaction (never broadcast). A coin with no recorded
+  spender at all keeps the old rule.
+- Records already wrong in a wallet are not repaired automatically: the
+  will summary (#84a) shows "still active" with the real date, and the next
+  Check with the later date invalidates on-chain and prepares the new will
+  as expected (verified with the harness on such records).
+- New tests: `tests/test_local_copy_not_invalidated.py` (8).
+  `tests/test_core_will_extra.py`: the test that pinned the old rule
+  (same date: coin hidden) now checks the new one, plus a test for an
+  EARLIER local will (coin still hidden); the pre-build purge test uses
+  such an earlier placeholder. The old rule came from BAL (commit 251fd93)
+  with no stated reason; the purge before every build still runs.
+- Catalogs: line references only (no text changed).
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as `main`; whole scenario matrix 6 times on `main`
+and on this branch: same verdicts; the owner's sequence on the private
+regtest chain: before the fix 2 items marked "Invalidated" with nothing
+broadcast, after it 0; then the postpone invalidates on-chain (old txs
+"missing-inputs"), the new will is refused by the node before its date and,
+after it, executed paying the heirs 60/40; zip builds and loads.
+
+**Outcome:** DONE.

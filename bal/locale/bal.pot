@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-09 20:40+0200\n"
+"POT-Creation-Date: 2026-10-09 21:00+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -376,88 +376,88 @@ msgstr ""
 msgid "Operation in progress: follow the window in front"
 msgstr ""
 
-#: bal/core/will.py:1834
+#: bal/core/will.py:1865
 #, python-brace-format
 msgid "NOT {}"
 msgstr ""
 
-#: bal/core/will.py:1858
+#: bal/core/will.py:1889
 msgid "Anticipated"
 msgstr ""
 
-#: bal/core/will.py:1859
+#: bal/core/will.py:1890
 msgid "Broadcasted"
 msgstr ""
 
-#: bal/core/will.py:1860
+#: bal/core/will.py:1891
 msgid "Checked"
 msgstr ""
 
-#: bal/core/will.py:1861
+#: bal/core/will.py:1892
 msgid "Check Failed"
 msgstr ""
 
-#: bal/core/will.py:1862
+#: bal/core/will.py:1893
 msgid "Signed"
 msgstr ""
 
-#: bal/core/will.py:1863
+#: bal/core/will.py:1894
 msgid "Confirmed"
 msgstr ""
 
-#: bal/core/will.py:1864 bal/gui/qt/lists.py:1370 bal/gui/qt/lists.py:1384
+#: bal/core/will.py:1895 bal/gui/qt/lists.py:1370 bal/gui/qt/lists.py:1384
 msgid "Error"
 msgstr ""
 
-#: bal/core/will.py:1865 bal/gui/qt/dialogs.py:807 bal/gui/qt/dialogs.py:965
+#: bal/core/will.py:1896 bal/gui/qt/dialogs.py:807 bal/gui/qt/dialogs.py:965
 msgid "Expired"
 msgstr ""
 
-#: bal/core/will.py:1866
+#: bal/core/will.py:1897
 msgid "Exported"
 msgstr ""
 
-#: bal/core/will.py:1867
+#: bal/core/will.py:1898
 msgid "Imported"
 msgstr ""
 
-#: bal/core/will.py:1868
+#: bal/core/will.py:1899
 msgid "Invalidated"
 msgstr ""
 
-#: bal/core/will.py:1869
+#: bal/core/will.py:1900
 msgid "Mempool"
 msgstr ""
 
-#: bal/core/will.py:1870
+#: bal/core/will.py:1901
 msgid "Push failed"
 msgstr ""
 
-#: bal/core/will.py:1871
+#: bal/core/will.py:1902
 msgid "Pushed"
 msgstr ""
 
-#: bal/core/will.py:1872
+#: bal/core/will.py:1903
 msgid "Partially Signed"
 msgstr ""
 
-#: bal/core/will.py:1873
+#: bal/core/will.py:1904
 msgid "Replaced"
 msgstr ""
 
-#: bal/core/will.py:1874
+#: bal/core/will.py:1905
 msgid "Restored"
 msgstr ""
 
-#: bal/core/will.py:1875
+#: bal/core/will.py:1906
 msgid "Updated"
 msgstr ""
 
-#: bal/core/will.py:1876 bal/gui/qt/dialogs.py:2998
+#: bal/core/will.py:1907 bal/gui/qt/dialogs.py:2998
 msgid "Valid"
 msgstr ""
 
-#: bal/core/will.py:1882
+#: bal/core/will.py:1913
 msgid "New"
 msgstr ""
 

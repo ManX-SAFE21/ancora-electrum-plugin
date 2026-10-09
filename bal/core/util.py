@@ -550,10 +550,10 @@ class Util:
 
         ``wallet.get_utxos()`` drops any output that a wallet-LOCAL transaction
         marks as spent. The plugin itself creates such local spenders when it
-        saves an incomplete will transaction into the local history; a *later*
-        will transaction stored there (a replacement/future will with a locktime
-        strictly after ``will_locktime``) must not hide the coins from the will
-        being checked or rebuilt. This view therefore restores those coins.
+        saves an incomplete will transaction into the local history; a will
+        transaction stored there with a locktime on or after ``will_locktime``
+        must not hide the coins from the will being checked or rebuilt. This
+        view therefore restores those coins.
 
         A local spender is ignored (the coin is kept available) only when ALL of
         these hold:
@@ -561,7 +561,15 @@ class Util:
         * it is a wallet-local or future transaction (not broadcast),
         * its wallet label matches the BAL history label template (after the
           "{willexecutor}" substitution),
-        * the stored spender's locktime is strictly LATER than ``will_locktime``.
+        * the stored spender's locktime is on or after ``will_locktime``.
+
+        WHY "on or after" (CHANGELOG #86): the local copy usually IS the will
+        being checked (same locktime), e.g. an unsigned will saved after a
+        Cancel at signing. With "strictly later" its own copy hid its coin,
+        and the next Check marked the will "Invalidated" although nothing was
+        ever broadcast (owner's wallet: the sent will then looked dead while
+        it was still executable). A local copy is never broadcast, so it
+        spends nothing.
 
         Real (broadcast/confirmed) spenders are never ignored. With a falsy
         ``will_locktime`` this returns ``wallet.get_utxos()`` unchanged.
@@ -625,7 +633,8 @@ class Util:
         if stored is None:
             return False
         try:
-            return int(stored.locktime) > int(will_locktime)
+            # ">=": a copy of the will being checked spends nothing (#86).
+            return int(stored.locktime) >= int(will_locktime)
         except Exception:
             return False
 
