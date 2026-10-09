@@ -1156,11 +1156,21 @@ class WillSettingsWidget(QWidget):
     def on_locktime_change(self):
         locktime = self.widgets["locktime"].get_value()
         threshold_raw = self.widgets["threshold"].get_value()
+        # CHANGELOG #79: the REAL delivery date. With a will in force a
+        # relative setting ("4y") stays anchored to the date frozen in the
+        # signed tx; "today + 4y", shown before, moved every day while the
+        # will kept its own date.
+        try:
+            planned, in_force = Will.planned_delivery(
+                self.bal_window.willitems, locktime
+            )
+        except Exception:
+            planned, in_force = BalTimestamp(locktime).to_timestamp(), False
         locktime = BalTimestamp(locktime)
 
         min_locktime = min(
                 Will.get_min_locktime(self.bal_window.willitems, NLOCKTIME_MAX),
-                locktime.to_timestamp(),
+                planned,
         )
         # Resolved Check Alive date. The SIGN of the RAW value selects the
         # anchor: negative counts backwards from the delivery, positive counts
@@ -1179,12 +1189,18 @@ class WillSettingsWidget(QWidget):
         except Exception as _e:
             pass
 
-        td = locktime.to_date()
+        td = BalTimestamp._safe_fromtimestamp(planned)
         alarm = BalTimestamp(min_locktime).to_date()
         self.widgets["locktime"].alarm=alarm
         self.bal_window.will_settings["real_locktime"]=td.timestamp()
         try:
-            self.widgets["locktime"].editor.label.setText(td.strftime("%Y-%m-%d"))
+            label = self.widgets["locktime"].editor.label
+            label.setText(td.strftime("%Y-%m-%d"))
+            label.setToolTip(
+                _("Delivery date of the will in force")
+                if in_force
+                else _("Delivery date of the will that will be prepared")
+            )
         except Exception as _e:
             pass
 

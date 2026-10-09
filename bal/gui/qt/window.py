@@ -18,16 +18,18 @@ import json
 import threading
 
 from electrum.util import MyEncoder
+from PyQt6.QtWidgets import QMessageBox
 
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
+    check_alive_renewal,
     ensure_check_alive_valid,
     resolve_date_to_check,
     resolve_delivery_date,
     resolve_guard_threshold,
 )
-from ...core.messages import will_change_message
+from ...core.messages import check_alive_message, will_change_message
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -718,9 +720,101 @@ class BalWindow:
         for heir, value in updates.items():
             self.heirs[heir] = value
 
+    def _refresh_invalidated_items(self):
+        """Mark the will items already invalidated on-chain (CHANGELOG #79).
+
+        Runs before ``date_to_check`` and the Check Alive are computed, which
+        read the VALID items: see ``Will.refresh_invalidated``. Never raises.
+        """
+        try:
+            utxos = Util.get_available_utxos(
+                self.window.wallet,
+                self.bal_plugin.HISTORY_LABEL.get(),
+                Will.get_min_locktime(self.willitems, default_value=time.time()),
+            )
+            Will.refresh_invalidated(self.willitems, utxos, self.window.wallet)
+        except Exception as e:
+            _logger.debug(f"refresh invalidated items failed: {e!r}")
+
+    def check_alive_info(self):
+        """``check_alive_renewal`` for this wallet (None: nothing to do).
+
+        Read-only and offline (no will-executor ping), so it can run when the
+        wallet opens. See ``bal.core.checkalive.check_alive_renewal``.
+        """
+        try:
+            return check_alive_renewal(
+                self.bal_plugin.is_basic_mode(),
+                self.will_settings,
+                built_locktime=Will.get_min_locktime(self.willitems),
+                creation_date=Will.get_creation_time(self.willitems),
+            )
+        except Exception as e:
+            _logger.debug(f"check alive info failed: {e!r}")
+            return None
+
+    def ask_renew_will(self, text, parent=None):
+        """Ask "Renew" / "Not now"; True when the owner chose to renew.
+
+        Owner decision (CHANGELOG #79): a passed Check Alive is never acted
+        on without asking. "Not now" is the default (Esc / closing the box):
+        nothing is invalidated and the current will stays valid.
+        """
+        box = QMessageBox(parent or self.window)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(_("Check Alive"))
+        box.setText(text)
+        renew = box.addButton(_("Renew"), QMessageBox.ButtonRole.AcceptRole)
+        not_now = box.addButton(_("Not now"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(not_now)
+        box.setEscapeButton(not_now)
+        box.exec()
+        return box.clickedButton() is renew
+
+    def offer_check_alive_renewal(self, info=None, parent=None):
+        """Ask to renew the will when the Check Alive has passed.
+
+        Used when the wallet opens and by "Prepare". On "Renew" the Check
+        wizard runs with the renewal already approved (invalidate the old
+        will, then prepare the new one). When the will cannot be renewed with
+        one click, only the reason is shown. Returns True when something was
+        shown.
+        """
+        info = info or self.check_alive_info()
+        if not info:
+            return False
+        text = check_alive_message(info)
+        if info.get("renewable") and info.get("has_will"):
+            if self.ask_renew_will(text, parent=parent):
+                BalBuildWillDialog(self, renew=True).build_will_task()
+        else:
+            self.show_warning(text)
+        return True
+
+    def check_alive_on_open(self):
+        """When the wallet opens: offer the renewal if the Check Alive passed.
+
+        Only in ADVANCED mode and with a will in force (the help text of the
+        Check Alive always promised this question; nothing did it before
+        CHANGELOG #79). Never raises: opening the wallet must not fail.
+        """
+        try:
+            if self.disable_plugin or self.bal_plugin.is_basic_mode():
+                return
+            if not Will.get_min_locktime(self.willitems):
+                return
+            # A will already invalidated on-chain is not "in force".
+            self._refresh_invalidated_items()
+            info = self.check_alive_info()
+            if info and info.get("has_will"):
+                self.offer_check_alive_renewal(info)
+        except Exception as e:
+            _logger.error(f"check alive on open failed: {e!r}")
+
     def init_class_variables(self):
         if not self.heirs:
             raise NoHeirsException(_("Heirs are not defined"))
+        self._refresh_invalidated_items()
         try:
             # SIMPLE / ADVANCED root behaviour of the "Check Alive" (threshold).
             #
@@ -855,11 +949,9 @@ class BalWindow:
                 )
                 return
             except CheckAliveError:
-                self.show_error(
-                    _(
-                        "CheckAlive is in the past please update it to a date in the future but less than locktime"
-                    )
-                )
+                # CHANGELOG #79: offer the renewal (or say why it is not
+                # possible) instead of a bare "CheckAlive is in the past".
+                self.offer_check_alive_renewal()
                 return
             if self.is_locktime_below_threshold():
                 self.show_error(_("locktime is lower than threshold"))
@@ -1205,9 +1297,9 @@ class BalWindow:
     #     invalidation transaction;
     #   * an on-chain invalidation transaction is built ONLY when the
     #     anticipated locktime would fall before the check-alive threshold
-    #     (post-build check_will -> WillExpiredException), or when the
-    #     threshold is already in the past (CheckAliveError) - the same two
-    #     conditions that trigger invalidation in the wizard.
+    #     (post-build check_will -> WillExpiredException).  A threshold
+    #     already in the past (CheckAliveError) no longer invalidates here:
+    #     the owner is asked to renew instead (CHANGELOG #79).
     # ------------------------------------------------------------------ #
 
     def schedule_auto_rebuild(self, delay_ms=None):
@@ -1313,9 +1405,21 @@ class BalWindow:
                 )
                 return False
             except CheckAliveError:
-                _logger.info("auto rebuild: check-alive threshold passed -> invalidate")
-                self._auto_invalidate_will()
-                return True
+                info = self.check_alive_info()
+                if info and info.get("reason") == "expired":
+                    # Past the delivery date: the expired case, invalidated
+                    # as before (same as WillExpiredException below).
+                    _logger.info("auto rebuild: will expired -> invalidate")
+                    self._auto_invalidate_will()
+                    return True
+                # CHANGELOG #79: never invalidate on our own for a passed
+                # Check Alive (it used to leave no will in force). The owner
+                # is asked to renew when the wallet opens or on Check.
+                _logger.info(
+                    "auto rebuild: check-alive passed -> nothing done, the "
+                    "owner is asked to renew"
+                )
+                return False
             except NoHeirsException:
                 _logger.info("auto rebuild: no heirs, nothing to rebuild")
                 return False

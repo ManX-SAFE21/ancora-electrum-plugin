@@ -4399,3 +4399,96 @@ I001); whole `tests/` directory (same failures as `main`); zip builds
 and loads.
 
 **Outcome:** DONE.
+
+## 79. 5b/1: Check Alive passed — ask to renew, show the real delivery date
+
+**Date:** 2026-10-09
+
+**Problems (traced in the scenario harness):**
+
+1. **A passed Check Alive left no will in force.** Advanced mode, delivery in
+   200 days, Check Alive 180 days before it; 25 days later the owner presses
+   Check: the plugin invalidated the will on-chain (1,430 sat at 13 sat/vB)
+   and then stopped on "Checking variables: Wait" without preparing the new
+   will. Every later Check stopped the same way, with no message, while the
+   will list still showed the old items as valid. Cause: after the
+   invalidation, `date_to_check` was still anchored to the old (now
+   invalidated) items, so the passed Check Alive was found again. The same
+   happened at wallet close, and the automatic rebuild invalidated silently.
+2. **Wrong invalidation on a settings change.** A will in force, then the
+   delivery moved to 90 days ahead with a 180-day Check Alive: the plugin
+   paid an invalidation (moving a date earlier must never need one) and
+   stopped as above. A first will in the same situation stopped on "Wait"
+   with no explanation.
+3. **Wallet open.** The Check Alive help text promised a question when the
+   wallet opens; nothing in the code did it.
+4. **The delivery date next to a relative setting moved every day.** Next
+   to "4y" the field showed "today + 4 years", while the will in force keeps
+   the date frozen in the signed transaction.
+
+**What changed (owner decisions: ask to renew, never invalidate on its own;
+the question also when the wallet opens; delivery stays Raw or Date):**
+
+- `bal/core/checkalive.py`: new `check_alive_renewal(...)` (decides only):
+  `None` when the Check Alive has not passed, else whether the will can be
+  renewed with one click and, if not, why (`expired`: past the delivery,
+  invalidated as before; `fixed_date`: the owner must choose a later date;
+  `still_past`: a renewed will would have its Check Alive in the past too;
+  no will in force). Renewing relies on an existing rule: with no will in
+  force a relative delivery ("4y") is counted from today.
+- `bal/core/will.py`: new `Will.refresh_invalidated(...)` (the detection
+  `check_will` already runs, done before the dates are computed) and
+  `Will.planned_delivery(...)` (the real delivery date).
+- `bal/core/messages.py`: the question and the reasons (texts approved by
+  the owner): "Are you still here? The Check Alive date (...) has passed.
+  Renew your will: the new delivery date will be ... (today + 4 years). The
+  old will is invalidated on the blockchain (this costs a miner fee) and the
+  new one is prepared right away. Not now: nothing changes, your current
+  will stays valid."
+- `bal/gui/qt/dialogs.py` (Check and wallet close): a passed Check Alive
+  asks "Renew" / "Not now". Renew: the old will is invalidated and the new
+  one is prepared in the same Check ("Old will invalidated: preparing the
+  new will with the time period you set."). Not now: nothing is done. When
+  a one-click renewal is not possible: "Checking variables: Stopped" and the
+  reason, nothing invalidated. A will already past its delivery is still
+  invalidated at once (Electrum's classic window). The task #21 loop guard
+  also covers the renewal (never invalidate twice).
+- `bal/gui/qt/window.py`: `init_class_variables` marks the items already
+  invalidated on-chain first (fixes problem 1); `check_alive_on_open` (3 s
+  after the wallet opens, advanced mode, a will in force),
+  `offer_check_alive_renewal` (also used by Prepare), `ask_renew_will`
+  ("Not now" is the default button); the automatic rebuild no longer
+  invalidates for a passed Check Alive (it still does for an expired will).
+- `bal/gui/qt/widgets.py`: the date next to the delivery field is the real
+  one (the will in force, or the will that will be prepared, see tooltip).
+- `bal/gui/qt/plugin.py`: `load_wallet` schedules the wallet-open check.
+- `bal/cli/controller.py`, `bal/cli/commands.py`: the same refresh before
+  the dates; `bal_will_autorebuild` returns `check_alive_passed` (with how
+  to renew by hand) instead of an invalidation; an expired will is still
+  invalidated as before.
+- Catalogs: the new texts in Italian and Spanish.
+- Tests: new `tests/test_check_alive_renew.py` (22); two tests that expected
+  the automatic invalidation now expect the report
+  (`test_auto_rebuild_on_new_tx.py`, `test_cli_controller_offline.py`).
+
+**Verification:** harness (advanced mode, Check Alive 180 days before the
+delivery) - relative delivery, 25 days later: "Renew" invalidates and
+prepares the new will (today + 200 days) in ONE Check, the follow-up Check
+is "Ok"; "Not now": nothing done, the old will stays executable, the next
+Check asks again; Renew chosen at wallet open: same result. Fixed delivery:
+"Stopped" + "choose a later delivery date", nothing invalidated. First will
+with a delivery closer than the Check Alive, and delivery moved to 90 days
+ahead: "Stopped" + reason, no invalidation (was one paid invalidation and
+"Wait"). Private regtest node (`real_renew.py`): the node accepted and
+mined the invalidation, both old transactions dead (missing-inputs), the new
+will dated today + 200 days is non-final before that date, accepted after
+it, and executed it pays the heirs 60/40. Scenario matrix x6 (119 Checks per
+run): verdicts unchanged (only the known B2, B2adv, C3adv; C3adv still ends
+with no will in force because its Check Alive is saved as a fixed date: #80
+converts it), #69 oracle 0 mismatches; C2adv no longer invalidates (was 1,
+leaving no will). `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: 27 failed as on `main` (the two renamed tests replace their old
+versions in that list; they pass when run alone, like before - see 5c);
+zip builds and loads.
+
+**Outcome:** DONE.

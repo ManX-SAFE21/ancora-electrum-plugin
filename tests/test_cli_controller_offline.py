@@ -218,16 +218,18 @@ def test_auto_rebuild_no_heirs():
         assert c.auto_rebuild() == {"result": "no_heirs"}
 
 
-def test_auto_rebuild_threshold_passed_invalidates():
+def test_auto_rebuild_threshold_passed_does_not_invalidate():
+    """CHANGELOG #79: a passed Check Alive is reported, never invalidated on
+    its own (it used to return an invalidation, ``threshold_passed``)."""
     with Plugin() as plugin:
         c = _make_controller(plugin)
         c.heirs_add("alice", VALID_ADDRESS, "100000")
         plugin.USER_TYPE.set("advanced")
         c.will_settings["threshold"] = int(time.time()) - 3600
         result = c.auto_rebuild()
-        assert result["result"] == "invalidated"
-        assert result["reason"] == "threshold_passed"
-        assert result["invalidation_tx"] == {"txid": None, "tx": None}
+        assert result["result"] == "check_alive_passed", result
+        assert "invalidation_tx" not in result
+        assert "Check Alive" in result["message"]
 
 
 def test_build_will_reanchors_date_to_check_to_new_locktime():

@@ -1048,6 +1048,49 @@ class Will:
         Will.check_signatures(will, wallet)
 
     @staticmethod
+    def planned_delivery(will, locktime_setting):
+        """Return ``(timestamp, in_force)``: the delivery date really used.
+
+        With a will in force, a relative setting such as ``"4y"`` is NOT
+        counted from today: it stays anchored to the date frozen in the
+        signed tx (``Util.resolve_locktime_against_tx``). Showing "today +
+        4y" next to the field therefore showed a date that moved every day
+        while the will kept its own (CHANGELOG #79). This returns the frozen
+        date when the setting is unchanged (``in_force`` True), the date a
+        changed setting would give, or - with no will in force - the date a
+        new will gets (``in_force`` False). Read-only.
+        """
+        for w in Will.only_valid_list(will).values():
+            for name, their in (w.heirs or {}).items():
+                if name[:9] == 'w!ll3x3c"':
+                    continue
+                tx_locktime = int(w.tx.locktime)
+                resolved = Util.resolve_locktime_against_tx(
+                    locktime_setting, their[2], tx_locktime
+                )
+                return resolved, resolved == tx_locktime
+        return Util.parse_locktime_string(locktime_setting), False
+
+    @staticmethod
+    def refresh_invalidated(will, all_utxos, wallet):
+        """Mark INVALIDATED the items whose coins are already spent on-chain.
+
+        The same detection ``check_will`` runs (``add_willtree`` +
+        ``check_invalidated``), but meant to run BEFORE the Check Alive and
+        ``date_to_check`` are computed (CHANGELOG #79): those read the
+        locktime of the VALID items, and right after a renewal the old,
+        already-invalidated items would otherwise still count, so the passed
+        Check Alive was found again and the new will was never prepared.
+        Idempotent; never raises (a failure only logs: ``check_will`` runs
+        the same detection again later).
+        """
+        try:
+            Will.add_willtree(will)
+            Will.check_invalidated(will, Will.utxos_strs(all_utxos), wallet)
+        except Exception as e:
+            _logger.debug(f"refresh_invalidated failed: {e!r}")
+
+    @staticmethod
     def save_valid_transactions_to_history(will, wallet, history_label):
         """Keep the wallet's LOCAL history in sync with the current will state.
 
