@@ -890,7 +890,9 @@ class BalBuildWillDialog(BalDialog):
             # neither the date nor the heirs changed.  _check_failure_message
             # names the real cause using the detail each exception already
             # carries (heir name, will-executor URL, old/new fee rate).
-            message = self._check_failure_message(e)
+            # A delivery date in the past is the real cause of whatever the
+            # core reports here (BUG-4, CHANGELOG #75): say that instead.
+            message = self._past_date_message() or self._check_failure_message(e)
             _logger.debug(f"message: {message}")
             self.msg_set_checking(message)
 
@@ -2224,6 +2226,26 @@ class BalBuildWillDialog(BalDialog):
             "reason could not be determined."
         )
 
+    def _past_date_message(self):
+        """Return the "delivery date already passed" message, or ``None``.
+
+        Uses :meth:`Will.past_delivery_date` on the will settings. WHY (BUG-4,
+        CHANGELOG #75): with a past date the Check used to say that an heir
+        was "not covered by the current will" and that there was "no delivery
+        date left to build", without naming the real cause. Never raises.
+        """
+        try:
+            past = Will.past_delivery_date(self.bal_window.will_settings)
+        except Exception as _err:
+            _logger.debug(f"_past_date_message: {_err}")
+            return None
+        if past is None:
+            return None
+        return _(
+            "The delivery date ({}) has already passed. Choose a future date, "
+            "then press Check again."
+        ).format(BalTimestamp._safe_fromtimestamp(past).strftime("%Y-%m-%d"))
+
     def _build_failure_message(self):
         """Return a plain-language explanation of why the will was not built.
 
@@ -2247,6 +2269,11 @@ class BalBuildWillDialog(BalDialog):
         except Exception as _err:
             # A diagnostic must never break the report it is explaining.
             _logger.debug(f"_build_failure_message: {_err}")
+
+        # "No future date" with a delivery date in the past: the past date is
+        # the cause, already explained on the "Checking your will" row (#75).
+        if reason == "NO_FUTURE_DATE" and self._past_date_message():
+            return _("Skipped")
 
         messages = {
             "NO_HEIRS": _(

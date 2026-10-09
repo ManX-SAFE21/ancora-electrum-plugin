@@ -4174,3 +4174,33 @@ the error row (it failed with `AttributeError: ... 'upade_all'` before).
 (same failures as `main`), scenario matrix (unchanged), zip builds and loads.
 
 **Outcome:** DONE.
+
+---
+
+## 75. F4/1 (BUG-4): clear message when the delivery date is in the past
+
+**Date:** 2026-10-09
+
+**Problem:** with a delivery date in the past (scenario A6, and C1 after an
+expired will was invalidated) the Check said that an heir was "not covered by
+the current will" and then "No delivery date left to build: every heir's date
+is already covered by the existing will". Neither names the real cause.
+
+**What changed (text approved by the owner):**
+
+- `bal/core/will.py`: new `Will.past_delivery_date(will_settings, now=None)`
+  — the settings delivery date if it is not later than now (relative
+  recipes are always future), else `None`; never raises.
+- `bal/gui/qt/dialogs.py`: new `_past_date_message()`; when it applies, the
+  "Checking your will" row shows "The delivery date (YYYY-MM-DD) has already
+  passed. Choose a future date, then press Check again." and the building row
+  only "Skipped" (instead of the misleading "no delivery date left" text).
+  Future dates: unchanged.
+- Catalogs: the new text in Italian and Spanish.
+- New `tests/test_msg_date_in_past.py` (7).
+
+**Verification:** harness A6 and C1 show the new message; scenario matrix
+verdicts unchanged; `ruff` (same 3 pre-existing I001); whole `tests/`
+directory (same failures as `main`); zip builds and loads.
+
+**Outcome:** DONE.
