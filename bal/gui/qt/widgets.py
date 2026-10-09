@@ -1688,11 +1688,20 @@ class WillSummaryWidget(QFrame):
             self.on_action(self.action)
 
     def _clear_rows(self):
-        """Remove the label/value lines of the previous summary."""
+        """Remove the label/value lines of the previous summary.
+
+        Each line is hidden and detached at once, not only scheduled for
+        deletion: ``deleteLater`` waits for the event loop that called it,
+        and a working dialog's own loop (exec) runs meanwhile, so the old
+        line stayed painted in the grey "operation in progress" box
+        (owner's screenshots, CHANGELOG #87).
+        """
         while self.grid.count():
             item = self.grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
 
     def _value_html(self, row):
