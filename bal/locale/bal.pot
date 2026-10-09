@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-10 00:44+0200\n"
+"POT-Creation-Date: 2026-10-10 01:17+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -65,93 +65,98 @@ msgstr ""
 msgid "interrupted"
 msgstr ""
 
-#: bal/core/messages.py:57
+#: bal/core/messages.py:58
 #, python-brace-format
 msgid "Miner fee rate changed (the will was built with {} sat/byte, now it is {}): a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:61
+#: bal/core/messages.py:62
 msgid "The miner fee rate changed: a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:64
+#: bal/core/messages.py:65
 #, python-brace-format
 msgid "Will-executor \"{}\" is not covered by the current will: a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:69
+#: bal/core/messages.py:71
+#, python-brace-format
+msgid "Will-executor \"{}\" holds two wills that can be executed on the same day, and one of them does not include all your coins: preparing a new will, dated one day earlier."
+msgstr ""
+
+#: bal/core/messages.py:77
 msgid "Backup mode is enabled but the will has no backup transaction: a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:78
+#: bal/core/messages.py:86
 #, python-brace-format
 msgid "Heir \"{}\" was removed: preparing a new will."
 msgstr ""
 
-#: bal/core/messages.py:80
+#: bal/core/messages.py:88
 #, python-brace-format
 msgid "Heir \"{}\" was added: preparing a new will."
 msgstr ""
 
-#: bal/core/messages.py:83
+#: bal/core/messages.py:91
 #, python-brace-format
 msgid "The delivery date of heir \"{}\" changed: preparing a new will."
 msgstr ""
 
-#: bal/core/messages.py:87
+#: bal/core/messages.py:95
 #, python-brace-format
 msgid "The amount of heir \"{}\" changed: preparing a new will."
 msgstr ""
 
-#: bal/core/messages.py:91
+#: bal/core/messages.py:99
 #, python-brace-format
 msgid "The address of heir \"{}\" changed: preparing a new will."
 msgstr ""
 
-#: bal/core/messages.py:94
+#: bal/core/messages.py:102
 #, python-brace-format
 msgid "Heir \"{}\" is not covered by the current will (it was added or removed, or its delivery date changed): a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:102
+#: bal/core/messages.py:110
 msgid "The heirs changed: a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:104
+#: bal/core/messages.py:112
 msgid "A will-executor changed: a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:111
+#: bal/core/messages.py:119
 msgid "The wallet contains funds that the current will does not cover yet: a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:115
+#: bal/core/messages.py:123
 msgid "The will contains no valid transaction: a new will must be prepared."
 msgstr ""
 
-#: bal/core/messages.py:121
+#: bal/core/messages.py:129
 msgid "The will is no longer coherent and must be rebuilt; the exact reason could not be determined."
 msgstr ""
 
-#: bal/core/messages.py:137 bal/core/summary.py:62
+#: bal/core/messages.py:145 bal/core/summary.py:62
 msgid "1 year"
 msgstr ""
 
-#: bal/core/messages.py:137 bal/core/summary.py:62
+#: bal/core/messages.py:145 bal/core/summary.py:62
 #, python-brace-format
 msgid "{} years"
 msgstr ""
 
-#: bal/core/messages.py:138 bal/core/summary.py:56
+#: bal/core/messages.py:146 bal/core/summary.py:56
 msgid "1 day"
 msgstr ""
 
-#: bal/core/messages.py:138 bal/core/summary.py:56
+#: bal/core/messages.py:146 bal/core/summary.py:56
 #, python-brace-format
 msgid "{} days"
 msgstr ""
 
-#: bal/core/messages.py:148
+#: bal/core/messages.py:156
 #, python-brace-format
 msgid ""
 "Are you still here? The Check Alive date ({check}) has passed.\n"
@@ -161,27 +166,27 @@ msgid ""
 "Not now: nothing changes, your current will stays valid."
 msgstr ""
 
-#: bal/core/messages.py:169 bal/core/summary.py:276
+#: bal/core/messages.py:177 bal/core/summary.py:276
 #, python-brace-format
 msgid "The delivery date of your will ({date}) has already passed: the will can be executed now. Press Check to invalidate it and prepare a new one."
 msgstr ""
 
-#: bal/core/messages.py:175
+#: bal/core/messages.py:183
 #, python-brace-format
 msgid "The Check Alive date ({check}) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive."
 msgstr ""
 
-#: bal/core/messages.py:181
+#: bal/core/messages.py:189
 #, python-brace-format
 msgid "The Check Alive date ({check}) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid."
 msgstr ""
 
-#: bal/core/messages.py:186
+#: bal/core/messages.py:194
 #, python-brace-format
 msgid "The Check Alive date ({check}) has passed, and with these settings a renewed will would have its Check Alive in the past too: choose a longer delivery time or a shorter Check Alive. Until then your current will stays valid."
 msgstr ""
 
-#: bal/core/messages.py:196
+#: bal/core/messages.py:204
 #, python-brace-format
 msgid "The Check Alive date ({check}) has passed: a renewed will would be delivered on {new} (today + {period})."
 msgstr ""
@@ -430,88 +435,88 @@ msgstr ""
 msgid "Operation in progress: follow the window in front"
 msgstr ""
 
-#: bal/core/will.py:1907
+#: bal/core/will.py:1964
 #, python-brace-format
 msgid "NOT {}"
 msgstr ""
 
-#: bal/core/will.py:1931
+#: bal/core/will.py:1988
 msgid "Anticipated"
 msgstr ""
 
-#: bal/core/will.py:1932
+#: bal/core/will.py:1989
 msgid "Broadcasted"
 msgstr ""
 
-#: bal/core/will.py:1933
+#: bal/core/will.py:1990
 msgid "Checked"
 msgstr ""
 
-#: bal/core/will.py:1934
+#: bal/core/will.py:1991
 msgid "Check Failed"
 msgstr ""
 
-#: bal/core/will.py:1935
+#: bal/core/will.py:1992
 msgid "Signed"
 msgstr ""
 
-#: bal/core/will.py:1936
+#: bal/core/will.py:1993
 msgid "Confirmed"
 msgstr ""
 
-#: bal/core/will.py:1937 bal/gui/qt/lists.py:1362 bal/gui/qt/lists.py:1376
+#: bal/core/will.py:1994 bal/gui/qt/lists.py:1362 bal/gui/qt/lists.py:1376
 msgid "Error"
 msgstr ""
 
-#: bal/core/will.py:1938 bal/gui/qt/dialogs.py:884 bal/gui/qt/dialogs.py:1042
+#: bal/core/will.py:1995 bal/gui/qt/dialogs.py:884 bal/gui/qt/dialogs.py:1042
 msgid "Expired"
 msgstr ""
 
-#: bal/core/will.py:1939
+#: bal/core/will.py:1996
 msgid "Exported"
 msgstr ""
 
-#: bal/core/will.py:1940
+#: bal/core/will.py:1997
 msgid "Imported"
 msgstr ""
 
-#: bal/core/will.py:1941
+#: bal/core/will.py:1998
 msgid "Invalidated"
 msgstr ""
 
-#: bal/core/will.py:1942
+#: bal/core/will.py:1999
 msgid "Mempool"
 msgstr ""
 
-#: bal/core/will.py:1943
+#: bal/core/will.py:2000
 msgid "Push failed"
 msgstr ""
 
-#: bal/core/will.py:1944
+#: bal/core/will.py:2001
 msgid "Pushed"
 msgstr ""
 
-#: bal/core/will.py:1945
+#: bal/core/will.py:2002
 msgid "Partially Signed"
 msgstr ""
 
-#: bal/core/will.py:1946
+#: bal/core/will.py:2003
 msgid "Replaced"
 msgstr ""
 
-#: bal/core/will.py:1947
+#: bal/core/will.py:2004
 msgid "Restored"
 msgstr ""
 
-#: bal/core/will.py:1948
+#: bal/core/will.py:2005
 msgid "Updated"
 msgstr ""
 
-#: bal/core/will.py:1949 bal/gui/qt/dialogs.py:3674
+#: bal/core/will.py:2006 bal/gui/qt/dialogs.py:3674
 msgid "Valid"
 msgstr ""
 
-#: bal/core/will.py:1955
+#: bal/core/will.py:2012
 msgid "New"
 msgstr ""
 

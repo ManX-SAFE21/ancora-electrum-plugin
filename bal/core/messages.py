@@ -19,6 +19,7 @@ from .will import (
     HeirNotFoundException,
     NotCompleteWillException,
     NoWillExecutorNotPresent,
+    SameDateCopiesException,
     TxFeesChangedException,
     WillexecutorChangeException,
     WillExecutorNotPresent,
@@ -63,6 +64,13 @@ def will_change_message(e):
         return _(
             'Will-executor "{}" is not covered by the current will: '
             "a new will must be prepared."
+        ).format(str(e))
+    if isinstance(e, SameDateCopiesException):
+        # CHANGELOG #91: the state left by wills built before the fix.
+        return _(
+            'Will-executor "{}" holds two wills that can be executed on the '
+            "same day, and one of them does not include all your coins: "
+            "preparing a new will, dated one day earlier."
         ).format(str(e))
     if isinstance(e, NoWillExecutorNotPresent):
         return _(
