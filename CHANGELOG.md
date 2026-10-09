@@ -4721,3 +4721,81 @@ not draw the list): harness A1 OK; `ruff` (same 3 pre-existing I001); whole
 builds and loads.
 
 **Outcome:** DONE.
+
+## 84. 5d/4a: a will summary at the top of the Will tab
+
+**Date:** 2026-10-09
+
+**Problem (owner's remark during the ZIP tests):** the Will tab showed the
+settings (the delivery recipe such as "4y", the Check Alive) and one row per
+will-executor copy, but nowhere said in plain words whether the will is in
+force, when it is delivered, when the owner will be asked to renew it and
+whether the will-executors have it. With a relative delivery ("4y") the
+owner "lost the thread" and had to trust the wallet.
+
+**What changed (mockup and texts approved by the owner):**
+
+- New `bal/core/summary.py` (no Qt): `will_summary(...)` describes the will
+  in force from the data the plugin already has. It only reads: it never
+  builds, signs, sends or invalidates. States, with the colour of the box:
+  - green "Your will is in force";
+  - orange "In force, but 1 will-executor did not receive it" / "No
+    will-executor received your will" (button "Check again"), "Will
+    prepared: it must be signed and sent" ("Sign and send"), "Will signed:
+    it must be sent to the will-executors" ("Send"), "The Check Alive date
+    has passed: renew your will" ("Renew"; without a button when the will
+    cannot be renewed with one click, with the reason of #79);
+  - orange "Your previous will is still active at the will-executors"
+    (no button): no item is VALID by the plugin's records, but a will
+    already sent can still be executed because its coins were never spent
+    (same on-chain check as the #69 warning). Found on the owner's wallet:
+    after "fee changed -> Cancel at sign -> later date -> Cancel at the
+    invalidation", the unsigned items were marked "Invalidated" and the
+    sent ones "Replaced", so the box said "No will in force" while three
+    will-executors held an executable will (2028-09-29). Reproduced with
+    the harness; the wrong records are fixed separately (#86);
+  - red "The delivery date has passed" ("Check") and "No will in force"
+    ("Build Your Will"; after an on-chain invalidation it says so, and "no
+    transaction prepared" only when there is really none);
+  - grey "Your will has been executed" / "is being executed (mempool)";
+  - grey "Operation in progress: follow the window in front", with no line
+    and no button, while a working dialog (build/check, sign, send, wait)
+    is on screen: the box no longer shows half-way states ("to sign") and
+    a second button behind the dialog that is already asking the same
+    thing (owner's remark). `BalDialog` tells the window when such a dialog
+    is shown and hidden.
+
+  The lines: "Delivery to the heirs" (the date of the will in force, e.g.
+  "2028-10-01 (in 1 year and 11 months)"), "Check Alive" (advanced mode
+  only; "from that day the wallet asks you to renew it", red when passed),
+  "Will-Executor" (e.g. "1 of 2 verified it · 1 did not receive it",
+  counted once per executor at its worst copy, with the same priority as
+  the Status column of #83) and "Heirs" (their number).
+- `bal/gui/qt/widgets.py`: new `WillSummaryWidget` draws it (explicit
+  colours, so it stays readable with the dark theme) with at most one button.
+- `bal/gui/qt/window.py`: the box goes between the toolbar and the
+  transaction list (`create_will_tab`); `update_will_summary()` refreshes it
+  when the list or the heirs are redrawn, when the delivery / Check Alive
+  settings change and when the wallet opens; `on_will_summary_action()` maps
+  the button to the EXISTING commands (Check; the Renew question of #79 with
+  its fee warning; the wizard; Sign and Broadcast when "auto sign" is off).
+- `bal/gui/qt/lists.py`: the transaction list refreshes the box with itself.
+- Catalogs: the new texts in Italian and Spanish. The existing message
+  "Press Check to invalidate it" now names the button as the Italian and
+  Spanish interface shows it ("Premi Controlla", "Pulsa Comprobar").
+- New tests: `tests/test_will_summary.py` (31): every state, the lines,
+  relative dates, the widget, where the box goes, the button actions, the
+  busy state and the on-chain check.
+
+"Last check" (the date of the last verification) is not stored anywhere
+today: it comes with the activity log (#84c), as agreed with the owner.
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as `main`; harness A1 OK (the box only reads);
+translations complete; the real widget rendered in Italian matches the
+approved mockup; the owner's sequence reproduced with the harness
+(Cancel at the invalidation: "still active", 2032-09-23 as the harness's
+real delivery; Cancel at sign after the invalidation: "to be signed");
+zip builds and loads.
+
+**Outcome:** DONE.

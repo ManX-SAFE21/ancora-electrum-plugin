@@ -182,7 +182,36 @@ class BalDialog(QDialog,MessageBoxMixin):
 
     def hideEvent(self, event):
         self._stopping = True
+        self._set_summary_busy(False)
         super().hideEvent(event)
+
+    # CHANGELOG #84a: the "working" dialogs (build/check, sign, send, wait)
+    # set ``_summary_window`` to their BalWindow. While one of them is on
+    # screen the will summary of the Will tab only says "operation in
+    # progress": otherwise it showed intermediate states ("to sign") and a
+    # second button behind the dialog that was already asking the same
+    # thing (owner's remark).
+    _summary_window = None
+    _summary_busy_on = False
+
+    def showEvent(self, event):
+        self._set_summary_busy(True)
+        super().showEvent(event)
+
+    def _set_summary_busy(self, busy):
+        """Tell the BalWindow (if any) that this working dialog is shown/hidden.
+
+        The per-dialog flag keeps the window's counter balanced when Qt
+        sends several show/hide events. Never raises.
+        """
+        window = self._summary_window
+        if window is None or self._summary_busy_on == busy:
+            return
+        self._summary_busy_on = busy
+        try:
+            window.set_will_summary_busy(busy)
+        except Exception as e:
+            _logger.debug(f"summary busy update failed: {e!r}")
 
 
 class BalWizardDialog(BalDialog):
@@ -565,6 +594,7 @@ class BalWaitingDialog(BalDialog):
         BalDialog.__init__(
             self, bal_window.window, bal_window.bal_plugin, _("Please wait")
         )
+        self._summary_window = bal_window
         self.message_label = QLabel(message)
         vbox = QVBoxLayout(self)
         vbox.addWidget(self.message_label)
@@ -650,6 +680,7 @@ class BalBuildWillDialog(BalDialog):
         if not parent:
             parent = bal_window.window
         BalDialog.__init__(self, parent, bal_window.bal_plugin, _("Building Will"))
+        self._summary_window = bal_window
         self._renew_approved = renew
         self._check_alive_info = None
         # (parent already stored as self._bal_parent by BalDialog.__init__)

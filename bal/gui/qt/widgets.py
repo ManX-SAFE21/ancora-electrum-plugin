@@ -16,8 +16,10 @@ Contents:
     * WillSettingsWidget                                    - the settings panel
     * PercAmountEdit                                        - amount-or-percentage editor
     * WillWidget                                            - single will-tx box
+    * WillSummaryWidget                                     - will summary box (#84a)
 """
 
+import html
 from datetime import timezone
 from typing import TYPE_CHECKING
 
@@ -55,6 +57,8 @@ from .common import (
     QComboBox,
     QDateTime,
     QDateTimeEdit,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -1369,6 +1373,12 @@ class WillSettingsWidget(QWidget):
             )
         except Exception as _e:
             pass
+        # CHANGELOG #84a: a new Check Alive value, or the heirs list redrawn
+        # (it calls this too), changes the will summary of the Will tab.
+        try:
+            self.bal_window.update_will_summary()
+        except Exception as _e:
+            pass
 
 
 
@@ -1613,3 +1623,139 @@ class WillWidget(QWidget):
                 hlayout.addWidget(WillWidget(w, parent=parent, will=self.will))
 
 
+class WillSummaryWidget(QFrame):
+    """The will summary box at the top of the Will tab (CHANGELOG #84a).
+
+    Draws what :func:`bal.core.summary.will_summary` computed: an icon and a
+    title in the colour of the state (green: in force; orange: something to
+    do; red: no will in force or delivery date passed; grey: executed, or
+    an operation in progress), the
+    label/value lines, an optional note and at most ONE button. The button
+    only calls ``on_action(action)``: the window maps it to the existing
+    commands (Check, Renew, the wizard), so the box adds no new logic.
+    Hidden when there is nothing to show.
+    """
+
+    # kind -> (text and border colour, background, icon). Explicit colours on
+    # both text and background, so the box stays readable with Electrum's
+    # dark theme too.
+    _STYLES = {
+        "ok": ("#2e7d32", "#eef7ee", "✔"),
+        "warn": ("#b26a00", "#fff5e5", "⚠"),
+        "bad": ("#c62828", "#fdecec", "✖"),
+        "info": ("#555555", "#f2f2f2", "ℹ"),
+        "busy": ("#555555", "#f2f2f2", "⏳"),
+    }
+    _RED = "#c62828"
+
+    def __init__(self, on_action, parent=None):
+        super().__init__(parent)
+        self.on_action = on_action
+        self.action = None
+        # The style sheet targets this object name only, so the colours do
+        # not leak into the child labels and button.
+        self.setObjectName("balWillSummary")
+        box = QHBoxLayout(self)
+        box.setContentsMargins(14, 10, 14, 10)
+        box.setSpacing(14)
+        self.icon = QLabel()
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignTop)
+        box.addWidget(self.icon)
+        column = QVBoxLayout()
+        column.setSpacing(6)
+        self.title = QLabel()
+        self.title.setWordWrap(True)
+        column.addWidget(self.title)
+        self.grid = QGridLayout()
+        self.grid.setHorizontalSpacing(12)
+        self.grid.setVerticalSpacing(3)
+        self.grid.setColumnStretch(1, 1)
+        column.addLayout(self.grid)
+        self.note = QLabel()
+        self.note.setWordWrap(True)
+        column.addWidget(self.note)
+        box.addLayout(column, 1)
+        self.button = QPushButton()
+        self.button.setMinimumHeight(32)
+        self.button.setMinimumWidth(170)
+        self.button.clicked.connect(self._on_button)
+        box.addWidget(self.button, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self.setVisible(False)
+
+    def _on_button(self):
+        """Run the action of the state shown (see ``BalWindow.on_will_summary_action``)."""
+        if self.action and self.on_action:
+            self.on_action(self.action)
+
+    def _clear_rows(self):
+        """Remove the label/value lines of the previous summary."""
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _value_html(self, row):
+        """The value of one line as rich text (bold date, red alarm).
+
+        Every piece is escaped: the texts come from the catalogs and the
+        dates from the will, never from the user, but escaping keeps a
+        stray "<" from breaking the line.
+        """
+        parts = []
+        if row.get("strong"):
+            parts.append("<b>{}</b>".format(html.escape(row["strong"])))
+        if row.get("text"):
+            parts.append(html.escape(row["text"]))
+        value = "&nbsp;".join(parts)
+        if row.get("alarm"):
+            alarm = '<span style="color:{};">{}</span>'.format(
+                self._RED, html.escape(row["alarm"])
+            )
+            value = value + " &middot; " + alarm if value else alarm
+        if row.get("red"):
+            value = '<span style="color:{};">{}</span>'.format(self._RED, value)
+        return value
+
+    def show_summary(self, summary):
+        """Show ``summary`` (a :func:`will_summary` dict), or hide the box for None."""
+        if not summary:
+            self.action = None
+            self.setVisible(False)
+            return
+        fg, bg, icon = self._STYLES.get(summary.get("kind"), self._STYLES["info"])
+        self.setStyleSheet(
+            "#balWillSummary{{background:{bg};border:1px solid {fg};"
+            "border-left:6px solid {fg};border-radius:6px;}}"
+            "#balWillSummary QLabel{{background:transparent;color:#111111;}}".format(
+                bg=bg, fg=fg
+            )
+        )
+        self.icon.setText(icon)
+        self.icon.setStyleSheet("color:{};font-size:26px;".format(fg))
+        self.title.setText(summary.get("title") or "")
+        self.title.setStyleSheet(
+            "color:{};font-size:15px;font-weight:bold;".format(fg)
+        )
+        self._clear_rows()
+        for i, row in enumerate(summary.get("rows") or []):
+            label = QLabel(row.get("label", "") + ":")
+            label.setStyleSheet("color:#555555;")
+            value = QLabel(self._value_html(row))
+            value.setTextFormat(Qt.TextFormat.RichText)
+            value.setWordWrap(True)
+            self.grid.addWidget(label, i, 0, Qt.AlignmentFlag.AlignTop)
+            self.grid.addWidget(value, i, 1)
+        note = summary.get("note")
+        self.note.setText(note or "")
+        self.note.setStyleSheet("color:#333333;font-style:italic;")
+        self.note.setVisible(bool(note))
+        self.action = summary.get("action")
+        if self.action:
+            self.button.setText(summary.get("action_text") or "")
+            self.button.setStyleSheet(
+                "QPushButton{{font-weight:bold;background:{};color:white;"
+                "border-radius:4px;padding:4px 12px;}}".format(fg)
+            )
+        self.button.setVisible(bool(self.action))
+        self.setVisible(True)
