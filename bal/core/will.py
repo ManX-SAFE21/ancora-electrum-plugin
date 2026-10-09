@@ -781,6 +781,29 @@ class Will:
             return []
 
     @staticmethod
+    def past_delivery_date(will_settings, now=None):
+        """Return the delivery date of the settings if it is already past.
+
+        The stored ``locktime`` (absolute timestamp, or a relative "1y"/"30d"
+        recipe, which always lies in the future) is resolved with
+        :meth:`Util.parse_locktime_string`. Returns that UNIX timestamp when
+        it is not later than ``now`` (default: the current time), else
+        ``None``. Never raises.
+
+        WHY (CHANGELOG #75, BUG-4): with a delivery date in the past the
+        Check reported an heir "not covered by the current will" and then "no
+        delivery date left to build"; the real cause is the past date.
+        """
+        try:
+            delivery = Util.parse_locktime_string((will_settings or {})["locktime"])
+            current = now if now is not None else datetime.now(tz=timezone.utc).timestamp()
+            if delivery and int(delivery) <= int(current):
+                return int(delivery)
+        except Exception as e:
+            _logger.debug(f"past_delivery_date: {e!r}")
+        return None
+
+    @staticmethod
     def get_current_will_locktime(will, fallback=None):
         """Delivery date of the current will, as used by the still-active check.
 
