@@ -48,6 +48,7 @@ from ..core.checkalive import (
     resolve_guard_threshold,
 )
 from ..core.heirs import Heirs, is_op_return_address
+from ..core.messages import will_change_message
 from ..core.plugin_base import BalConfig, BalPlugin
 from ..core.util import Util, copy_structure
 from ..core.will import Will, WillItem
@@ -59,7 +60,8 @@ _logger = get_logger(__name__)
 def _user_facing(e):
     """Translate a ``bal.core`` domain exception into a user-facing message.
 
-    Unknown exceptions are passed through unchanged so their real type reaches
+    The "will no longer coherent" family uses the same sentences as the Check
+    dialog (``bal.core.messages``, CHANGELOG #78). Unknown exceptions are passed through unchanged so their real type reaches
     the caller (and, eventually, the Electrum log).
     """
     if isinstance(e, UserFacingException):
@@ -78,16 +80,14 @@ def _user_facing(e):
                 "signed and broadcast FIRST, then the will prepared again."
             )
         )
-    if isinstance(e, will_mod.HeirNotFoundException):
-        return UserFacingException(
-            _("Found CHANGES to the DATE or the HEIRS, a new WILL must be prepared")
-        )
-    if isinstance(e, will_mod.TxFeesChangedException):
-        return UserFacingException(_("Transaction fees are changed"))
-    if isinstance(e, will_mod.WillExecutorNotPresent):
-        return UserFacingException(_("Will-Executor not present"))
     if isinstance(e, will_mod.NoWillExecutorNotPresent):
+        # Kept as is: build_will below raises it too, for "nothing selected",
+        # where the Check sentence ("no backup transaction") would be wrong.
         return UserFacingException(_("No backup transaction or will-executor selected"))
+    if isinstance(e, will_mod.NotCompleteWillException):
+        # CHANGELOG #78: the same sentence as the Check dialog (heir added /
+        # removed / changed, fee rate, will-executor, new funds...).
+        return UserFacingException(will_change_message(e))
     if isinstance(e, will_mod.AmountException):
         return UserFacingException(
             _(
@@ -451,7 +451,8 @@ class BalController:
         Mirrors ``BalWindow.build_inheritance_transaction``:
 
         * ``coherent`` -> the existing will is still valid; nothing rebuilt.
-        * ``rebuilt``  -> the will was not coherent and has been rebuilt.
+        * ``rebuilt``  -> the will was not coherent and has been rebuilt;
+          ``reason`` says why, in the words of the Check dialog.
         * ``expired`` / ``postponed`` -> an invalidation transaction must be
           signed and broadcast before a new will can be prepared.
         """
@@ -534,6 +535,9 @@ class BalController:
             }
         except will_mod.NotCompleteWillException as e:
             _logger.info(f"will not coherent ({type(e).__name__}): rebuilding")
+            # CHANGELOG #78: say WHY it is rebuilt (returned as "reason"),
+            # computed now: the rebuild below changes what the core reports.
+            reason = will_change_message(e)
             self.build_will(ignore_duplicate, keep_original)
             rebuilt_ok = False
             try:
@@ -570,6 +574,7 @@ class BalController:
                         "The will was rebuilt and needs to be signed and "
                         "broadcast again"
                     ),
+                    "reason": reason,
                     "will": self._will_status_dict(),
                 }
             raise UserFacingException(_("will not rebuilt")) from None

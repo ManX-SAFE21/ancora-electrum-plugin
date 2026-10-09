@@ -57,6 +57,7 @@ from ...core.qrtransfer import (
     encode_transfer,
     preset_index_for_chunk_size,
 )
+from ...core.messages import no_valid_transaction, will_change_message
 from ...core.reminders import build_ics_reminders
 from ...i18n import number_separators
 from .calendar import BalCalendarButton
@@ -73,8 +74,6 @@ from .common import (
     Callable,
     CancelButton,
     HeirAmountIsDustException,
-    HeirChangeException,
-    HeirNotFoundException,
     MessageBoxMixin,
     Network,
     NoHeirsException,
@@ -100,11 +99,9 @@ from .common import (
     QWidget,
     TaskThread,
     TxBroadcastError,
-    TxFeesChangedException,
     Util,
     WaitingDialog,
     Will,
-    WillexecutorChangeException,
     WillExecutorFeeTooHighException,
     WillExecutorNotPresent,
     Willexecutors,
@@ -2224,15 +2221,8 @@ class BalBuildWillDialog(BalDialog):
 
     @staticmethod
     def _no_valid_transaction(e):
-        """True for the core's argument-less NotCompleteWillException.
-
-        ``Will.is_will_valid`` raises it with no argument when the will holds
-        no VALID transaction, and with a message when a wallet coin is not
-        covered. ``WillException`` keeps only ``msg`` (default
-        ``"WillException"``) and never fills ``e.args``, so the default
-        message is what tells the two apart.
-        """
-        return type(e) is NotCompleteWillException and str(e) == "WillException"
+        """See :func:`bal.core.messages.no_valid_transaction` (CHANGELOG #77)."""
+        return no_valid_transaction(e)
 
     def _rebuild_reason_message(self, e):
         """Name the real reason when the core's sentence would mislead.
@@ -2273,103 +2263,13 @@ class BalBuildWillDialog(BalDialog):
     def _check_failure_message(self, e):
         """Return a precise explanation of why the will is no longer coherent.
 
-        ``Will.is_will_valid`` raises NotCompleteWillException (or one of its
-        subclasses) when the stored will stops matching the wallet, the heirs
-        or the will-executors.  Those exceptions ALREADY carry the useful
-        detail - the heir name, the will-executor URL, the old and new fee
-        rate - but this dialog used to discard all of it and print the same
-        sentence, "Found CHANGES to the DATE or the HEIRS", for every case.
-
-        That was not merely vague, it was WRONG for the most common situation:
-        when the wallet simply receives new funds, neither the date nor the
-        heirs changed, yet the user was sent hunting for edits never made.
-
-        NOTE: no new exception classes were added for this (owner request).
-        Every case below is told apart using only what the core already
-        raises today.
+        The dialog used to print the same sentence, "Found CHANGES to the
+        DATE or the HEIRS", for every case - wrong for the most common one,
+        new funds received. The sentences now live in
+        :func:`bal.core.messages.will_change_message`, shared with the main
+        window and the command line (CHANGELOG #78).
         """
-        # Subclasses first - they are all NotCompleteWillException.
-        if isinstance(e, TxFeesChangedException):
-            # The core raises TxFeesChangedException(f"{tx_fees}:  {w.tx_fees}"),
-            # i.e. "current:  stored".  Show both rates when they can be read,
-            # and fall back to a plain sentence if that format ever changes.
-            try:
-                now_fee, old_fee = [p.strip() for p in str(e).split(":", 1)]
-                return _(
-                    "Miner fee rate changed (the will was built with {} "
-                    "sat/byte, now it is {}): a new will must be prepared."
-                ).format(old_fee, now_fee)
-            except Exception:
-                return _(
-                    "The miner fee rate changed: a new will must be prepared."
-                )
-        if isinstance(e, WillExecutorNotPresent):
-            return _(
-                'Will-executor "{}" is not covered by the current will: '
-                "a new will must be prepared."
-            ).format(str(e))
-        if isinstance(e, NoWillExecutorNotPresent):
-            return _(
-                "Backup mode is enabled but the will has no backup "
-                "transaction: a new will must be prepared."
-            )
-        if isinstance(e, HeirNotFoundException):
-            # Owner decision (CHANGELOG #77): one sentence per kind of change,
-            # as reported by the core (Will._heir_change). The generic
-            # sentence stays for an exception without that detail.
-            change = getattr(e, "change", None)
-            if change == HeirNotFoundException.HEIR_REMOVED:
-                return _('Heir "{}" was removed: preparing a new will.').format(str(e))
-            if change == HeirNotFoundException.HEIR_ADDED:
-                return _('Heir "{}" was added: preparing a new will.').format(str(e))
-            if change == HeirNotFoundException.HEIR_DATE:
-                return _(
-                    'The delivery date of heir "{}" changed: preparing a new will.'
-                ).format(str(e))
-            if change == HeirNotFoundException.HEIR_AMOUNT:
-                return _(
-                    'The amount of heir "{}" changed: preparing a new will.'
-                ).format(str(e))
-            if change == HeirNotFoundException.HEIR_ADDRESS:
-                return _(
-                    'The address of heir "{}" changed: preparing a new will.'
-                ).format(str(e))
-            return _(
-                'Heir "{}" is not covered by the current will (it was added '
-                "or removed, or its delivery date changed): a new will must "
-                "be prepared."
-            ).format(str(e))
-        # Kept for completeness: nothing in the plugin raises these two today,
-        # but they ARE NotCompleteWillException subclasses, so should future
-        # code raise them they get a sensible message rather than the fallback.
-        if isinstance(e, HeirChangeException):
-            return _("The heirs changed: a new will must be prepared.")
-        if isinstance(e, WillexecutorChangeException):
-            return _("A will-executor changed: a new will must be prepared.")
-
-        # A plain NotCompleteWillException.  The core raises it in exactly two
-        # places, told apart STRUCTURALLY (not by matching message text, which
-        # would be fragile): with no argument when the will holds no valid
-        # transaction, and with one argument when a wallet utxo is not
-        # included in the will.  WillException drops its arguments (e.args is
-        # always empty), so the check is on the default message instead; the
-        # old e.args test always said "no valid transaction" (CHANGELOG #77).
-        if type(e) is NotCompleteWillException:
-            if not self._no_valid_transaction(e):
-                return _(
-                    "The wallet contains funds that the current will does not "
-                    "cover yet: a new will must be prepared."
-                )
-            return _(
-                "The will contains no valid transaction: a new will must be "
-                "prepared."
-            )
-
-        # An unrecognised subclass: say so honestly instead of guessing.
-        return _(
-            "The will is no longer coherent and must be rebuilt; the exact "
-            "reason could not be determined."
-        )
+        return will_change_message(e)
 
     @staticmethod
     def _amounts_message(info):
