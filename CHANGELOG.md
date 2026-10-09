@@ -4857,3 +4857,29 @@ broadcast, after it 0; then the postpone invalidates on-chain (old txs
 after it, executed paying the heirs 60/40; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 87. 5d/6: no old line left in the grey "operation in progress" box
+
+**Date:** 2026-10-09
+
+**Problem (owner's screenshots of the #86 tests):** while a working dialog
+was open, the grey will summary box ("Operation in progress: follow the
+window in front", #84a) still showed an old line ("Delivery to the heirs:
+2028-09-29") under its title.
+
+**Cause:** the old lines were removed from the layout and scheduled with
+`deleteLater`, which runs only when control returns to the event loop that
+called it; the working dialog's own loop (exec) runs meanwhile, so the old
+widgets stayed painted at their place.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py`: `WillSummaryWidget._clear_rows` hides and
+  detaches each old line at once, then deletes it later.
+- New test in `tests/test_will_summary.py`: switching to the grey box
+  leaves no old line, with no event loop in between.
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as `main`; harness A1 OK; zip builds and loads.
+
+**Outcome:** DONE.

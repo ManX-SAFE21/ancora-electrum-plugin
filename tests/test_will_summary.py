@@ -359,6 +359,17 @@ def test_widget_without_button_and_hidden_for_none():
     assert w.isHidden()
 
 
+def test_busy_box_leaves_no_old_line_painted():
+    """CHANGELOG #87: the old lines vanish at once, not at deleteLater."""
+    w = WillSummaryWidget(lambda a: None)
+    w.show_summary(_summary({"a": _item(*VERIFIED)}))
+    old = [w.grid.itemAt(i).widget() for i in range(w.grid.count())]
+    assert old and all(x.parent() is w for x in old)
+    w.show_summary(busy_summary())          # no event loop runs in between
+    assert w.grid.count() == 0
+    assert all(x.isHidden() and x.parent() is None for x in old)
+
+
 # ------------------------------------------------------------------ window
 
 def test_box_goes_between_toolbar_and_list():
