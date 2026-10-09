@@ -1725,9 +1725,12 @@ class BalWindow:
         # 1) Business logic: build/save the will on close (unchanged behaviour).
         # REBUILD_ON_CLOSE gates the "Build your will" wizard only: the will is
         # still persisted so a manual Build/Check from the session is not lost.
+        # CHANGELOG #84b-2: ``closing=True`` makes the dialog say that the
+        # wallet is closing and why it is working; it also verifies with the
+        # will-executors what it sent, like the Check button.
         try:
             if self.bal_plugin.REBUILD_ON_CLOSE.get():
-                close_window = BalBuildWillDialog(self)
+                close_window = BalBuildWillDialog(self, closing=True)
                 close_window.build_will_task()
             self.save_willitems()
         except Exception as e:

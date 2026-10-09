@@ -1805,6 +1805,7 @@ class BuildReportView(QWidget):
     _EXECUTOR_STYLE = {
         "waiting": ("↻", "#b26a00"),
         "received": ("✔", "#2e7d32"),
+        "verifying": ("↻", "#1565c0"),
         "verified": ("✔", "#2e7d32"),
         "to_verify": ("✔", "#2e7d32"),
         "failed": ("✖", "#c62828"),
@@ -1830,6 +1831,7 @@ class BuildReportView(QWidget):
         return {
             "waiting": _("waiting…"),
             "received": _("received"),
+            "verifying": _("received, verifying…"),
             "verified": _("received and verified"),
             "to_verify": _("received, to be verified"),
             "failed": _("not received"),

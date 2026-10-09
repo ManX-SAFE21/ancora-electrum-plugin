@@ -55,8 +55,10 @@ class FakeBuildWillDialog:
 
     instances = []
 
-    def __init__(self, bal_window):
+    def __init__(self, bal_window, **kwargs):
+        # kwargs: on_close() passes closing=True (CHANGELOG #84b-2).
         self.bal_window = bal_window
+        self.kwargs = kwargs
         FakeBuildWillDialog.instances.append(self)
 
     def build_will_task(self):
@@ -144,6 +146,8 @@ def test_on_close_runs_wizard_when_enabled():
     fake = _make_fake_window(True)
     _call_on_close(fake)
     assert len(FakeBuildWillDialog.instances) == 1, "wizard must be opened"
+    assert FakeBuildWillDialog.instances[0].kwargs == {"closing": True}, (
+        "the dialog must know the wallet is closing (#84b-2)")
     assert fake._wizard_ran is True, "wizard build_will_task must run"
     assert fake.saved == ["save"], "save_willitems must run"
 

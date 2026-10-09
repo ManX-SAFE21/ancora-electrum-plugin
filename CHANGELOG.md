@@ -4981,3 +4981,84 @@ the invalidation) matches the approved mockup; translations complete; zip
 builds and loads.
 
 **Outcome:** DONE.
+
+## 89. 5d/9 (#84b-2): the verification inside the Building Will dialog
+
+**Date:** 2026-10-09
+
+**Problem (owner's remarks):** the dialog had to close before the
+will-executors were verified: the Check button and the wizard then opened a
+separate "Check Transaction" window, so the "Verification" step of the new
+bar (#84b-1) was always "to do". At wallet close and after a Check Alive
+renewal the verification did not run at all, so a will just sent (for
+example because new funds arrived) was not confirmed before the owner left.
+At wallet close the dialog did not say that the wallet was closing nor why
+it was working and asking for the password.
+
+**What changed (plan and texts approved by the owner):**
+
+- `bal/gui/qt/dialogs.py` (`BalBuildWillDialog`): new `loop_verify()`, the
+  Verification step, run at the end of phase 2 right after the sending, so
+  it runs for the Check button, the wizard, the renewal and the wallet
+  close (owner's decision: everywhere, wallet close included). Every VALID
+  item that was sent and is not verified yet (`Will.needs_server_check`, the
+  items the Check button verified) is looked up on its will-executor, all
+  at once, with the same 20 s limit as the sending
+  (`Willexecutors.check_transactions_parallel`); each answer is recorded as
+  before (`WillItem.set_check_willexecutor`). While it runs: the step
+  counter ("0/2 · 3 s / 20 s"), the sentence "Verifying your will with the
+  will-executors… waiting for: <hosts>", each executor "received,
+  verifying…"; then "received and verified", "not received" or "no answer
+  (20 s)". The word under the step is counted over every will-executor of
+  the will, like the sending ("2/2"; "1/2" attention; "0/2" error; "to do"
+  only when nothing was sent yet). A verification error never stops the
+  dialog. Nothing to verify: no request at all.
+- The "Sending" step shows its count ("2/2") as soon as the sending ends
+  (`_merge_executors_and_send_note`), not only when the dialog ends.
+- Defect of #84b-1 found by the new tests and fixed: while the sending ran,
+  the result sentence lost "waiting for: <host>" (#85) at every progress
+  row; it was only in the log, closed by default. The sending and the
+  verification now keep their own counter and sentence.
+- Found in the owner's test of the first ZIP: after a Cancel at the
+  password the bar said "Sending: not needed". It was needed but could
+  not happen (a copy is still to sign): the step now stays grey, with no
+  word (`_finish_report`).
+- At wallet close (`BalWindow.on_close` opens the dialog with
+  `closing=True`): the title "Closing the wallet: checking your will", a
+  light-blue box above the steps: "You are closing the wallet. Before it
+  closes, the plugin checks that your will covers all your bitcoin,
+  including those received after the last check. If something changed, it
+  prepares a new will and asks for your password to sign it. Then it sends
+  it to the will-executors and verifies that they received it." and, next
+  to Close, "When you press Close, the wallet finishes closing." On the
+  owner's request the box does NOT say how to turn this check off
+  (dangerous: new funds would stay out of the will).
+- `bal/gui/qt/lists.py` (`PreviewList.check`) and the wizard
+  (`BalWizardDialog.on_next_we`): no separate "Check Transaction" window
+  any more. The right-click "check" of a single row is unchanged.
+- `bal/core/build_report.py`, `bal/gui/qt/widgets.py`: new executor state
+  "verifying".
+- Catalogs: the new texts in Italian and Spanish.
+- New tests: `tests/test_verify_in_dialog.py` (13, including the real Qt
+  dialog at wallet close). `tests/test_rebuild_on_close_setting.py`: its
+  fake dialog accepts `closing=True` and checks it is passed.
+- Scenario harness (outside the repository): the fake will-executor now
+  answers the verification with the tx it received (it answered "x", which
+  the verification would record as "not received").
+
+**Not changed:** the automatic rebuild on new transactions (setting OFF by
+default) still sends without a dialog and without verification; when the
+dialog stops before the sending (no will-executor, no heirs, "Not now" at a
+renewal, an error), the verification does not run and the step stays "to
+do", as the Will tab says ("to be verified").
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as #84b-1; the scenario matrix 6 times on `main`
+and on this branch: same verdicts (0 differences; B2/B2adv end one day
+earlier, known and accepted), and on this branch every verification
+answered "Ok" (186 Verification steps, 372 executor answers); the real
+dialog rendered in Italian at wallet close after new funds arrived
+(owner's example): while verifying and at the end; translations
+complete; zip builds and loads.
+
+**Outcome:** DONE.

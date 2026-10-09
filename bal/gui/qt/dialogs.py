@@ -275,23 +275,15 @@ class BalWizardDialog(BalDialog):
         )
 
     def on_next_we(self):
+        """Last wizard page: build, sign, send and verify the will, then close.
+
+        The will-executors are verified by the Building Will dialog itself,
+        as its last step (CHANGELOG #84b-2). Before, the wizard ran the same
+        check as the Check button (allegato15, case B) in a separate "Check
+        Transaction" window opened after that dialog had closed.
+        """
         close_window = BalBuildWillDialog(self.bal_window)
         close_window.build_will_task()
-
-        # Run the SAME final server check as the "Check" button (allegato15,
-        # case B): previously the wizard only ran build_will_task() and skipped
-        # the will-executor verification, so the user always had to press
-        # "Check" manually after finishing the wizard. We now replicate exactly
-        # the lists.py check() logic: after building, query every will that
-        # needs a server check (Will.needs_server_check) and run
-        # check_transactions(), which shows the "Checking transactions" dialog.
-        will = {}
-        for wid, w in self.bal_window.willitems.items():
-            if Will.needs_server_check(w):
-                will[wid] = w
-        if will:
-            self.bal_window.check_transactions(will)
-
         self.close()
         # self.next_widget(BalWizardLocktimeAndFeeWidget(self.bal_window,self,self.on_next_locktimeandfee,self.on_next_wedonwload,self.on_next_wedonwload.on_cancel_heir))
 
@@ -684,14 +676,30 @@ class BalBuildWillDialog(BalDialog):
     _build_report = None
     _times = None
     _log_auto_opened = False
+    # CHANGELOG #84b-2 (same reason as above).
+    _closing = False
+    verify_row = None
 
-    def __init__(self, bal_window, parent=None, renew=False):
+    def __init__(self, bal_window, parent=None, renew=False, closing=False):
         """``renew=True``: the owner already chose "Renew" for a passed Check
         Alive (wallet open / Prepare, CHANGELOG #79), so it is not asked
-        again here."""
+        again here.
+
+        ``closing=True``: opened because the wallet is closing (the "Rebuild
+        will on wallet close" setting). The dialog then says so, and why, in
+        its title and in a box above the steps (CHANGELOG #84b-2, owner: a
+        window asking for the password while Electrum closes must explain
+        itself).
+        """
         if not parent:
             parent = bal_window.window
-        BalDialog.__init__(self, parent, bal_window.bal_plugin, _("Building Will"))
+        title = (
+            _("Closing the wallet: checking your will")
+            if closing
+            else _("Building Will")
+        )
+        BalDialog.__init__(self, parent, bal_window.bal_plugin, title)
+        self._closing = closing
         self._summary_window = bal_window
         self._renew_approved = renew
         self._check_alive_info = None
@@ -707,6 +715,9 @@ class BalBuildWillDialog(BalDialog):
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
         )
         self.vbox = QVBoxLayout(self)
+        if closing:
+            # Above the scroll area, so it stays in view while the steps run.
+            self.vbox.addWidget(self._closing_intro())
 
         # SCROLLABLE message area (allegato14): with many will-executors the
         # report can reach dozens of lines. Previously the dialog kept resizing
@@ -760,6 +771,7 @@ class BalBuildWillDialog(BalDialog):
         self.build_row = None
         self.sign_row = None
         self.push_row = None
+        self.verify_row = None
         # Manual next-steps hint (Sign / Broadcast) shown to the user after the
         # dialog finishes; None when nothing is left to do.
         self._next_steps_hint = None
@@ -788,6 +800,39 @@ class BalBuildWillDialog(BalDialog):
 
     def task_finished(self):
         pass
+
+    def _closing_intro(self):
+        """The light-blue box that says why this dialog opened at closing.
+
+        Text approved by the owner (CHANGELOG #84b-2). On purpose it does
+        NOT say how to turn the check off: the owner finds that dangerous
+        (new funds would stay out of the will).
+        """
+        label = QLabel(_(
+            "You are closing the wallet. Before it closes, the plugin checks "
+            "that your will covers all your bitcoin, including those received "
+            "after the last check. If something changed, it prepares a new "
+            "will and asks for your password to sign it. Then it sends it to "
+            "the will-executors and verifies that they received it."
+        ))
+        label.setWordWrap(True)
+        label.setObjectName("balClosingIntro")
+        label.setStyleSheet(
+            "#balClosingIntro{background:#e3f2fd;color:#0d47a1;"
+            "border:1px solid #90caf9;border-radius:6px;padding:8px;}"
+        )
+        return label
+
+    def _add_closing_note(self, row):
+        """At closing, tell the owner that Close lets the wallet close.
+
+        ``row`` is a button row; the note goes on its left. Nothing when the
+        dialog was not opened by the wallet closing.
+        """
+        if not self._closing:
+            return
+        note = QLabel(_("When you press Close, the wallet finishes closing."))
+        row.insertWidget(0, note)
 
     def build_will_task(self):
         _logger.debug("build will task to be started")
@@ -1642,6 +1687,121 @@ class BalBuildWillDialog(BalDialog):
             if not self._stopping:
                 pass
 
+    def loop_verify(self):
+        """The Verification step: do the will-executors hold the will? (#84b-2)
+
+        Every VALID item that was sent and is not verified yet
+        (``Will.needs_server_check``, the items the Check button verified)
+        is looked up on its will-executor. All the executors are asked at
+        once, with the same 20 s limit as the sending
+        (``Willexecutors.check_transactions_parallel``), and each answer is
+        recorded as before (``WillItem.set_check_willexecutor``: the executor
+        must hold exactly the tx that was sent, otherwise the item is marked
+        failed and will be sent again).
+
+        WHY here: the verification used to run after this dialog had closed,
+        in a separate "Check Transaction" window, and only for the Check
+        button and the wizard; at wallet close and after a renewal it did not
+        run at all. Now it is the last step of every run of phase 2, and the
+        owner sees it executor by executor: the step counter, who is still
+        awaited, then "received and verified" or "not received". It only
+        reads from the executors; nothing is sent to them.
+        """
+        if self._stopping:
+            return
+        items = {
+            wid: w
+            for wid, w in self.bal_window.willitems.items()
+            if Will.needs_server_check(w)
+        }
+        if not items:
+            # Nothing sent that is not verified yet: the step then shows what
+            # the items already say (see _finish_report).
+            return
+        left = {}       # url -> the ids it has not answered for yet
+        for wid, w in items.items():
+            left.setdefault(w.we["url"], set()).add(wid)
+        failed = set()  # urls that did not confirm every one of their items
+        total = len(left)
+        deadline = Willexecutors.CHECK_GLOBAL_DEADLINE
+        report = self._report()
+        start = time.time()
+
+        def _progress():
+            # The log row first, then the bar and the sentence: the row's own
+            # report update must not overwrite them (see _report_status).
+            elapsed = min(int(time.time() - start), deadline)
+            done = sum(1 for wids in left.values() if not wids)
+            pending = [url for url, wids in left.items() if wids]
+            self.msg_set_verifying(
+                self.verify_status_text(done, total, elapsed, deadline, pending)
+            )
+            report.set_step(
+                "verify", "run",
+                "{}/{} · {} s / {} s".format(done, total, elapsed, deadline),
+            )
+            sentence = html.escape(
+                _("Verifying your will with the will-executors…")
+            )
+            hosts = sorted(urlparse(u).hostname or u for u in pending)
+            if hosts:
+                sentence += " " + html.escape(
+                    _("waiting for: {}").format(", ".join(hosts[:3]))
+                )
+            report.set_result("run", sentence)
+            self.updatemessage.emit()
+
+        def _answered(wid, url, res, timed_out=False):
+            # Called from this (task) thread by check_transactions_parallel.
+            w = items[wid]
+            try:
+                w.set_check_willexecutor(res)
+            except Exception as e:
+                _logger.error(f"verify: recording the answer for {wid} failed: {e!r}")
+            ok = bool(w.get_status("CHECKED"))
+            if not ok:
+                failed.add(url)
+            left[url].discard(wid)
+            if timed_out:
+                report.set_executor(url, "timeout", deadline)
+            elif not left[url]:
+                report.set_executor(url, "failed" if url in failed else "verified")
+            if ok:
+                result = self.msg_ok(_("Ok"))
+            elif timed_out:
+                result = self.msg_error(_("Timeout - no answer"))
+            else:
+                result = self.msg_error(_("Ko"))
+            self._log_only(
+                "{} : {}".format(_("checked {} - {}").format(url, wid), result)
+            )
+            _progress()
+
+        def on_each(wid, url, res, exc):
+            if exc is not None:
+                _logger.info(f"verify: {url} did not answer for {wid}: {exc!r}")
+                res = None
+            _answered(wid, url, res)
+
+        def on_timeout(wid, url):
+            _answered(wid, url, None, timed_out=True)
+
+        def on_tick():
+            if not self._stopping:
+                _progress()
+
+        self.msg_set_verifying()
+        for url in left:
+            report.set_executor(url, "verifying")
+        _progress()
+        Willexecutors.check_transactions_parallel(
+            [(wid, w.we["url"]) for wid, w in items.items()],
+            on_each=on_each, on_timeout=on_timeout, on_tick=on_tick,
+        )
+        # The final word under the step is counted over every will-executor
+        # of the will in _finish_report.
+        self.msg_set_verifying(self.msg_error(_("Ko")) if failed else self.msg_ok())
+
     def invalidate_task(self, password, bal_window, tx):
         if self._stopping:
             return
@@ -1682,9 +1842,24 @@ class BalBuildWillDialog(BalDialog):
         host name is shown, at most three of them ("(+N more)" for the
         rest), so the line stays short with many will-executors.
         """
-        text = "{} {}/{} ({}s / {}s)".format(
-            _("Broadcasting"), done, total, elapsed, deadline
+        return BalBuildWillDialog._progress_text(
+            _("Broadcasting"), done, total, elapsed, deadline, pending
         )
+
+    @staticmethod
+    def verify_status_text(done, total, elapsed, deadline, pending=()):
+        """The "Verifying" status line (#84b-2), shaped like the sending one.
+
+        "Verifying 1/2 (4s / 20s) — waiting for: we.example.org".
+        """
+        return BalBuildWillDialog._progress_text(
+            _("Verifying"), done, total, elapsed, deadline, pending
+        )
+
+    @staticmethod
+    def _progress_text(verb, done, total, elapsed, deadline, pending=()):
+        """``verb done/total (elapsed / deadline)`` and who is still awaited."""
+        text = "{} {}/{} ({}s / {}s)".format(verb, done, total, elapsed, deadline)
         hosts = sorted(urlparse(u).hostname or u for u in pending)
         if hosts:
             names = ", ".join(hosts[:3])
@@ -1974,6 +2149,7 @@ class BalBuildWillDialog(BalDialog):
         button_row.addStretch(1)
         button_row.addWidget(calendar_button)
         button_row.addWidget(self._close_button)
+        self._add_closing_note(button_row)
         self.vbox.addLayout(button_row)
         self._close_button.setFocus()
         self._fit_height()
@@ -2003,6 +2179,7 @@ class BalBuildWillDialog(BalDialog):
         close_btn = QPushButton(_("Close"))
         close_btn.clicked.connect(self.close)
         btn_row.addWidget(close_btn)
+        self._add_closing_note(btn_row)
 
         self._no_we_layout = btn_row
         self.vbox.addLayout(btn_row)
@@ -2073,6 +2250,7 @@ class BalBuildWillDialog(BalDialog):
         close_btn = QPushButton(_("Close"))
         close_btn.clicked.connect(self.close)
         btn_row.addWidget(close_btn)
+        self._add_closing_note(btn_row)
 
         self._no_heirs_layout = btn_row
         self.vbox.addLayout(btn_row)
@@ -2232,6 +2410,16 @@ class BalBuildWillDialog(BalDialog):
             except Exception as e:
                 # td = traceback.format_exc()
                 self.msg_set_pushing(self.msg_error(e))
+        # CHANGELOG #84b-2: verify here what the will-executors hold (it
+        # used to run after this dialog, in a separate window, and not at
+        # all at wallet close). Never stops the dialog.
+        try:
+            if not self._stopping:
+                self._merge_executors_and_send_note()
+            self.loop_verify()
+        except Exception as e:
+            _logger.error(f"verification failed: {e!r}")
+            self.msg_set_verifying(self.msg_error(e))
         # Blank separator row: visually detach the final "All done" summary
         # from the per-step result rows above it, so the closing line stands
         # out as the overall outcome rather than just another step.
@@ -2732,6 +2920,13 @@ class BalBuildWillDialog(BalDialog):
             _("Broadcasting your will to executors"), self.push_row, status
         )
 
+    def msg_set_verifying(self, status=None, row=None):
+        """The log row of the Verification step (#84b-2)."""
+        row = self.verify_row if row is None else row
+        self.verify_row = self.msg_set_status(
+            _("Verifying your will with the executors"), row, status
+        )
+
     def msg_set_waiting(self, status=None, row=None):
         row = self.wait_row if row is None else row
         self.wait_row = self.msg_edit_row(
@@ -2950,6 +3145,7 @@ class BalBuildWillDialog(BalDialog):
             _("Building your will"): "prepare",
             _("Signing your will"): "sign",
             _("Broadcasting your will to executors"): "send",
+            _("Verifying your will with the executors"): "verify",
         }.get(label)
 
     def _running_text(self, label):
@@ -2965,6 +3161,9 @@ class BalBuildWillDialog(BalDialog):
             _("Broadcasting your will to executors"): _(
                 "Sending your will to the will-executors\u2026"
             ),
+            _("Verifying your will with the executors"): _(
+                "Verifying your will with the will-executors\u2026"
+            ),
         }.get(label, "")
 
     def _status_class(self, status, color=None):
@@ -2973,7 +3172,8 @@ class BalBuildWillDialog(BalDialog):
         Every coloured status comes from msg_ok / msg_error / msg_warning /
         msg_alert (or the ``color`` argument), so the colour tells the kind:
         "ok", "err", "warn". Plain words tell "run" (Wait, Waiting,
-        Broadcasting and the push counters), "skip" (Nothing to do,
+        Broadcasting, the push counters and the "x/y (Ns / 20s)" progress
+        lines of the sending and the verification), "skip" (Nothing to do,
         Skipped) and "abort" (Aborted); any other plain text is "text".
         """
         raw = str(status)
@@ -2989,6 +3189,10 @@ class BalBuildWillDialog(BalDialog):
         if text in (_("Wait"), _("Waiting")) or text.startswith(_("Broadcasting")):
             return "run", text
         if re.match(r"^\d+/\d+ \(\d+s\)$", text):
+            return "run", text
+        if re.search(r"\d+/\d+ \(\d+s / \d+s\)", text):
+            # A progress line ("Verifying 1/2 (4s / 20s) ..."): matched by its
+            # shape, so the translated verb does not matter.
             return "run", text
         if text in (_("Nothing to do"), _("Skipped")):
             return "skip", text
@@ -3018,9 +3222,12 @@ class BalBuildWillDialog(BalDialog):
                     report.put("problems", key, line)
                 return
             if kind == "run":
-                if step != "send":       # the sending sets its own counter
+                # The sending and the verification set their own counter and
+                # "waiting for" sentence once running (#84b-2: rewriting the
+                # sentence here at every progress row erased "waiting for").
+                if step not in ("send", "verify") or report.step(step)[0] != "run":
                     report.set_step(step, "run", "")
-                report.set_result("run", self._running_text(label))
+                    report.set_result("run", self._running_text(label))
             elif kind == "skip":
                 report.set_step(step, "skip")
             elif kind == "abort":
@@ -3083,33 +3290,29 @@ class BalBuildWillDialog(BalDialog):
         try:
             report = self._report()
             bw = self.bal_window
-            valid = Will.only_valid_list(bw.willitems)
-            states = {
-                url: state for url, state in executor_states(valid).items()
-            }
-            report.merge_executors(states)
-            executors = report.executors()
+            executors = self._merge_executors_and_send_note()
             total = len(executors)
-            received = sum(
-                1 for st, _sec in executors.values()
-                if st in ("received", "verified", "to_verify")
-            )
-            failed = sum(
-                1 for st, _sec in executors.values() if st in ("failed", "timeout")
-            )
-            send_state = report.step("send")[0]
-            if send_state in ("ok", "run") and total:
-                report.set_step(
-                    "send", "warn" if failed else "ok", "{}/{}".format(received, total)
-                )
+            if report.step("send")[0] == "skip" and any(
+                st == "to_sign" for st, _sec in executors.values()
+            ):
+                # Owner's test (#84b-2): after a Cancel at the password the bar
+                # said "Sending: not needed". It was needed; it could not
+                # happen because a copy is still to sign. Grey, no word.
+                report.set_step("send", "todo")
             verified = sum(1 for st, _sec in executors.values() if st == "verified")
-            if report.step("verify")[0] == "todo" and total:
+            # Counted over every will-executor of the will, like the sending
+            # (#84b-2): a verification that ran and got no confirmation is an
+            # error; one that never ran (nothing sent yet) is still "to do".
+            verify_state = report.step("verify")[0]
+            if total and verify_state != "skip":
                 if verified == total:
                     report.set_step("verify", "ok", "{}/{}".format(verified, total))
                 elif verified:
                     report.set_step("verify", "warn", "{}/{}".format(verified, total))
-                else:
+                elif verify_state == "todo":
                     report.set_step("verify", "todo", _("to do"))
+                else:
+                    report.set_step("verify", "err", "{}/{}".format(verified, total))
             if report.step("prepare")[0] == "ok":
                 report.set_heirs(heir_shares(bw.willitems))
             summary = will_summary(
@@ -3163,6 +3366,33 @@ class BalBuildWillDialog(BalDialog):
             self.updatemessage.emit()
         except Exception as e:
             _logger.error(f"build report (finish) failed: {e!r}")
+
+    def _merge_executors_and_send_note(self):
+        """Every will-executor of the will in the box, and the sending's count.
+
+        The box gets the state of each executor from the will items (a live
+        "no answer" is kept); the Sending step gets "received/total". Used
+        when the dialog ends and, since #84b-2, as soon as the sending ends,
+        so the bar shows "2/2" under Sending while the verification runs
+        (it showed "ok" until the end). Returns ``{url: (state, seconds)}``.
+        """
+        report = self._report()
+        valid = Will.only_valid_list(self.bal_window.willitems)
+        report.merge_executors(executor_states(valid))
+        executors = report.executors()
+        total = len(executors)
+        received = sum(
+            1 for st, _sec in executors.values()
+            if st in ("received", "verifying", "verified", "to_verify")
+        )
+        failed = sum(
+            1 for st, _sec in executors.values() if st in ("failed", "timeout")
+        )
+        if report.step("send")[0] in ("ok", "run") and total:
+            report.set_step(
+                "send", "warn" if failed else "ok", "{}/{}".format(received, total)
+            )
+        return executors
 
     @staticmethod
     def _summary_sentence(summary):

@@ -43,9 +43,10 @@ STEP_STATES = ("todo", "run", "ok", "warn", "err", "skip")
 #: The text boxes, in the order they are shown.
 BOXES = ("changes", "warnings", "problems")
 
-#: Will-executor states shown in the will-executors box.
+#: Will-executor states shown in the will-executors box ("verifying": asked
+#: for the will by the Verification step, no answer yet, #84b-2).
 EXECUTOR_STATES = (
-    "waiting", "received", "verified", "failed", "timeout",
+    "waiting", "received", "verifying", "verified", "failed", "timeout",
     "to_sign", "to_send", "to_verify",
 )
 
