@@ -475,7 +475,10 @@ def test_auto_rebuild_rebuilds_and_pushes_on_new_utxo():
     assert ctl.check_will() is True
 
 
-def test_auto_rebuild_invalidates_when_threshold_passed():
+def test_auto_rebuild_does_not_invalidate_when_threshold_passed():
+    """CHANGELOG #79: a passed Check Alive is never invalidated on its own
+    (it used to be, leaving no will in force); the owner is asked to renew
+    when the wallet opens or on Check."""
     with _no_willexecutors():
         ctl = make_controller()
         ctl.prepare_will()
@@ -488,8 +491,8 @@ def test_auto_rebuild_invalidates_when_threshold_passed():
         ) as sign:
             result = ctl.maybe_auto_rebuild()
 
-    assert result is True
-    inv.assert_called_once()
+    assert result is False
+    inv.assert_not_called()
     sign.assert_not_called()
 
 

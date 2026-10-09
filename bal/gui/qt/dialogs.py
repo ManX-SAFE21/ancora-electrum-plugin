@@ -57,7 +57,11 @@ from ...core.qrtransfer import (
     encode_transfer,
     preset_index_for_chunk_size,
 )
-from ...core.messages import no_valid_transaction, will_change_message
+from ...core.messages import (
+    check_alive_message,
+    no_valid_transaction,
+    will_change_message,
+)
 from ...core.reminders import build_ics_reminders
 from ...i18n import number_separators
 from .calendar import BalCalendarButton
@@ -638,10 +642,15 @@ class BalBuildWillDialog(BalDialog):
     COLOR_ERROR = "#ff0000"
     COLOR_OK = "#05ad05"
 
-    def __init__(self, bal_window, parent=None):
+    def __init__(self, bal_window, parent=None, renew=False):
+        """``renew=True``: the owner already chose "Renew" for a passed Check
+        Alive (wallet open / Prepare, CHANGELOG #79), so it is not asked
+        again here."""
         if not parent:
             parent = bal_window.window
         BalDialog.__init__(self, parent, bal_window.bal_plugin, _("Building Will"))
+        self._renew_approved = renew
+        self._check_alive_info = None
         # (parent already stored as self._bal_parent by BalDialog.__init__)
         self.updatemessage.connect(self.msg_update)
         self.bal_window = bal_window
@@ -744,28 +753,55 @@ class BalBuildWillDialog(BalDialog):
             )
             return "check_alive_before_delivery", None
         except CheckAliveError as cae:
-            fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
-            tx = Will.invalidate_will(
-                self.bal_window.willitems, self.bal_window.wallet, fee_per_byte,
-                history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
-                will_locktime=Will.get_min_locktime(
-                    self.bal_window.willitems,
-                    default_value=self.bal_window.date_to_check,
-                ),
-            )
-            if tx:
-                _logger.debug(
-                    "during phase1 CAE: {}, Continue to invalidate".format(cae)
-                )
+            # CHANGELOG #79 (owner decision): a passed Check Alive is never
+            # invalidated on its own any more. It used to invalidate and then
+            # stop on "Checking variables: Wait" with NO will in force (the
+            # renewed will was never prepared). Now the owner is asked to
+            # renew (on_success_phase1); when a one-click renewal is not
+            # possible the reason is shown and nothing is invalidated.
+            _logger.debug(f"phase1: check alive passed: {cae}")
+            if self._invalidation_broadcast:
+                # Renewal invalidation already sent on the previous pass but
+                # not yet seen by the wallet: never invalidate twice.
+                return "invalidation_pending", None
+            info = self.bal_window.check_alive_info()
+            self._check_alive_info = info
+            if info and info.get("reason") == "expired":
+                # The will in force is already past its delivery date: it can
+                # be executed now. That is the EXPIRED case (invalidate at
+                # once, Electrum's classic window), not a Check Alive matter;
+                # stopping here would leave it executable (scenario C3adv).
                 self.msg_set_status(
-                    _("Checking variables"), varrow,
-                    _("Check Alive Threshold Passed: you have to Invalidate "
-                      "your old Will"),
+                    _("Checking variables"), varrow, _("Expired"),
                     self.COLOR_ERROR,
                 )
+                return "invalidate_classic", None
+            tx = None
+            if info and info.get("renewable") and info.get("has_will"):
+                fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
+                tx = Will.invalidate_will(
+                    self.bal_window.willitems, self.bal_window.wallet,
+                    fee_per_byte,
+                    history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
+                    will_locktime=Will.get_min_locktime(
+                        self.bal_window.willitems,
+                        default_value=self.bal_window.date_to_check,
+                    ),
+                )
+            if tx:
+                self.msg_set_status(
+                    _("Checking variables"), varrow,
+                    _("Check Alive passed"), self.COLOR_WARNING,
+                )
+                return "check_alive_renew", tx
+            self.msg_set_status(
+                _("Checking variables"), varrow, _("Stopped"), self.COLOR_ERROR
+            )
+            if info:
+                self.msg_edit_row(self.msg_error(check_alive_message(info)))
             else:
-                raise cae
-            return None, tx
+                self.msg_edit_row(self.msg_error(str(cae)))
+            return "check_alive_stop", None
         except NoHeirsException:
             self.msg_set_status(
                 _("Checking variables"), varrow, self.msg_alert(_("No Heirs"))
@@ -1515,6 +1551,27 @@ class BalBuildWillDialog(BalDialog):
             on_error=self.on_error_phase1,
         )
 
+    def _stop_invalidation_pending(self):
+        """Stop: the invalidation was broadcast but is not yet seen.
+
+        The task #21 loop guard, shared with the renewal path (#79): never
+        ask to invalidate twice; tell the user to press Check again once the
+        invalidation transaction is confirmed.
+        """
+        self.thread.stop()
+        self.msg_set_invalidating(self.msg_ok())
+        self.bal_window.show_message(
+            _(
+                "Your old will has been invalidated and the "
+                "transaction was broadcast.\n"
+                "Electrum may need a little time to register it.\n"
+                "Please wait until the invalidation transaction is "
+                "confirmed, then press the Check button again to "
+                "finish updating your will."
+            )
+        )
+        self._add_close_button()
+
     def on_success_phase1(self, result):
         try:
             self._on_success_phase1_body(result)
@@ -1608,6 +1665,36 @@ class BalBuildWillDialog(BalDialog):
             self._add_close_button()
             return
 
+        if self.have_to_sign == "check_alive_stop":
+            # Passed Check Alive that cannot be renewed with one click (#79):
+            # the reason is on its own red row; nothing was invalidated.
+            self._add_close_button()
+            return
+
+        if self.have_to_sign == "invalidation_pending":
+            self._stop_invalidation_pending()
+            return
+
+        if self.have_to_sign == "check_alive_renew":
+            # Passed Check Alive (#79): ask "Renew" / "Not now" unless the
+            # owner already chose "Renew" (wallet open / Prepare). On Renew
+            # this falls through to the normal invalidation below; the next
+            # phase-1 pass then prepares the new will (the old items are
+            # marked INVALIDATED first, see BalWindow.init_class_variables).
+            if not getattr(self, "_renew_approved", False):
+                question = check_alive_message(self._check_alive_info)
+                if not self.bal_window.ask_renew_will(question, parent=self):
+                    self.msg_edit_row(
+                        self.msg_alert(
+                            _("Not now: nothing was changed, your current "
+                              "will stays valid.")
+                        )
+                    )
+                    self._add_close_button()
+                    return
+            self._renew_approved = True
+            self.have_to_sign = None
+
         _logger.debug("have to sign {}".format(self.have_to_sign))
         password = None
         if self.have_to_sign is None:
@@ -1621,19 +1708,7 @@ class BalBuildWillDialog(BalDialog):
             # Instead of re-prompting, STOP cleanly with a clear message and
             # tell the user to retry the Check once the invalidation confirms.
             if self._invalidation_broadcast:
-                self.thread.stop()
-                self.msg_set_invalidating(self.msg_ok())
-                self.bal_window.show_message(
-                    _(
-                        "Your old will has been invalidated and the "
-                        "transaction was broadcast.\n"
-                        "Electrum may need a little time to register it.\n"
-                        "Please wait until the invalidation transaction is "
-                        "confirmed, then press the Check button again to "
-                        "finish updating your will."
-                    )
-                )
-                self._add_close_button()
+                self._stop_invalidation_pending()
                 return
 
             self.msg_set_invalidating()

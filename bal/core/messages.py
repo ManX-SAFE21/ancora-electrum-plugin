@@ -6,9 +6,12 @@ will-executors. :func:`will_change_message` turns that exception into one
 plain sentence. It is shared by the Check dialog, the main window
 ("Prepare") and the command line (CHANGELOG #78), so the three can no longer
 drift apart. The texts are the ones approved by the owner in #77 and before.
+It also holds the Check Alive renewal texts (CHANGELOG #79).
 
 Must never import Qt (``bal/core`` rule).
 """
+
+from datetime import datetime, timezone
 
 from ..i18n import _
 from .will import (
@@ -118,3 +121,89 @@ def will_change_message(e):
         "The will is no longer coherent and must be rebuilt; the exact "
         "reason could not be determined."
     )
+
+# ----------------------------------------------------------- Check Alive (#79)
+
+
+def _day(ts):
+    """``YYYY-MM-DD`` of a UNIX timestamp (UTC, like the will locktimes)."""
+    return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
+
+
+def _period(period):
+    """``(4, "y")`` -> "4 years", ``(30, "d")`` -> "30 days" (translated)."""
+    value, unit = period
+    if unit in ("y", "Y"):
+        return _("1 year") if value == 1 else _("{} years").format(value)
+    return _("1 day") if value == 1 else _("{} days").format(value)
+
+
+def check_alive_renew_question(info):
+    """The renewal question shown when the Check Alive has passed.
+
+    ``info`` comes from :func:`bal.core.checkalive.check_alive_renewal` and
+    must be ``renewable``. Text approved by the owner (CHANGELOG #79).
+    """
+    return _(
+        "Are you still here? The Check Alive date ({check}) has passed.\n\n"
+        "Renew your will: the new delivery date will be {new} (today + "
+        "{period}). The old will is invalidated on the blockchain (this costs "
+        "a miner fee) and the new one is prepared right away.\n\n"
+        "Not now: nothing changes, your current will stays valid."
+    ).format(
+        check=_day(info["check_date"]),
+        new=_day(info["new_delivery"]),
+        period=_period(info["period"]),
+    )
+
+
+def check_alive_cannot_renew(info):
+    """Why a passed Check Alive cannot be renewed with one click.
+
+    Nothing is invalidated in these cases: the owner must change the
+    settings first (CHANGELOG #79).
+    """
+    check = _day(info["check_date"])
+    if info.get("reason") == "expired":
+        return _(
+            "The delivery date of your will ({date}) has already passed: the "
+            "will can be executed now. Press Check to invalidate it and "
+            "prepare a new one."
+        ).format(date=_day(info["delivery"]))
+    if not info.get("has_will"):
+        return _(
+            "The Check Alive date ({check}) is already in the past with this "
+            "delivery date: choose a later delivery date or a shorter Check "
+            "Alive."
+        ).format(check=check)
+    if info.get("reason") == "fixed_date":
+        return _(
+            "The Check Alive date ({check}) has passed. Your delivery is a "
+            "fixed date: choose a later delivery date to renew your will. "
+            "Until then your current will stays valid."
+        ).format(check=check)
+    return _(
+        "The Check Alive date ({check}) has passed, and with these settings "
+        "a renewed will would have its Check Alive in the past too: choose a "
+        "longer delivery time or a shorter Check Alive. Until then your "
+        "current will stays valid."
+    ).format(check=check)
+
+
+def check_alive_passed_sentence(info):
+    """Short form for the command line: date passed and the new delivery."""
+    return _(
+        "The Check Alive date ({check}) has passed: a renewed will would be "
+        "delivered on {new} (today + {period})."
+    ).format(
+        check=_day(info["check_date"]),
+        new=_day(info["new_delivery"]),
+        period=_period(info["period"]),
+    )
+
+
+def check_alive_message(info):
+    """The question when the will can be renewed, else the reason it cannot."""
+    if info.get("renewable") and info.get("has_will"):
+        return check_alive_renew_question(info)
+    return check_alive_cannot_renew(info)

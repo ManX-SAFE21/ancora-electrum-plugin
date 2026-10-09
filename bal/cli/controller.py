@@ -42,13 +42,18 @@ from ..core import will as will_mod
 from ..core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
+    check_alive_renewal,
     ensure_check_alive_valid,
     resolve_date_to_check,
     resolve_delivery_date,
     resolve_guard_threshold,
 )
 from ..core.heirs import Heirs, is_op_return_address
-from ..core.messages import will_change_message
+from ..core.messages import (
+    check_alive_message,
+    check_alive_passed_sentence,
+    will_change_message,
+)
 from ..core.plugin_base import BalConfig, BalPlugin
 from ..core.util import Util, copy_structure
 from ..core.will import Will, WillItem
@@ -115,13 +120,25 @@ def _user_facing(e):
             )
         )
     if isinstance(e, checkalive.CheckAliveError):
-        return UserFacingException(
-            _(
-                "CheckAlive is in the past: update it to a date in the future "
-                "but less than the locktime"
-            )
-        )
+        return UserFacingException(_check_alive_cli_message(None))
     return e
+
+
+def _check_alive_cli_message(info):
+    """Passed Check Alive on the command line (CHANGELOG #79).
+
+    The command line never invalidates on its own: it explains what the GUI
+    would ask and how to renew by hand.
+    """
+    how = _(
+        "To renew: run bal_will_invalidate, sign and broadcast the "
+        "transaction, then run bal_will_prepare once it is confirmed."
+    )
+    if info is None:
+        return _("The Check Alive date has passed.") + " " + how
+    if info.get("renewable") and info.get("has_will"):
+        return check_alive_passed_sentence(info) + " " + how
+    return check_alive_message(info)
 
 
 class BalController:
@@ -273,9 +290,36 @@ class BalController:
     # ------------------------------------------------------------------ #
     # Core flows (mirror of BalWindow)
     # ------------------------------------------------------------------ #
+    def _refresh_invalidated_items(self):
+        """Mirror of ``BalWindow._refresh_invalidated_items`` (#79)."""
+        try:
+            utxos = Util.get_available_utxos(
+                self.wallet,
+                self.plugin.HISTORY_LABEL.get(),
+                Will.get_min_locktime(self.willitems, default_value=time.time()),
+            )
+            Will.refresh_invalidated(self.willitems, utxos, self.wallet)
+        except Exception as e:
+            _logger.debug(f"refresh invalidated items failed: {e!r}")
+
+    def check_alive_info(self):
+        """``check_alive_renewal`` for this wallet (see BalWindow)."""
+        try:
+            return check_alive_renewal(
+                self.plugin.is_basic_mode(),
+                self.will_settings,
+                built_locktime=Will.get_min_locktime(self.willitems),
+                creation_date=Will.get_creation_time(self.willitems),
+            )
+        except Exception as e:
+            _logger.debug(f"check alive info failed: {e!r}")
+            return None
+
     def init_class_variables(self):
         if not self.heirs:
             raise will_mod.NoHeirsException(_("Heirs are not defined"))
+        # Items already invalidated on-chain must not anchor the dates (#79).
+        self._refresh_invalidated_items()
         self.date_to_check = resolve_date_to_check(
             self.plugin.is_basic_mode(),
             self.will_settings,
@@ -585,14 +629,18 @@ class BalController:
         Re-runs the same check the wizard runs at wallet close - anticipation
         of the delivery date by one day (orphaning the old will on-chain),
         on-chain invalidation only when the anticipated locktime crosses the
-        Check Alive threshold or the threshold is already in the past - and,
-        when the will is rebuilt, signs it (passwordless wallets only) and
-        pushes it to its will-executors.
+        Check Alive threshold - and, when the will is rebuilt, signs it
+        (passwordless wallets only) and pushes it to its will-executors.
+        A Check Alive already in the past never invalidates on its own
+        (CHANGELOG #79): ``check_alive_passed`` is returned instead.
 
         Returns a JSON object with ``result``:
 
         * ``valid``         -> the will is still coherent; nothing was done.
         * ``no_heirs``      -> no valid heirs are configured.
+        * ``check_alive_passed`` -> the Check Alive date has passed; nothing
+          was done. ``message`` says how to renew (``renewable`` tells whether
+          a renewal with the current settings is possible).
         * ``invalidated``   -> the old will must be invalidated on-chain first:
           the returned ``invalidation_tx`` must be signed and broadcast, then
           the command re-run.
@@ -614,8 +662,19 @@ class BalController:
             )
             return {"result": "check_alive_before_delivery"}
         except CheckAliveError:
+            # CHANGELOG #79: never invalidate on our own for a passed Check
+            # Alive (the GUI used to be left with no will in force). Say so
+            # and how to renew; the owner decides.
             _logger.info("auto rebuild: Check Alive already in the past")
-            return self._auto_rebuild_invalidate("threshold_passed")
+            info = self.check_alive_info()
+            if info and info.get("reason") == "expired":
+                # Past the delivery date: the expired case, as before.
+                return self._auto_rebuild_invalidate("expired")
+            return {
+                "result": "check_alive_passed",
+                "renewable": bool(info and info.get("renewable")),
+                "message": _check_alive_cli_message(info),
+            }
 
         try:
             self.check_will()

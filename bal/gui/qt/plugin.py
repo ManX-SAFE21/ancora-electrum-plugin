@@ -350,6 +350,10 @@ class Plugin(BalPlugin, EventListener):
         # load_wallet is fired on the recreated window during a hot enable too;
         # use it as an extra trigger to auto-close the leftover manager dialog.
         QTimer.singleShot(350, self._close_plugins_manager_dialog)
+        # CHANGELOG #79: a passed Check Alive asks to renew when the wallet
+        # opens. Deferred so the window is shown and the wallet has a moment
+        # to sync (an invalidation already on-chain is then recognised).
+        QTimer.singleShot(3000, w.check_alive_on_open)
 
     @hook
     def close_wallet(self, wallet):

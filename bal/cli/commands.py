@@ -344,13 +344,14 @@ async def will_autorebuild(self, wallet=None, plugin=None):
 
     The same flow the GUI runs automatically on new wallet transactions:
     the delivery date is anticipated by one day to orphan the old will on-chain
-    and, only when the anticipated locktime crosses the Check Alive threshold
-    (or the threshold is already in the past), an invalidation transaction is
-    returned instead.  Signing needs a passwordless wallet.
+    and, only when the anticipated locktime crosses the Check Alive threshold,
+    an invalidation transaction is returned instead.  A Check Alive already in
+    the past is reported (``check_alive_passed``) and never invalidated on its
+    own.  Signing needs a passwordless wallet.
 
     Returns a JSON object with ``result``: ``valid``, ``no_heirs``,
-    ``invalidated`` (with ``invalidation_tx``), ``nothing``,
-    ``needs_signing`` or ``rebuilt``.
+    ``check_alive_passed``, ``invalidated`` (with ``invalidation_tx``),
+    ``nothing``, ``needs_signing`` or ``rebuilt``.
     """
     return _call(plugin, wallet, "auto_rebuild")
 

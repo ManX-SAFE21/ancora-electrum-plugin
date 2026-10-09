@@ -19,8 +19,10 @@ A RELATIVE Check Alive value is anchored according to its SIGN:
   ``time``). The reference falls back to *now*.
 
 Pure, GUI-free. The GUI raises :class:`CheckAliveError` /
-:class:`CheckAliveAfterDeliveryError` to trigger the postpone/invalidate flow;
-the decision that they *should* be raised lives here.
+:class:`CheckAliveAfterDeliveryError`; the decision that they *should* be
+raised lives here.  A passed Check Alive never invalidates on its own any
+more: :func:`check_alive_renewal` tells the GUI/CLI whether to offer the
+owner a renewal (CHANGELOG #79).
 """
 
 from datetime import datetime, timezone
@@ -241,6 +243,95 @@ def resolve_guard_threshold(
         creation_date=creation_date,
         now=now,
     )
+
+
+def check_alive_renewal(
+    is_basic_mode: bool,
+    will_settings: Any,
+    built_locktime: float | int | None = None,
+    creation_date: float | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """Describe a PASSED Check Alive and whether the will can be renewed.
+
+    Owner decision (CHANGELOG #79): a passed Check Alive means the owner is
+    still here, so the plugin offers to RENEW the will (invalidate the old
+    one, then prepare a new one at once) instead of invalidating on its own
+    and leaving no will in force.  This helper only decides; it never builds,
+    signs or invalidates anything.
+
+    Renewing works because of an existing rule (see
+    :func:`resolve_delivery_date`): with no will in force a RELATIVE delivery
+    (``"4y"``) is counted from *now*.  So once the old will is invalidated,
+    the new one is delivered ``now + 4y``.  A FIXED delivery date cannot be
+    renewed this way: the owner must choose a later date.
+
+    Args:
+        is_basic_mode: ``True`` in BASIC mode (no Check Alive: returns None).
+        will_settings: the per-wallet settings (``"locktime"``,
+            ``"threshold"``).
+        built_locktime: the earliest locktime of the VALID will items
+            (``Will.get_min_locktime``), ``None`` when no will is in force.
+        creation_date: ``Will.get_creation_time`` of the will in force.
+        now: overridable clock for tests.
+
+    Returns:
+        ``None`` when the Check Alive has not passed (or BASIC mode), else a
+        dict with ``check_date`` (the passed Check Alive), ``has_will``,
+        ``renewable``, ``reason`` (``None``, ``"expired"``: the will in force
+        is already past its delivery date, ``"fixed_date"`` or
+        ``"still_past"``: even a renewed will would have its Check Alive in
+        the past), ``delivery`` (= ``built_locktime``), and for a relative
+        delivery ``new_delivery``,
+        ``new_check``, ``period`` (``(value, unit)``, e.g. ``(4, "y")``).
+    """
+    if is_basic_mode:
+        return None
+    current = now if now is not None else datetime.now(tz=timezone.utc).timestamp()
+    try:
+        check_date = resolve_date_to_check(
+            False, will_settings, now=current,
+            built_locktime=built_locktime, creation_date=creation_date,
+        )
+    except Exception:
+        return None
+    if check_date >= current:
+        return None
+    info = {
+        "check_date": check_date,
+        "has_will": bool(built_locktime),
+        "renewable": False,
+        "reason": None,
+        "new_delivery": None,
+        "new_check": None,
+        "period": None,
+        "delivery": built_locktime,
+    }
+    if built_locktime and built_locktime <= current:
+        # The will in force is already past its delivery date: it can be
+        # executed now. That is the EXPIRED case (invalidate at once), not a
+        # Check Alive one; the callers route it there (scenario C3adv).
+        info["reason"] = "expired"
+        return info
+    locktime = BalTimestamp(will_settings.get("locktime"))
+    if locktime.unit is None:
+        info["reason"] = "fixed_date"
+        return info
+    # The renewed will: no will in force any more, delivery counted from now,
+    # and a positive ("after creation") Check Alive anchored to the new will.
+    new_delivery = locktime.to_timestamp(current)
+    new_check = resolve_date_to_check(
+        False, will_settings, now=current, built_locktime=None,
+        creation_date=current,
+    )
+    info["new_delivery"] = new_delivery
+    info["new_check"] = new_check
+    info["period"] = (locktime.value, locktime.unit)
+    if not is_check_alive_date_valid(new_check, new_delivery, now=current):
+        info["reason"] = "still_past"
+        return info
+    info["renewable"] = True
+    return info
 
 
 def is_check_alive_date_valid(
