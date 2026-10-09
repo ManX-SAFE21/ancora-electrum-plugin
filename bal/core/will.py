@@ -45,7 +45,7 @@ from electrum.util import (
 )
 
 from ..i18n import N_, _
-from .heirs import WillExecutorFeeTooHighException
+from .heirs import WillExecutorFeeTooHighException, is_op_return_address
 from .util import Util, copy_structure
 from .willexecutors import Willexecutors
 
@@ -901,7 +901,13 @@ class Will:
           "with_fixed": bool}`` — the percentages do not add up to 100: the
           will always empties the wallet, so they are rescaled in proportion
           (of what remains after the fixed amounts, if any);
+        * ``{"kind": "fixed_scaled", "shares": [(name, share)]}`` — only
+          fixed amounts: they are paid in proportion, the wallet is emptied
+          (CHANGELOG #82);
         * ``None`` — nothing to explain.
+
+        "fixed_exceeds" is never reported when no coin is visible (balance 0),
+        since the balance then says nothing about the amounts (#82).
 
         Never raises (``None`` on error).
         """
@@ -917,7 +923,10 @@ class Will:
                 and Willexecutors.is_valid(we, dust=dust)
             ]
             left = balance - (max(base_fees) if base_fees else 0)
-            if fixed_heirs and fixed_amount >= left:
+            # CHANGELOG #82: with no coin visible at this moment (e.g. right
+            # after a Cancel) the balance says nothing about the amounts:
+            # never report "fixed amounts exceed" then.
+            if fixed_heirs and balance > 0 and fixed_amount >= left:
                 return {
                     "kind": "fixed_exceeds",
                     "fixed": int(fixed_amount),
@@ -935,6 +944,27 @@ class Will:
                     "shares": shares,
                     "with_fixed": bool(fixed_heirs),
                 }
+            if fixed_heirs and not perc_heirs and fixed_amount > 0:
+                # CHANGELOG #82: only fixed amounts. The will always empties
+                # the wallet, so the build pays them IN PROPORTION (verified
+                # in the harness: 300,000 + 200,000 sat on a 1,000,000 sat
+                # wallet became 60 % / 40 % of it). Heirs at or below the dust
+                # threshold and OP_RETURN outputs are left out, as in the
+                # build (fixed_amount does not count them).
+                amounts = []
+                for name in fixed_heirs:
+                    entry = heirs[name]
+                    if is_op_return_address(entry[0]):
+                        continue
+                    amount = int(math.floor(float(entry[1])))
+                    if amount > dust:
+                        amounts.append((name, amount))
+                total = sum(a for _n, a in amounts)
+                if total > 0:
+                    return {
+                        "kind": "fixed_scaled",
+                        "shares": [(n, a * 100 / total) for n, a in amounts],
+                    }
         except Exception as e:
             _logger.debug(f"describe_amounts: {e!r}")
         return None
