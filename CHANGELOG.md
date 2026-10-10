@@ -5637,3 +5637,25 @@ with every field through the command layer.
 **Verification:** Whole `tests/` directory: 992 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: `--info ... --promo_code SAFE21` saved.
 
 **Outcome:** DONE.
+
+## 102. CLI/4: the delivery date no longer moves at every daemon restart
+
+**Date:** 2026-10-10
+
+**Problem:** the default will settings hold absolute dates computed when the
+plugin starts (today + 1 year). The command line never saved them, so a
+daemon restarted on a later day had a new default, one day later, and a
+signed will looked "postponed": `bal_will_check` asked for an on-chain
+invalidation (a fee). The GUI saves the settings when the wallet window
+opens, so GUI users did not see it. CLI review point 2, confirmed live with
+the daemon restarted with the clock one day later.
+
+**What changed (plan approved by the owner):** `BalController._init_settings`
+saves the default the first time it is used, like the GUI. Test: the first
+wallet command saves it, and a new default one day later does not change
+the date of a new heir.
+
+**Verification:** Whole `tests/` directory: 993 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: prepare and sign, restart "one day
+later": `bal_will_check` answers valid (before: postponed).
+
+**Outcome:** DONE.

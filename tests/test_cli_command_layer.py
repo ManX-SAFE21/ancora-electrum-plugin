@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from electrum.commands import Commands
 from electrum.util import UserFacingException
-from test_cli_controller_offline import FakeWallet, Plugin
+from test_cli_controller_offline import VALID_ADDRESS, FakeWallet, Plugin
 
 import bal  # noqa: F401  (importing the package registers the bal_* commands)
 
@@ -165,3 +165,21 @@ def test_executor_update_with_every_field(plugin):
     assert (we["base_fee"], we["info"], we["promo_code"]) == (2000, "renamed", "SAFE21")
     out = run(plugin, "willexecutors_update", new_url, promo_code="", wallet=wallet)
     assert out["willexecutor"]["promo_code"] is None
+
+
+def test_default_will_settings_are_saved_once(plugin):
+    """#102: the first wallet command saves the default will settings, so a
+    daemon restarted on a later day (a new default, one day later) keeps the
+    delivery date of the will already built."""
+    wallet = FakeWallet()
+    assert plugin.config.get("bal_will_settings") is None
+    run(plugin, "heirs_list", wallet=wallet)
+    saved = plugin.config.get("bal_will_settings")
+    assert saved and saved["locktime"] == plugin.WILL_SETTINGS.default["locktime"]
+    # A restart one day later: the plugin computes a new default.
+    later = dict(plugin.WILL_SETTINGS.default)
+    later["locktime"] += 24 * 3600
+    plugin.WILL_SETTINGS.default = later
+    out = run(plugin, "heirs_add", "alice", VALID_ADDRESS, "100%", wallet=wallet)
+    assert out["value"][2] == saved["locktime"]
+    assert plugin.config.get("bal_will_settings") == saved

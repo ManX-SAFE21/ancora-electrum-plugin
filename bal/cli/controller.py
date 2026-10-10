@@ -305,10 +305,21 @@ class BalController(BalSettingsController):
             return 8
 
     def _init_settings(self):
+        """Load the will settings; save the default the first time.
+
+        The default holds absolute dates computed when the plugin starts
+        (today + 1 year). Never saved, it moved by one day at every daemon
+        restart on a new day, and a signed will then looked "postponed",
+        asking for an on-chain invalidation (CHANGELOG #102). The GUI saves
+        the settings as soon as the wallet window opens; this does the same.
+        """
+        stored = self.plugin.config.get(self.plugin.WILL_SETTINGS.name)
         self.will_settings = self.plugin.WILL_SETTINGS.get()
         if not self.will_settings:
             self.will_settings = self.plugin.default_will_settings()
         Util.fix_will_settings_tx_fees(self.will_settings)
+        if not stored:
+            self.plugin.WILL_SETTINGS.set(self.will_settings)
 
     def _init_heirs(self):
         self.heirs = Heirs._validate(Heirs(self.wallet))
