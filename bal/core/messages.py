@@ -6,15 +6,20 @@ will-executors. :func:`will_change_message` turns that exception into one
 plain sentence. It is shared by the Check dialog, the main window
 ("Prepare") and the command line (CHANGELOG #78), so the three can no longer
 drift apart. The texts are the ones approved by the owner in #77 and before.
-It also holds the Check Alive renewal texts (CHANGELOG #79) and the text
-for the will-executor that cannot be deleted (CHANGELOG #108).
+It also holds the Check Alive renewal texts (CHANGELOG #79), the text
+for the will-executor that cannot be deleted (CHANGELOG #108) and the
+sentences of the Check dialog that need no widget (CHANGELOG #115, moved
+unchanged from ``BalBuildWillDialog`` so a GUI-free engine can use them).
 
 Must never import Qt (``bal/core`` rule).
 """
 
 from datetime import datetime, timezone
 
-from ..i18n import _
+from electrum.logging import get_logger
+
+from ..i18n import _, number_separators
+from .plugin_base import BalTimestamp
 from .will import (
     HeirChangeException,
     HeirNotFoundException,
@@ -22,9 +27,12 @@ from .will import (
     NoWillExecutorNotPresent,
     SameDateCopiesException,
     TxFeesChangedException,
+    Will,
     WillexecutorChangeException,
     WillExecutorNotPresent,
 )
+
+_logger = get_logger(__name__)
 
 
 def no_valid_transaction(e):
@@ -228,3 +236,209 @@ def protected_executor_message(url):
         "{} is the Bitcoin After Life will-executor: it cannot be deleted or "
         "renamed. To stop using it, deselect it."
     ).format(url)
+
+# ------------------------------------------------- Check dialog sentences (#115)
+# Moved unchanged from BalBuildWillDialog (CHANGELOG #115). The dialog keeps
+# its method names as one-line bridges that read its own state and call these.
+
+
+def rebuild_reason_message(
+    e, invalidation_broadcast, postpone_invalidation, unsigned_executors
+):
+    """Name the real reason when the core's sentence would mislead.
+
+    Texts approved by the owner (CHANGELOG #77):
+
+    * right after the Check broadcast an invalidation
+      (``invalidation_broadcast``), the old items are all INVALIDATED and
+      the core reports "no valid transaction"; the real news is that the old
+      will is gone and the new one comes (with the new date for a postpone,
+      ``postpone_invalidation``, else the time period set);
+    * after a Cancel at signing, the next Check discards the unsigned items
+      and reports "no valid transaction" or "will-executor not covered" (for
+      an executor in ``unsigned_executors``, see
+      :meth:`Will.unsigned_will_executors`): say the will was not signed.
+      Any other cause (fee, heirs...) keeps its own message.
+
+    Returns ``None`` when neither applies.
+    """
+    plain = no_valid_transaction(e)
+    if plain and invalidation_broadcast:
+        if postpone_invalidation:
+            return _(
+                "Old will invalidated: preparing the new will with the "
+                "new date."
+            )
+        return _(
+            "Old will invalidated: preparing the new will with the "
+            "time period you set."
+        )
+    if unsigned_executors and (
+        plain
+        or (isinstance(e, WillExecutorNotPresent) and str(e) in unsigned_executors)
+    ):
+        return _(
+            "The will prepared earlier was not signed: preparing it again."
+        )
+    return None
+
+
+def amounts_message(info):
+    """Turn :meth:`Will.describe_amounts` into one plain sentence.
+
+    Texts approved by the owner (CHANGELOG #76). Percentages are shown
+    with one decimal (none when whole) and amounts in satoshi with the
+    separators of the current language (``bal.i18n.number_separators``).
+    Returns ``None`` when ``info`` is ``None``.
+    """
+    if not info:
+        return None
+    decimal, thousands = number_separators()
+
+    def pct(x):
+        s = "{:.1f}".format(x)
+        if s.endswith(".0"):
+            s = s[:-2]
+        return s.replace(".", decimal)
+
+    def sats(n):
+        return "{:,}".format(int(n)).replace(",", thousands)
+
+    if info["kind"] == "fixed_exceeds":
+        if info["percent_heirs"]:
+            return _(
+                "The fixed amounts ({fixed} sat) exceed the balance available "
+                "for the heirs ({balance} sat): the heirs with a percentage "
+                "({names}) would receive nothing. Reduce the fixed amounts."
+            ).format(
+                fixed=sats(info["fixed"]), balance=sats(info["balance"]),
+                names=", ".join(info["percent_heirs"]),
+            )
+        return _(
+            "The fixed amounts ({fixed} sat) exceed the balance available "
+            "for the heirs ({balance} sat). Reduce the fixed amounts."
+        ).format(fixed=sats(info["fixed"]), balance=sats(info["balance"]))
+    shares = ", ".join(
+        "{} {}%".format(name, pct(share)) for name, share in info["shares"]
+    )
+    if info["kind"] == "fixed_scaled":
+        # Text approved by the owner (CHANGELOG #82).
+        return _(
+            "All the heirs have a fixed amount: the will always empties the "
+            "whole wallet, so the amounts are increased in proportion "
+            "({shares})."
+        ).format(shares=shares)
+    if info["with_fixed"]:
+        return _(
+            "The heirs' percentages add up to {total}%: the will always "
+            "empties the whole wallet, so the shares of what remains after "
+            "the fixed amounts are recalculated in proportion ({shares})."
+        ).format(total=pct(info["total"]), shares=shares)
+    return _(
+        "The heirs' percentages add up to {total}%: the will always "
+        "empties the whole wallet, so the shares are recalculated in "
+        "proportion ({shares})."
+    ).format(total=pct(info["total"]), shares=shares)
+
+
+def past_date_message(will_settings):
+    """Return the "delivery date already passed" message, or ``None``.
+
+    Uses :meth:`Will.past_delivery_date` on ``will_settings``. WHY (BUG-4,
+    CHANGELOG #75): with a past date the Check used to say that an heir
+    was "not covered by the current will" and that there was "no delivery
+    date left to build", without naming the real cause. Never raises.
+    """
+    try:
+        past = Will.past_delivery_date(will_settings)
+    except Exception as _err:
+        _logger.debug(f"past_date_message: {_err}")
+        return None
+    if past is None:
+        return None
+    return _(
+        "The delivery date ({}) has already passed. Choose a future date, "
+        "then press Check again."
+    ).format(BalTimestamp._safe_fromtimestamp(past).strftime("%Y-%m-%d"))
+
+
+def build_failure_message(reason, date_passed):
+    """Return a plain-language explanation of why the will was not built.
+
+    ``reason`` is the code that ``Heirs.buildTransactions`` records in
+    ``last_build_error`` every time it gives up (the codes are listed in
+    that method), or ``None``. ``date_passed`` is True when the delivery
+    date of the settings is in the past (:func:`past_date_message`). The
+    code becomes ONE specific sentence telling the user what to fix.
+
+    WHY: the Check used to print the same three "possible reasons" (low
+    balance / dust shares / check-alive after the delivery date) whenever
+    the build returned nothing. The owner hit a real case where all three
+    were false - the actual cause was that no will-executor was usable,
+    which the list did not even mention - so the message actively misled.
+    When the reason is unknown we now SAY that it is unknown and list what
+    to check, instead of asserting three guesses as if they were the only
+    possibilities.
+    """
+    # "No future date" with a delivery date in the past: the past date is
+    # the cause, already explained on the "Checking your will" row (#75).
+    if reason == "NO_FUTURE_DATE" and date_passed:
+        return _("Skipped")
+
+    messages = {
+        "NO_HEIRS": _(
+            "No heirs: add at least one heir before building the will."
+        ),
+        "NO_UTXO": _(
+            "The wallet has no spendable funds, so no inheritance "
+            "transaction can be created."
+        ),
+        "NO_WILLEXECUTOR_USABLE": _(
+            "No usable will-executor: none of the servers in the list is "
+            "both selected and valid. Open the will-executor settings, "
+            "select at least one server and check that it is reachable."
+        ),
+        "NO_FUTURE_DATE": _(
+            "No delivery date left to build: every heir's date is already "
+            "covered by the existing will. Choose a later delivery date, "
+            "or change an heir's date."
+        ),
+        "WILLEXECUTOR_FEE": _(
+            "The amount to send must cover the miner fees plus this "
+            "will-executor's fee, and the wallet balance is not enough: "
+            "select cheaper will-executors, or add funds to the wallet."
+        ),
+        "WILLEXECUTOR_FEE_TOO_HIGH": _(
+            "A will-executor asks for more than the maximum fee you "
+            "allowed: raise the maximum fee in the settings, or select a "
+            "cheaper will-executor."
+        ),
+        "TX_BUILD_FAILED": _(
+            "The inheritance transactions could not be assembled from the "
+            "available funds (the balance may not cover the miner fees)."
+        ),
+        "FIXED_EXCEEDS_BALANCE": _(
+            "The heirs' fixed amounts exceed the wallet balance left after "
+            "the miner and will-executor fees: reduce the fixed amounts."
+        ),
+        "WILLEXECUTOR_TX_ERROR": _(
+            "An unexpected error stopped the transactions being prepared "
+            "for a will-executor, so it was skipped. Try again, or select "
+            "a different will-executor."
+        ),
+    }
+
+    if reason in messages:
+        return "{}\n\n{}".format(messages[reason], _("Skipped"))
+
+    return "{}\n\n{}".format(
+        _(
+            "Could not build the will, and the exact cause could not be "
+            "determined. Please check that:\n"
+            "- the wallet balance covers the miner and will-executor fees,\n"
+            "- each heir's share is above the minimum (dust limit),\n"
+            "- the Check Alive date is EARLIER than the delivery date,\n"
+            "- at least one will-executor is selected and reachable."
+        ),
+        _("Skipped"),
+    )

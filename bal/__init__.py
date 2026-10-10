@@ -18,6 +18,7 @@ distinct sub-packages:
             heirs.py         Heir list model + transaction building
             will.py          Will / WillItem domain model
             willexecutors.py Will-executor (dead-man's switch) networking
+        engine/          The shared engine of the flows (Phase 5e), no Qt
         gui/
             qt/          PyQt6 presentation layer
                 theme.py     Colors / status -> color mapping (status_color)

@@ -6064,3 +6064,56 @@ bal/ tests/`: all checks passed. No plugin file changed, so the scenario
 harness and the test ZIP are unchanged (baseline of #112).
 
 **Outcome:** DONE (tests only).
+
+## 115. Phase 5e, step 3: the engine folder and the Check dialog's pure helpers in the core
+
+**Date:** 2026-10-10
+
+**Problem:** Phase 5e moves the flows of the plugin (check, build, sign,
+send, invalidate) into one engine that the GUI and the command line share.
+The engine must never need Qt, and the sentences and checks of the "Check
+your will" dialog that need no widget were methods of the dialog, so a
+GUI-free engine could not use them.
+
+**What changed (no visible change):**
+
+- New package `bal/engine/` (only its docstring for now): the shared
+  engine of Phase 5e. Its rules: no Qt or GUI, no `bal.cli`, relative
+  imports only (the zip loads the plugin as `electrum_external_plugins.bal`).
+- New `tests/test_layering.py`: `bal/core`, `bal/engine` and `bal/cli`
+  import no `PyQt*`, `electrum.gui` or `bal.gui` (also inside functions),
+  the engine does not import `bal.cli`, and no layer imports the plugin
+  with an absolute `bal.` name. Checked on the source and by importing
+  every module of the three layers in a separate Python process, which
+  must load no Qt module. The rules already held before this change.
+- Moved without changing a word, with explicit arguments instead of the
+  dialog's state:
+  - to `bal/core/messages.py`: `rebuild_reason_message` (#77),
+    `amounts_message` (#76, #82), `past_date_message` (#75),
+    `build_failure_message`;
+  - to `Will` in `bal/core/will.py`: `executed_inheritance_status` (#7a),
+    `unsigned_will_executors` (#77), `amount_warning_is_false_alarm` (#76).
+- `bal/gui/qt/dialogs.py`: the old methods keep their names as bridges
+  that read the dialog's state and call the core (243 lines out, 44 in).
+  They still never raise when the window state cannot be read, as before.
+- `tests/test_group_h_v048.py` tested a copy of the "inheritance already
+  executed" rule; it now tests the real one.
+- New `tests/test_core_messages_moved.py`: the moved functions case by
+  case, and the bridges (dialog state passed, never raising).
+- Catalogs refreshed with pybabel: the same 597 entries in `bal.pot` and
+  643 in each `.po`, with the same texts, translations and flags (compared
+  entry by entry); only the order and the source locations changed.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1173 passed, 0 failed, 0 errors (1156 + 17 new). The 93
+golden files of #112 and #114 are unchanged (compared, not rewritten).
+`ruff check bal/ tests/`: all checks passed. `build_zip.py`: the zip holds
+`bal/engine/`; on Electrum 4.8.2 `external_zip_test.py` and
+`smoke_test.py` pass, and `bal.engine` and the moved functions import and
+run from the zip without Qt. Tests run on Electrum 4.8.2 only (owner
+decision, 2026-10-10). Scenario harness (full matrix, the 2-coin scenarios and the
+bug-3 probes 6 times, warn_matrix synced and not synced): the log is the
+same as the #112 baseline line by line (transaction ids aside), including
+the known B2/B2adv result; warn_matrix 134 Checks, 0 mismatches.
+
+**Outcome:** DONE. The owner tested the ZIP: it works well.
