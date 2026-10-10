@@ -6239,3 +6239,58 @@ automatic rebuild, list download and ping give the same results as after
 baseline, warn_matrix 134 Checks, 0 mismatches.
 
 **Outcome:** DONE. The owner tested the ZIP: it works.
+
+## 118. Phase 5e, step 5e-06: the GUI window uses the engine's state bricks
+
+**Date:** 2026-10-10
+
+**Problem:** after #117 the command line used the engine's state bricks
+(`bal/engine/context.py`), while the GUI window `BalWindow` still had its
+own copies of the same steps.
+
+**What changed (no visible change):**
+
+- `bal/gui/qt/window.py`: `load_willitems`, `save_willitems`,
+  `_save_will_to_history`, `_refresh_invalidated_items`,
+  `_normalize_check_alive`, `check_alive_info`, `init_class_variables`,
+  `init_heirs_to_locktime` and `check_will` keep their names (the window's
+  flows, the dialogs, the tests and the scenario harness use them) and run
+  the engine functions. Kept in the window: the Will tab refresh after
+  loading, and the error logging of `init_class_variables` ("no heirs" is
+  raised without a log, as it came before the old `try`; every later error
+  is logged with `log_error` and raised again).
+- The window's three engine hooks do what the window did before:
+  `store_will_setting` calls `update_setting_widgets(value, field,
+  update_all=True)` (the call of the old `_normalize_check_alive`),
+  `flush_wallet_db` does nothing (the window never wrote the wallet file in
+  these steps), `after_history_saved` schedules the History redraw.
+- Differences between the two copies checked to change nothing: the window
+  stored `NO_WILLEXECUTOR` as read, the engine as `bool()` (only used as
+  yes/no); the window passed `bal_window=self` to
+  `Willexecutors.get_willexecutors` (the parameter is read only in
+  commented-out code); the window passed `callback_not_valid_tx` to
+  `Will.is_will_valid` (never called by the core; `delete_not_valid`
+  raises `NotImplementedError`); the window read `self.window.wallet` in
+  two steps, the engine `self.wallet` (the same object, set in
+  `BalWindow.__init__`).
+- Not in this step: `update_all` (the refresh of the statuses and the
+  lists). Its status half exists in five copies; it gets its own step.
+- Tests: `tests/flowkit.py` also gives `bal.engine.context` the scenario's
+  fixed clock (the window's `_refresh_invalidated_items` read the window's
+  clock and now runs there); `tests/test_import_will_details.py`: its
+  hand-made window gets the `flush_wallet_db` hook. New
+  `tests/test_gui_engine_host.py` (17): the window's hooks, every step
+  calling the engine on the window, the Will tab refresh, the error logging.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1218 passed, 0 failed, 0 errors (1201 + 17 new); the 93
+golden files of #112 and #114 (they run the real `BalWindow`: Check,
+Prepare, automatic rebuild, wallet close) unchanged. `ruff check bal/
+tests/`: all checks passed. Scenario harness (it runs a `BalWindow`
+subclass): log identical to the #112 baseline, warn_matrix 134 Checks, 0
+mismatches. `build_zip.py`: on Electrum 4.8.2 `external_zip_test.py` and
+`smoke_test.py` pass. Independent review: three reviewers (line-by-line
+equivalence; callers, overrides and fakes; clocks, threads and
+persistence) found no behaviour difference.
+
+**Outcome:** DONE. The owner tested the ZIP: it works.
