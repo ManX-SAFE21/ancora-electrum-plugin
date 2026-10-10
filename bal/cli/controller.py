@@ -625,6 +625,49 @@ class BalController(BalSettingsController):
             return {}
         return self.willitems
 
+    def _after_rebuild(self):
+        """Label the rebuilt transactions and keep the delivery date in step.
+
+        Mirror of ``BalBuildWillDialog._build_success_report`` (labels) and
+        ``_sync_locktime_to_built_txs`` (CHANGELOG #107).
+        """
+        for wid in Will.only_valid(self.willitems):
+            try:
+                self.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
+            except Exception as label_err:
+                _logger.debug(f"set_label after rebuild failed: {label_err}")
+        self._sync_locktime_to_built_txs()
+
+    def _sync_locktime_to_built_txs(self):
+        """Move the stored delivery date to the rebuilt transactions' date.
+
+        Mirror of the GUI's ``BalBuildWillDialog._sync_locktime_to_built_txs``
+        (see its docstring for the full why). A rebuild that spends the coins
+        of the will already sent (e.g. after new funds) anticipates the
+        locktime by one day, so the new transactions are valid first. The
+        stored date stayed one day later, and the next check took that for a
+        postponement and asked for an on-chain invalidation (CHANGELOG #107).
+        The date only ever moves EARLIER, and only when it is an absolute
+        date: a relative one ("1y") is resolved against the built
+        transactions on every check, and a later date chosen by the user is
+        never overwritten.
+        """
+        min_locktime = Will.get_min_locktime(self.willitems, None)
+        if min_locktime is None:
+            return
+        min_locktime = int(min_locktime)
+        stored = self.will_settings["locktime"]
+        if isinstance(stored, str) and stored[-1:].lower() in ("d", "y"):
+            return
+        try:
+            current = int(Util.parse_locktime_string(stored))
+        except Exception:
+            current = None
+        if current is not None and min_locktime < current:
+            _logger.info(f"delivery date synced to the rebuilt will: {current} -> {min_locktime}")
+            self.will_settings["locktime"] = min_locktime
+            self.plugin.WILL_SETTINGS.set(self.will_settings)
+
     def invalidate_will(self, will=None):
         """Build the on-chain invalidation transaction (real fee).
 
@@ -762,15 +805,26 @@ class BalController(BalSettingsController):
             # CHANGELOG #78: say WHY it is rebuilt (returned as "reason"),
             # computed now: the rebuild below changes what the core reports.
             reason = will_change_message(e)
-            self.build_will(ignore_duplicate, keep_original)
+            if not self.build_will(ignore_duplicate, keep_original):
+                raise UserFacingException(
+                    _(
+                        "The will was not built ({}): check the heirs, the "
+                        "amounts, the delivery date and the will-executors."
+                    ).format(getattr(self.heirs, "last_build_error", None) or "?")
+                ) from None
             rebuilt_ok = False
             try:
                 self.check_will()
-                for wid, _w in self.willitems.items():
-                    try:
-                        self.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
-                    except Exception as label_err:
-                        _logger.debug(f"prepare_will set_label failed: {label_err}")
+                rebuilt_ok = True
+            except will_mod.NotCompleteWillException as e2:
+                # CHANGELOG #107, mirror of the Check dialog (bugs E/F/K): right
+                # after a rebuild the check reports that the new will differs
+                # from the old one (e.g. the heir's date, anticipated by one
+                # day after new funds). That only means the new transactions
+                # must be signed. Before, the command line stopped here with
+                # "Error: <heir> Please, check your heirs..." and the will
+                # could not be prepared again after receiving funds.
+                _logger.info(f"rebuilt will needs signing ({type(e2).__name__})")
                 rebuilt_ok = True
             except will_mod.WillExpiredException:
                 inv = self._tx_out(self.invalidate_will())
@@ -783,14 +837,9 @@ class BalController(BalSettingsController):
                     "invalidation_tx": inv,
                     "will": self._will_status_dict(),
                 }
-            except will_mod.NotCompleteWillException as e2:
-                raise UserFacingException(
-                    _("Error: {} Please, check your heirs, locktime and threshold!").format(
-                        str(e2)
-                    )
-                ) from e2
             self.save_willitems()
             if rebuilt_ok:
+                self._after_rebuild()
                 self._save_to_history()
                 return {
                     "result": "rebuilt",
@@ -892,6 +941,7 @@ class BalController(BalSettingsController):
             return self._auto_rebuild_invalidate("anticipation_crossed")
         except will_mod.NotCompleteWillException:
             pass
+        self._after_rebuild()
 
         if self.wallet.has_keystore_encryption():
             _logger.warning(

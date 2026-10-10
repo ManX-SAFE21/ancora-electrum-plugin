@@ -5759,3 +5759,35 @@ of date and where the current one is. Documentation only.
 Whole `tests/` directory: 1010 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL.
 
 **Outcome:** DONE.
+
+## 107. CLI/9: after new funds the command line rebuilds the will and keeps the date in step
+
+**Date:** 2026-10-10
+
+**Problem (found in the live CLI test of 2026-10-10, new):** after new funds
+arrived in a wallet with a signed will:
+
+- `bal_will_prepare` stopped with "Error: alice Please, check your heirs,
+  locktime and threshold!": the will could not be prepared again. Right
+  after a rebuild the check reports that the new will differs from the old
+  one; the Check dialog treats that as "sign it" (bugs E/F/K), the command
+  line as an error.
+- `bal_will_autorebuild` rebuilt the will one day earlier (correct: the new
+  will must be valid before the one the will-executors hold) but left the
+  stored delivery date one day later, so the next `bal_will_check` /
+  `bal_will_prepare` took it for a postponement and asked for an on-chain
+  invalidation (a fee). The Check dialog moves the stored date
+  (`_sync_locktime_to_built_txs`); the command line did not.
+
+**What changed (plan approved by the owner):** `prepare_will` treats that
+post-rebuild check as "rebuilt, needs signing" (and stops with a clear
+message when nothing was built); after a rebuild, `prepare_will` and
+`auto_rebuild` label the transactions and move the stored date to the
+rebuilt will's date, with the Check dialog's rule (only earlier, only an
+absolute date). Two tests reproduce both failures on the old code.
+
+**Verification:** Whole `tests/` directory: 1012 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: new coin, then `bal_will_prepare`
+answers rebuilt (before: error); new coin, then `bal_will_autorebuild`,
+then `bal_will_prepare` answers coherent (before: postponed).
+
+**Outcome:** DONE.

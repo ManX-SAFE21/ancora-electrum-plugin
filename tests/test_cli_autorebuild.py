@@ -362,6 +362,68 @@ def test_auto_rebuild_says_when_no_will_executor_received_it():
     new_item = _item_spending(c, "11" * 32, "22" * 32)
     assert new_item.get_status("COMPLETE"), "the will is still signed"
 
+
+def _rebuild_after_new_funds(run_rebuild):
+    """Prepare and sign a will, receive new funds, rebuild with ``run_rebuild``
+    (anticipating the date by one day, as the core does when the old will's
+    coins are spent again), then run the next command's check.
+
+    The delivery date is the default ABSOLUTE one (``_make_controller`` sets
+    a relative "1y", which is resolved against the built will and never had
+    the problem).
+
+    Returns ``(rebuild result, stored locktime, old locktime, next check)``.
+    """
+    with _no_willexecutors():
+        with _Plugin() as plugin:
+            plugin.NO_WILLEXECUTOR.set(True)
+            wallet = FakeWallet([make_funding_input()])
+            c = BalController(plugin, wallet)
+            c.heirs_add("alice", ADDRESS, "100000")
+            c.heirs_add("bob", ADDRESS, "100%")
+            c.prepare_will()
+            c.sign_transactions(None)
+            _, old_item = _single(c)
+            old_locktime = int(old_item.tx.locktime)
+            wallet._utxos.append(make_funding_input("22" * 32))
+            with mock.patch.object(
+                Will, "check_anticipate", return_value=old_locktime - 86400
+            ):
+                result = run_rebuild(c)
+            stored = plugin.WILL_SETTINGS.get()["locktime"]
+            # The next command: a new controller, as for every CLI command.
+            nxt = BalController(plugin, wallet)
+            nxt.sign_transactions(None)
+            try:
+                check = nxt.will_check()
+            except Exception as e:
+                check = e
+    return result, stored, old_locktime, check
+
+
+def test_prepare_after_new_funds_rebuilds_and_keeps_the_date_in_step():
+    """CHANGELOG #107: after new funds, ``bal_will_prepare`` failed with
+    "Error: <heir> Please, check your heirs..." (the post-rebuild check
+    differs from the old will: that only means "sign it"), and the stored
+    date stayed one day after the rebuilt will, so the next check asked to
+    invalidate a "postponed" will."""
+    result, stored, old_locktime, check = _rebuild_after_new_funds(
+        lambda c: c.prepare_will()
+    )
+    assert result["result"] == "rebuilt", result
+    assert int(stored) == old_locktime - 86400
+    assert check == {"valid": True}, check
+
+
+def test_auto_rebuild_keeps_the_date_in_step():
+    """CHANGELOG #107: the same date sync after ``bal_will_autorebuild``."""
+    result, stored, old_locktime, check = _rebuild_after_new_funds(
+        lambda c: c.auto_rebuild()
+    )
+    assert result["result"] == "rebuilt", result
+    assert int(stored) == old_locktime - 86400
+    assert check == {"valid": True}, check
+
 def _run_all():
     tests = [fn for name, fn in sorted(globals().items()) if name.startswith("test_")]
     for fn in tests:
