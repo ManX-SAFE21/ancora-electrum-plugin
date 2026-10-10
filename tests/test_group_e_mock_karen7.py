@@ -522,6 +522,15 @@ def test_e4_compute_id():
 # E5 - Build inheritance from the real wallet file
 # ================================================================== #
 
+# CHANGELOG #97: the only test of this file that reads the real tests/karen7
+# (the BAL author's regtest wallet, not in git): skipped, saying why, when it
+# is missing, and run on regtest (its addresses are bcrt1).
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(os.path.dirname(__file__), "karen7")),
+    reason="tests/karen7 (the BAL author's regtest wallet, not in git) is not "
+    "available",
+)
+@pytest.mark.usefixtures("regtest_net")
 def test_e5_build_with_real_wallet_heirs_and_utxos():
     """Read heirs and UTXOs from the real ``tests/karen7`` file, pass them
     through ``Heirs.buildTransactions`` and report any unhandled error.

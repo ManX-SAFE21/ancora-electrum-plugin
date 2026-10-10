@@ -288,19 +288,30 @@ def test_auto_rebuild_invalidates_when_locktime_expired():
     assert not any(w.get_status("COMPLETE") for w in c.willitems.values())
 
 
-def test_auto_rebuild_invalidates_when_anticipation_crosses_threshold():
+def test_auto_rebuild_anticipation_never_crosses_the_check_alive():
+    """A one-day anticipation never crosses the Check Alive (CHANGELOG #97).
+
+    This test used to put the Check Alive 12 hours before the delivery (an
+    absolute date) and expected the rebuilt, anticipated will to be
+    invalidated ("anticipation_crossed"). Since CHANGELOG #80 (owner's
+    decision D14) the Check Alive is only "N days before the delivery", at
+    least 1, counted back from the will's own locktime: an absolute date is
+    converted, and one that cannot keep its date becomes 180 days, here
+    already passed (CheckAliveError). The failure stayed hidden behind the
+    network pollution fixed in #97. The closest setting, one day before the
+    delivery, shows the guarantee D14 was chosen for: the anticipated will
+    is rebuilt, nothing is invalidated.
+    """
     with _no_willexecutors():
         with _Plugin() as plugin:
             now = time.time()
             delivery = int(now + 3 * 86400)
-            # ADVANCED mode: the check-alive threshold sits 12h before delivery,
-            # so an anticipated (delivery - 1 day) locktime falls BEFORE it.
             plugin.USER_TYPE.set("advanced")
             wallet = FakeWallet([make_funding_input()])
             plugin.NO_WILLEXECUTOR.set(True)
             c = _make_controller(plugin, wallet)
             c.will_settings["locktime"] = delivery
-            c.will_settings["threshold"] = delivery - 12 * 3600
+            c.will_settings["threshold"] = "-1d"
             c.prepare_will()
             old_txid, _ = _single(c)
             wallet._utxos.append(make_funding_input("22" * 32))
@@ -313,12 +324,8 @@ def test_auto_rebuild_invalidates_when_anticipation_crosses_threshold():
             ):
                 result = c.auto_rebuild()
 
-    assert result["result"] == "invalidated", result
-    assert result["reason"] == "anticipation_crossed"
-    assert not any(w.get_status("COMPLETE") for w in c.willitems.values()), (
-        "after an invalidation the rebuilt will must NOT be signed/pushed "
-        "(the wizard stops and waits for the invalidation to confirm)"
-    )
+    assert result["result"] == "rebuilt", result
+    assert "invalidation_tx" not in result
     new_item = _item_spending(c, "11" * 32, "22" * 32)
     assert new_item.tx.txid() != old_txid, "the rebuilt will must replace the old tx"
     assert int(new_item.tx.locktime) == delivery - 86400, (

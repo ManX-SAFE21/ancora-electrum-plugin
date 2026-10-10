@@ -14,6 +14,23 @@ import time
 import traceback
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+# CHANGELOG #97: tests/karen7 is the BAL author's regtest wallet and is not in
+# git (.gitignore). Without it this test cannot run: skip it, saying why,
+# instead of an error while the file is collected.
+wallet_path = os.path.join(os.path.dirname(__file__), "karen7")
+if not os.path.exists(wallet_path):
+    pytest.skip(
+        "tests/karen7 (the BAL author's regtest wallet, not in git) is not "
+        "available",
+        allow_module_level=True,
+    )
+
+# CHANGELOG #97: karen7 is a regtest wallet. The test used to get regtest
+# only because the other karen7 modules switched it for the whole session.
+pytestmark = pytest.mark.usefixtures("regtest_net")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 # Electrum source
@@ -36,7 +53,6 @@ from bal.core.willexecutors import Willexecutors
 # ------------------------------------------------------------------ #
 # Load karen7 wallet data
 # ------------------------------------------------------------------ #
-wallet_path = os.path.join(os.path.dirname(__file__), "karen7")
 with open(wallet_path) as f:
     KAREN7_DATA = json.load(f)
 

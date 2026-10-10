@@ -696,6 +696,10 @@ def test_import_start_stop_scan_signal_wiring():
     ``.videoFrame.connect(...)`` raises AttributeError. This test drives the
     real sink life-cycle with a mocked camera and asserts the scan session
     starts/ends cleanly with no error.
+
+    CHANGELOG #97: the QR reader is mocked too. The real one needs the zbar
+    library: without it ``_start_scan`` stopped before the wiring this test
+    is about, and the test failed on machines without zbar.
     """
     from PyQt6.QtMultimedia import QCamera, QMediaCaptureSession, QMediaDevices
 
@@ -709,6 +713,7 @@ def test_import_start_stop_scan_signal_wiring():
     fake_device.isNull.return_value = False
 
     with (
+        patch("electrum.qrreader.get_qr_reader", return_value=MagicMock()),
         patch.object(QMediaDevices, "defaultVideoInput", return_value=fake_device),
         # Mock camera + capture session; the QVideoSink stays real so the
         # videoFrameChanged connect/disconnect wiring is exercised for real.

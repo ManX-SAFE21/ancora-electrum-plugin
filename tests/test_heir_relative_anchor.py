@@ -178,7 +178,15 @@ _WILL_SETTINGS = {"locktime": "2y", "threshold": "150d"}
 
 def test_karen7_frozen_delivery_not_expired():
     """ADVANCED date_to_check anchored to the frozen tx locktime: the check
-    window opens BEFORE the delivery, so the will is never read as expired."""
+    window opens BEFORE the delivery, so the will is never read as expired.
+
+    CHANGELOG #97: it failed already in BAL (827a1d1). Its "150d" (150 days
+    after the creation) drifted with "now" when no creation date is given.
+    Since CHANGELOG #80 (decision D14) the Check Alive is only "N days before
+    the delivery": with "-150d" the window is anchored to the frozen
+    locktime, as this test means.
+    """
+    settings = {"locktime": "2y", "threshold": "-150d"}
     heirs = {"alice": ["addr_alice", 5000, "1y"]}
     item = _make_will_item(copy_structure(heirs), _FROZEN, status_complete=True)
     will = {"willid_1": item}
@@ -187,12 +195,12 @@ def test_karen7_frozen_delivery_not_expired():
     assert built_locktime == int(item.tx.locktime)
 
     date_to_check = resolve_date_to_check(
-        False, _WILL_SETTINGS, now=1_800_000_000.0, built_locktime=built_locktime
+        False, settings, now=1_800_000_000.0, built_locktime=built_locktime
     )
     assert int(date_to_check) < built_locktime
     # Re-evaluated 10 days later the window is identical (no daily drift).
     later = resolve_date_to_check(
-        False, _WILL_SETTINGS, now=1_800_000_000.0 + 10 * 86400,
+        False, settings, now=1_800_000_000.0 + 10 * 86400,
         built_locktime=built_locktime,
     )
     assert date_to_check == later
