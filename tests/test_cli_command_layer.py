@@ -141,3 +141,27 @@ def test_executor_commands_run(plugin):
     assert run(plugin, "willexecutors_select", url, value=False, wallet=wallet) == {
         url: False
     }
+
+
+def test_executor_update_with_every_field(plugin):
+    """#101: the command passes every field by position, the promo code
+    included; the controller used to raise ``TypeError``."""
+    wallet = FakeWallet()
+    url = "https://we.example.com"
+    new_url = "https://we2.example.com"
+    run(plugin, "willexecutors_add", url, wallet=wallet)
+    out = run(
+        plugin,
+        "willexecutors_update",
+        url,
+        base_fee=2000,
+        info="renamed",
+        promo_code="SAFE21",
+        rename_to=new_url,
+        wallet=wallet,
+    )
+    assert out["url"] == new_url
+    we = out["willexecutor"]
+    assert (we["base_fee"], we["info"], we["promo_code"]) == (2000, "renamed", "SAFE21")
+    out = run(plugin, "willexecutors_update", new_url, promo_code="", wallet=wallet)
+    assert out["willexecutor"]["promo_code"] is None

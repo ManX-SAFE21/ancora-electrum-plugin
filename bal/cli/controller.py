@@ -1243,7 +1243,13 @@ class BalController(BalSettingsController):
         return self.willexecutors_show(url)
 
     def willexecutors_update(self, url, address=None, base_fee=None, info=None,
-                             rename_to=None):
+                             promo_code=None, rename_to=None):
+        """Change only the given fields of a will-executor and save.
+
+        ``promo_code`` is in the same place as in ``bal_willexecutors_update``,
+        which passes every field by position (CHANGELOG #101: without it the
+        command failed with a ``TypeError``). An empty promo code removes it.
+        """
         if url not in self.willexecutors:
             raise UserFacingException(_("Will-Executor not found: {}").format(url))
         we = self.willexecutors[url]
@@ -1254,6 +1260,8 @@ class BalController(BalSettingsController):
             we["base_fee"] = int(base_fee)
         if info is not None:
             we["info"] = info.strip() or "New Will Executor"
+        if promo_code is not None:
+            we["promo_code"] = promo_code.strip() or None
         if rename_to and rename_to != url:
             if rename_to in self.willexecutors:
                 raise UserFacingException(

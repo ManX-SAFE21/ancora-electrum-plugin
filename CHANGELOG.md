@@ -5621,3 +5621,19 @@ CLI review point 4, confirmed live.
 the command line.
 
 **Outcome:** DONE.
+
+## 101. CLI/3: updating a will-executor no longer fails
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_willexecutors_update` passed the promo code by position,
+but `BalController.willexecutors_update` had no `promo_code` parameter:
+`TypeError`, also over JSON-RPC. CLI review point 5.
+
+**What changed (plan approved by the owner):** `willexecutors_update` takes
+`promo_code` (saved in the record; an empty one removes it). Test: update
+with every field through the command layer.
+
+**Verification:** Whole `tests/` directory: 992 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: `--info ... --promo_code SAFE21` saved.
+
+**Outcome:** DONE.
