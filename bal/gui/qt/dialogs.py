@@ -46,6 +46,7 @@ from ...core.animated_qr import (
     format_name,
     parse_for_detection,
 )
+from ...core.build_report import BuildReport, heir_shares
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
@@ -53,31 +54,29 @@ from ...core.checkalive import (
     resolve_relative_check_alive_date,
     will_executable_now,
 )
+from ...core.messages import (
+    check_alive_message,
+    no_valid_transaction,
+    will_change_message,
+)
 from ...core.qrtransfer import (
     CHUNK_PRESETS,
     decode_transfer,
     encode_transfer,
     preset_index_for_chunk_size,
 )
-from ...core.messages import (
-    check_alive_message,
-    no_valid_transaction,
-    will_change_message,
-)
-from ...core.build_report import BuildReport, heir_shares
 from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
 from ...i18n import number_separators
 from .calendar import BalCalendarButton
-from .report_actions import report_menu
 from .common import (
     HEIR_DUST_AMOUNT,
     HEIR_REAL_AMOUNT,
     N_,
     AmountException,
     Any,
-    BalTimestamp,
     BalanceTooLowException,
+    BalTimestamp,
     BestEffortRequestFailed,
     Buttons,
     Callable,
@@ -137,6 +136,7 @@ from .common import (
     tx_from_any,
     write_json_file,
 )
+from .report_actions import report_menu
 from .widgets import (
     BuildReportView,
     WillSettingsWidget,

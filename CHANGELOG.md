@@ -5898,3 +5898,19 @@ wallet close moved the delivery date one day earlier through the shared
 rule.
 
 **Outcome:** DONE (the automatic rebuild path verified in-process only).
+
+## 111. ruff: no findings left
+
+**Date:** 2026-10-10
+
+**Problem:** `ruff check bal/ tests/` reported 3 `I001` (unsorted imports)
+inherited from BAL: `bal/gui/qt/dialogs.py`, `tests/test_core_animated_qr.py`,
+`tests/test_core_qr_transfer.py`.
+
+**What changed (owner request):** `ruff --select I001 --fix` on those three
+files only: the imports of `dialogs.py` in alphabetical order (no statement
+changed), one blank line removed in each test file.
+
+**Verification:** `ruff check bal/ tests/`: All checks passed. Whole `tests/` directory: 1026 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: all checks passed.
+
+**Outcome:** DONE.
