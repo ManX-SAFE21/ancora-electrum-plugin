@@ -1,0 +1,82 @@
+[
+ {
+  "action": "check",
+  "broadcasts": [],
+  "dialog_events": [
+   "close-button"
+  ],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "2000000"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "history": [
+   "Checking variables:\t<b>Wait</b>",
+   "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
+   "<font color='#ff0000'><b>The fixed amounts (2,000,000 sat) exceed the balance available for the heirs (999,000 sat): the heirs with a percentage (bob) would receive nothing. Reduce the fixed amounts.</b></font>"
+  ],
+  "items": [],
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "report": {
+   "boxes": {
+    "changes": [],
+    "problems": [
+     "The fixed amounts (2,000,000 sat) exceed the balance available for the heirs (999,000 sat): the heirs with a percentage (bob) would receive nothing. Reduce the fixed amounts."
+    ],
+    "warnings": []
+   },
+   "executors": [],
+   "heirs": null,
+   "result": [
+    "err",
+    "<b>The check stopped: nothing was changed.</b>"
+   ],
+   "steps": [
+    [
+     "check",
+     "err",
+     "error"
+    ],
+    [
+     "prepare",
+     "todo",
+     ""
+    ],
+    [
+     "sign",
+     "todo",
+     ""
+    ],
+    [
+     "send",
+     "todo",
+     ""
+    ],
+    [
+     "verify",
+     "todo",
+     ""
+    ]
+   ],
+   "will_now": "No will in force\nUntil you create your will, nobody will receive your bitcoin."
+  },
+  "rows": [
+   "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
+   "<font color='#ff0000'><b>The fixed amounts (2,000,000 sat) exceed the balance available for the heirs (999,000 sat): the heirs with a percentage (bob) would receive nothing. Reduce the fixed amounts.</b></font>"
+  ],
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "verified": [],
+  "window_events": []
+ }
+]

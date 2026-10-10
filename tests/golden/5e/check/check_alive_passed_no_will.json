@@ -1,0 +1,82 @@
+[
+ {
+  "action": "check",
+  "broadcasts": [],
+  "dialog_events": [
+   "close-button"
+  ],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "history": [
+   "Checking variables:\t<b>Wait</b>",
+   "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
+   "<font color='#ff0000'><b>The Check Alive date (2026-09-10) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive.</b></font>"
+  ],
+  "items": [],
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "report": {
+   "boxes": {
+    "changes": [],
+    "problems": [
+     "The Check Alive date (2026-09-10) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive."
+    ],
+    "warnings": []
+   },
+   "executors": [],
+   "heirs": null,
+   "result": [
+    "err",
+    "<b>The check stopped: nothing was changed.</b>"
+   ],
+   "steps": [
+    [
+     "check",
+     "err",
+     "error"
+    ],
+    [
+     "prepare",
+     "todo",
+     ""
+    ],
+    [
+     "sign",
+     "todo",
+     ""
+    ],
+    [
+     "send",
+     "todo",
+     ""
+    ],
+    [
+     "verify",
+     "todo",
+     ""
+    ]
+   ],
+   "will_now": "No will in force\nUntil you create your will, nobody will receive your bitcoin."
+  },
+  "rows": [
+   "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
+   "<font color='#ff0000'><b>The Check Alive date (2026-09-10) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive.</b></font>"
+  ],
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2026-12-09",
+   "threshold": "-90d"
+  },
+  "verified": [],
+  "window_events": []
+ }
+]

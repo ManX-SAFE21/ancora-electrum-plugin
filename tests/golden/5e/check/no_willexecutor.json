@@ -1,0 +1,89 @@
+[
+ {
+  "action": "check",
+  "broadcasts": [],
+  "dialog_events": [
+   "no-willexecutor-buttons"
+  ],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "history": [
+   "Checking variables:\t<b>Wait</b>",
+   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+   "Checking your will:\t<b>Waiting</b>",
+   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Building your will:\t<b>Wait</b>",
+   "Will-Executor:\t<font color=#ff0000><b>Not present - select one or enable backup mode</b></font>"
+  ],
+  "items": [],
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "report": {
+   "boxes": {
+    "changes": [
+     "The will contains no valid transaction: a new will must be prepared."
+    ],
+    "problems": [
+     "Will-Executor: Not present - select one or enable backup mode"
+    ],
+    "warnings": []
+   },
+   "executors": [],
+   "heirs": null,
+   "result": [
+    "err",
+    "<b>No will in force</b>"
+   ],
+   "steps": [
+    [
+     "check",
+     "ok",
+     "ok"
+    ],
+    [
+     "prepare",
+     "run",
+     ""
+    ],
+    [
+     "sign",
+     "skip",
+     "not needed"
+    ],
+    [
+     "send",
+     "skip",
+     "not needed"
+    ],
+    [
+     "verify",
+     "todo",
+     ""
+    ]
+   ],
+   "will_now": null
+  },
+  "rows": [
+   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Building your will:\t<b>Wait</b>",
+   "Will-Executor:\t<font color=#ff0000><b>Not present - select one or enable backup mode</b></font>"
+  ],
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "verified": [],
+  "window_events": []
+ }
+]
