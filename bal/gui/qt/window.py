@@ -342,6 +342,50 @@ class BalWindow:
             _logger.debug(f"still-active check for the summary failed: {e!r}")
             return []
 
+    def can_exclude_willexecutor(self, url):
+        """True when ``url`` is selected and is not the last one selected (#93).
+
+        Excluding the last will-executor would leave the will with nobody to
+        broadcast it: the owner must choose another one, or the backup mode,
+        in the Will-Executor tab.
+        """
+        selected = [
+            u for u, we in (self.willexecutors or {}).items()
+            if Willexecutors.is_selected(we)
+        ]
+        return url in selected and len(selected) > 1
+
+    def exclude_willexecutor(self, url):
+        """Deselect the will-executor ``url`` and save it, like its tab (#93).
+
+        Owner: when an executor does not answer, deselecting it in the
+        Will-Executor tab and pressing Check again is the way out, but hard
+        to find; the Building Will dialog now offers it with one click. The
+        executor stays in the list and can be selected again. Returns False
+        (nothing done) when it is not allowed (:meth:`can_exclude_willexecutor`).
+
+        The copies of the will meant for it that it never got (VALID, not
+        sent) are dropped: they exist only here, and a deselected executor's
+        copy stays VALID (BAL only ignores it), so the summary kept saying
+        "1 will-executor did not receive it" and the report stayed locked
+        (found with the scenario harness). Copies it did get are kept.
+        """
+        if not self.can_exclude_willexecutor(url):
+            return False
+        self.willexecutors[url]["selected"] = False
+        Willexecutors.save(self.bal_plugin, self.willexecutors)
+        unsent = [
+            wid for wid, w in self.willitems.items()
+            if w.get_status("VALID")
+            and (w.we or {}).get("url") == url
+            and not w.get_status("PUSHED")
+        ]
+        for wid in unsent:
+            del self.willitems[wid]
+        if unsent:
+            self.save_willitems()
+        return True
+
     def set_will_summary_busy(self, busy):
         """A working dialog was shown (True) or hidden (False), see BalDialog.
 

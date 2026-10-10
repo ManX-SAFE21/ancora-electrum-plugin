@@ -5247,3 +5247,53 @@ its address); harness A1 OK (the will logic is unchanged); translations
 complete; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 93. 5d/13: a will-executor that does not answer: "Exclude" and "Retry"
+
+**Date:** 2026-10-10
+
+**Problem (owner's test):** while one will-executor does not answer, the
+will stays "In force, but 1 will-executor did not receive it" and the
+report (#92) stays locked. The way out, deselecting it in the Will-Executor
+tab and pressing Check again, is hard to find; and pressing Check again
+(which already sends the missing copies again) is not suggested anywhere.
+
+**What changed (plan approved by the owner):**
+
+- `bal/gui/qt/widgets.py` (`BuildReportView`): once the Building Will
+  dialog has finished, the will-executors box shows "Exclude" next to each
+  executor that did not get the will ("not received", "no answer") and
+  "Retry" under the box.
+- `bal/gui/qt/dialogs.py`: "Retry" runs the whole check again in the same
+  dialog (a new worker thread: the finished run stopped its own); the copies
+  that did not arrive are sent again and verified. "Exclude" asks first
+  ("... did not receive your will. The other 4 will-executors have it. If
+  you exclude it, your will is no longer sent to it and the check runs
+  again without it. You can select it again in the Will-Executor tab."),
+  then excludes it and runs the check again. Never the last selected
+  executor (a message says to choose another one in the Will-Executor tab).
+- `bal/gui/qt/window.py`: `BalWindow.can_exclude_willexecutor` and
+  `exclude_willexecutor`: deselect and save like the Will-Executor tab, and
+  drop the copies of the will meant for it that it never got. Found with the
+  scenario harness: BAL only ignores a deselected executor, its unsent copy
+  stayed VALID, so the summary stayed orange and the report locked even
+  after deselecting it. Copies it did get are kept (dated later than the
+  will in force, they cannot be executed first).
+- Catalogs: the new texts in Italian and Spanish.
+- New tests: `tests/test_failed_executor.py` (6).
+- Scenario harness (outside the repository): `World.down`, an executor that
+  does not answer (the push times out, the verification fails); scenario
+  A20 (fee up with we1 not answering, Check, Exclude we1, Check).
+
+**Verification:** harness (fee up, we1 not answering): after the Check
+"In force, but 1 will-executor did not receive it", report locked; after
+Exclude + Check "Your will is in force", report allowed, no password asked,
+the next Check changes nothing; the last executor cannot be excluded.
+`ruff` (same 3 pre-existing I001); whole `tests/` directory: same
+failures as `main`; the scenario matrix 6 times on `main` and on this
+branch: no scenario differs (A20 ends with the intended date on both: the
+harness deselects we1 by hand on `main`; the difference is the summary
+and the report, checked above); translations complete; zip builds and
+loads.
+
+**Outcome:** DONE.
