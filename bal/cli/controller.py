@@ -653,20 +653,13 @@ class BalController(BalSettingsController):
         transactions on every check, and a later date chosen by the user is
         never overwritten.
         """
-        min_locktime = Will.get_min_locktime(self.willitems, None)
-        if min_locktime is None:
-            return
-        min_locktime = int(min_locktime)
-        stored = self.will_settings["locktime"]
-        if isinstance(stored, str) and stored[-1:].lower() in ("d", "y"):
-            return
-        try:
-            current = int(Util.parse_locktime_string(stored))
-        except Exception:
-            current = None
-        if current is not None and min_locktime < current:
-            _logger.info(f"delivery date synced to the rebuilt will: {current} -> {min_locktime}")
-            self.will_settings["locktime"] = min_locktime
+        # The rule lives in bal.core (CHANGELOG #110), shared with the GUI.
+        new_locktime = Will.anticipated_delivery_to_store(
+            self.willitems, self.will_settings["locktime"]
+        )
+        if new_locktime is not None:
+            _logger.info(f"delivery date synced to the rebuilt will: -> {new_locktime}")
+            self.will_settings["locktime"] = new_locktime
             self.plugin.WILL_SETTINGS.set(self.will_settings)
 
     def invalidate_will(self, will=None):

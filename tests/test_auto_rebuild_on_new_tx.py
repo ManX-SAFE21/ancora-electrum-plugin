@@ -559,6 +559,45 @@ def test_auto_rebuild_invalidates_when_anticipation_crosses_threshold():
     )
 
 
+
+def test_auto_rebuild_keeps_the_delivery_date_in_step():
+    """CHANGELOG #110: with the DEFAULT (absolute) delivery date, the
+    automatic rebuild after new funds anticipates the locktime by one day but
+    left the stored date one day later, so the next Check read it as a
+    postponement and asked for an on-chain invalidation. The stored date now
+    follows the rebuilt will, and the date widgets are refreshed afterwards
+    on the GUI thread."""
+    from bal.core import will as will_mod
+
+    with _no_willexecutors():
+        ctl = make_controller()  # default will settings: absolute dates
+        assert not isinstance(ctl.will_settings["locktime"], str)
+        ctl.prepare_will()
+        _, old_item = _single(ctl)
+        old_locktime = int(old_item.tx.locktime)
+        ctl.wallet._utxos.append(make_funding_input("22" * 32))
+        with mock.patch.object(ctl, "_auto_invalidate_will") as inv, mock.patch.object(
+            ctl, "push_transactions_to_willexecutors"
+        ), mock.patch.object(ctl, "_save_will_to_history"), mock.patch.object(
+            Will, "check_anticipate", return_value=old_locktime - 86400
+        ):
+            assert ctl.maybe_auto_rebuild() is True
+        assert inv.call_count == 0
+        assert int(ctl.will_settings["locktime"]) == old_locktime - 86400
+        assert int(ctl.bal_plugin.WILL_SETTINGS.get()["locktime"]) == old_locktime - 86400
+
+        # The next Check starts like the wizard: no postponement.
+        ctl.init_class_variables()
+        try:
+            ctl.check_will()
+        except will_mod.WillPostponedException as e:  # pragma: no cover
+            raise AssertionError(f"the next Check asks to invalidate: {e}") from e
+
+        # The GUI-thread refresh shows the new date in the widgets.
+        with mock.patch.object(ctl, "update_setting_widgets") as widgets:
+            ctl._after_auto_rebuild()
+        widgets.assert_called_once_with(old_locktime - 86400, "locktime", update_all=True)
+
 def _run_all():
     tests = [fn for name, fn in sorted(globals().items()) if name.startswith("test_")]
     for fn in tests:

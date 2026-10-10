@@ -5855,3 +5855,46 @@ answers `not_sent` (signed, reason "You are offline."); on the encrypted
 wallet `needs_signing`.
 
 **Outcome:** DONE.
+
+## 110. One rule for the delivery date after a rebuild
+
+**Date:** 2026-10-10
+
+**Problem:** with "Rebuild automatically on new transactions" on (off by
+default), new funds made the GUI rebuild the will one day earlier, but the
+stored delivery date stayed one day later: the next Check read it as a
+postponement and asked to sign and broadcast an on-chain invalidation (a
+useless fee). Reproduced in-process on the plugin code with the default
+(absolute) date; the existing test used a relative "1y", which never had
+the problem. The Check dialog and the rebuild at wallet close already did
+the right thing. The same rule existed twice (Check dialog, command line
+#107) and was missing here.
+
+**What changed (plan approved by the owner, first step towards one engine
+for GUI and command line):**
+
+- `bal/core/will.py`: `Will.anticipated_delivery_to_store`, the rule in one
+  place (only earlier, only an absolute stored date).
+- The Check dialog (`_sync_locktime_to_built_txs`) and the command line use
+  it instead of their own copies.
+- `bal/gui/qt/window.py`: the automatic rebuild stores the new date after
+  the rebuild (worker thread) and refreshes the date widgets afterwards on
+  the GUI thread.
+- New `tests/test_core_anticipated_delivery.py`; a GUI test of the automatic
+  rebuild with the default date (the next Check no longer asks to
+  invalidate).
+
+**Found while testing (not fixed here, owner decision: Phase 5e):** in the
+real Electrum the automatic rebuild never starts at all. Electrum sends
+wallet events on its asyncio thread, and the plugin schedules the rebuild
+there with `QTimer.singleShot`, which never fires outside a Qt thread. The
+rebuild at wallet close (on by default) covers new funds meanwhile. Details
+and the proven fix in `PLAN.md`, Phase 5e.
+
+**Verification:** Whole `tests/` directory: 1026 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. The existing tests of the Check dialog's sync
+(`test_sync_locktime_built_txs.py`, `test_build_report.py`) pass unchanged.
+Live (owner, test ZIP, Electrum 4.8.2): after new funds, the rebuild at
+wallet close moved the delivery date one day earlier through the shared
+rule.
+
+**Outcome:** DONE (the automatic rebuild path verified in-process only).

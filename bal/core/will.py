@@ -1465,6 +1465,41 @@ class Will:
                 _logger.error(f"check_signatures failed for item {wi._id}: {e}")
 
     @staticmethod
+    def anticipated_delivery_to_store(will, stored_locktime):
+        """The delivery date to store after a rebuild, or ``None`` to keep it.
+
+        One rule for every front-end (CHANGELOG #110): the Check dialog, the
+        GUI's automatic rebuild and the command line used to carry their own
+        copy of it, and the automatic rebuild had none (the next Check then
+        asked to invalidate a will that was only anticipated).
+
+        WHY: a rebuild that spends the coins of the will already sent (e.g.
+        after new funds, or after an heir was removed) anticipates the
+        locktime by one day (``check_anticipate``), so the new transactions
+        are valid before the old ones. If the stored date stays one day
+        later, the next check compares "stored > transaction", takes it for a
+        postponement chosen by the user and asks for an on-chain
+        invalidation.
+
+        Rule: return the earliest locktime of the VALID transactions when it
+        is strictly earlier than an ABSOLUTE stored date. A relative stored
+        date ("30d"/"1y") is resolved against the built transactions on every
+        check, so it is kept; a later date (a real postponement) is never
+        overwritten; an unreadable stored date is left alone.
+        """
+        min_locktime = Will.get_min_locktime(will, None)
+        if min_locktime is None:
+            return None
+        min_locktime = int(min_locktime)
+        if isinstance(stored_locktime, str) and stored_locktime[-1:].lower() in ("d", "y"):
+            return None
+        try:
+            current = int(Util.parse_locktime_string(stored_locktime))
+        except Exception:
+            return None
+        return min_locktime if min_locktime < current else None
+
+    @staticmethod
     def get_min_locktime(will,default_value=None):
         return min((v.tx.locktime for v in will.values() if v.get_status('VALID')), default=default_value)
 

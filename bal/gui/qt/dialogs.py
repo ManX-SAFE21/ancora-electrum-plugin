@@ -1372,49 +1372,23 @@ class BalBuildWillDialog(BalDialog):
         every panel/wizard, so the visible date and the .ics export stay
         consistent.
         """
-        # Minimum locktime across the valid (just built) inheritance txs.
-        # Will.get_min_locktime returns None when there is no valid tx.
-        min_locktime = Will.get_min_locktime(self.bal_window.willitems, None)
-        if min_locktime is None:
-            return
-        min_locktime = int(min_locktime)
-        stored_locktime = self.bal_window.will_settings["locktime"]
-        # A RELATIVE stored value ("30d"/"1y") is PRESERVED: it is resolved
-        # against the built transactions on every check (the post-build
-        # `resolve_date_to_check` anchoring and `resolve_locktime_against_tx`
-        # in the postpone detection), so it no longer drifts and must not be
-        # frozen to an absolute timestamp here.  Only an ABSOLUTE stored value
-        # is compared with the built transactions (see below).
-        is_relative_locktime = (
-            isinstance(stored_locktime, str)
-            and stored_locktime[-1:].lower() in ("d", "y")
+        # The rule itself lives in bal.core (CHANGELOG #110), shared with the
+        # automatic rebuild and the command line.
+        new_locktime = Will.anticipated_delivery_to_store(
+            self.bal_window.willitems, self.bal_window.will_settings["locktime"]
         )
-        if not is_relative_locktime:
-            # Current stored delivery date, as a comparable UNIX timestamp.
-            try:
-                current = int(Util.parse_locktime_string(stored_locktime))
-            except Exception:
-                # If the stored value cannot be parsed, fall back to syncing.
-                current = None
-            # A genuine user-chosen POSTPONE (a later absolute date) is never
-            # overwritten; a genuine automatic ANTICIPATION (built earlier
-            # than stored) is synced to the built transactions.
-            was_anticipation = current is not None and min_locktime < current
-            if was_anticipation:
-                _logger.debug(
-                    f"sync delivery date to built tx locktime: "
-                    f"{current} -> {min_locktime}"
-                )
-                # Remember that we anticipated the date, so the later sign
-                # prompt can explain WHY signing is needed
-                # (see on_success_phase1).
-                self._date_was_anticipated = True
-                # update_setting_widgets stores the value, persists it and
-                # refreshes the date widgets in all panels/wizard (the .ics
-                # calendar too).
-                self.bal_window.update_setting_widgets(
-                    min_locktime, "locktime", update_all=True
-                )
+        if new_locktime is not None:
+            _logger.debug(f"sync delivery date to built tx locktime: -> {new_locktime}")
+            # Remember that we anticipated the date, so the later sign
+            # prompt can explain WHY signing is needed
+            # (see on_success_phase1).
+            self._date_was_anticipated = True
+            # update_setting_widgets stores the value, persists it and
+            # refreshes the date widgets in all panels/wizard (the .ics
+            # calendar too).
+            self.bal_window.update_setting_widgets(
+                new_locktime, "locktime", update_all=True
+            )
         # A relative "Check Alive" threshold is also PRESERVED: it is anchored
         # on every check by ``resolve_date_to_check`` / ``resolve_guard_threshold``
         # (negative counts back from the delivery, positive forward from the
