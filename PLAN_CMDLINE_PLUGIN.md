@@ -1,5 +1,7 @@
 # Piano: supporto da riga di comando (CLI) per il plugin BAL
 
+> **Note (Safe21 Heartbeat, CHANGELOG #106):** this is the original design plan (in Italian). Some command syntax below is out of date; the current syntax is in `README.md` ("Command-line / headless usage") and in `electrum <command> --help`.
+
 > **Stato**: solo piano. Nessun codice viene modificato finché il piano non viene approvato.
 >
 > **Versione di riferimento**: commit `2221389` (`core: anchor relative locktime/threshold recipes...`), working tree pulito.

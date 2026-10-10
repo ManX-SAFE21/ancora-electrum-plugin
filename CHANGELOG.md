@@ -5740,3 +5740,22 @@ answers `rebuilt_not_sent`; the bad-heirs file gives `imported: 1` with two
 reasons.
 
 **Outcome:** DONE.
+
+## 106. CLI/8: the command-line syntax in the README
+
+**Date:** 2026-10-10
+
+**Problem:** the README listed only the command names, and
+`PLAN_CMDLINE_PLUGIN.md` (BAL's original design plan) shows a syntax that no
+longer matches the code. CLI review point 11.
+
+**What changed (plan approved by the owner):** README "Command-line /
+headless usage": the most common forms (heirs, will-executors, settings),
+the per-heir date rule, results and exit codes, and `electrum <command>
+--help`. `PLAN_CMDLINE_PLUGIN.md`: a note at the top that its syntax is out
+of date and where the current one is. Documentation only.
+
+**Verification:** every README example was run live (2026-10-10).
+Whole `tests/` directory: 1010 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL.
+
+**Outcome:** DONE.
