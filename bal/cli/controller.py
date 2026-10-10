@@ -55,6 +55,7 @@ from ..core.heirs import Heirs, is_op_return_address
 from ..core.messages import (
     check_alive_message,
     check_alive_passed_sentence,
+    protected_executor_message,
     will_change_message,
 )
 from ..core.plugin_base import BalConfig, BalPlugin
@@ -1478,6 +1479,10 @@ class BalController(BalSettingsController):
         """
         if url not in self.willexecutors:
             raise UserFacingException(_("Will-Executor not found: {}").format(url))
+        if rename_to and rename_to != url and Willexecutors.is_protected(self.plugin, url):
+            # Renaming is deleting the old URL (CHANGELOG #108); checked
+            # before any field changes.
+            raise UserFacingException(protected_executor_message(url))
         we = self.willexecutors[url]
         if address is not None:
             self._validate_executor_address(address)
@@ -1503,9 +1508,16 @@ class BalController(BalSettingsController):
         """Delete will-executors by URL; ``not_found`` lists the unknown ones.
 
         A single URL is accepted too (CHANGELOG #105), as in ``heirs_delete``.
+        The Bitcoin After Life will-executor cannot be deleted (CHANGELOG
+        #108): when it is in the list, nothing is deleted and the message
+        says to deselect it.
         """
+        urls = _as_name_list(urls)
+        for url in urls:
+            if Willexecutors.is_protected(self.plugin, url):
+                raise UserFacingException(protected_executor_message(url))
         deleted, not_found = [], []
-        for url in _as_name_list(urls):
+        for url in urls:
             if url in self.willexecutors:
                 del self.willexecutors[url]
                 deleted.append(url)

@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 from PyQt6.QtWidgets import QMessageBox, QStyledItemDelegate
 
+from ...core.messages import protected_executor_message
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -1073,11 +1074,21 @@ class WillExecutorListWidget(MyTreeView):
         return a
 
     def delete(self, selected_keys):
+        """Delete the selected will-executors, except the Bitcoin After Life
+        one: it is kept and a message says to deselect it (CHANGELOG #108;
+        before, it came back selected at the next start on testnet)."""
+        plugin = self._bal_parent.bal_plugin
+        kept = [k for k in selected_keys if Willexecutors.is_protected(plugin, k)]
         for key in selected_keys:
-            del self._bal_parent.willexecutors_list[key]
+            if key not in kept:
+                del self._bal_parent.willexecutors_list[key]
 
         self._bal_parent.save_willexecutors()
         self.update()
+        if kept:
+            self._bal_parent.show_message(
+                "\n".join(protected_executor_message(k) for k in kept)
+            )
 
     def select(self, selected_keys):
         for wid, w in self._bal_parent.willexecutors_list.items():
@@ -1098,6 +1109,14 @@ class WillExecutorListWidget(MyTreeView):
         col = idx.column()
         try:
             if col == self.Columns.URL:
+                if text != edit_key and Willexecutors.is_protected(
+                    self._bal_parent.bal_plugin, edit_key
+                ):
+                    # Renaming is deleting the old URL (CHANGELOG #108): put
+                    # the URL back and say why.
+                    self.update()
+                    self._bal_parent.show_message(protected_executor_message(edit_key))
+                    return
                 self._bal_parent.willexecutors_list[text] = self._bal_parent.willexecutors_list[
                     edit_key
                 ]
@@ -1479,6 +1498,12 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
                 continue
             if edit_key:
                 old_url = edit_key
+                if url != old_url and Willexecutors.is_protected(
+                    self.bal_plugin, old_url
+                ):
+                    # Renaming is deleting the old URL (CHANGELOG #108).
+                    self.show_error(protected_executor_message(old_url))
+                    continue
                 ex = self.willexecutors_list[old_url]
                 ex.update({
                     "info": info_edit.text().strip() or "New Will Executor",

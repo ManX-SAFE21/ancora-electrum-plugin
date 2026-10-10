@@ -14,6 +14,7 @@ checking whether a tx is already stored).  It is GUI-free: all user
 interaction is handled by the Qt layer.
 """
 
+import copy
 import json
 import time
 from datetime import datetime
@@ -143,9 +144,25 @@ class Willexecutors:
     CHECK_GLOBAL_DEADLINE = CHECK_GLOBAL_DEADLINE
 
     @staticmethod
+    def _stored_or_copy_of_default(bal_plugin):
+        """The stored will-executor lists, or a COPY of the default ones.
+
+        ``WILLEXECUTORS.get()`` returns the default dict ITSELF while nothing
+        is saved yet. Changing it (adding, deleting, selecting) then changed
+        the plugin's built-in defaults in memory until Electrum was
+        restarted: a will-executor added on a fresh install became a
+        "default", and a deleted default vanished from them (CHANGELOG #108).
+        """
+        stored = bal_plugin.WILLEXECUTORS.get()
+        if stored is bal_plugin.WILLEXECUTORS.default:
+            stored = copy.deepcopy(stored)
+        return stored
+
+    @staticmethod
     def save(bal_plugin, willexecutors):
+        """Store ``willexecutors`` as the list of the current network."""
         _logger.debug(f"save {willexecutors},{BalPlugin.chainname}")
-        aw = bal_plugin.WILLEXECUTORS.get()
+        aw = Willexecutors._stored_or_copy_of_default(bal_plugin)
         aw[BalPlugin.chainname] = willexecutors
         bal_plugin.WILLEXECUTORS.set(aw)
         _logger.debug(f"saved: {aw}")
@@ -155,7 +172,12 @@ class Willexecutors:
     def get_willexecutors(
         bal_plugin, update=False, bal_window: Any = None, force=False, task=True
     ):
-        willexecutors = bal_plugin.WILLEXECUTORS.get()
+        """The will-executor list of the current network, sorted.
+
+        The default ones are added back when missing; the built-in defaults
+        themselves are never handed out, only copies (CHANGELOG #108).
+        """
+        willexecutors = Willexecutors._stored_or_copy_of_default(bal_plugin)
         willexecutors = willexecutors.get(BalPlugin.chainname, {})
         to_del = []
         for w in willexecutors:
@@ -174,7 +196,9 @@ class Willexecutors:
         for bal_url, bal_executor in bal.items():
             if bal_url not in willexecutors:
                 _logger.debug(f"force add {bal_url} willexecutor")
-                willexecutors[bal_url] = bal_executor
+                # A copy: the record is changed later (selected, status...),
+                # and the default must stay as built in (CHANGELOG #108).
+                willexecutors[bal_url] = copy.deepcopy(bal_executor)
         # if update:
         #    found = False
         #    for url, we in willexecutors.items():
@@ -202,6 +226,27 @@ class Willexecutors:
             )
         )
         return w_sorted
+
+    @staticmethod
+    def is_protected(bal_plugin, url):
+        """True for the Bitcoin After Life will-executor, which cannot be
+        deleted or renamed, only deselected (owner decision, CHANGELOG #108).
+
+        It is recognised by its URL: any URL of the plugin's default
+        will-executor list (``WILLEXECUTORS.default``, every network), so the
+        rule holds on mainnet too, where it arrives from the welist download
+        and not from the default list. Before, deleting it "worked" but on
+        testnet it came back selected at the next start
+        (``get_willexecutors`` adds the defaults back).
+        """
+        if not url:
+            return False
+        wanted = str(url).rstrip("/").lower()
+        for chain in bal_plugin.WILLEXECUTORS.default.values():
+            for default_url in chain:
+                if default_url.rstrip("/").lower() == wanted:
+                    return True
+        return False
 
     @staticmethod
     def is_selected(willexecutor, value=None):

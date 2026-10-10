@@ -5791,3 +5791,43 @@ answers rebuilt (before: error); new coin, then `bal_will_autorebuild`,
 then `bal_will_prepare` answers coherent (before: postponed).
 
 **Outcome:** DONE.
+
+## 108. The Bitcoin After Life will-executor cannot be deleted, only deselected
+
+**Date:** 2026-10-10
+
+**Problem:** deleting the Bitcoin After Life will-executor "worked" from the
+GUI and the command line, but on testnet it came back selected at the next
+start (`get_willexecutors` adds the default list back), while in the same
+session it stayed deleted. CLI review point 9. Found on the way:
+
+- on a fresh install the stored will-executor list WAS the plugin's
+  built-in default dict: adding, deleting or selecting a will-executor
+  changed the defaults themselves in memory until Electrum was restarted (a
+  will-executor added there became a "default"). That is why point 9
+  behaved differently from one session to the next;
+- on mainnet the BAL will-executor is not added by default at all: the
+  plugin looks up the network "bitcoin", the default list says "mainnet"
+  (since BAL v0.2.8). It arrives from the welist download of the Wizard.
+  Left as it is (owner decision).
+
+**What changed (owner decision: it cannot be deleted, only deselected, on
+every network, recognised by its URL):**
+
+- `bal/core/willexecutors.py`: `Willexecutors.is_protected`; `save` and
+  `get_willexecutors` never hand out or change the built-in defaults, only
+  copies.
+- `bal/core/messages.py`: `protected_executor_message`, one text for GUI and
+  command line (translated in Italian and Spanish).
+- Command line: `bal_willexecutors_delete` refuses it (and deletes nothing
+  else in that call); `--rename_to` refuses it (renaming deletes the old
+  URL); other fields and deselecting still work.
+- GUI will-executor list: Delete keeps it (the others are deleted) and
+  shows the message; renaming it in the URL cell or in the Edit dialog is
+  refused with the message.
+- New `tests/test_protected_executor.py`.
+
+**Verification:** Whole `tests/` directory: 1018 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: delete and rename refused with the
+message, `--info` works, another will-executor is deleted normally.
+
+**Outcome:** DONE.
