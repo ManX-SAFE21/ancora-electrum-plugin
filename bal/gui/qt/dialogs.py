@@ -69,6 +69,7 @@ from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
 from ...i18n import number_separators
 from .calendar import BalCalendarButton
+from .report_actions import report_menu
 from .common import (
     HEIR_DUST_AMOUNT,
     HEIR_REAL_AMOUNT,
@@ -2142,11 +2143,17 @@ class BalBuildWillDialog(BalDialog):
 
         calendar_button = BalCalendarButton(self.bal_window, self._ics_provider)
         calendar_button.setText(_("Calendar"))
+        # CHANGELOG #92: the inheritance plan report, as it is after this run.
+        # "Will report", not "Report": Electrum's catalog wins (bal.i18n) and
+        # a bare "Report" can mean "report a bug" there.
+        report_button = QPushButton(_("Will report"))
+        report_button.setMenu(report_menu(self.bal_window, self))
 
         self._close_button = QPushButton(_("Close"))
         self._close_button.clicked.connect(self._on_close_clicked)
         button_row = QHBoxLayout()
         button_row.addStretch(1)
+        button_row.addWidget(report_button)
         button_row.addWidget(calendar_button)
         button_row.addWidget(self._close_button)
         self._add_closing_note(button_row)

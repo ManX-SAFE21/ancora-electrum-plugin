@@ -5176,3 +5176,74 @@ known and accepted); translations complete; zip builds and
 loads.
 
 **Outcome:** DONE.
+
+## 92. 5d/12: the inheritance plan report (save as file or PDF, print)
+
+**Date:** 2026-10-10
+
+**Request (owner's idea, example approved):** a report of the inheritance
+plan, "old style" ASCII, to keep or print: who receives the bitcoin, how
+much and when, which will-executors hold the will. Multi-page with "Page
+1/2, 2/2..." sized for an A4 sheet with standard printer margins.
+
+**What changed:**
+
+- New `bal/core/report.py` (no Qt): `inheritance_report(...)` builds the
+  report as pages, from the same data as the will summary of the Will tab
+  and the Building Will dialog: 1. Status (the summary's title, delivery,
+  Check Alive, miner fee, its note); 2. Heirs (name, share, amount in the
+  wallet's unit, full address, total; before a will is prepared, the shares
+  set in the Heirs tab); 3. Will-executors and where each stands; 4. How it
+  works (owner's text); 5. Technical details (each executor's transaction
+  id and date). Marked private at the top; never a seed, key, password or
+  raw transaction (only the ids); no fiat value (owner's choice).
+- Layout: 78 columns, pages of 60 lines. A4 is 297 mm high: with 20 mm
+  margins 257 mm are left, and a 10 pt monospaced line with 1.2 spacing is
+  4.23 mm: 60 lines; 78 columns of 10 pt Courier take 165 mm of the 170 mm
+  between the side margins. Every page ends with "PRIVATE ... Page n/N";
+  the next pages start with the title in short; a block (an heir and the
+  address, a transaction and its id, a section title and its first lines)
+  is never split across pages.
+- New `bal/gui/qt/report_actions.py`: the "Report" menu with "Save as
+  file…" (a `.txt`, UTF-8, Windows line ends, exactly 60 lines per page,
+  proposed on the Desktop as `safe21-report-<wallet>-<date>.txt`) and
+  "Print…" (the printer dialog, then one report page per sheet: A4, 20 mm
+  margins, 10 pt; on a smaller printable area the font shrinks instead of
+  breaking the pages, so "Page 1/2" on paper is always right).
+- "Save as PDF…" (owner's request after printing the .txt from another
+  program, whose pages did not match): the same sheets as "Print…",
+  saved as `safe21-report-<wallet>-<date>.pdf`, so the pages stay right
+  wherever the file is opened or printed.
+- Owner's rule: the report can be made only for a will in force and
+  verified (`report_block_reason`): the will summary is green ("Your will
+  is in force": signed, sent, delivery and Check Alive not passed) AND
+  every will-executor has verified it. Otherwise the three entries are
+  grey and the menu's first line says why ("... Press Check."); the
+  actions refuse too. A passed Check Alive: not allowed (renew first).
+  A will with only a backup transaction (no will-executor): allowed, and
+  the report says that the owner keeps the signed transaction and nobody
+  will broadcast it for him.
+- Where: a "Report" button next to Calendar and Close at the end of the
+  Building Will dialog (`bal/gui/qt/dialogs.py`), and a "Report" submenu
+  in the tools menu of the Will tab (`bal/gui/qt/lists.py`).
+- From the owner's test of the first ZIP: a blank line between one heir
+  and the next; the share column said "Condividi" (Electrum's catalog,
+  which wins, translates "Share" as the verb): the texts are now
+  "Heir's share" and, for the button and menu, "Will report" (a bare
+  "Report" can mean "report a bug" in Electrum's catalog).
+- Catalogs: the new texts in Italian (the example approved by the owner)
+  and Spanish.
+- New tests: `tests/test_inheritance_report.py` (12, including printing two
+  pages to a PDF printer, "Save as PDF…", the dialog's button and the
+  owner's rule).
+
+Printing the `.txt` from Notepad uses Notepad's own font and margins, so
+its pages may not match: "Print…" or the PDF are the reliable ways.
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as `main`; reports generated in Italian from real
+harness wills (2 heirs: one page; 16 heirs: two pages, no heir split from
+its address); harness A1 OK (the will logic is unchanged); translations
+complete; zip builds and loads.
+
+**Outcome:** DONE.
