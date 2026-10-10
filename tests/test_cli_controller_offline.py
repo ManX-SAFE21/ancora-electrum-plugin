@@ -225,7 +225,11 @@ def test_auto_rebuild_threshold_passed_does_not_invalidate():
         c = _make_controller(plugin)
         c.heirs_add("alice", VALID_ADDRESS, "100000")
         plugin.USER_TYPE.set("advanced")
-        c.will_settings["threshold"] = int(time.time()) - 3600
+        # Two days in the past, not one hour (CHANGELOG #113): #80 turns the
+        # Check Alive into whole days before the delivery, rounded, and in
+        # the afternoon (UTC) "one hour ago" was rounded to tomorrow, which
+        # is not past any more.
+        c.will_settings["threshold"] = int(time.time()) - 2 * 86400
         result = c.auto_rebuild()
         assert result["result"] == "check_alive_passed", result
         assert "invalidation_tx" not in result
