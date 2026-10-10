@@ -26,7 +26,7 @@ Flags (see ``electrum.commands.plugin_command``):
 from electrum.commands import plugin_command
 from electrum.util import UserFacingException
 
-from .controller import BalController, _user_facing
+from .controller import BalController, BalSettingsController, _user_facing
 
 plugin_name = "bal"
 
@@ -41,9 +41,22 @@ def _controller(plugin, wallet):
 
 
 def _call(plugin, wallet, method, *args, **kwargs):
+    """Run ``method`` of the wallet's controller; domain errors become messages."""
     controller = _controller(plugin, wallet)
     try:
         return getattr(controller, method)(*args, **kwargs)
+    except Exception as e:
+        raise _user_facing(e) from e
+
+
+def _settings_call(plugin, method, *args):
+    """Run a settings ``method``: the settings belong to the plugin, so no
+    wallet is needed (CHANGELOG #99: ``_call`` with no wallet always failed
+    with "wallet not loaded")."""
+    if plugin is None:
+        raise UserFacingException("the bal plugin is not enabled in this daemon")
+    try:
+        return getattr(BalSettingsController(plugin), method)(*args)
     except Exception as e:
         raise _user_facing(e) from e
 
@@ -58,7 +71,7 @@ async def settings_list(self, plugin=None):
     Returns a JSON object mapping every BAL configuration option (``bal_*``)
     to an object with ``value``, ``default`` and ``name``.
     """
-    return _call(plugin, None, "settings_list")
+    return _settings_call(plugin, "settings_list")
 
 
 @plugin_command("n", plugin_name)
@@ -67,7 +80,7 @@ async def settings_get(self, key, plugin=None):
 
     arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
     """
-    return _call(plugin, None, "settings_get", key)
+    return _settings_call(plugin, "settings_get", key)
 
 
 @plugin_command("n", plugin_name)
@@ -77,7 +90,7 @@ async def settings_set(self, key, value, plugin=None):
     arg:str:key:The configuration key (e.g. ``bal_user_type``).
     arg:str:value:The new value; JSON for object-typed keys such as ``bal_will_settings``.
     """
-    return _call(plugin, None, "settings_set", key, value)
+    return _settings_call(plugin, "settings_set", key, value)
 
 
 @plugin_command("n", plugin_name)
@@ -86,7 +99,7 @@ async def settings_reset(self, key, plugin=None):
 
     arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
     """
-    return _call(plugin, None, "settings_reset", key)
+    return _settings_call(plugin, "settings_reset", key)
 
 
 # --------------------------------------------------------------------------- #

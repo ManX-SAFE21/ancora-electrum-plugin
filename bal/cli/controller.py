@@ -142,17 +142,140 @@ def _check_alive_cli_message(info):
     return check_alive_message(info)
 
 
-class BalController:
+class BalSettingsController:
+    """Plugin settings (``bal_*`` config keys) for the command line.
+
+    The settings belong to the plugin, not to a wallet, so this needs no
+    wallet: ``bal_settings_*`` run with no wallet loaded (CHANGELOG #99;
+    before, they always failed with "wallet not loaded").
+    :class:`BalController` inherits these methods, so there is one copy of
+    the code.
+    """
+
+    def __init__(self, plugin):
+        """Keep the plugin whose ``BalConfig`` attributes are read and set."""
+        self.plugin = plugin
+
+    def _configs(self):
+        """Return ``{ATTRIBUTE: BalConfig}`` for every plugin setting."""
+        out = {}
+        for attr in dir(self.plugin):
+            if not attr.isupper():
+                continue
+            value = getattr(self.plugin, attr, None)
+            if isinstance(value, BalConfig):
+                out[attr] = value
+        return out
+
+    def _config_key(self, key):
+        """Find a setting by attribute name (``TX_FEES``) or config key
+        (``bal_tx_fees``); raise a clear message for an unknown one."""
+        configs = self._configs()
+        aliases = {}
+        for attr, cfg in configs.items():
+            aliases[attr.upper().replace("-", "_").replace(".", "_")] = (attr, cfg)
+            aliases[cfg.name.upper().replace("-", "_").replace(".", "_")] = (attr, cfg)
+        normalized = key.upper().replace("-", "_").replace(".", "_")
+        if normalized not in aliases:
+            raise UserFacingException(
+                _("Unknown BAL setting: {} (use bal_settings_list)").format(key)
+            )
+        return aliases[normalized]
+
+    def settings_list(self):
+        """Every setting with its config key, default and current value."""
+        out = {}
+        for attr, cfg in self._configs().items():
+            out[attr] = {
+                "name": cfg.name,
+                "default": cfg.default,
+                "value": cfg.get(),
+            }
+        return out
+
+    def settings_get(self, key):
+        """One setting with its config key, default and current value."""
+        attr, cfg = self._config_key(key)
+        return {
+            "key": attr,
+            "name": cfg.name,
+            "default": cfg.default,
+            "value": cfg.get(),
+        }
+
+    def settings_reset(self, key):
+        """Put one setting back to its default value."""
+        attr, cfg = self._config_key(key)
+        cfg.set(cfg.default)
+        return {
+            "key": attr,
+            "name": cfg.name,
+            "default": cfg.default,
+            "value": cfg.get(),
+        }
+
+    def settings_set(self, key, value):
+        """Set one setting; ``value`` is converted to the setting's type."""
+        attr, cfg = self._config_key(key)
+        coerced = self._coerce_config_value(cfg, value)
+        cfg.set(coerced)
+        return {
+            "key": attr,
+            "name": cfg.name,
+            "default": cfg.default,
+            "value": cfg.get(),
+        }
+
+    def _coerce_config_value(self, cfg, raw):
+        """Convert the command-line text ``raw`` to the type of ``cfg``'s
+        default (bool, int, JSON object or text)."""
+        if isinstance(cfg.default, bool):
+            if isinstance(raw, str):
+                low = raw.strip().lower()
+                if low in ("true", "1", "yes", "on"):
+                    return True
+                if low in ("false", "0", "no", "off"):
+                    return False
+                raise UserFacingException(
+                    _("Invalid boolean for {}: {}").format(cfg.name, raw)
+                )
+            return bool(raw)
+        if isinstance(cfg.default, int):
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                raise UserFacingException(
+                    _("Expected an integer for {}: {}").format(cfg.name, raw)
+                ) from None
+        if isinstance(cfg.default, dict):
+            try:
+                value = json.loads(raw) if isinstance(raw, str) else raw
+            except (json.JSONDecodeError, TypeError):
+                raise UserFacingException(
+                    _("Expected a JSON object for {}").format(cfg.name)
+                ) from None
+            if not isinstance(value, dict):
+                raise UserFacingException(
+                    _("Expected a JSON object for {}").format(cfg.name)
+                )
+            return value
+        return str(raw)
+
+
+class BalController(BalSettingsController):
     """Headless per-wallet controller replicating :class:`BalWindow`.
 
     One instance wraps one wallet; commands construct it on demand with
     ``BalController(plugin, wallet)``.  It mirrors the GUI's state object
     (``will_settings``, ``heirs``, ``will``, ``willitems``, ``willexecutors``,
-    ``date_to_check``) and its flows.
+    ``date_to_check``) and its flows.  The settings methods come from
+    :class:`BalSettingsController`.
     """
 
     def __init__(self, plugin, wallet):
-        self.plugin = plugin
+        """Load the wallet's heirs, will and the plugin's settings and
+        will-executors."""
+        super().__init__(plugin)
         self.wallet = wallet
         self.heirs = {}
         self.will = {}
@@ -1277,105 +1400,6 @@ class BalController:
     def willexecutors_export(self, path):
         write_json_file(path, self.willexecutors)
         return {"exported": len(self.willexecutors), "path": path}
-
-    # ------------------------------------------------------------------ #
-    # Settings
-    # ------------------------------------------------------------------ #
-    def _configs(self):
-        out = {}
-        for attr in dir(self.plugin):
-            if not attr.isupper():
-                continue
-            value = getattr(self.plugin, attr, None)
-            if isinstance(value, BalConfig):
-                out[attr] = value
-        return out
-
-    def _config_key(self, key):
-        configs = self._configs()
-        aliases = {}
-        for attr, cfg in configs.items():
-            aliases[attr.upper().replace("-", "_").replace(".", "_")] = (attr, cfg)
-            aliases[cfg.name.upper().replace("-", "_").replace(".", "_")] = (attr, cfg)
-        normalized = key.upper().replace("-", "_").replace(".", "_")
-        if normalized not in aliases:
-            raise UserFacingException(
-                _("Unknown BAL setting: {} (use bal_settings_list)").format(key)
-            )
-        return aliases[normalized]
-
-    def settings_list(self):
-        out = {}
-        for attr, cfg in self._configs().items():
-            out[attr] = {
-                "name": cfg.name,
-                "default": cfg.default,
-                "value": cfg.get(),
-            }
-        return out
-
-    def settings_get(self, key):
-        attr, cfg = self._config_key(key)
-        return {
-            "key": attr,
-            "name": cfg.name,
-            "default": cfg.default,
-            "value": cfg.get(),
-        }
-
-    def settings_reset(self, key):
-        attr, cfg = self._config_key(key)
-        cfg.set(cfg.default)
-        return {
-            "key": attr,
-            "name": cfg.name,
-            "default": cfg.default,
-            "value": cfg.get(),
-        }
-
-    def settings_set(self, key, value):
-        attr, cfg = self._config_key(key)
-        coerced = self._coerce_config_value(cfg, value)
-        cfg.set(coerced)
-        return {
-            "key": attr,
-            "name": cfg.name,
-            "default": cfg.default,
-            "value": cfg.get(),
-        }
-
-    def _coerce_config_value(self, cfg, raw):
-        if isinstance(cfg.default, bool):
-            if isinstance(raw, str):
-                low = raw.strip().lower()
-                if low in ("true", "1", "yes", "on"):
-                    return True
-                if low in ("false", "0", "no", "off"):
-                    return False
-                raise UserFacingException(
-                    _("Invalid boolean for {}: {}").format(cfg.name, raw)
-                )
-            return bool(raw)
-        if isinstance(cfg.default, int):
-            try:
-                return int(raw)
-            except (TypeError, ValueError):
-                raise UserFacingException(
-                    _("Expected an integer for {}: {}").format(cfg.name, raw)
-                ) from None
-        if isinstance(cfg.default, dict):
-            try:
-                value = json.loads(raw) if isinstance(raw, str) else raw
-            except (json.JSONDecodeError, TypeError):
-                raise UserFacingException(
-                    _("Expected a JSON object for {}").format(cfg.name)
-                ) from None
-            if not isinstance(value, dict):
-                raise UserFacingException(
-                    _("Expected a JSON object for {}").format(cfg.name)
-                )
-            return value
-        return str(raw)
 
 
 def get_decimal_point(plugin):

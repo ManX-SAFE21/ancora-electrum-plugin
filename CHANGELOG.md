@@ -5571,3 +5571,30 @@ its invalidation transaction, and the "no will-executor selected" path.
 files in reverse order. `ruff` (same 3 pre-existing I001); harness A1 OK.
 
 **Outcome:** DONE.
+
+## 99. CLI/1: the settings commands work with no wallet
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_settings_list`, `bal_settings_get`, `bal_settings_set` and
+`bal_settings_reset` always failed with "wallet not loaded", from the
+command line and over JSON-RPC. The commands passed no wallet to a helper
+that requires one. The tests called the controller methods directly, so
+they passed anyway. Found in the CLI review of 2026-09-24 (point 3),
+confirmed live on `main` on 2026-10-10.
+
+**What changed (plan approved by the owner):**
+
+- `bal/cli/controller.py`: new `BalSettingsController(plugin)` with the
+  settings methods (moved, not copied); `BalController` inherits them.
+- `bal/cli/commands.py`: the four settings commands use the new
+  `_settings_call`, which needs no wallet.
+- New `tests/test_cli_command_layer.py`: the commands are called through
+  Electrum's own `Commands` wrappers, with a small fake daemon, as on the
+  command line (the gap that let this and #100/#101 through).
+
+**Verification:** Whole `tests/` directory: 988 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live (Electrum 4.8.2, testnet, offline
+daemon, throwaway wallets): list/get/set/reset work with no wallet,
+including `bal_settings_set bal_will_settings` with a JSON object.
+
+**Outcome:** DONE.
