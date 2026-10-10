@@ -5396,3 +5396,67 @@ OK (the will logic is unchanged); translations complete; zip builds and
 loads.
 
 **Outcome:** DONE.
+
+## 96. 5d/16: the Building Will dialog fits its content and stays on the screen
+
+**Date:** 2026-10-10
+
+**Problem (owner's screenshots):** the Building Will dialog was much taller
+than its content, and its bottom part, with the buttons, often ended below
+the screen. A first fix made it too short: the will-executors box and the
+"Details (log)" link ended below the fold, which the scroll bar showed.
+
+**Causes (found by measuring the real dialog with the scenario harness):**
+
+- The room around the report (margins, the row of buttons) was counted
+  ~200 px too big: `QScrollArea.sizeHint()` keeps the size its content had
+  when the dialog was created (~30 px), while the layout reserves at least
+  the scroll area's minimum (240 px) for it. At the end of a normal Check
+  the dialog asked for 464 px where 290 were enough.
+- It grew while the run showed more (e.g. the log) up to 85% of the screen
+  and never shrank.
+- Growing moved its bottom edge down: Qt places a dialog inside the screen
+  only when it opens.
+- The fit ran right after the last redraw: Qt shows a widget added to a
+  visible dialog only later (a queued event) and a widget not shown yet
+  counts as empty, so whole boxes were missed (4 will-executors and a
+  warning: 138 px hidden in the harness).
+
+**What changed (plan approved by the owner, then "a middle way": the owner
+sent a screenshot, 570 px high, with everything visible, as the minimum):** `bal/gui/qt/dialogs.py`
+(`BalBuildWillDialog`):
+
+- `_fit_height`: the room around the report is what the layout really
+  reserves; the dialog is never shorter than 560 px (`OPEN_HEIGHT`, was 560
+  for opening only) and takes at most 75% of the screen's available height
+  (was 85%). While the run goes on it only grows, so it does not jump; when
+  the run is over and when the log is closed it fits its content, down to
+  560 px. On a 1366x768 notebook the cap (546 px) wins.
+- New `_content_height`: shows the children not hidden on purpose before
+  measuring, and takes the larger of the layout's hint and its height for
+  the width the text really has (a wrapped sentence needs more height when
+  narrow). A deferred second fit (`QTimer.singleShot(0)`) runs once Qt has
+  processed its queued events.
+- When the run is over (`_add_close_button`) the new row of buttons is shown
+  at once, otherwise the fit did not count it (28 px short).
+- New `_keep_on_screen`: after every change of height, a dialog whose bottom
+  edge is below the screen moves up.
+- `tests/test_build_report.py`: the #84b height test no longer expects the
+  dialog to stay tall at the end.
+- New test: `tests/test_dialog_fits_screen.py` (7: the owner's limits; a
+  short report is not shorter than 560 px; a notebook screen caps it; the end of a run with 4
+  will-executors and two long boxes hides nothing; the room around the
+  report is counted right; the buttons of a visible dialog count; closing
+  the log gives the room back; it moves up instead of ending below the
+  screen).
+
+**Verification:** real dialog in the harness, end of a run with 4
+will-executors, a warning and a "what changed" box: 138 px hidden below the
+fold after the first fix, 0 now; end of a normal Check (2
+will-executors) on a 1040 px screen: 560 px, the same as before #96 but with
+the room around the report counted right, so content that needs more is
+shown whole and the dialog is never taller than it needs. `ruff` (same 3 pre-existing I001); whole `tests/`
+directory: same failures as `main`; harness A1 OK (the will logic is
+unchanged); zip builds and loads.
+
+**Outcome:** DONE.
