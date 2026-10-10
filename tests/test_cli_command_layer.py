@@ -215,3 +215,28 @@ def test_heir_locktime_checked_with_multiverse(plugin, locktime, message):
     out = run(plugin, "heirs_add", "carol", VALID_ADDRESS, "10%", locktime="2y",
               wallet=wallet)
     assert out["value"][2] == "2y"
+
+
+@pytest.mark.parametrize(
+    "name, args",
+    [
+        ("heirs_import", ["/nonexistent/heirs.json"]),
+        ("heirs_export", ["/nonexistent/dir/heirs.json"]),
+        ("willexecutors_import", ["/nonexistent/we.json"]),
+        ("willexecutors_export", ["/nonexistent/dir/we.json"]),
+        ("will_export", ["/nonexistent/dir/will.json"]),
+    ],
+)
+def test_file_errors_are_messages(plugin, name, args):
+    """#104: a wrong path gives a message, not a Python traceback with
+    "internal error while executing RPC"."""
+    with pytest.raises(UserFacingException, match="Failed to (import from|export to) file"):
+        run(plugin, name, *args, wallet=FakeWallet())
+
+
+def test_bad_address_message_says_it_once(plugin):
+    """#104: the address error used to repeat itself
+    ("not an address, not an address,<address>")."""
+    with pytest.raises(UserFacingException) as info:
+        run(plugin, "heirs_add", "erin", "notanaddress", "10%", wallet=FakeWallet())
+    assert str(info.value) == "Not a valid address for this network: notanaddress"

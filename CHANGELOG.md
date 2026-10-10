@@ -5679,3 +5679,23 @@ modes.
 refused with the message; adding the heir without it works.
 
 **Outcome:** DONE.
+
+## 104. CLI/6: messages instead of Python tracebacks
+
+**Date:** 2026-10-10
+
+**Problem:** a wrong path in `bal_heirs_import`/`_export`,
+`bal_willexecutors_import`/`_export` and `bal_will_export` printed a Python
+traceback and "internal error while executing RPC". A bad heir address said
+"not an address, not an address,<address>". CLI review point 7 (its other
+cases were already fixed by #78).
+
+**What changed (plan approved by the owner):** `_user_facing` turns
+Electrum's `FileImportFailed`/`FileExportFailed` into the message they carry
+(what failed and why), and the address error into "Not a valid address for
+this network: <address>". Tests for the five file commands and the address.
+
+**Verification:** Whole `tests/` directory: 1002 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: every case gives the message, exit
+code 1.
+
+**Outcome:** DONE.

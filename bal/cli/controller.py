@@ -30,6 +30,8 @@ from electrum.i18n import _
 from electrum.logging import get_logger
 from electrum.transaction import tx_from_any
 from electrum.util import (
+    FileExportFailed,
+    FileImportFailed,
     MyEncoder,
     UserFacingException,
     read_json_file,
@@ -109,7 +111,15 @@ def _user_facing(e):
     if isinstance(e, heirs_mod.HeirAmountIsDustException):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.NotAnAddress):
-        return UserFacingException(_("not an address, {}").format(e))
+        # The core text is "not an address,<address>": prefixing it again gave
+        # "not an address, not an address,<address>" (CHANGELOG #104).
+        text = str(e)
+        prefix = "not an address,"
+        if text.startswith(prefix):
+            return UserFacingException(
+                _("Not a valid address for this network: {}").format(text[len(prefix):])
+            )
+        return UserFacingException(text)
     if isinstance(e, heirs_mod.AmountNotValid):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.LocktimeNotValid):
@@ -122,6 +132,11 @@ def _user_facing(e):
         )
     if isinstance(e, checkalive.CheckAliveError):
         return UserFacingException(_check_alive_cli_message(None))
+    if isinstance(e, (FileImportFailed, FileExportFailed)):
+        # A wrong path or a bad file is the user's input, not a bug: a message
+        # instead of a traceback and "internal error while executing RPC"
+        # (CHANGELOG #104). The text already says what failed and why.
+        return UserFacingException(str(e))
     return e
 
 
