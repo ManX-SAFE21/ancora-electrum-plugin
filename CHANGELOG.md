@@ -6294,3 +6294,79 @@ equivalence; callers, overrides and fakes; clocks, threads and
 persistence) found no behaviour difference.
 
 **Outcome:** DONE. The owner tested the ZIP: it works.
+
+## 119. Phase 5e, step 5e-07: one build brick for the Check, Prepare, the automatic rebuild and the command line
+
+**Date:** 2026-10-11
+
+**Problem:** three steps of a rebuild were written in several places:
+building the will items from the heirs (`BalWindow.build_will`, used by the
+Check dialog, the Prepare menu and the automatic rebuild, and
+`BalController.build_will` for the command line), labelling the rebuilt
+transactions "Safe21 Heartbeat backup transaction" in the History (Check
+dialog, Prepare menu, command line), and moving the stored delivery date to
+the rebuilt will's date (Check dialog, automatic rebuild, command line;
+CHANGELOG #107 / #110).
+
+**What changed (no visible change):**
+
+- New `bal/engine/build.py`: `build_will(host, with_creation_date)` (the
+  GUI's version; the record of each item built once), `label_rebuilt(host,
+  scope, on_error)` and `sync_delivery_date(host, store, on_error)`.
+- The callers keep today's behaviour through the parameters (the owner
+  decides later whether they should agree):
+  - `with_creation_date`: the GUI passes the old will's creation date when
+    it re-anchors `date_to_check`, the command line does not;
+  - label `scope`: the Prepare menu labels every item, the Check dialog and
+    the command line the VALID ones; `on_error`: the command line logs a
+    label it cannot write and goes on, the GUI stops;
+  - date `store`: the Check dialog remembers the anticipation (for the sign
+    prompt) and refreshes the date fields; the automatic rebuild stores the
+    setting on its worker thread and marks the date for the refresh on the
+    GUI thread (an error of the rule is only logged); the command line
+    stores it through its `store_will_setting` hook;
+  - unchanged: the Prepare menu does not move the date, the automatic
+    rebuild does not label.
+- `bal/gui/qt/window.py`, `bal/gui/qt/dialogs.py`, `bal/cli/controller.py`:
+  the method names stay (`build_will`, `_after_rebuild`, the two
+  `_sync_*` methods; callers and tests use them) and call the brick.
+  `BalWindow.update_will` (only used by the old `build_will`) is part of
+  the brick now.
+- Differences between the two `build_will` copies checked to change
+  nothing: the GUI read `self.window.wallet` (the same object as
+  `self.wallet`) and passed `bal_window=self` to `get_willexecutors` (read
+  only in commented-out code); the GUI wrapped the build in a
+  `try`/log/raise, the command line did not (the same exception reaches the
+  caller); log lines.
+- Tests: `tests/flowkit.py` gives `bal.engine.build` the scenario clock
+  (the creation time of the built items); in the scenarios the command
+  line's builds now get it too (before #119 they read the real clock; no
+  golden file depends on it). `tests/test_core_status_language_neutral.py`
+  checks the one builder `bal/engine/build.py` (the stored status "New" is
+  never translated). New `tests/test_engine_build.py` (21), with three
+  will-executors (one not selected, one over the maximum fee, one valid):
+  each parameter and each caller's choice.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1239 passed, 0 failed, 0 errors (1218 + 21 new); the 93
+golden files of #112 and #114 unchanged (they build the will through the
+Check dialog, Prepare, the automatic rebuild and the command line).
+`ruff check bal/ tests/`: all checks passed. Scenario harness: log
+identical to the #112 baseline, warn_matrix 134 Checks, 0 mismatches.
+`build_zip.py`: the zip holds `bal/engine/build.py`; on Electrum 4.8.2
+`external_zip_test.py` and `smoke_test.py` pass. Live command line (daemon
+with a network, three fake will-executors on 127.0.0.1), the same before
+and after: an heir added, `bal_will_prepare` rebuilds three items dated one
+day earlier, the old ones REPLACED, the stored date follows (1823126400 ->
+1823040000), sign and send reach the three. Independent review: three
+reviewers (build line by line; labels and dates; callers, fakes and
+patches) found no behaviour difference.
+
+**Outcome:** DONE. The owner tested the ZIP on his wallet: a test heir
+added, then removed, each followed by "Check your will": both rebuilds
+were signed, sent 4/4 and verified 4/4 (delivery date now two days
+earlier, as expected). The History tab shows no new rows: expected and
+unchanged, since signed backup transactions are never kept in the wallet's
+local history (`Will.save_valid_transactions_to_history` removes complete
+ones); the "Safe21 Heartbeat backup transaction" label is stored on their
+txids (the golden file `heir_removed` records it).

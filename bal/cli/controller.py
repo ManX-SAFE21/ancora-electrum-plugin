@@ -54,10 +54,10 @@ from ..core.messages import (
     will_change_message,
 )
 from ..core.plugin_base import BalConfig, BalPlugin
-from ..core.util import Util, copy_structure
+from ..core.util import Util
 from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
-from ..engine import context
+from ..engine import build, context
 
 _logger = get_logger(__name__)
 
@@ -467,92 +467,27 @@ class BalController(BalSettingsController):
     def build_will(self, ignore_duplicate=True, keep_original=True):
         """Build (or rebuild) the inheritance transactions.
 
-        Mirrors ``BalWindow.build_will``; raises ``NoWillExecutorNotPresent``
-        when no valid will-executor is selected and the user is not their own
-        executor.
+        See :func:`bal.engine.build.build_will` (CHANGELOG #119): raises
+        ``NoWillExecutorNotPresent`` when no valid will-executor is selected
+        and the user is not their own executor. The command line does not
+        pass the old will's creation date when it re-anchors
+        ``date_to_check`` (``with_creation_date=False``), as before.
+        ``ignore_duplicate`` / ``keep_original`` were never used.
         """
-        will = {}
-        # Drop stale wallet-LOCAL will placeholders (mirror of the GUI
-        # build_will) so their coins are available to this build.
-        Will.remove_stale_wallet_history(
-            self.wallet, self.plugin.HISTORY_LABEL.get()
-        )
-        # A (re)build may have anticipated the delivery (shorter heir recipes)
-        # while ``date_to_check`` is still anchored to the OLD built will.
-        # Recompute it for the will being built (earliest future delivery among
-        # the CURRENT heirs), mirroring ``BalWindow.build_will``, so the
-        # anticipated dates pass the build filter.
-        _new_locktime = min(
-            (
-                Util.parse_locktime_string(h[2])
-                for h in self.heirs.values()
-            ),
-            default=None,
-        )
-        if _new_locktime:
-            self.date_to_check = resolve_date_to_check(
-                self.plugin.is_basic_mode(), self.will_settings,
-                built_locktime=_new_locktime,
-            )
-        self.willexecutors = Willexecutors.get_willexecutors(
-            self.plugin, update=False, task=False
-        )
-        if not self.no_willexecutor:
-            valid = False
-            for _u, w in self.willexecutors.items():
-                if Willexecutors.is_selected(w) and Willexecutors.is_valid(
-                    w,
-                    max_fee=self.plugin.MAX_WILLEXECUTOR_FEE.get(),
-                    dust=self.wallet.dust_threshold(),
-                ):
-                    valid = True
-            if not valid:
-                raise will_mod.NoWillExecutorNotPresent(
-                    "No Will-Executor or backup transaction selected"
-                )
-        txs = self.heirs.get_transactions(
-            self.plugin,
-            self.wallet,
-            self.will_settings["baltx_fees"],
-            self._available_utxos(),
-            self.date_to_check,
-        )
-        creation_time = time.time()
-        if txs:
-            for txid in txs:
-                tx = {}
-                tx["tx"] = txs[txid]
-                tx["my_locktime"] = txs[txid].my_locktime
-                tx["heirsvalue"] = txs[txid].heirsvalue
-                tx["description"] = txs[txid].description
-                tx["willexecutor"] = copy_structure(txs[txid].willexecutor)
-                # Stored history: always English (translated only for display by
-                # format_status_history); never _() here.
-                tx["status"] = "New"
-                tx["baltx_fees"] = txs[txid].tx_fees
-                tx["time"] = creation_time
-                tx["heirs"] = copy_structure(txs[txid].heirs)
-                tx["txchildren"] = []
-                will[txid] = WillItem(tx, _id=txid, wallet=self.wallet)
-            Will.update_will(self.willitems, will)
-            self.willitems.update(will)
-            Will.normalize_will(self.willitems, self.wallet)
-        else:
-            _logger.info("No transactions was built")
-            return {}
-        return self.willitems
+        return build.build_will(self, with_creation_date=False)
 
     def _after_rebuild(self):
         """Label the rebuilt transactions and keep the delivery date in step.
 
-        Mirror of ``BalBuildWillDialog._build_success_report`` (labels) and
-        ``_sync_locktime_to_built_txs`` (CHANGELOG #107).
+        The VALID items get the label; one that cannot be written is only
+        logged (CHANGELOG #119: bal.engine.build.label_rebuilt). Then
+        :meth:`_sync_locktime_to_built_txs` (CHANGELOG #107).
         """
-        for wid in Will.only_valid(self.willitems):
-            try:
-                self.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
-            except Exception as label_err:
-                _logger.debug(f"set_label after rebuild failed: {label_err}")
+        build.label_rebuilt(
+            self,
+            scope="valid",
+            on_error=lambda e: _logger.debug(f"set_label after rebuild failed: {e}"),
+        )
         self._sync_locktime_to_built_txs()
 
     def _sync_locktime_to_built_txs(self):
@@ -569,14 +504,14 @@ class BalController(BalSettingsController):
         transactions on every check, and a later date chosen by the user is
         never overwritten.
         """
-        # The rule lives in bal.core (CHANGELOG #110), shared with the GUI.
-        new_locktime = Will.anticipated_delivery_to_store(
-            self.willitems, self.will_settings["locktime"]
-        )
-        if new_locktime is not None:
-            _logger.info(f"delivery date synced to the rebuilt will: -> {new_locktime}")
-            self.will_settings["locktime"] = new_locktime
-            self.plugin.WILL_SETTINGS.set(self.will_settings)
+        # The rule lives in bal.core (CHANGELOG #110) and the steps in
+        # bal.engine.build (CHANGELOG #119), shared with the GUI.
+
+        def store(field, value):
+            _logger.info(f"delivery date synced to the rebuilt will: -> {value}")
+            self.store_will_setting(field, value)
+
+        build.sync_delivery_date(self, store)
 
     def invalidate_will(self, will=None):
         """Build the on-chain invalidation transaction (real fee).
