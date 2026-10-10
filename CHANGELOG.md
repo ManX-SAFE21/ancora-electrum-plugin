@@ -6117,3 +6117,74 @@ same as the #112 baseline line by line (transaction ids aside), including
 the known B2/B2adv result; warn_matrix 134 Checks, 0 mismatches.
 
 **Outcome:** DONE. The owner tested the ZIP: it works well.
+
+## 116. Command line: the bal_* commands work off Electrum's network thread
+
+**Date:** 2026-10-10
+
+**Problem:** Electrum runs the body of every command on its network
+(asyncio) thread, and the `bal_*` commands did all their work there. The
+plugin talks to the will-executors through `Network.send_http_on_proxy`,
+which Electrum refuses on that thread and which, called from the worker
+threads of the parallel send, check and ping, waits for that same thread.
+The live checks of #99-#111 used an offline daemon, so it never showed.
+Probe on a daemon with a network (testnet test wallet, three fake
+will-executors on 127.0.0.1, one answering after 3 seconds, nothing sent
+outside the machine), before this change:
+
+- `bal_will_broadcast`: after about 21 seconds "no answer in time" for all
+  three and the will stays not sent; the requests reach the will-executors
+  only after the command has given up;
+- `bal_will_check_executor`: after about 22 seconds every item is marked
+  CHECK_FAIL, loses PUSHED, and this is saved in the wallet;
+- `bal_will_autorebuild`: signs, then "no will-executor received it" after
+  about 22 seconds (same cause as the send);
+- `bal_willexecutors_download`: fails at once with "must not be called
+  from asyncio thread";
+- `bal_willexecutors_ping`: never returns; the terminal gives up after 60
+  seconds and the daemon answers no other command until it is killed;
+- while any of these commands waits, the daemon does not even answer
+  `getinfo`.
+
+**What changed:**
+
+- `bal/cli/commands.py`: every command (31) runs its work on a worker
+  thread (`loop.run_in_executor`), so the network thread stays free. The
+  controller (`bal/cli/controller.py`) is unchanged; `_call` and
+  `_settings_call` are unchanged too (the golden files of #114 call
+  `_call` directly).
+- New `bal/engine/locks.py`: `flow_lock_for(wallet)`, one lock per wallet.
+  Before, the commands could not overlap because each one blocked the
+  network thread; now two commands on the same wallet run one after the
+  other, while different wallets and the settings commands do not wait.
+  A command that cannot get its wallet within 20 seconds (owner decision)
+  ends with "Another command is still working on this wallet: try again in
+  a moment." The command line stays English (`babel.cfg` does not extract
+  `bal/cli`), so there is no new catalog entry. Later Phase 5e steps use
+  the same lock for the GUI flows.
+- New `tests/test_cli_off_loop.py` (12): the commands run through
+  Electrum's own command wrappers on an event loop, with a fake `Network`
+  that follows Electrum 4.8.2's rules (refuses the event-loop thread, runs
+  each request as a coroutine on that loop) and three will-executors, one
+  slow: ping, list download, send (also "already present", which asks the
+  will-executor at once), check; one command at a time per wallet,
+  different wallets in parallel, the busy message, settings while a wallet
+  is busy, the lock released after an error. On the code before this change
+  8 of the 12 fail (the other 4 cover what was already true).
+
+**After this change** (same probe; the slow will-executor adds 3 seconds):
+the send reaches all three and marks the will sent (4.6 s); the check marks
+all three CHECKED (4.6 s); the automatic rebuild sends to all three (8.1 s);
+the list download gets the three (1.9 s); the ping answers for all three
+(4.2 s); the daemon answers `getinfo` while a command is working; a send
+and a ping started together on the same wallet run one after the other.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1185 passed, 0 failed, 0 errors (1173 + 12 new); the golden
+files of #112 and #114 unchanged. `ruff check bal/ tests/`: all checks
+passed. `build_zip.py`: the zip holds `bal/engine/locks.py`; on Electrum
+4.8.2 `external_zip_test.py` and `smoke_test.py` pass. Scenario harness
+(the GUI is not touched): log identical to the #112 baseline, warn_matrix
+134 Checks, 0 mismatches.
+
+**Outcome:** DONE. The owner tested the ZIP: it works.

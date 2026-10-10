@@ -23,12 +23,21 @@ Flags (see ``electrum.commands.plugin_command``):
     * ``p`` -> requires the wallet password (for signing).
 """
 
+import asyncio
+from functools import partial
+
 from electrum.commands import plugin_command
 from electrum.util import UserFacingException
 
+from ..engine.locks import flow_lock_for
+from ..i18n import _
 from .controller import BalController, BalSettingsController, _user_facing
 
 plugin_name = "bal"
+
+# How long a command waits for another ``bal_*`` command that is still
+# working on the same wallet, in seconds (owner decision, CHANGELOG #116).
+BUSY_TIMEOUT = 20
 
 
 def _controller(plugin, wallet):
@@ -61,6 +70,61 @@ def _settings_call(plugin, method, *args):
         raise _user_facing(e) from e
 
 
+def _call_locked(plugin, wallet, method, *args, **kwargs):
+    """:func:`_call` holding the wallet's flow lock (one command at a time).
+
+    Runs on a worker thread. Waits up to ``BUSY_TIMEOUT`` seconds for a
+    command that is still working on the same wallet, then gives up with a
+    message. Without a wallet :func:`_call` reports "wallet not loaded".
+    """
+    if wallet is None:
+        return _call(plugin, wallet, method, *args, **kwargs)
+    lock = flow_lock_for(wallet)
+    if not lock.acquire(timeout=BUSY_TIMEOUT):
+        raise UserFacingException(
+            _(
+                "Another command is still working on this wallet: try again "
+                "in a moment."
+            )
+        )
+    try:
+        return _call(plugin, wallet, method, *args, **kwargs)
+    finally:
+        lock.release()
+
+
+async def _off_network_thread(func, *args, **kwargs):
+    """Run ``func(*args, **kwargs)`` on a worker thread and await its result.
+
+    WHY (CHANGELOG #116): Electrum runs every command body on its network
+    (asyncio) thread. The plugin's calls to the will-executors go through
+    ``Network.send_http_on_proxy``, which Electrum forbids on that thread
+    (the welist download failed with "must not be called from asyncio
+    thread") and which, from the worker threads of the parallel send, check
+    and ping, waits for that same thread: the send and the check ended in
+    "no answer in time" after 20 seconds (the request left only after the
+    command had given up) and the ping blocked the daemon for good. On a
+    worker thread the network thread stays free.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(func, *args, **kwargs))
+
+
+async def _call_off_loop(plugin, wallet, method, *args, **kwargs):
+    """:func:`_call` on a worker thread, one command at a time per wallet."""
+    return await _off_network_thread(
+        _call_locked, plugin, wallet, method, *args, **kwargs
+    )
+
+
+async def _settings_call_off_loop(plugin, method, *args):
+    """:func:`_settings_call` on a worker thread.
+
+    The settings belong to the plugin, not to a wallet, so no wallet lock.
+    """
+    return await _off_network_thread(_settings_call, plugin, method, *args)
+
+
 # --------------------------------------------------------------------------- #
 # Settings
 # --------------------------------------------------------------------------- #
@@ -71,7 +135,7 @@ async def settings_list(self, plugin=None):
     Returns a JSON object mapping every BAL configuration option (``bal_*``)
     to an object with ``value``, ``default`` and ``name``.
     """
-    return _settings_call(plugin, "settings_list")
+    return await _settings_call_off_loop(plugin, "settings_list")
 
 
 @plugin_command("n", plugin_name)
@@ -80,7 +144,7 @@ async def settings_get(self, key, plugin=None):
 
     arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
     """
-    return _settings_call(plugin, "settings_get", key)
+    return await _settings_call_off_loop(plugin, "settings_get", key)
 
 
 @plugin_command("n", plugin_name)
@@ -90,7 +154,7 @@ async def settings_set(self, key, value, plugin=None):
     arg:str:key:The configuration key (e.g. ``bal_user_type``).
     arg:str:value:The new value; JSON for object-typed keys such as ``bal_will_settings``.
     """
-    return _settings_call(plugin, "settings_set", key, value)
+    return await _settings_call_off_loop(plugin, "settings_set", key, value)
 
 
 @plugin_command("n", plugin_name)
@@ -99,7 +163,7 @@ async def settings_reset(self, key, plugin=None):
 
     arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
     """
-    return _settings_call(plugin, "settings_reset", key)
+    return await _settings_call_off_loop(plugin, "settings_reset", key)
 
 
 # --------------------------------------------------------------------------- #
@@ -112,7 +176,7 @@ async def heirs_list(self, wallet=None, plugin=None):
     Returns a JSON object mapping heir names to their ``[address, amount,
     locktime]`` values.
     """
-    return _call(plugin, wallet, "heirs_list")
+    return await _call_off_loop(plugin, wallet, "heirs_list")
 
 
 @plugin_command("nw", plugin_name)
@@ -121,7 +185,7 @@ async def heirs_show(self, name, wallet=None, plugin=None):
 
     arg:str:name:The heir name.
     """
-    return _call(plugin, wallet, "heirs_show", name)
+    return await _call_off_loop(plugin, wallet, "heirs_show", name)
 
 
 @plugin_command("nw", plugin_name)
@@ -133,7 +197,7 @@ async def heirs_add(self, name, address, amount, locktime=None, wallet=None, plu
     arg:str:amount:The amount in satoshis or a percentage like ``50%%``.
     arg:str:locktime:The delivery locktime (absolute timestamp or ``30d``/``1y``); defaults to the will locktime.
     """
-    return _call(plugin, wallet, "heirs_add", name, address, amount, locktime)
+    return await _call_off_loop(plugin, wallet, "heirs_add", name, address, amount, locktime)
 
 
 @plugin_command("nw", plugin_name)
@@ -153,7 +217,7 @@ async def heirs_update(
     arg:str:amount:The new amount in satoshis or a percentage.
     arg:str:locktime:The new delivery locktime.
     """
-    return _call(plugin, wallet, "heirs_update", name, address, amount, locktime)
+    return await _call_off_loop(plugin, wallet, "heirs_update", name, address, amount, locktime)
 
 
 @plugin_command("nw", plugin_name)
@@ -162,7 +226,7 @@ async def heirs_delete(self, names, wallet=None, plugin=None):
 
     arg:str:names:A heir name, or a JSON array of names (e.g. ``["Alice","Bob"]``).
     """
-    return _call(plugin, wallet, "heirs_delete", names)
+    return await _call_off_loop(plugin, wallet, "heirs_delete", names)
 
 
 @plugin_command("nw", plugin_name)
@@ -174,7 +238,7 @@ async def heirs_import(self, path, wallet=None, plugin=None):
 
     arg:str:path:Path to the JSON file.
     """
-    return _call(plugin, wallet, "heirs_import", path)
+    return await _call_off_loop(plugin, wallet, "heirs_import", path)
 
 
 @plugin_command("nw", plugin_name)
@@ -183,7 +247,7 @@ async def heirs_export(self, path, wallet=None, plugin=None):
 
     arg:str:path:Destination file path.
     """
-    return _call(plugin, wallet, "heirs_export", path)
+    return await _call_off_loop(plugin, wallet, "heirs_export", path)
 
 
 # --------------------------------------------------------------------------- #
@@ -196,7 +260,7 @@ async def willexecutors_list(self, wallet=None, plugin=None):
     Returns a JSON object mapping executor URLs to their records (address,
     base_fee, status, info, selected, ...).
     """
-    return _call(plugin, wallet, "willexecutors_list")
+    return await _call_off_loop(plugin, wallet, "willexecutors_list")
 
 
 # The parameter is ``executor_url``, never ``url`` (CHANGELOG #100): Electrum's
@@ -209,7 +273,7 @@ async def willexecutors_show(self, executor_url, wallet=None, plugin=None):
 
     arg:str:executor_url:The will-executor URL.
     """
-    return _call(plugin, wallet, "willexecutors_show", executor_url)
+    return await _call_off_loop(plugin, wallet, "willexecutors_show", executor_url)
 
 
 @plugin_command("nw", plugin_name)
@@ -229,7 +293,7 @@ async def willexecutors_add(
     arg:int:base_fee:The executor base fee in satoshis.
     arg:str:info:A human-readable description.
     """
-    return _call(
+    return await _call_off_loop(
         plugin, wallet, "willexecutors_add", executor_url, address, base_fee, info
     )
 
@@ -255,7 +319,7 @@ async def willexecutors_update(
     arg:str:promo_code:The new promo code.
     arg:str:rename_to:Optionally move the record to a new URL.
     """
-    return _call(
+    return await _call_off_loop(
         plugin,
         wallet,
         "willexecutors_update",
@@ -277,7 +341,7 @@ async def willexecutors_select(
     arg:str:executor_url:The will-executor URL.
     arg:bool:value:True to select, False to deselect (``--value false``).
     """
-    return _call(plugin, wallet, "willexecutors_select", [executor_url], value)
+    return await _call_off_loop(plugin, wallet, "willexecutors_select", [executor_url], value)
 
 
 @plugin_command("nw", plugin_name)
@@ -286,7 +350,7 @@ async def willexecutors_delete(self, urls, wallet=None, plugin=None):
 
     arg:str:urls:A will-executor URL, or a JSON array of URLs (e.g. ``["https://we.example.com"]``).
     """
-    return _call(plugin, wallet, "willexecutors_delete", urls)
+    return await _call_off_loop(plugin, wallet, "willexecutors_delete", urls)
 
 
 @plugin_command("nw", plugin_name)
@@ -298,7 +362,7 @@ async def willexecutors_ping(self, urls=None, wallet=None, plugin=None):
 
     arg:json:urls:Optional JSON array of URLs to ping; defaults to the selected executors.
     """
-    return _call(plugin, wallet, "willexecutors_ping", urls)
+    return await _call_off_loop(plugin, wallet, "willexecutors_ping", urls)
 
 
 @plugin_command("nw", plugin_name)
@@ -307,7 +371,7 @@ async def willexecutors_download(self, wallet=None, plugin=None):
 
     Returns the number of records downloaded and the new total.
     """
-    return _call(plugin, wallet, "willexecutors_download")
+    return await _call_off_loop(plugin, wallet, "willexecutors_download")
 
 
 @plugin_command("nw", plugin_name)
@@ -316,7 +380,7 @@ async def willexecutors_import(self, path, wallet=None, plugin=None):
 
     arg:str:path:Path to the JSON file.
     """
-    return _call(plugin, wallet, "willexecutors_import", path)
+    return await _call_off_loop(plugin, wallet, "willexecutors_import", path)
 
 
 @plugin_command("nw", plugin_name)
@@ -325,7 +389,7 @@ async def willexecutors_export(self, path, wallet=None, plugin=None):
 
     arg:str:path:Destination file path.
     """
-    return _call(plugin, wallet, "willexecutors_export", path)
+    return await _call_off_loop(plugin, wallet, "willexecutors_export", path)
 
 
 # --------------------------------------------------------------------------- #
@@ -337,7 +401,7 @@ async def will_status(self, wallet=None, plugin=None):
 
     Returns a JSON object with a per-txid detail list and global status counts.
     """
-    return _call(plugin, wallet, "will_status")
+    return await _call_off_loop(plugin, wallet, "will_status")
 
 
 @plugin_command("nw", plugin_name)
@@ -346,7 +410,7 @@ async def will_check(self, wallet=None, plugin=None):
 
     Returns ``{"valid": true}`` when coherent, or raises a descriptive error.
     """
-    return _call(plugin, wallet, "will_check")
+    return await _call_off_loop(plugin, wallet, "will_check")
 
 
 @plugin_command("nw", plugin_name)
@@ -357,7 +421,7 @@ async def will_prepare(self, wallet=None, plugin=None):
     ``expired``, ``postponed``) and, when needed, the invalidation
     transaction to sign and broadcast.
     """
-    return _call(plugin, wallet, "prepare_will")
+    return await _call_off_loop(plugin, wallet, "prepare_will")
 
 
 @plugin_command("nw", plugin_name)
@@ -377,7 +441,7 @@ async def will_autorebuild(self, wallet=None, plugin=None):
     ``nothing``, ``needs_signing``, ``rebuilt``, ``rebuilt_not_sent``,
     ``signed``, ``sent`` or ``not_sent``.
     """
-    return _call(plugin, wallet, "auto_rebuild")
+    return await _call_off_loop(plugin, wallet, "auto_rebuild")
 
 
 @plugin_command("nwp", plugin_name)
@@ -389,7 +453,7 @@ async def will_sign(self, txid=None, password=None, wallet=None, plugin=None):
     arg:str:txid:Optional transaction id to sign; signs all valid ones when omitted.
     """
     txids = [txid] if txid is not None else None
-    txs = _call(plugin, wallet, "sign_transactions", password, txids)
+    txs = await _call_off_loop(plugin, wallet, "sign_transactions", password, txids)
     return {wid: str(tx) for wid, tx in txs.items()}
 
 
@@ -407,7 +471,7 @@ async def will_broadcast(
     arg:bool:force:Force re-pushing transactions already marked as PUSHED.
     """
     txids = [txid] if txid is not None else None
-    return _call(plugin, wallet, "broadcast_command", force, txids)
+    return await _call_off_loop(plugin, wallet, "broadcast_command", force, txids)
 
 
 @plugin_command("nw", plugin_name)
@@ -416,7 +480,7 @@ async def will_export(self, path, wallet=None, plugin=None):
 
     arg:str:path:Destination file path.
     """
-    return _call(plugin, wallet, "export_will", path)
+    return await _call_off_loop(plugin, wallet, "export_will", path)
 
 
 @plugin_command("nw", plugin_name)
@@ -425,7 +489,7 @@ async def will_import_merge(self, path, wallet=None, plugin=None):
 
     arg:str:path:Path to the will JSON file.
     """
-    return _call(plugin, wallet, "merge_will_from_file", path)
+    return await _call_off_loop(plugin, wallet, "merge_will_from_file", path)
 
 
 @plugin_command("nw", plugin_name)
@@ -435,7 +499,7 @@ async def will_invalidate(self, wallet=None, plugin=None):
     Returns ``{txid, tx}`` (or nulls when there is nothing to invalidate); the
     transaction still needs to be signed and broadcast.
     """
-    return _call(plugin, wallet, "invalidate_will_command")
+    return await _call_off_loop(plugin, wallet, "invalidate_will_command")
 
 
 @plugin_command("nw", plugin_name)
@@ -448,4 +512,4 @@ async def will_check_executor(self, txid=None, wallet=None, plugin=None):
     arg:str:txid:Optional transaction id to check; checks all pending ones when omitted.
     """
     txids = [txid] if txid is not None else None
-    return _call(plugin, wallet, "check_transactions", txids)
+    return await _call_off_loop(plugin, wallet, "check_transactions", txids)
