@@ -26,7 +26,7 @@ from ...core.checkalive import (
 )
 from ...core.messages import check_alive_message, will_change_message
 from ...core.summary import busy_summary, will_summary
-from ...engine import context
+from ...engine import build, context
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -44,7 +44,6 @@ from .common import (
     Network,
     NoHeirsException,
     NotCompleteWillException,
-    NoWillExecutorNotPresent,
     OkButton,
     Optional,
     PaymentIdentifier,
@@ -70,7 +69,6 @@ from .common import (
     _,
     _logger,
     char_width_in_lineedit,
-    copy_structure,
     export_meta_gui,
     import_meta_gui,
     is_onion_url,
@@ -607,114 +605,16 @@ class BalWindow:
     def delete_not_valid(self, txid, s_utxo):
         raise NotImplementedError()
 
-    def update_will(self, will):
-        Will.update_will(self.willitems, will)
-        self.willitems.update(will)
-        Will.normalize_will(self.willitems, self.wallet)
-
     def build_will(self, ignore_duplicate=True, keep_original=True):
-        _logger.debug("building will...")
-        # Drop stale wallet-LOCAL will placeholders saved by previous prepares
-        # so their coins are available to this build (see remove_stale...).
-        Will.remove_stale_wallet_history(
-            self.window.wallet, self.bal_plugin.HISTORY_LABEL.get()
-        )
-        # A (re)build may have anticipated the delivery (shorter heir recipes)
-        # while ``date_to_check`` is still anchored to the OLD built will. Using
-        # that stale anchor as the build filter would block every future
-        # delivery ("NO_FUTURE_DATE"). Recompute ``date_to_check`` for the will
-        # that is being built: its locktime is the earliest future delivery
-        # among the CURRENT heirs. The checks of the EXISTING will keep their
-        # anchored ``date_to_check`` (set in init_class_variables).
-        _new_locktime = min(
-            (
-                Util.parse_locktime_string(h[2])
-                for h in self.heirs.values()
-            ),
-            default=None,
-        )
-        if _new_locktime:
-            self.date_to_check = resolve_date_to_check(
-                self.bal_plugin.is_basic_mode(),
-                self.will_settings,
-                built_locktime=_new_locktime,
-                creation_date=Will.get_creation_time(self.willitems),
-            )
-        will = {}
-        # willtodelete = []
-        # willtoappend = {}
-        try:
-            self.willexecutors = Willexecutors.get_willexecutors(
-                self.bal_plugin, update=False, bal_window=self
-            )
-            if not self.no_willexecutor:
+        """See :func:`bal.engine.build.build_will` (CHANGELOG #119).
 
-                f = False
-                for _u, w in self.willexecutors.items():
-                    if Willexecutors.is_selected(
-                        w
-                    ) and Willexecutors.is_valid(
-                        w, max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
-                        dust=self.window.wallet.dust_threshold()
-                    ):
-                        f = True
-                if not f:
-                    _logger.error("No Will-Executor or backup transaction selected")
-                    raise NoWillExecutorNotPresent(
-                        "No Will-Executor or backup transaction selected"
-                    )
-            # date_to_check already carries the correct reference timestamp for
-            # the current mode (the Check Alive in ADVANCED, or "now" in BASIC -
-            # see init_class_variables). So build the will directly against it;
-            # no per-mode branch is needed here anymore. The available-UTXO view
-            # restores coins that a newer, wallet-local will tx (stored in the
-            # history with a later locktime) nominally spent.
-            txs = self.heirs.get_transactions(
-                self.bal_plugin,
-                self.window.wallet,
-                self.will_settings["baltx_fees"],
-                Util.get_available_utxos(
-                    self.window.wallet,
-                    self.bal_plugin.HISTORY_LABEL.get(),
-                    Will.get_min_locktime(
-                        self.willitems, default_value=self.date_to_check
-                    ),
-                ),
-                self.date_to_check,
-            )
-
-            _logger.info(f"txs built: {txs}")
-            creation_time = time.time()
-            if txs:
-                for txid in txs:
-                    # txtodelete = []
-                    _break = False
-                    tx = {}
-                    tx["tx"] = txs[txid]
-                    tx["my_locktime"] = txs[txid].my_locktime
-                    tx["heirsvalue"] = txs[txid].heirsvalue
-                    tx["description"] = txs[txid].description
-                    tx["willexecutor"] = copy_structure(txs[txid].willexecutor)
-                    # Stored history: always English (translated only for display by
-                    # format_status_history); never _() here.
-                    tx["status"] = "New"
-                    tx["baltx_fees"] = txs[txid].tx_fees
-                    tx["time"] = creation_time
-                    tx["heirs"] = copy_structure(txs[txid].heirs)
-                    tx["txchildren"] = []
-                    will[txid] = WillItem(tx, _id=txid, wallet=self.wallet)
-                self.update_will(will)
-            else:
-                _logger.info("No transactions was built")
-                _logger.info(f"will-settings: {self.will_settings}")
-                _logger.info(f"date_to_check:{self.date_to_check}")
-                _logger.info(f"heirs: {self.heirs}")
-                return {}
-        except Exception as e:
-            _logger.info(f"Exception build_will: {e}")
-            raise e
-            pass
-        return self.willitems
+        The window passes the old will's creation date when it re-anchors
+        ``date_to_check`` (``with_creation_date=True``), as it did before.
+        ``ignore_duplicate`` / ``keep_original`` are kept for the callers and
+        were never used. The former helper ``update_will`` (only used here)
+        is part of the engine function now.
+        """
+        return build.build_will(self, with_creation_date=True)
 
     def check_will(self):
         """See :func:`bal.engine.context.check_will`.
@@ -1114,9 +1014,9 @@ class BalWindow:
                 rebuilt_ok = False
                 try:
                     self.check_will()
-                    for wid, _w in self.willitems.items():
-                        # Label shown in Electrum's History tab for inheritance txs.
-                        self.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
+                    # Label shown in Electrum's History tab for inheritance
+                    # txs: every item, as Prepare always did (CHANGELOG #119).
+                    build.label_rebuilt(self, scope="all")
                     rebuilt_ok = True
                 except WillExpiredException as e:
                     self.invalidate_will()
@@ -1644,21 +1544,24 @@ class BalWindow:
         Same rule as the Check dialog (``Will.anticipated_delivery_to_store``,
         CHANGELOG #110). This runs on the auto-rebuild worker thread, so only
         the setting is stored here; the date widgets are refreshed by
-        :meth:`_after_auto_rebuild` on the GUI thread.
+        :meth:`_after_auto_rebuild` on the GUI thread. The steps live in
+        :func:`bal.engine.build.sync_delivery_date` (CHANGELOG #119); an
+        error of the rule is logged and nothing is stored, as before.
         """
-        try:
-            new_locktime = Will.anticipated_delivery_to_store(
-                self.willitems, self.will_settings["locktime"]
-            )
-        except Exception as e:
-            _logger.error("auto rebuild: delivery date sync failed: {}".format(e))
-            return
-        if new_locktime is None:
-            return
-        _logger.info("auto rebuild: delivery date synced to {}".format(new_locktime))
-        self.will_settings["locktime"] = new_locktime
-        self.bal_plugin.WILL_SETTINGS.set(self.will_settings)
-        self._auto_rebuild_synced_locktime = new_locktime
+
+        def store(field, value):
+            _logger.info("auto rebuild: delivery date synced to {}".format(value))
+            self.will_settings[field] = value
+            self.bal_plugin.WILL_SETTINGS.set(self.will_settings)
+            self._auto_rebuild_synced_locktime = value
+
+        build.sync_delivery_date(
+            self,
+            store,
+            on_error=lambda e: _logger.error(
+                "auto rebuild: delivery date sync failed: {}".format(e)
+            ),
+        )
 
     def _auto_sign_save_push(self):
         """Headless sign + persist + push of the rebuilt will.

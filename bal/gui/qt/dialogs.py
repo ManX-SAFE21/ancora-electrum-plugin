@@ -71,6 +71,7 @@ from ...core.qrtransfer import (
 )
 from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
+from ...engine import build
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -1309,9 +1310,9 @@ class BalBuildWillDialog(BalDialog):
         skipped, exactly as the core coherence check does. A set keeps the list
         unique even when an heir appears in several transactions.
         """
-        for wid in Will.only_valid(self.bal_window.willitems):
-            # Label shown in Electrum's History tab for inheritance txs.
-            self.bal_window.wallet.set_label(wid, "Safe21 Heartbeat backup transaction")
+        # Label shown in Electrum's History tab for inheritance txs: the
+        # VALID items (CHANGELOG #119: bal.engine.build).
+        build.label_rebuilt(self.bal_window, scope="valid")
         # Keep the plugin's stored delivery date in sync with the (possibly
         # auto-anticipated) transactions, otherwise the next Check would wrongly
         # ask to invalidate. See _sync_locktime_to_built_txs for the full why.
@@ -1375,13 +1376,12 @@ class BalBuildWillDialog(BalDialog):
         every panel/wizard, so the visible date and the .ics export stay
         consistent.
         """
-        # The rule itself lives in bal.core (CHANGELOG #110), shared with the
-        # automatic rebuild and the command line.
-        new_locktime = Will.anticipated_delivery_to_store(
-            self.bal_window.willitems, self.bal_window.will_settings["locktime"]
-        )
-        if new_locktime is not None:
-            _logger.debug(f"sync delivery date to built tx locktime: -> {new_locktime}")
+        # The rule itself lives in bal.core (CHANGELOG #110) and the steps in
+        # bal.engine.build (CHANGELOG #119), shared with the automatic
+        # rebuild and the command line; this dialog stores the date its way.
+
+        def store(field, value):
+            _logger.debug(f"sync delivery date to built tx locktime: -> {value}")
             # Remember that we anticipated the date, so the later sign
             # prompt can explain WHY signing is needed
             # (see on_success_phase1).
@@ -1389,9 +1389,9 @@ class BalBuildWillDialog(BalDialog):
             # update_setting_widgets stores the value, persists it and
             # refreshes the date widgets in all panels/wizard (the .ics
             # calendar too).
-            self.bal_window.update_setting_widgets(
-                new_locktime, "locktime", update_all=True
-            )
+            self.bal_window.update_setting_widgets(value, field, update_all=True)
+
+        build.sync_delivery_date(self.bal_window, store)
         # A relative "Check Alive" threshold is also PRESERVED: it is anchored
         # on every check by ``resolve_date_to_check`` / ``resolve_guard_threshold``
         # (negative counts back from the delivery, positive forward from the

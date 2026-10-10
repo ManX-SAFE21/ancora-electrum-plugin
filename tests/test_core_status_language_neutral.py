@@ -57,10 +57,16 @@ def _item(status="", we=None):
 # ------------------------------------------------------------------ #
 
 def test_builders_store_english_new():
-    """window.py and the CLI controller must not translate the stored status."""
-    for rel in ("bal/gui/qt/window.py", "bal/cli/controller.py"):
+    """The will builder must not translate the stored status.
+
+    Since CHANGELOG #119 the one builder is ``bal/engine/build.py`` (it was
+    in ``window.py`` and the CLI controller); none of the three files may
+    translate it.
+    """
+    src = (ROOT / "bal/engine/build.py").read_text(encoding="utf-8")
+    assert re.search(r'tx\["status"\]\s*=\s*"New"', src)
+    for rel in ("bal/engine/build.py", "bal/gui/qt/window.py", "bal/cli/controller.py"):
         src = (ROOT / rel).read_text(encoding="utf-8")
-        assert re.search(r'tx\["status"\]\s*=\s*"New"', src), rel
         assert not re.search(r'tx\["status"\]\s*=\s*_\(', src), rel
 
 
