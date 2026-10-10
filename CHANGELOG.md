@@ -5977,3 +5977,27 @@ both BUG-3 probes: nothing still executable, 6 runs out of 6; warn_matrix
 synced: 134 Checks, 0 mismatches.
 
 **Outcome:** DONE (tests only; the test ZIP would be identical, so none).
+
+## 113. A command-line test failed every afternoon
+
+**Date:** 2026-10-10
+
+**Problem:** `tests/test_cli_controller_offline.py::test_auto_rebuild_threshold_passed_does_not_invalidate`
+failed whenever the suite ran after about 13:00 UTC, also on unchanged
+`main` (found during #112). The test sets the Check Alive one hour in the
+past. Since #80 the plugin keeps the Check Alive as whole days before the
+delivery, rounded: in the afternoon (UTC) "one hour ago" is rounded to
+tomorrow, which is not past, so the test saw no passed Check Alive. The
+plugin is right; the test depended on the time of day. The runs of
+#99-#111 were in the morning.
+
+**What changed (test only):** the test sets the Check Alive two days in the
+past, with a comment that says why.
+
+**Verification:** the test run with the clock set to 00:30, 06:30, 11:30,
+12:30, 13:30, 15:30, 18:30 and 23:30 UTC (a scratch test with the
+`tests/flowkit.py` clock): the old version fails at 4 of these hours, the
+new one passes at all 8. Whole `tests/` directory: 1064 passed, 0 failed,
+0 errors. `ruff check bal/ tests/`: all checks passed.
+
+**Outcome:** DONE.
