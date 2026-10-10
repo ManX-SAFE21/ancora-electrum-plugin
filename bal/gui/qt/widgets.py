@@ -887,8 +887,20 @@ class LockTimeWidget(BalTimeEditWidget):
 
 class WillSettingsWidget(QWidget):
 
+    # Toolbar rows (CHANGELOG #95), set in __init__ for layout_type "h";
+    # class-level defaults so the methods below never fail on a widget
+    # built another way.
+    _rows = ()
+    _two_rows = None
+    _locktime_min_width = 0
+
     def __init__(self, bal_window: "BalWindow", parent, layout_type="h",
                  read_only=True):
+        """Delivery time, Check Alive, calendar and fee fields of the will.
+
+        ``layout_type="h"``: one row, for the Will and Heirs tab toolbars;
+        any other value: one field under the other, for the wizard.
+        """
         self.widgets = {}
         QWidget.__init__(self, parent)
         self.bal_window = bal_window
@@ -936,10 +948,19 @@ class WillSettingsWidget(QWidget):
         if w not in bal_window.txfee_widgets:
             bal_window.txfee_widgets.append(w)
         if layout_type == "h":
-            box.addWidget(self.widgets["locktime"])
-            box.addWidget(self.widgets["threshold"])
-            box.addWidget(self.calendar_button)
-            box.addWidget(self.widgets["baltx_fees"])
+            # CHANGELOG #95: one row in BASIC, two in ADVANCED (see
+            # _arrange_toolbar_rows). The fields go into two row layouts
+            # stacked in a column; BASIC uses only the first one.
+            self._locktime_min_width = self.widgets["locktime"].minimumWidth()
+            column = QVBoxLayout()
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(2)
+            self._rows = (QHBoxLayout(), QHBoxLayout())
+            for row in self._rows:
+                row.setContentsMargins(0, 0, 0, 0)
+                column.addLayout(row)
+            box.addLayout(column)
+            self._arrange_toolbar_rows()
         else:
             # ----------------------------------------------------------------- #
             # Vertical layout (the "Build your will" wizard) - Layout H.         #
@@ -1161,6 +1182,67 @@ class WillSettingsWidget(QWidget):
             apply_combo = getattr(widget, "apply_user_type_visibility", None)
             if callable(apply_combo):
                 apply_combo()
+        # CHANGELOG #95: one or two toolbar rows, following the mode.
+        self._arrange_toolbar_rows()
+
+    def _arrange_toolbar_rows(self):
+        """Lay the toolbar fields on one row (BASIC) or two (ADVANCED).
+
+        Owner (CHANGELOG #95), after the Check button became as big as the
+        Wizard:
+
+        * BASIC keeps the one row it always had, with its spacing:
+          delivery time | calendar | fee (the Check Alive is hidden);
+        * ADVANCED, which also shows the Raw/Date selector and the Check Alive
+          with its sentence, uses two rows next to the two big buttons:
+          delivery time | calendar, then Check Alive | fee. On one row the
+          Will tab needed a window about 1500 px wide.
+
+        Only for a toolbar (``layout_type="h"``: Will and Heirs tabs); the
+        wizard is vertical. It runs on every refresh (through
+        apply_user_type_visibility), so the fields move only when the mode
+        really changed. Never raises.
+        """
+        if self.layout_type != "h" or not self._rows:
+            return
+        try:
+            basic = self.bal_window.bal_plugin.is_basic_mode()
+        except Exception:
+            basic = False
+        two_rows = not basic
+        if two_rows == self._two_rows:
+            return
+        try:
+            for row in self._rows:
+                # Empty both rows: the widgets stay (their parent is this
+                # widget), the stretches of the old arrangement are dropped.
+                while row.count():
+                    row.takeAt(0)
+            locktime = self.widgets["locktime"]
+            if two_rows:
+                # Packed to the left: the 40-character minimum of the
+                # delivery field (kept in BASIC) would push the calendar
+                # ~140 px away from the date.
+                locktime.setMinimumWidth(0)
+                lines = (
+                    (locktime, self.calendar_button),
+                    (self.widgets["threshold"], self.widgets["baltx_fees"]),
+                )
+            else:
+                locktime.setMinimumWidth(self._locktime_min_width)
+                lines = (
+                    (locktime, self.widgets["threshold"], self.calendar_button,
+                     self.widgets["baltx_fees"]),
+                    (),
+                )
+            for row, widgets in zip(self._rows, lines, strict=True):
+                for widget in widgets:
+                    row.addWidget(widget)
+                if two_rows:
+                    row.addStretch(1)
+            self._two_rows = two_rows
+        except Exception as e:
+            _logger.debug(f"toolbar rows: {e!r}")
 
     def apply_user_type_editor_default(self):
         """Apply the per-mode Raw/Date editor default to both time fields.

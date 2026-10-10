@@ -5341,3 +5341,58 @@ branch: no scenario differs (only texts changed); no untranslated text
 in Italian and Spanish; zip builds and loads.
 
 **Outcome:** DONE.
+
+## 95. 5d/15: the Check button as big as the Wizard, right after it
+
+**Date:** 2026-10-10
+
+**Request (owner):** the Check button should be much bigger, about as big
+as the Wizard, and right after it. Check is the command used most after the
+Wizard (new funds, a change, a will-executor that did not get the will), but
+it was a small icon at the far right of the Will tab's toolbar, next to
+"Tools", and easy to miss.
+
+**What changed (mockups approved by the owner):**
+
+- `bal/gui/qt/lists.py` (`PreviewList.create_toolbar`): the Check button
+  has its name on it, "Check your will" (Italian "Controlla testamento",
+  Spanish "Comprobar testamento", already translated in #94), with the same
+  look as the Wizard (bold, 28 px icon, 40 px high), right after it:
+  Wizard | Check | Delivery time | Check Alive | Calendar.
+- New `PreviewList._big_button`, used by both buttons, so the two main
+  commands always look the same.
+- The tooltip explains what the button does: "Rebuild the will if something
+  has changed, send it to the will-executors and check that they have it.
+  With 'Auto-sign on Check' off, it shows how to sign and send it." The
+  second sentence was added to the approved text: with that option off the
+  Check does not sign and send by itself; the option is named exactly as it
+  is translated.
+- Room for it (owner asked to check ADVANCED mode, then chose the layout):
+  `bal/gui/qt/widgets.py` (`WillSettingsWidget._arrange_toolbar_rows`, for
+  the one-row layout of the Will and Heirs tab toolbars). BASIC keeps its
+  one row and its spacing: delivery time | calendar | fee. ADVANCED, which
+  also shows the Raw/Date selector and the Check Alive with its sentence,
+  uses two rows next to the two big buttons: delivery time | calendar, then
+  Check Alive | fee, packed to the left (the delivery field drops its
+  40-character minimum there, which pushed the calendar ~140 px away from
+  the date). A BASIC <-> ADVANCED switch rearranges the existing toolbars
+  (called from `apply_user_type_visibility`, which runs on every refresh:
+  the fields move only when the mode really changed). Minimum width of the
+  Will tab toolbar, Italian, offscreen render (Linux fonts): BASIC 867 px
+  before, 1024 px now; ADVANCED 1334 px before, 1499 px with the big button
+  on one row, 1099 px on two rows (about 25 px taller). The wizard is
+  unchanged.
+- Catalogs: the tooltip in Italian and Spanish.
+- New test: `tests/test_check_button.py` (6: order, same look as the
+  Wizard, the button runs the Check and its tooltip names the option; BASIC
+  one row with its spacing, ADVANCED two rows, a mode switch rearranges the
+  existing toolbar and an ordinary refresh moves nothing).
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/` directory: same
+failures as `main`; the real toolbar rendered in Italian, BASIC and
+ADVANCED, before and after (widths above), also after switching BASIC ->
+ADVANCED without a restart (same 1099 px); harness A1
+OK (the will logic is unchanged); translations complete; zip builds and
+loads.
+
+**Outcome:** DONE.

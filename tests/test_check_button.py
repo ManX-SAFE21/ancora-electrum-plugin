@@ -1,0 +1,207 @@
+"""
+The Check button of the Will tab, as big as the Wizard (CHANGELOG #95).
+
+Owner: Check is the command used most after the Wizard, but it was a small
+icon at the far right, next to "Tools". It now has its name on it ("Check
+your will"), the same look as the Wizard, and sits right after it:
+    Wizard | Check | Delivery time | Check Alive | Calendar
+
+To make room for it, ADVANCED mode lays the toolbar fields on two rows
+(delivery time | calendar, then Check Alive | fee); BASIC keeps its one row
+and its spacing. A BASIC <-> ADVANCED switch rearranges the existing
+toolbars without a restart.
+
+Run (standalone or with pytest):
+    QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \
+        python3 tests/test_check_button.py
+"""
+
+import os
+import sys
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
+
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QToolButton,
+    QWidget,
+)
+
+from bal.core.plugin_base import BalPlugin
+from bal.gui.qt import lists as lists_mod
+from bal.gui.qt import widgets as widgets_mod
+from bal.gui.qt.widgets import WillSettingsWidget
+from bal.i18n import _
+
+_APP = QApplication.instance() or QApplication(sys.argv)
+
+DELIVERY = 1979683200            # 2032-09-26, a fixed delivery date
+
+
+class _Host(QWidget):
+    """The Will tab list, reduced to what ``create_toolbar`` uses."""
+
+    def __init__(self):
+        super().__init__()
+        self.bal_window = MagicMock()
+        self.bal_window.bal_plugin.read_file.return_value = b""
+        for name in ("build_transactions", "ask_password_and_sign_transactions",
+                     "export_will", "import_will", "merge_will", "broadcast",
+                     "check", "invalidate_will"):
+            setattr(self, name, MagicMock())
+
+    def create_toolbar_with_menu(self, title):
+        """Electrum's toolbar: title, stretch, "Tools" menu button."""
+        toolbar = QHBoxLayout()
+        toolbar.addWidget(QLabel(title))
+        toolbar.addStretch()
+        toolbar.addWidget(QToolButton())
+        return toolbar, QMenu()
+
+    _big_button = lists_mod.PreviewList._big_button
+
+
+def _row():
+    host = _Host()
+    settings = QWidget()
+    with patch.object(lists_mod, "WillSettingsWidget", return_value=settings), \
+            patch.object(lists_mod, "report_menu", return_value=QMenu()):
+        toolbar = lists_mod.PreviewList.create_toolbar(host, None)
+    row = toolbar.itemAt(2).widget().layout()
+    return host, settings, [row.itemAt(i).widget() for i in range(row.count())]
+
+
+def test_check_comes_right_after_the_wizard():
+    host, settings, widgets = _row()
+    wizard, check = widgets[0], widgets[1]
+    assert wizard.text().strip() == _("Build Your Will")
+    assert check.text().strip() == _("Check your will")
+    assert widgets[2] is settings and len(widgets) == 3
+
+
+def test_check_looks_like_the_wizard():
+    _host, _settings, (wizard, check, _rest) = _row()
+    assert isinstance(check, QPushButton)
+    assert check.iconSize() == wizard.iconSize()
+    assert check.minimumHeight() == wizard.minimumHeight() == 40
+    assert check.styleSheet() == wizard.styleSheet()
+    assert "bold" in check.styleSheet()
+
+
+def test_check_runs_the_check_and_explains_itself():
+    host, _settings, (wizard, check, _rest) = _row()
+    # assert_called_once, not ..._with(): a mock takes Qt's "checked"
+    # argument, the real methods take none and Qt leaves it out.
+    check.click()
+    host.check.assert_called_once()
+    wizard.click()
+    host.bal_window.init_wizard.assert_called_once()
+    # The tooltip names the auto-sign option exactly as it is translated.
+    assert "'{}'".format(_("Auto-sign on Check")) in check.toolTip()
+
+
+# ------------------------------------------------- room for it (the toolbar)
+
+class _Field(QWidget):
+    """Stand-in for the Check Alive and fee fields (not what is measured)."""
+
+    valueEdited = pyqtSignal()  # noqa: N815 (the real fields' signal name)
+
+    def __init__(self, bal_window, parent):
+        super().__init__(parent)
+        self.prefix_widget = QWidget()
+
+    def get_value(self):
+        return None
+
+    def set_read_only(self, read_only):
+        pass
+
+
+class _CalendarButton(QToolButton):
+    """Stand-in for the calendar export button."""
+
+    def __init__(self, bal_window, provider):
+        super().__init__()
+
+
+def _bal_window(mode):
+    """Just what the real delivery field uses from BalWindow.
+
+    ``mode`` is a one-item list ("basic" / "advanced") the test can change.
+    """
+    settings = {"locktime": DELIVERY, "threshold": "-180d"}
+    return SimpleNamespace(
+        will_settings=dict(settings),
+        willitems={},
+        update_setting_widgets=MagicMock(),
+        update_combo_setting_widgets=MagicMock(),
+        bal_plugin=SimpleNamespace(
+            is_basic_mode=lambda: mode[0] == "basic",
+            read_file=lambda path: b"",
+            EDITABLE_DATES=SimpleNamespace(get=lambda: False),
+            WILL_SETTINGS=SimpleNamespace(get=lambda: dict(settings)),
+            default_will_settings=BalPlugin.default_will_settings,
+            default_will_settings_relative=BalPlugin.default_will_settings_relative,
+            default_will_settings_absolute=BalPlugin.default_will_settings_absolute,
+        ),
+    )
+
+
+def _settings_row(mode):
+    """The real WillSettingsWidget of a toolbar, other fields stood in."""
+    with patch.object(widgets_mod, "ThresholdTimeWidget", _Field),             patch.object(widgets_mod, "BalTxFeesWidget", _Field),             patch.object(widgets_mod, "BalCalendarButton", _CalendarButton),             patch.object(WillSettingsWidget, "on_locktime_change", lambda self: None):
+        return WillSettingsWidget(_bal_window(mode), None, "h")
+
+
+def _lines(row):
+    """The widgets of the two toolbar rows, in order."""
+    return [[r.itemAt(i).widget() for i in range(r.count()) if r.itemAt(i).widget()]
+            for r in row._rows]
+
+
+def test_basic_keeps_one_row_and_its_spacing():
+    row = _settings_row(["basic"])
+    w = row.widgets
+    assert _lines(row) == [
+        [w["locktime"], w["threshold"], row.calendar_button, w["baltx_fees"]], []]
+    forty = 40 * widgets_mod.char_width_in_lineedit()
+    assert w["locktime"].minimumWidth() == forty
+
+
+def test_advanced_uses_two_rows_packed_to_the_left():
+    row = _settings_row(["advanced"])
+    w = row.widgets
+    assert _lines(row) == [[w["locktime"], row.calendar_button],
+                           [w["threshold"], w["baltx_fees"]]]
+    assert w["locktime"].minimumWidth() == 0
+
+
+def test_mode_switch_rearranges_the_existing_toolbar():
+    mode = ["basic"]
+    row = _settings_row(mode)
+    w = row.widgets
+    mode[0] = "advanced"
+    row.apply_user_type_visibility()
+    assert _lines(row) == [[w["locktime"], row.calendar_button],
+                           [w["threshold"], w["baltx_fees"]]]
+    row.apply_user_type_visibility()          # every refresh: nothing moves
+    assert len(_lines(row)[0]) == 2
+    mode[0] = "basic"
+    row.apply_user_type_visibility()
+    assert _lines(row)[1] == [] and len(_lines(row)[0]) == 4
+    assert w["locktime"].minimumWidth() == 40 * widgets_mod.char_width_in_lineedit()
+
+if __name__ == "__main__":
+    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    for t in tests:
+        t()
+        print("ok", t.__name__)
+    print("{} tests passed".format(len(tests)))

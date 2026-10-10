@@ -701,49 +701,63 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # The Wizard is the main entry point to create an inheritance, so make
         # it stand out: show a bold label next to a slightly larger icon (the
         # plain icon-only button was too easy to overlook).
-        wizard = QPushButton("  {}".format(_("Build Your Will")))
-        wizard.setIcon(
-            read_QIcon_from_bytes(
-                self.bal_window.bal_plugin.read_file("icons/wizard.png")
-            )
+        wizard = self._big_button(
+            _("Build Your Will"), "icons/wizard.png",
+            _("Wizard - Build your will"), self.bal_window.init_wizard,
         )
-        wizard.setIconSize(QSize(28, 28))
-        wizard.setMinimumHeight(40)
-        wizard.setStyleSheet("QPushButton{font-weight:bold;}")
-        # Tooltip so the button is self-explanatory when hovered.
-        wizard.setToolTip(_("Wizard - Build your will"))
-        wizard.clicked.connect(self.bal_window.init_wizard)
         # display = QPushButton(_("Display"))
         # display.clicked.connect(self.bal_window.preview_modal_dialog)
 
-        refresh = QPushButton()
-        refresh.setIcon(
-            read_QIcon_from_bytes(
-                self.bal_window.bal_plugin.read_file("icons/reload.png")
-            )
+        # CHANGELOG #95 (owner): Check is the command used most after the
+        # Wizard (new funds, a change, a will-executor that did not get the
+        # will), but as a small icon at the far right it was easy to miss.
+        # Same look as the Wizard, right after it, with its name on it. The
+        # tooltip names the auto-sign option as it is translated, because
+        # with that option off the Check only shows how to sign and send.
+        refresh = self._big_button(
+            _("Check your will"), "icons/reload.png",
+            _(
+                "Rebuild the will if something has changed, send it to the "
+                "will-executors and check that they have it.\n"
+                "With '{}' off, it shows how to sign and send it."
+            ).format(_("Auto-sign on Check")),
+            self.check,
         )
-        # Tooltip so the icon is self-explanatory when hovered: the button
-        # re-checks the will (not a generic refresh). "Check your will", not
-        # "Check Inheritance" (CHANGELOG #94, owner: one word, "will").
-        refresh.setToolTip(_("Check your will"))
-        refresh.clicked.connect(self.check)
 
         widget = QWidget(self)
         hlayout = QHBoxLayout(widget)
         hlayout.setContentsMargins(0, 0, 0, 0)
         self.will_settings_widget = WillSettingsWidget(self.bal_window, self)
         # Toolbar order (left -> right):
-        #   Wizard | Delivery time | Check Alive | Calendar | Check (refresh)
-        # The Wizard button goes first (leftmost); the settings widget already
-        # lays out delivery/check-alive/calendar in that order internally.
+        #   Wizard | Check | Delivery time | Check Alive | Calendar
+        # The two main commands go first (#95: Check used to be last); the
+        # settings widget already lays out delivery/check-alive/calendar in
+        # that order internally.
         hlayout.addWidget(wizard)
-        hlayout.addWidget(self.will_settings_widget)
         hlayout.addWidget(refresh)
+        hlayout.addWidget(self.will_settings_widget)
         toolbar.insertWidget(2, widget)
 
         self.menu = menu
         self.toolbar = toolbar
         return toolbar
+
+    def _big_button(self, text, icon_path, tooltip, slot):
+        """A main toolbar command: bold name next to a larger icon.
+
+        Used for the Wizard and the Check (CHANGELOG #95), so the two main
+        commands always look the same.
+        """
+        button = QPushButton("  {}".format(text))
+        button.setIcon(
+            read_QIcon_from_bytes(self.bal_window.bal_plugin.read_file(icon_path))
+        )
+        button.setIconSize(QSize(28, 28))
+        button.setMinimumHeight(40)
+        button.setStyleSheet("QPushButton{font-weight:bold;}")
+        button.setToolTip(tooltip)
+        button.clicked.connect(slot)
+        return button
 
     def hide_replaced(self):
         self.bal_window.bal_plugin.hide_replaced()
