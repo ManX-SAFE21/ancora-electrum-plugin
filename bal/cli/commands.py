@@ -26,7 +26,7 @@ Flags (see ``electrum.commands.plugin_command``):
 from electrum.commands import plugin_command
 from electrum.util import UserFacingException
 
-from .controller import BalController, _user_facing
+from .controller import BalController, BalSettingsController, _user_facing
 
 plugin_name = "bal"
 
@@ -41,9 +41,22 @@ def _controller(plugin, wallet):
 
 
 def _call(plugin, wallet, method, *args, **kwargs):
+    """Run ``method`` of the wallet's controller; domain errors become messages."""
     controller = _controller(plugin, wallet)
     try:
         return getattr(controller, method)(*args, **kwargs)
+    except Exception as e:
+        raise _user_facing(e) from e
+
+
+def _settings_call(plugin, method, *args):
+    """Run a settings ``method``: the settings belong to the plugin, so no
+    wallet is needed (CHANGELOG #99: ``_call`` with no wallet always failed
+    with "wallet not loaded")."""
+    if plugin is None:
+        raise UserFacingException("the bal plugin is not enabled in this daemon")
+    try:
+        return getattr(BalSettingsController(plugin), method)(*args)
     except Exception as e:
         raise _user_facing(e) from e
 
@@ -58,7 +71,7 @@ async def settings_list(self, plugin=None):
     Returns a JSON object mapping every BAL configuration option (``bal_*``)
     to an object with ``value``, ``default`` and ``name``.
     """
-    return _call(plugin, None, "settings_list")
+    return _settings_call(plugin, "settings_list")
 
 
 @plugin_command("n", plugin_name)
@@ -67,7 +80,7 @@ async def settings_get(self, key, plugin=None):
 
     arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
     """
-    return _call(plugin, None, "settings_get", key)
+    return _settings_call(plugin, "settings_get", key)
 
 
 @plugin_command("n", plugin_name)
@@ -77,7 +90,7 @@ async def settings_set(self, key, value, plugin=None):
     arg:str:key:The configuration key (e.g. ``bal_user_type``).
     arg:str:value:The new value; JSON for object-typed keys such as ``bal_will_settings``.
     """
-    return _call(plugin, None, "settings_set", key, value)
+    return _settings_call(plugin, "settings_set", key, value)
 
 
 @plugin_command("n", plugin_name)
@@ -86,7 +99,7 @@ async def settings_reset(self, key, plugin=None):
 
     arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
     """
-    return _call(plugin, None, "settings_reset", key)
+    return _settings_call(plugin, "settings_reset", key)
 
 
 # --------------------------------------------------------------------------- #
@@ -145,9 +158,9 @@ async def heirs_update(
 
 @plugin_command("nw", plugin_name)
 async def heirs_delete(self, names, wallet=None, plugin=None):
-    """Delete one or more heirs.
+    """Delete one or more heirs; ``not_found`` lists the unknown names.
 
-    arg:json:names:A JSON array of heir names (e.g. ``["Alice","Bob"]``).
+    arg:str:names:A heir name, or a JSON array of names (e.g. ``["Alice","Bob"]``).
     """
     return _call(plugin, wallet, "heirs_delete", names)
 
@@ -155,6 +168,9 @@ async def heirs_delete(self, names, wallet=None, plugin=None):
 @plugin_command("nw", plugin_name)
 async def heirs_import(self, path, wallet=None, plugin=None):
     """Import heirs from a JSON file (validated, merged).
+
+    Returns ``imported`` (heirs taken from the file), ``names``, ``skipped``
+    (each refused entry with the reason) and ``total``.
 
     arg:str:path:Path to the JSON file.
     """
@@ -183,19 +199,23 @@ async def willexecutors_list(self, wallet=None, plugin=None):
     return _call(plugin, wallet, "willexecutors_list")
 
 
+# The parameter is ``executor_url``, never ``url`` (CHANGELOG #100): Electrum's
+# command line reads any option called ``url`` as a payment request
+# (``run_electrum``: "unknown command: <url>"), so show/add/update/select
+# could not be used from the command line.
 @plugin_command("nw", plugin_name)
-async def willexecutors_show(self, url, wallet=None, plugin=None):
+async def willexecutors_show(self, executor_url, wallet=None, plugin=None):
     """Show the details of a single will-executor.
 
-    arg:str:url:The will-executor URL.
+    arg:str:executor_url:The will-executor URL.
     """
-    return _call(plugin, wallet, "willexecutors_show", url)
+    return _call(plugin, wallet, "willexecutors_show", executor_url)
 
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_add(
     self,
-    url,
+    executor_url,
     address="",
     base_fee=0,
     info=None,
@@ -204,18 +224,20 @@ async def willexecutors_add(
 ):
     """Add a new will-executor (not selected by default).
 
-    arg:str:url:The will-executor base URL.
+    arg:str:executor_url:The will-executor base URL.
     arg:str:address:The executor fee address for this network.
     arg:int:base_fee:The executor base fee in satoshis.
     arg:str:info:A human-readable description.
     """
-    return _call(plugin, wallet, "willexecutors_add", url, address, base_fee, info)
+    return _call(
+        plugin, wallet, "willexecutors_add", executor_url, address, base_fee, info
+    )
 
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_update(
     self,
-    url,
+    executor_url,
     address=None,
     base_fee=None,
     info=None,
@@ -226,7 +248,7 @@ async def willexecutors_update(
 ):
     """Update an existing will-executor (only the given fields).
 
-    arg:str:url:The will-executor URL to update.
+    arg:str:executor_url:The will-executor URL to update.
     arg:str:address:The new fee address.
     arg:int:base_fee:The new base fee in satoshis.
     arg:str:info:The new description.
@@ -237,7 +259,7 @@ async def willexecutors_update(
         plugin,
         wallet,
         "willexecutors_update",
-        url,
+        executor_url,
         address,
         base_fee,
         info,
@@ -248,21 +270,21 @@ async def willexecutors_update(
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_select(
-    self, url, value=True, wallet=None, plugin=None
+    self, executor_url, value=True, wallet=None, plugin=None
 ):
     """Select (or deselect) a will-executor.
 
-    arg:str:url:The will-executor URL.
-    arg:bool:value:True to select, False to deselect.
+    arg:str:executor_url:The will-executor URL.
+    arg:bool:value:True to select, False to deselect (``--value false``).
     """
-    return _call(plugin, wallet, "willexecutors_select", [url], value)
+    return _call(plugin, wallet, "willexecutors_select", [executor_url], value)
 
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_delete(self, urls, wallet=None, plugin=None):
-    """Delete one or more will-executors.
+    """Delete one or more will-executors; ``not_found`` lists the unknown URLs.
 
-    arg:json:urls:A JSON array of executor URLs (e.g. ``["https://we.example.com"]``).
+    arg:str:urls:A will-executor URL, or a JSON array of URLs (e.g. ``["https://we.example.com"]``).
     """
     return _call(plugin, wallet, "willexecutors_delete", urls)
 
@@ -347,11 +369,13 @@ async def will_autorebuild(self, wallet=None, plugin=None):
     and, only when the anticipated locktime crosses the Check Alive threshold,
     an invalidation transaction is returned instead.  A Check Alive already in
     the past is reported (``check_alive_passed``) and never invalidated on its
-    own.  Signing needs a passwordless wallet.
+    own.  Signing needs a passwordless wallet.  A coherent will that is not
+    signed yet, or that no will-executor has received, is signed and sent.
 
     Returns a JSON object with ``result``: ``valid``, ``no_heirs``,
     ``check_alive_passed``, ``invalidated`` (with ``invalidation_tx``),
-    ``nothing``, ``needs_signing`` or ``rebuilt``.
+    ``nothing``, ``needs_signing``, ``rebuilt``, ``rebuilt_not_sent``,
+    ``signed``, ``sent`` or ``not_sent``.
     """
     return _call(plugin, wallet, "auto_rebuild")
 
@@ -375,13 +399,15 @@ async def will_broadcast(
 ):
     """Send the signed will transactions to their will-executors (in parallel).
 
-    Updates the PUSHED/PUSH_FAIL statuses and persists.  Returns ``{url: status}``.
+    Updates the PUSHED/PUSH_FAIL statuses and persists.  Returns ``{url: status}``;
+    ``_failed`` maps each failed will-executor to the reason.  Ends with an
+    error (exit code 1) when no will-executor received the will.
 
     arg:str:txid:Optional transaction id to broadcast; all valid+signed ones when omitted.
     arg:bool:force:Force re-pushing transactions already marked as PUSHED.
     """
     txids = [txid] if txid is not None else None
-    return _call(plugin, wallet, "push_transactions_to_willexecutors", force, txids)
+    return _call(plugin, wallet, "broadcast_command", force, txids)
 
 
 @plugin_command("nw", plugin_name)

@@ -202,12 +202,18 @@ def _item_spending(controller, *prevout_hexes):
 # --------------------------------------------------------------------------- #
 
 def test_auto_rebuild_noop_when_will_valid():
+    """A coherent, signed will with nothing to send: nothing is done.
+
+    CHANGELOG #109: the will is signed first; an unsigned one is now signed
+    by the command (see test_auto_rebuild_signs_a_coherent_unsigned_will).
+    """
     with _no_willexecutors():
         with _Plugin() as plugin:
             plugin.NO_WILLEXECUTOR.set(True)
             wallet = FakeWallet([make_funding_input()])
             c = _make_controller(plugin, wallet)
             c.prepare_will()
+            c.sign_transactions(None)
             txid_before, _ = _single(c)
 
             result = c.auto_rebuild()
@@ -332,6 +338,156 @@ def test_auto_rebuild_anticipation_never_crosses_the_check_alive():
         "the rebuilt locktime must be anticipated by one day"
     )
 
+
+
+def test_auto_rebuild_says_when_no_will_executor_received_it():
+    """CHANGELOG #105: rebuilt and signed, but every push failed (offline):
+    the result is ``rebuilt_not_sent`` with the reasons, not "rebuilt ...
+    signed and pushed"."""
+    failed_push = {
+        "https://we.example.com": "Failed",
+        "_error": True,
+        "_failed": {"https://we.example.com": "You are offline."},
+    }
+    with _no_willexecutors():
+        with _Plugin() as plugin:
+            plugin.NO_WILLEXECUTOR.set(True)
+            wallet = FakeWallet([make_funding_input()])
+            c = _make_controller(plugin, wallet)
+            c.prepare_will()
+            wallet._utxos.append(make_funding_input("22" * 32))
+            with mock.patch.object(
+                BalController,
+                "push_transactions_to_willexecutors",
+                return_value=failed_push,
+            ):
+                result = c.auto_rebuild()
+
+    assert result["result"] == "rebuilt_not_sent", result
+    assert result["push"]["_failed"] == {"https://we.example.com": "You are offline."}
+    new_item = _item_spending(c, "11" * 32, "22" * 32)
+    assert new_item.get_status("COMPLETE"), "the will is still signed"
+
+
+def _rebuild_after_new_funds(run_rebuild):
+    """Prepare and sign a will, receive new funds, rebuild with ``run_rebuild``
+    (anticipating the date by one day, as the core does when the old will's
+    coins are spent again), then run the next command's check.
+
+    The delivery date is the default ABSOLUTE one (``_make_controller`` sets
+    a relative "1y", which is resolved against the built will and never had
+    the problem).
+
+    Returns ``(rebuild result, stored locktime, old locktime, next check)``.
+    """
+    with _no_willexecutors():
+        with _Plugin() as plugin:
+            plugin.NO_WILLEXECUTOR.set(True)
+            wallet = FakeWallet([make_funding_input()])
+            c = BalController(plugin, wallet)
+            c.heirs_add("alice", ADDRESS, "100000")
+            c.heirs_add("bob", ADDRESS, "100%")
+            c.prepare_will()
+            c.sign_transactions(None)
+            _, old_item = _single(c)
+            old_locktime = int(old_item.tx.locktime)
+            wallet._utxos.append(make_funding_input("22" * 32))
+            with mock.patch.object(
+                Will, "check_anticipate", return_value=old_locktime - 86400
+            ):
+                result = run_rebuild(c)
+            stored = plugin.WILL_SETTINGS.get()["locktime"]
+            # The next command: a new controller, as for every CLI command.
+            nxt = BalController(plugin, wallet)
+            nxt.sign_transactions(None)
+            try:
+                check = nxt.will_check()
+            except Exception as e:
+                check = e
+    return result, stored, old_locktime, check
+
+
+def test_prepare_after_new_funds_rebuilds_and_keeps_the_date_in_step():
+    """CHANGELOG #107: after new funds, ``bal_will_prepare`` failed with
+    "Error: <heir> Please, check your heirs..." (the post-rebuild check
+    differs from the old will: that only means "sign it"), and the stored
+    date stayed one day after the rebuilt will, so the next check asked to
+    invalidate a "postponed" will."""
+    result, stored, old_locktime, check = _rebuild_after_new_funds(
+        lambda c: c.prepare_will()
+    )
+    assert result["result"] == "rebuilt", result
+    assert int(stored) == old_locktime - 86400
+    assert check == {"valid": True}, check
+
+
+def test_auto_rebuild_keeps_the_date_in_step():
+    """CHANGELOG #107: the same date sync after ``bal_will_autorebuild``."""
+    result, stored, old_locktime, check = _rebuild_after_new_funds(
+        lambda c: c.auto_rebuild()
+    )
+    assert result["result"] == "rebuilt", result
+    assert int(stored) == old_locktime - 86400
+    assert check == {"valid": True}, check
+
+
+
+def _coherent_will(plugin, signed=False):
+    """A controller with a prepared (coherent) will, signed or not."""
+    plugin.NO_WILLEXECUTOR.set(True)
+    c = _make_controller(plugin, FakeWallet([make_funding_input()]))
+    c.prepare_will()
+    if signed:
+        c.sign_transactions(None)
+    return c
+
+
+def test_auto_rebuild_signs_a_coherent_unsigned_will():
+    """CHANGELOG #109: prepared but never signed -> signed, not "valid"."""
+    with _no_willexecutors():
+        with _Plugin() as plugin:
+            c = _coherent_will(plugin)
+            result = c.auto_rebuild()
+    assert result["result"] == "signed", result
+    _, item = _single(c)
+    assert item.get_status("COMPLETE")
+
+
+def test_auto_rebuild_coherent_unsigned_encrypted_needs_signing():
+    """CHANGELOG #109: an encrypted wallet cannot sign unattended."""
+    with _no_willexecutors():
+        with _Plugin() as plugin:
+            c = _coherent_will(plugin)
+            c.wallet._encrypted = True
+            result = c.auto_rebuild()
+    assert result["result"] == "needs_signing", result
+    _, item = _single(c)
+    assert not item.get_status("COMPLETE")
+
+
+def test_auto_rebuild_sends_a_signed_will_nobody_has():
+    """CHANGELOG #109: signed but not received by any will-executor (e.g.
+    offline at the last attempt) -> sent again; the result says whether it
+    arrived."""
+    cases = [
+        ({"https://we.example.com": "Success"}, "sent"),
+        ({"https://we.example.com": "Failed", "_error": True,
+          "_failed": {"https://we.example.com": "You are offline."}}, "not_sent"),
+    ]
+    for push, expected in cases:
+        with _no_willexecutors():
+            with _Plugin() as plugin:
+                c = _coherent_will(plugin, signed=True)
+                with mock.patch.object(
+                    Willexecutors, "get_willexecutor_transactions",
+                    return_value={"https://we.example.com": {}},
+                ), mock.patch.object(
+                    BalController, "push_transactions_to_willexecutors",
+                    return_value=push,
+                ) as pushed:
+                    result = c.auto_rebuild()
+        pushed.assert_called_once()
+        assert result["result"] == expected, result
 
 def _run_all():
     tests = [fn for name, fn in sorted(globals().items()) if name.startswith("test_")]

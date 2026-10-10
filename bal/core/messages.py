@@ -6,7 +6,8 @@ will-executors. :func:`will_change_message` turns that exception into one
 plain sentence. It is shared by the Check dialog, the main window
 ("Prepare") and the command line (CHANGELOG #78), so the three can no longer
 drift apart. The texts are the ones approved by the owner in #77 and before.
-It also holds the Check Alive renewal texts (CHANGELOG #79).
+It also holds the Check Alive renewal texts (CHANGELOG #79) and the text
+for the will-executor that cannot be deleted (CHANGELOG #108).
 
 Must never import Qt (``bal/core`` rule).
 """
@@ -215,3 +216,15 @@ def check_alive_message(info):
     if info.get("renewable") and info.get("has_will"):
         return check_alive_renew_question(info)
     return check_alive_cannot_renew(info)
+
+
+def protected_executor_message(url):
+    """Why the Bitcoin After Life will-executor was not deleted or renamed.
+
+    One text for the GUI and the command line (CHANGELOG #108), see
+    ``Willexecutors.is_protected``.
+    """
+    return _(
+        "{} is the Bitcoin After Life will-executor: it cannot be deleted or "
+        "renamed. To stop using it, deselect it."
+    ).format(url)

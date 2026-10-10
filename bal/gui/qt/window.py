@@ -1535,7 +1535,18 @@ class BalWindow:
         return result
 
     def _after_auto_rebuild(self):
-        """Refresh the will tabs after an auto-rebuild (GUI thread)."""
+        """Refresh the will tabs after an auto-rebuild (GUI thread).
+
+        When the rebuild moved the delivery date (CHANGELOG #110), the date
+        widgets are refreshed here, on the GUI thread.
+        """
+        synced = getattr(self, "_auto_rebuild_synced_locktime", None)
+        if synced is not None:
+            self._auto_rebuild_synced_locktime = None
+            try:
+                self.update_setting_widgets(synced, "locktime", update_all=True)
+            except Exception as e:
+                _logger.debug("_after_auto_rebuild date refresh failed: {}".format(e))
         try:
             self.update_all()
         except Exception as e:
@@ -1653,6 +1664,13 @@ class BalWindow:
                 )
                 return False
 
+            # 4b) Keep the stored delivery date in step with the rebuilt
+            #     (anticipated) transactions, as the Check dialog does;
+            #     otherwise the next Check reads the anticipation as a
+            #     postponement and asks for an on-chain invalidation
+            #     (CHANGELOG #110).
+            self._sync_delivery_after_auto_rebuild()
+
             # 5) Sign (passwordless wallets only, headlessly), persist and push
             #    the rebuilt transactions to their will-executors: pushing the
             #    earlier-locktime transactions is what makes them orphan the
@@ -1722,6 +1740,28 @@ class BalWindow:
         except Exception as e:
             _logger.error("auto invalidate failed: {}".format(e))
             return None
+
+    def _sync_delivery_after_auto_rebuild(self):
+        """Store the rebuilt will's (anticipated) delivery date.
+
+        Same rule as the Check dialog (``Will.anticipated_delivery_to_store``,
+        CHANGELOG #110). This runs on the auto-rebuild worker thread, so only
+        the setting is stored here; the date widgets are refreshed by
+        :meth:`_after_auto_rebuild` on the GUI thread.
+        """
+        try:
+            new_locktime = Will.anticipated_delivery_to_store(
+                self.willitems, self.will_settings["locktime"]
+            )
+        except Exception as e:
+            _logger.error("auto rebuild: delivery date sync failed: {}".format(e))
+            return
+        if new_locktime is None:
+            return
+        _logger.info("auto rebuild: delivery date synced to {}".format(new_locktime))
+        self.will_settings["locktime"] = new_locktime
+        self.bal_plugin.WILL_SETTINGS.set(self.will_settings)
+        self._auto_rebuild_synced_locktime = new_locktime
 
     def _auto_sign_save_push(self):
         """Headless sign + persist + push of the rebuilt will.

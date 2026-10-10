@@ -151,7 +151,43 @@ electrum stop
 All commands require a running daemon (Electrum's `plugin_command` enforces
 this). Wallet-bound commands (`bal_heirs_*`, `bal_will_*`, etc.) require the
 wallet to be loaded first. Signing commands require `--password` for encrypted
-wallets.
+wallets. The settings commands (`bal_settings_*`) need no wallet.
+
+### Syntax
+
+`electrum <command> --help` prints the exact arguments of every command.
+The most common forms:
+
+```bash
+# Heirs: name, address, amount (satoshis or a percentage)
+electrum bal_heirs_add alice tb1q... 50%
+electrum bal_heirs_update alice --amount 40%
+electrum bal_heirs_delete alice                 # or a JSON array: '["alice","bob"]'
+
+# Will-executors: the URL comes first, the other fields are options
+electrum bal_willexecutors_add https://we.example.com --address tb1q... --base_fee 1000
+electrum bal_willexecutors_update https://we.example.com --info "My executor"
+electrum bal_willexecutors_select https://we.example.com --value false   # deselect
+electrum bal_willexecutors_ping --urls '["https://we.example.com"]'
+
+# Settings: key, then value (JSON for the will settings)
+electrum bal_settings_get bal_will_settings
+electrum bal_settings_set bal_will_settings '{"baltx_fees": 20, "threshold": "-180d", "locktime": "1y"}'
+```
+
+Every heir gets the delivery date of the will (`"locktime"` in
+`bal_will_settings`), so `--locktime` for a single heir is refused unless
+`bal_enable_multiverse` is on.
+
+### Results and exit codes
+
+Results are JSON. A command that cannot do its job ends with a message and
+exit code 1, for example `bal_will_broadcast` when no will-executor received
+the will (the message names each will-executor and the reason, such as
+"You are offline."). When only some failed, the JSON result lists them in
+`_failed`. `bal_will_autorebuild` answers `rebuilt_not_sent` when the will
+was rebuilt and signed but not delivered. `bal_heirs_import` returns the
+imported heirs and, in `skipped`, each refused entry with the reason.
 
 ## Inheritance safety: anticipate / postpone
 

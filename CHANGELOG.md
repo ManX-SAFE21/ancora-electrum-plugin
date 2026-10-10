@@ -5571,3 +5571,346 @@ its invalidation transaction, and the "no will-executor selected" path.
 files in reverse order. `ruff` (same 3 pre-existing I001); harness A1 OK.
 
 **Outcome:** DONE.
+
+## 99. CLI/1: the settings commands work with no wallet
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_settings_list`, `bal_settings_get`, `bal_settings_set` and
+`bal_settings_reset` always failed with "wallet not loaded", from the
+command line and over JSON-RPC. The commands passed no wallet to a helper
+that requires one. The tests called the controller methods directly, so
+they passed anyway. Found in the CLI review of 2026-09-24 (point 3),
+confirmed live on `main` on 2026-10-10.
+
+**What changed (plan approved by the owner):**
+
+- `bal/cli/controller.py`: new `BalSettingsController(plugin)` with the
+  settings methods (moved, not copied); `BalController` inherits them.
+- `bal/cli/commands.py`: the four settings commands use the new
+  `_settings_call`, which needs no wallet.
+- New `tests/test_cli_command_layer.py`: the commands are called through
+  Electrum's own `Commands` wrappers, with a small fake daemon, as on the
+  command line (the gap that let this and #100/#101 through).
+
+**Verification:** Whole `tests/` directory: 988 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live (Electrum 4.8.2, testnet, offline
+daemon, throwaway wallets): list/get/set/reset work with no wallet,
+including `bal_settings_set bal_will_settings` with a JSON object.
+
+**Outcome:** DONE.
+
+## 100. CLI/2: the will-executor commands work from the command line
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_willexecutors_show`, `_add`, `_update` and `_select` stopped
+with "unknown command: <url>": Electrum's `run_electrum` reads any option
+called `url` as a payment request and exits. Over JSON-RPC they worked.
+CLI review point 4, confirmed live.
+
+**What changed (plan approved by the owner):**
+
+- `bal/cli/commands.py`: the parameter is `executor_url` (was `url`) in the
+  four commands, with a comment that says why. JSON-RPC callers must use the
+  new name; the CLI is new, so the cost is low.
+- `bal_willexecutors_select` deselects with `--value false` (documented).
+- Tests: no `bal_*` command has a `url` parameter; Electrum's own parser
+  puts the URL in `executor_url`; add/show/select run.
+
+**Verification:** Whole `tests/` directory: 991 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: show, add, update and select work from
+the command line.
+
+**Outcome:** DONE.
+
+## 101. CLI/3: updating a will-executor no longer fails
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_willexecutors_update` passed the promo code by position,
+but `BalController.willexecutors_update` had no `promo_code` parameter:
+`TypeError`, also over JSON-RPC. CLI review point 5.
+
+**What changed (plan approved by the owner):** `willexecutors_update` takes
+`promo_code` (saved in the record; an empty one removes it). Test: update
+with every field through the command layer.
+
+**Verification:** Whole `tests/` directory: 992 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: `--info ... --promo_code SAFE21` saved.
+
+**Outcome:** DONE.
+
+## 102. CLI/4: the delivery date no longer moves at every daemon restart
+
+**Date:** 2026-10-10
+
+**Problem:** the default will settings hold absolute dates computed when the
+plugin starts (today + 1 year). The command line never saved them, so a
+daemon restarted on a later day had a new default, one day later, and a
+signed will looked "postponed": `bal_will_check` asked for an on-chain
+invalidation (a fee). The GUI saves the settings when the wallet window
+opens, so GUI users did not see it. CLI review point 2, confirmed live with
+the daemon restarted with the clock one day later.
+
+**What changed (plan approved by the owner):** `BalController._init_settings`
+saves the default the first time it is used, like the GUI. Test: the first
+wallet command saves it, and a new default one day later does not change
+the date of a new heir.
+
+**Verification:** Whole `tests/` directory: 993 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: prepare and sign, restart "one day
+later": `bal_will_check` answers valid (before: postponed).
+
+**Outcome:** DONE.
+
+## 103. CLI/5: a per-heir delivery date is refused or checked, never dropped silently
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_heirs_add`/`_update --locktime` accepted anything ("domani",
+which gives 0, or a 2017 date). With "multiverse" off (the default, and the
+only GUI mode) every heir gets the will's date, so the next check/prepare
+overwrote the per-heir date without a word. CLI review point 6.
+
+**What changed (plan approved by the owner):** `_check_heir_locktime`: with
+multiverse off, `--locktime` is refused with a message that says how to
+change the date for every heir (`bal_will_settings`); with multiverse on, a
+date that is not understood or already past is refused. Tests for both
+modes.
+
+**Verification:** Whole `tests/` directory: 996 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: `--locktime 2y` and `1500000000`
+refused with the message; adding the heir without it works.
+
+**Outcome:** DONE.
+
+## 104. CLI/6: messages instead of Python tracebacks
+
+**Date:** 2026-10-10
+
+**Problem:** a wrong path in `bal_heirs_import`/`_export`,
+`bal_willexecutors_import`/`_export` and `bal_will_export` printed a Python
+traceback and "internal error while executing RPC". A bad heir address said
+"not an address, not an address,<address>". CLI review point 7 (its other
+cases were already fixed by #78).
+
+**What changed (plan approved by the owner):** `_user_facing` turns
+Electrum's `FileImportFailed`/`FileExportFailed` into the message they carry
+(what failed and why), and the address error into "Not a valid address for
+this network: <address>". Tests for the five file commands and the address.
+
+**Verification:** Whole `tests/` directory: 1002 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: every case gives the message, exit
+code 1.
+
+**Outcome:** DONE.
+
+## 105. CLI/7: results that scripts and AI can read
+
+**Date:** 2026-10-10
+
+**Problem (CLI review point 10, confirmed live):**
+
+- `bal_will_broadcast`: when every push failed it ended with exit code 0 and
+  only "Failed"; the reason ("You are offline.", the server's answer) was
+  lost in a debug log.
+- `bal_will_autorebuild`: "rebuilt ... signed and pushed" even when no
+  will-executor received the will.
+- `bal_heirs_import`: `imported` was the total number of heirs, and invalid
+  entries were dropped silently (a file with three bad heirs said
+  `imported: 3` and added one).
+- `bal_willexecutors_import`: `imported` counted the entries already present.
+- `bal_heirs_delete`/`bal_willexecutors_delete`: a plain name (without the
+  JSON brackets) was refused, and unknown names were not reported.
+
+**What changed (plan approved by the owner):**
+
+- `bal/core/willexecutors.py`: a failed push keeps its reason
+  (`broadcast_error`, on the push copy of the record, never saved).
+- `push_transactions_to_willexecutors` returns `_failed: {url: reason}`; a
+  server still busy at the deadline is "no answer in time".
+- New `broadcast_command`: when no will-executor received the will, the
+  command ends with an error (exit code 1) that names each one and its
+  reason; otherwise the JSON result, with `_failed` for the others.
+- `bal_will_autorebuild` answers `rebuilt_not_sent` in that case.
+- `bal_heirs_import` returns `imported`, `names`, `skipped` (reason per
+  entry) and `total`; with multiverse on, a date not understood or past is
+  skipped too. `bal_willexecutors_import` returns `imported` (added ones),
+  `already_present` and `total`.
+- The delete commands take one name or a JSON array and return `not_found`.
+
+**Verification:** Whole `tests/` directory: 1010 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: broadcast offline ends with the reason
+per will-executor and exit code 1; autorebuild after new funds offline
+answers `rebuilt_not_sent`; the bad-heirs file gives `imported: 1` with two
+reasons.
+
+**Outcome:** DONE.
+
+## 106. CLI/8: the command-line syntax in the README
+
+**Date:** 2026-10-10
+
+**Problem:** the README listed only the command names, and
+`PLAN_CMDLINE_PLUGIN.md` (BAL's original design plan) shows a syntax that no
+longer matches the code. CLI review point 11.
+
+**What changed (plan approved by the owner):** README "Command-line /
+headless usage": the most common forms (heirs, will-executors, settings),
+the per-heir date rule, results and exit codes, and `electrum <command>
+--help`. `PLAN_CMDLINE_PLUGIN.md`: a note at the top that its syntax is out
+of date and where the current one is. Documentation only.
+
+**Verification:** every README example was run live (2026-10-10).
+Whole `tests/` directory: 1010 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL.
+
+**Outcome:** DONE.
+
+## 107. CLI/9: after new funds the command line rebuilds the will and keeps the date in step
+
+**Date:** 2026-10-10
+
+**Problem (found in the live CLI test of 2026-10-10, new):** after new funds
+arrived in a wallet with a signed will:
+
+- `bal_will_prepare` stopped with "Error: alice Please, check your heirs,
+  locktime and threshold!": the will could not be prepared again. Right
+  after a rebuild the check reports that the new will differs from the old
+  one; the Check dialog treats that as "sign it" (bugs E/F/K), the command
+  line as an error.
+- `bal_will_autorebuild` rebuilt the will one day earlier (correct: the new
+  will must be valid before the one the will-executors hold) but left the
+  stored delivery date one day later, so the next `bal_will_check` /
+  `bal_will_prepare` took it for a postponement and asked for an on-chain
+  invalidation (a fee). The Check dialog moves the stored date
+  (`_sync_locktime_to_built_txs`); the command line did not.
+
+**What changed (plan approved by the owner):** `prepare_will` treats that
+post-rebuild check as "rebuilt, needs signing" (and stops with a clear
+message when nothing was built); after a rebuild, `prepare_will` and
+`auto_rebuild` label the transactions and move the stored date to the
+rebuilt will's date, with the Check dialog's rule (only earlier, only an
+absolute date). Two tests reproduce both failures on the old code.
+
+**Verification:** Whole `tests/` directory: 1012 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: new coin, then `bal_will_prepare`
+answers rebuilt (before: error); new coin, then `bal_will_autorebuild`,
+then `bal_will_prepare` answers coherent (before: postponed).
+
+**Outcome:** DONE.
+
+## 108. The Bitcoin After Life will-executor cannot be deleted, only deselected
+
+**Date:** 2026-10-10
+
+**Problem:** deleting the Bitcoin After Life will-executor "worked" from the
+GUI and the command line, but on testnet it came back selected at the next
+start (`get_willexecutors` adds the default list back), while in the same
+session it stayed deleted. CLI review point 9. Found on the way:
+
+- on a fresh install the stored will-executor list WAS the plugin's
+  built-in default dict: adding, deleting or selecting a will-executor
+  changed the defaults themselves in memory until Electrum was restarted (a
+  will-executor added there became a "default"). That is why point 9
+  behaved differently from one session to the next;
+- on mainnet the BAL will-executor is not added by default at all: the
+  plugin looks up the network "bitcoin", the default list says "mainnet"
+  (since BAL v0.2.8). It arrives from the welist download of the Wizard.
+  Left as it is (owner decision).
+
+**What changed (owner decision: it cannot be deleted, only deselected, on
+every network, recognised by its URL):**
+
+- `bal/core/willexecutors.py`: `Willexecutors.is_protected`; `save` and
+  `get_willexecutors` never hand out or change the built-in defaults, only
+  copies.
+- `bal/core/messages.py`: `protected_executor_message`, one text for GUI and
+  command line (translated in Italian and Spanish).
+- Command line: `bal_willexecutors_delete` refuses it (and deletes nothing
+  else in that call); `--rename_to` refuses it (renaming deletes the old
+  URL); other fields and deselecting still work.
+- GUI will-executor list: Delete keeps it (the others are deleted) and
+  shows the message; renaming it in the URL cell or in the Edit dialog is
+  refused with the message.
+- New `tests/test_protected_executor.py`.
+
+**Verification:** Whole `tests/` directory: 1018 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: delete and rename refused with the
+message, `--info` works, another will-executor is deleted normally.
+
+**Outcome:** DONE.
+
+## 109. CLI/10: bal_will_autorebuild finishes the job
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_will_autorebuild` is the command meant to run unattended
+(e.g. once a day), but a coherent will answered `valid` even when it was
+never signed, or signed but never received by a will-executor (the last
+send failed, e.g. offline), and nothing was retried.
+
+**What changed (owner decision, on Claude's advice):** `_finish_coherent_will`:
+a coherent will that is not signed is signed (passwordless wallets;
+encrypted ones get `needs_signing`), and one that no will-executor has
+received is sent again. New results: `signed`, `sent`, `not_sent` (with the
+reasons). Sending gives the selected will-executors the same signed
+transactions, as after a rebuild: no coin moves. The test that expected
+`valid` for a never-signed will now signs it first; new tests for the four
+cases.
+
+**Verification:** Whole `tests/` directory: 1021 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: prepare, then autorebuild offline
+answers `not_sent` (signed, reason "You are offline."); on the encrypted
+wallet `needs_signing`.
+
+**Outcome:** DONE.
+
+## 110. One rule for the delivery date after a rebuild
+
+**Date:** 2026-10-10
+
+**Problem:** with "Rebuild automatically on new transactions" on (off by
+default), new funds made the GUI rebuild the will one day earlier, but the
+stored delivery date stayed one day later: the next Check read it as a
+postponement and asked to sign and broadcast an on-chain invalidation (a
+useless fee). Reproduced in-process on the plugin code with the default
+(absolute) date; the existing test used a relative "1y", which never had
+the problem. The Check dialog and the rebuild at wallet close already did
+the right thing. The same rule existed twice (Check dialog, command line
+#107) and was missing here.
+
+**What changed (plan approved by the owner, first step towards one engine
+for GUI and command line):**
+
+- `bal/core/will.py`: `Will.anticipated_delivery_to_store`, the rule in one
+  place (only earlier, only an absolute stored date).
+- The Check dialog (`_sync_locktime_to_built_txs`) and the command line use
+  it instead of their own copies.
+- `bal/gui/qt/window.py`: the automatic rebuild stores the new date after
+  the rebuild (worker thread) and refreshes the date widgets afterwards on
+  the GUI thread.
+- New `tests/test_core_anticipated_delivery.py`; a GUI test of the automatic
+  rebuild with the default date (the next Check no longer asks to
+  invalidate).
+
+**Found while testing (not fixed here, owner decision: Phase 5e):** in the
+real Electrum the automatic rebuild never starts at all. Electrum sends
+wallet events on its asyncio thread, and the plugin schedules the rebuild
+there with `QTimer.singleShot`, which never fires outside a Qt thread. The
+rebuild at wallet close (on by default) covers new funds meanwhile. Details
+and the proven fix in `PLAN.md`, Phase 5e.
+
+**Verification:** Whole `tests/` directory: 1026 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. The existing tests of the Check dialog's sync
+(`test_sync_locktime_built_txs.py`, `test_build_report.py`) pass unchanged.
+Live (owner, test ZIP, Electrum 4.8.2): after new funds, the rebuild at
+wallet close moved the delivery date one day earlier through the shared
+rule.
+
+**Outcome:** DONE (the automatic rebuild path verified in-process only).
+
+## 111. ruff: no findings left
+
+**Date:** 2026-10-10
+
+**Problem:** `ruff check bal/ tests/` reported 3 `I001` (unsorted imports)
+inherited from BAL: `bal/gui/qt/dialogs.py`, `tests/test_core_animated_qr.py`,
+`tests/test_core_qr_transfer.py`.
+
+**What changed (owner request):** `ruff --select I001 --fix` on those three
+files only: the imports of `dialogs.py` in alphabetical order (no statement
+changed), one blank line removed in each test file.
+
+**Verification:** `ruff check bal/ tests/`: All checks passed. Whole `tests/` directory: 1026 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: all checks passed.
+
+**Outcome:** DONE.
