@@ -680,6 +680,9 @@ class BalBuildWillDialog(BalDialog):
     # CHANGELOG #84b-2 (same reason as above).
     _closing = False
     verify_row = None
+    # CHANGELOG #93 (same reason as above).
+    _close_layout = None
+    report_view = None
 
     def __init__(self, bal_window, parent=None, renew=False, closing=False):
         """``renew=True``: the owner already chose "Renew" for a passed Check
@@ -2139,6 +2142,8 @@ class BalBuildWillDialog(BalDialog):
         """
         if getattr(self, "_close_button", None) is not None:
             return
+        # CHANGELOG #93: the run is over, "Exclude" / "Retry" may be offered.
+        self._set_report_actions(True)
         self._finish_report()
 
         calendar_button = BalCalendarButton(self.bal_window, self._ics_provider)
@@ -2157,9 +2162,96 @@ class BalBuildWillDialog(BalDialog):
         button_row.addWidget(calendar_button)
         button_row.addWidget(self._close_button)
         self._add_closing_note(button_row)
+        self._close_layout = button_row
         self.vbox.addLayout(button_row)
         self._close_button.setFocus()
         self._fit_height()
+
+    # ------------------------------------------------------------------ #
+    # A will-executor that did not get the will (CHANGELOG #93)
+    # ------------------------------------------------------------------ #
+
+    def _set_report_actions(self, enabled):
+        """Offer (or stop offering) "Exclude" and "Retry" in the report."""
+        view = getattr(self, "report_view", None)
+        if view is None:
+            return
+        view.on_exclude = self._exclude_executor if enabled else None
+        view.on_retry = self._retry_check if enabled else None
+
+    def _retry_check(self):
+        """"Retry": run the whole check again, in this dialog.
+
+        The copies a will-executor did not get are still "to send", so the
+        new run sends them again and verifies them; it is what pressing
+        Check again did, without having to know it (owner, #93). The run
+        that just ended stopped its worker thread: a new one is made.
+        """
+        self._set_report_actions(False)
+        layout = getattr(self, "_close_layout", None)
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
+            self.vbox.removeItem(layout)
+            self._close_layout = None
+        self._close_button = None
+        self.labels = []
+        self._row_times().clear()
+        self._report().reset()
+        self.check_row = self.inval_row = self.build_row = None
+        self.sign_row = self.push_row = self.verify_row = None
+        self._next_steps_hint = None
+        self._log_auto_opened = False
+        self._stopping = False
+        self.thread = TaskThread(self)
+        self.thread.finished.connect(self.task_finished)
+        self.msg_update()
+        self.thread.add(
+            self.task_phase1,
+            on_success=self.on_success_phase1,
+            on_done=self.on_accept,
+            on_error=self.on_error_phase1,
+        )
+
+    def _exclude_executor(self, url):
+        """"Exclude": deselect a will-executor that did not get the will.
+
+        Owner (#93): deselecting it in the Will-Executor tab and pressing
+        Check again was the way out, but hard to find. Asks first, never
+        for the last selected executor, then checks again without it.
+        """
+        host = urlparse(url).hostname or url
+        if not self.bal_window.can_exclude_willexecutor(url):
+            self.show_warning(_(
+                '"{}" is the only will-executor selected: it cannot be '
+                "excluded. Choose another one in the Will-Executor tab."
+            ).format(host))
+            return
+        others = [
+            u for u, (state, _sec) in self._report().executors().items()
+            if u != url and state in ("verified", "to_verify", "received")
+        ]
+        text = _('"{}" did not receive your will.').format(host)
+        if others:
+            text += " " + (
+                _("1 other will-executor has it.")
+                if len(others) == 1
+                else _("The other {} will-executors have it.").format(len(others))
+            )
+        text += "\n\n" + _(
+            "If you exclude it, your will is no longer sent to it and the check "
+            "runs again without it. You can select it again in the "
+            "Will-Executor tab."
+        )
+        text += "\n\n" + _("Exclude it?")
+        if not self.question(text):
+            return
+        if self.bal_window.exclude_willexecutor(url):
+            self._retry_check()
 
     # ------------------------------------------------------------------ #
     # No-willexecutor error handling

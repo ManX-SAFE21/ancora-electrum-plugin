@@ -1814,9 +1814,17 @@ class BuildReportView(QWidget):
         "to_send": ("–", "#8a8a8a"),
     }
 
+    #: States of a will-executor that did not get the will (#93).
+    FAILED_STATES = ("failed", "timeout")
+
     def __init__(self, format_amount=None, parent=None):
         super().__init__(parent)
         self.format_amount = format_amount
+        # CHANGELOG #93: set by the dialog once it has finished; then the
+        # will-executors box offers "Exclude" next to each executor that did
+        # not get the will, and "Retry" under it. None while it works.
+        self.on_exclude = None
+        self.on_retry = None
         self.box = QVBoxLayout(self)
         self.box.setContentsMargins(0, 0, 0, 0)
         self.box.setSpacing(10)
@@ -1905,10 +1913,12 @@ class BuildReportView(QWidget):
         row.addWidget(label, 1)
         return frame
 
-    def _group(self, title, rows, accent="#777777"):
+    def _group(self, title, rows, accent="#777777", actions=None, footer=None):
         """A titled white box; ``rows``: ``[(left, right or None, colour)]``.
 
-        The texts are plain and escaped here.
+        The texts are plain and escaped here. ``actions``: ``{row: widget}``
+        put at the end of that row; ``footer``: a widget under the rows
+        (#93: the "Exclude" and "Retry" buttons).
         """
         frame = QFrame()
         frame.setObjectName("balGroup")
@@ -1936,8 +1946,20 @@ class BuildReportView(QWidget):
                 if colour:
                     value.setStyleSheet("color:{};".format(colour))
                 grid.addWidget(value, r, 1, Qt.AlignmentFlag.AlignRight)
+            if actions and r in actions:
+                grid.addWidget(actions[r], r, 2, Qt.AlignmentFlag.AlignRight)
         column.addLayout(grid)
+        if footer is not None:
+            column.addWidget(footer, 0, Qt.AlignmentFlag.AlignRight)
         return frame
+
+    @staticmethod
+    def _small_button(text, slot):
+        """A small button for a box row (#93)."""
+        button = QPushButton(text)
+        button.setStyleSheet("QPushButton{padding:1px 10px;}")
+        button.clicked.connect(slot)
+        return button
 
     def _amount(self, satoshi):
         """``satoshi`` in the wallet's unit, or in sat without a formatter."""
@@ -1986,6 +2008,8 @@ class BuildReportView(QWidget):
         executors = snapshot.get("executors")
         if executors:
             rows = []
+            actions = {}
+            failed = False
             for url, (state, seconds) in executors:
                 symbol, colour = self._EXECUTOR_STYLE.get(state, ("", None))
                 host = urlparse(url).hostname or url
@@ -1993,7 +2017,18 @@ class BuildReportView(QWidget):
                     (host, "{} {}".format(symbol, self.executor_text(state, seconds)),
                      colour)
                 )
-            self.box.addWidget(self._group(_("Will-Executor"), rows))
+                if state in self.FAILED_STATES:
+                    failed = True
+                    if self.on_exclude:
+                        actions[len(rows) - 1] = self._small_button(
+                            _("Exclude"), lambda _c=False, u=url: self.on_exclude(u)
+                        )
+            footer = None
+            if failed and self.on_retry:
+                footer = self._small_button(_("Retry"), lambda _c=False: self.on_retry())
+            self.box.addWidget(
+                self._group(_("Will-Executor"), rows, actions=actions, footer=footer)
+            )
         if snapshot.get("will_now"):
             self.box.addWidget(
                 self._group(_("Your will now"), [(snapshot["will_now"], None, None)])
