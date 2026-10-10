@@ -53,6 +53,7 @@ from bal.core.heirs import Heirs
 from bal.core.plugin_base import BalPlugin
 from bal.core.will import WillItem
 from bal.core.willexecutors import Willexecutors
+from bal.engine import context as engine_context
 from bal.gui.qt import dialogs as dialogs_mod
 from bal.gui.qt import window as window_mod
 from bal.gui.qt.dialogs import BalBuildWillDialog
@@ -146,11 +147,14 @@ _CLOCK_MODULES = (
 def install_clock(monkeypatch, clock):
     """Point every plugin clock read used by the flows at ``clock``.
 
-    ``time`` is replaced only inside ``window`` and ``dialogs`` (their
-    ``time.time`` / ``time.sleep`` / ``time.strftime``), never globally:
-    Electrum's own threads keep the real clock. ``sleep`` returns at once
-    (the 10 s pause after an invalidation), ``strftime`` gives a fixed
-    value (the log row times).
+    ``time`` is replaced only inside ``window``, ``dialogs`` and
+    ``bal.engine.context`` (their ``time.time`` / ``time.sleep`` /
+    ``time.strftime``), never globally: Electrum's own threads keep the real
+    clock. ``sleep`` returns at once (the 10 s pause after an invalidation),
+    ``strftime`` gives a fixed value (the log row times). The engine's
+    ``refresh_invalidated_items`` is the window's former
+    ``_refresh_invalidated_items`` (CHANGELOG #118), so it reads the same
+    clock.
     """
     import importlib
 
@@ -165,6 +169,7 @@ def install_clock(monkeypatch, clock):
     )
     monkeypatch.setattr(window_mod, "time", fake_time)
     monkeypatch.setattr(dialogs_mod, "time", fake_time)
+    monkeypatch.setattr(engine_context, "time", fake_time)
 
 
 # ---------------------------------------------------------------- world

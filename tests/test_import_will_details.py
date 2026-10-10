@@ -364,6 +364,9 @@ def _make_merge_fake(willitems):
             is_basic_mode=lambda: True,
         ),
         update_all=lambda: calls.append("update_all"),
+        # The window's engine hook (CHANGELOG #118): it never writes the
+        # wallet file itself.
+        flush_wallet_db=lambda: None,
     )
     fake.save_willitems = MethodType(window_mod.BalWindow.save_willitems, fake)
     return fake, calls
