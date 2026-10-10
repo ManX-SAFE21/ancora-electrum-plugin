@@ -5659,3 +5659,23 @@ the date of a new heir.
 later": `bal_will_check` answers valid (before: postponed).
 
 **Outcome:** DONE.
+
+## 103. CLI/5: a per-heir delivery date is refused or checked, never dropped silently
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_heirs_add`/`_update --locktime` accepted anything ("domani",
+which gives 0, or a 2017 date). With "multiverse" off (the default, and the
+only GUI mode) every heir gets the will's date, so the next check/prepare
+overwrote the per-heir date without a word. CLI review point 6.
+
+**What changed (plan approved by the owner):** `_check_heir_locktime`: with
+multiverse off, `--locktime` is refused with a message that says how to
+change the date for every heir (`bal_will_settings`); with multiverse on, a
+date that is not understood or already past is refused. Tests for both
+modes.
+
+**Verification:** Whole `tests/` directory: 996 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: `--locktime 2y` and `1500000000`
+refused with the message; adding the heir without it works.
+
+**Outcome:** DONE.

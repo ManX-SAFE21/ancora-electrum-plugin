@@ -183,3 +183,35 @@ def test_default_will_settings_are_saved_once(plugin):
     out = run(plugin, "heirs_add", "alice", VALID_ADDRESS, "100%", wallet=wallet)
     assert out["value"][2] == saved["locktime"]
     assert plugin.config.get("bal_will_settings") == saved
+
+
+def test_heir_locktime_refused_when_every_heir_shares_the_date(plugin):
+    """#103: multiverse off (the default): a per-heir --locktime would be
+    overwritten by the will's date at the next check, so it is refused."""
+    wallet = FakeWallet()
+    with pytest.raises(UserFacingException, match="bal_will_settings"):
+        run(plugin, "heirs_add", "bob", VALID_ADDRESS, "50%", locktime="2y",
+            wallet=wallet)
+    run(plugin, "heirs_add", "bob", VALID_ADDRESS, "50%", wallet=wallet)
+    with pytest.raises(UserFacingException, match="bal_will_settings"):
+        run(plugin, "heirs_update", "bob", locktime="2y", wallet=wallet)
+    # Changing another field keeps working.
+    out = run(plugin, "heirs_update", "bob", amount="40%", wallet=wallet)
+    assert out["value"][1] == "40%"
+
+
+@pytest.mark.parametrize(
+    "locktime, message",
+    [("domani", "not understood"), ("1500000000", "in the past")],
+)
+def test_heir_locktime_checked_with_multiverse(plugin, locktime, message):
+    """#103: multiverse on: a date that is not understood (it gave 0) or is
+    already past is refused; a future one is kept."""
+    plugin.ENABLE_MULTIVERSE.set(True)
+    wallet = FakeWallet()
+    with pytest.raises(UserFacingException, match=message):
+        run(plugin, "heirs_add", "carol", VALID_ADDRESS, "10%", locktime=locktime,
+            wallet=wallet)
+    out = run(plugin, "heirs_add", "carol", VALID_ADDRESS, "10%", locktime="2y",
+              wallet=wallet)
+    assert out["value"][2] == "2y"

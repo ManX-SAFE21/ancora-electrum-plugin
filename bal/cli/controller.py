@@ -1173,15 +1173,56 @@ class BalController(BalSettingsController):
             heir[2] = "0"
         return Heirs.validate_heir(heir[0], heir[1:])
 
+    def _check_heir_locktime(self, locktime):
+        """Refuse a per-heir delivery date that would not be used, or is wrong.
+
+        CHANGELOG #103. With "multiverse" off (the default, and the only mode
+        of the GUI) every heir gets the will's delivery date: the next
+        check/prepare overwrote a per-heir ``--locktime`` without a word, so
+        it is refused with a message that says how to change the date.
+        With multiverse on, a date that is not understood ("domani" gave 0)
+        or already past is refused; before, both were accepted.
+        """
+        if locktime is None:
+            return
+        if not self.plugin.ENABLE_MULTIVERSE.get():
+            raise UserFacingException(
+                _(
+                    "Every heir gets the delivery date of the will, so --locktime "
+                    "cannot be set for one heir. To change the date for every "
+                    'heir, change "locktime" in the will settings: '
+                    "bal_settings_get bal_will_settings, then bal_settings_set "
+                    "bal_will_settings with the new JSON."
+                )
+            )
+        when = Util.parse_locktime_string(locktime)
+        if not when:
+            raise UserFacingException(
+                _(
+                    "Delivery date not understood: {} (use a timestamp, or a "
+                    "time from now such as 30d or 1y)"
+                ).format(locktime)
+            )
+        if when <= time.time():
+            raise UserFacingException(
+                _("The delivery date is in the past: {}").format(locktime)
+            )
+
     def heirs_add(self, name, address, amount, locktime=None):
+        """Add (or replace) the heir ``name``; ``locktime`` only with
+        multiverse on (see :meth:`_check_heir_locktime`)."""
+        self._check_heir_locktime(locktime)
         value = self._build_heir_entry(name, address, amount, locktime)
         self.heirs[name] = value
         self.wallet.save_db()
         return {"name": name, "value": list(value)}
 
     def heirs_update(self, name, address=None, amount=None, locktime=None):
+        """Change only the given fields of the heir ``name``; ``locktime``
+        only with multiverse on (see :meth:`_check_heir_locktime`)."""
         if name not in self.heirs:
             raise UserFacingException(_("Heir not found: {}").format(name))
+        self._check_heir_locktime(locktime)
         current = list(self.heirs[name])
         address = address if address is not None else current[0]
         amount = amount if amount is not None else current[1]
