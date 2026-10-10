@@ -5,7 +5,9 @@ cancellation (invalidation) transaction.
 This test exercises the full pipeline with REAL Electrum transaction
 building (no mocking of from_io, from_address_and_value, or is_address):
 
-  1. Load the karen7 regtest wallet (heirs + UTXOs).
+  1. Load the regtest test wallet (heirs + UTXOs): karen7's structure,
+     made in ``regtest_wallet_data`` since CHANGELOG #98 (the real karen7,
+     the BAL author's wallet, is not in git).
   2. Set Electrum to regtest mode so bcrt1q addresses validate.
   3. Build the inheritance transactions via ``Heirs.buildTransactions``
      using real ``PartialTransaction.from_io`` and real
@@ -21,22 +23,10 @@ Run:
         python3 -m pytest tests/test_group_e_karen7_invalidate.py -q
 """
 
-import json
 import os
 import sys
 
 import pytest  # pyright: ignore[reportMissingImports]
-
-# CHANGELOG #97: tests/karen7 is the BAL author's regtest wallet and is not in
-# git (.gitignore). Without it these tests cannot run: skip them, saying why,
-# instead of an error while the file is collected.
-_WALLET_PATH = os.path.join(os.path.dirname(__file__), "karen7")
-if not os.path.exists(_WALLET_PATH):
-    pytest.skip(
-        "tests/karen7 (the BAL author's regtest wallet, not in git) is not "
-        "available",
-        allow_module_level=True,
-    )
 
 # ------------------------------------------------------------------ #
 # Electrum regtest mode (replaces mocking bitcoin.is_address)
@@ -55,17 +45,17 @@ from electrum.transaction import (
     TxOutpoint,
 )
 from electrum.util import bfh
+from regtest_wallet_data import wallet_data
 
 from bal.core.heirs import Heirs
 from bal.core.util import copy_structure
 from bal.core.will import Will, WillItem
 
 # ------------------------------------------------------------------ #
-# Load karen7 wallet data
+# Load the wallet data (karen7's structure, made in code: CHANGELOG #98)
 # ------------------------------------------------------------------ #
 
-with open(_WALLET_PATH) as _f:
-    _KAREN7_DATA = json.load(_f)
+_KAREN7_DATA = wallet_data()
 
 
 # ------------------------------------------------------------------ #
@@ -248,13 +238,18 @@ def _txs_to_will(txs, heirs_data):
 # ================================================================== #
 
 class TestKaren7BuildAndInvalidate:
-    """Load the real karen7 regtest wallet, build the inheritance
+    """Load the regtest test wallet (karen7's structure), build the inheritance
     transactions with real Electrum, then generate the cancellation
     (invalidation) transaction."""
 
     @pytest.fixture(autouse=True)
-    def _setup(self):
-        """Shared setup: build UTXOs, inheritance, and will once."""
+    def _setup(self, regtest_net):
+        """Shared setup: build UTXOs, inheritance, and will once.
+
+        ``regtest_net`` is requested here (CHANGELOG #98): an autouse fixture
+        runs before the ones of ``usefixtures``, so the module's marker alone
+        left this setup on mainnet, where the regtest addresses are invalid.
+        """
         self.utxos = _build_real_utxos(_KAREN7_DATA)
         self.utxo_value_map = _build_utxo_value_map(_KAREN7_DATA)
         assert len(self.utxos) > 0, "no UTXOs in karen7 wallet"
@@ -394,12 +389,28 @@ class TestKaren7BuildAndInvalidate:
             f"expected {expected} (balance={balance}, fee={fee})"
         )
 
-    def test_all_invalidated_returns_none(self):
-        """When all will items are INVALIDATED, returns None."""
+    def test_items_marked_invalidated_still_get_their_coins_spent(self):
+        """Items marked INVALIDATED whose coins are still in the wallet:
+        the invalidation spends them all the same.
+
+        CHANGELOG #98: this test expected None ("all invalidated"). Since
+        CHANGELOG #71 (BUG-3) the statuses are only the plugin's bookkeeping:
+        an item wrongly marked INVALIDATED (BUG-2) could stay executable, so
+        every wallet coin used by any will item is spent.
+        """
         for wid in self.will:
             self.will[wid].set_status("INVALIDATED", True)
 
         result = Will.invalidate_will(self.will, self.wallet, 10)
+        assert result is not None
+        spent = {txin.prevout.to_str() for txin in result.inputs()}
+        assert spent == set(Will.get_all_inputs(self.will)) & {
+            u.prevout.to_str() for u in self.utxos
+        }
+
+    def test_coins_already_spent_returns_none(self):
+        """No coin of the will left in the wallet: nothing to invalidate."""
+        result = Will.invalidate_will(self.will, _Karen7Wallet([]), 10)
         assert result is None
 
     def test_empty_will_returns_none(self):

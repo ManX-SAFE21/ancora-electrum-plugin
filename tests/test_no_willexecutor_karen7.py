@@ -1,7 +1,9 @@
 """
 Test the error when no will-executor is selected and ``no_willexecutor``
 is ``False`` (the "Add transactions without willexecutor" checkbox is
-unchecked), using the real **karen7** regtest wallet.
+unchecked), using a regtest test wallet with karen7's structure (made in
+``regtest_wallet_data`` since CHANGELOG #98: the real karen7, the BAL
+author's wallet, is not in git).
 
 Scenarios covered by this test
 ------------------------------
@@ -27,7 +29,6 @@ Run::
         python3 -m pytest tests/test_no_willexecutor_karen7.py -v -s
 """
 
-import json
 import logging
 import os
 import sys
@@ -35,17 +36,6 @@ import time
 from unittest.mock import patch
 
 import pytest  # pyright: ignore[reportMissingImports]
-
-# CHANGELOG #97: tests/karen7 is the BAL author's regtest wallet and is not in
-# git (.gitignore). Without it these tests cannot run: skip them, saying why,
-# instead of an error while the file is collected.
-_WALLET_PATH = os.path.join(os.path.dirname(__file__), "karen7")
-if not os.path.exists(_WALLET_PATH):
-    pytest.skip(
-        "tests/karen7 (the BAL author's regtest wallet, not in git) is not "
-        "available",
-        allow_module_level=True,
-    )
 
 # CHANGELOG #97: regtest per test (conftest ``regtest_net``), no longer
 # switched while the module is imported: that changed the network for every
@@ -59,6 +49,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 from electrum import bitcoin
 from electrum.transaction import PartialTxInput, TxOutpoint
 from electrum.util import bfh
+from regtest_wallet_data import wallet_data
 
 from bal.core.heirs import Heirs
 from bal.core.util import copy_structure
@@ -71,11 +62,10 @@ from bal.core.will import (
 from bal.core.willexecutors import Willexecutors
 
 # ------------------------------------------------------------------ #
-# Load karen7 wallet data
+# Load the wallet data (karen7's structure, made in code: CHANGELOG #98)
 # ------------------------------------------------------------------ #
 
-with open(_WALLET_PATH) as _f:
-    _KAREN7_DATA = json.load(_f)
+_KAREN7_DATA = wallet_data()
 
 
 # ------------------------------------------------------------------ #
@@ -397,7 +387,13 @@ class TestNoWillexecutorKaren7:
     selected, the inheritance build MUST fail with a clear error."""
 
     @pytest.fixture(autouse=True)
-    def _setup(self):
+    def _setup(self, regtest_net):
+        """Wallet, heirs and plugin for every test, on regtest.
+
+        ``regtest_net`` is requested here (CHANGELOG #98): an autouse fixture
+        runs before the ones of ``usefixtures``, so the module's marker alone
+        left this setup on mainnet, where the regtest addresses are invalid.
+        """
         self.utxos = _build_real_utxos(_KAREN7_DATA)
         assert len(self.utxos) > 0, "no UTXOs in karen7 wallet"
 
