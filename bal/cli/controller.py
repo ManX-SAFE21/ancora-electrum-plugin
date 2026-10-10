@@ -32,7 +32,6 @@ from electrum.transaction import tx_from_any
 from electrum.util import (
     FileExportFailed,
     FileImportFailed,
-    MyEncoder,
     UserFacingException,
     read_json_file,
     write_json_file,
@@ -44,11 +43,7 @@ from ..core import will as will_mod
 from ..core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
-    check_alive_renewal,
-    ensure_check_alive_valid,
-    normalize_check_alive,
     resolve_date_to_check,
-    resolve_delivery_date,
     resolve_guard_threshold,
 )
 from ..core.heirs import Heirs, is_op_return_address
@@ -62,6 +57,7 @@ from ..core.plugin_base import BalConfig, BalPlugin
 from ..core.util import Util, copy_structure
 from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
+from ..engine import context
 
 _logger = get_logger(__name__)
 
@@ -363,46 +359,40 @@ class BalController(BalSettingsController):
         )
         self.no_willexecutor = bool(self.plugin.NO_WILLEXECUTOR.get())
 
-    def load_willitems(self):
-        self.willitems = {}
-        for wid, w in self.will.items():
-            self.willitems[wid] = WillItem(w, wallet=self.wallet)
+    # ------------------------------------------------------------------ #
+    # Engine host (bal.engine.host.WalletHost, CHANGELOG #117)
+    # ------------------------------------------------------------------ #
+    @property
+    def bal_plugin(self):
+        """The plugin, under the name the engine (and the GUI) use."""
+        return self.plugin
 
-    def save_willitems(self):
-        """Persist the in-memory willitems into the wallet's ``will`` dict.
+    def store_will_setting(self, field, value):
+        """Engine hook: set a will setting and store the settings."""
+        self.will_settings[field] = value
+        self.plugin.WILL_SETTINGS.set(self.will_settings)
 
-        The transaction is stored serialized (exactly like the GUI, which
-        avoids deep-copying a live Transaction holding a ``threading.RLock``)
-        and every value is proven JSON-serializable before it is written.
-        """
-        keys = list(self.will.keys())
-        for k in keys:
-            del self.will[k]
-        for wid, w in self.willitems.items():
-            d = w.to_dict()
-            d["tx"] = str(d["tx"])
-            try:
-                json.dumps(d, cls=MyEncoder)
-            except Exception as e:
-                _logger.error(f"save_willitems: will {wid} is not serializable: {e!r}")
-                raise
-            self.will[wid] = d
+    def flush_wallet_db(self):
+        """Engine hook: the command line writes the wallet file at once."""
         self.wallet.save_db()
 
-    def _save_to_history(self):
-        """Persist the will state into the wallet's LOCAL history (best-effort).
+    def after_history_saved(self):
+        """Engine hook: nothing to redraw on the command line."""
 
-        Mirrors ``BalWindow._save_will_to_history``: only when the
-        ``SAVE_HISTORY`` setting is enabled, and never raises.
-        """
-        try:
-            if not bool(self.plugin.SAVE_HISTORY.get()):
-                return
-            Will.save_valid_transactions_to_history(
-                self.willitems, self.wallet, self.plugin.HISTORY_LABEL.get()
-            )
-        except Exception as e:
-            _logger.error(f"save_to_history failed: {e}")
+    # The state steps below live in bal.engine.context since CHANGELOG #117;
+    # the names stay (the controller's flows and the tests call them).
+
+    def load_willitems(self):
+        """See :func:`bal.engine.context.load_willitems`."""
+        context.load_willitems(self)
+
+    def save_willitems(self):
+        """See :func:`bal.engine.context.save_willitems`."""
+        context.save_willitems(self)
+
+    def _save_to_history(self):
+        """See :func:`bal.engine.context.save_to_history`."""
+        context.save_to_history(self)
 
     # ------------------------------------------------------------------ #
     # Serialization helpers
@@ -444,109 +434,35 @@ class BalController(BalSettingsController):
         return {"txid": tx.txid(), "tx": str(tx)}
 
     def _available_utxos(self):
-        return Util.get_available_utxos(
-            self.wallet,
-            self.plugin.HISTORY_LABEL.get(),
-            Will.get_min_locktime(self.willitems, default_value=self.date_to_check),
-        )
+        """See :func:`bal.engine.context.available_utxos`."""
+        return context.available_utxos(self)
 
     # ------------------------------------------------------------------ #
     # Core flows (mirror of BalWindow)
     # ------------------------------------------------------------------ #
     def _refresh_invalidated_items(self):
-        """Mirror of ``BalWindow._refresh_invalidated_items`` (#79)."""
-        try:
-            utxos = Util.get_available_utxos(
-                self.wallet,
-                self.plugin.HISTORY_LABEL.get(),
-                Will.get_min_locktime(self.willitems, default_value=time.time()),
-            )
-            Will.refresh_invalidated(self.willitems, utxos, self.wallet)
-        except Exception as e:
-            _logger.debug(f"refresh invalidated items failed: {e!r}")
+        """See :func:`bal.engine.context.refresh_invalidated_items` (#79)."""
+        context.refresh_invalidated_items(self)
 
     def check_alive_info(self):
-        """``check_alive_renewal`` for this wallet (see BalWindow)."""
-        try:
-            return check_alive_renewal(
-                self.plugin.is_basic_mode(),
-                self.will_settings,
-                built_locktime=Will.get_min_locktime(self.willitems),
-                creation_date=Will.get_creation_time(self.willitems),
-            )
-        except Exception as e:
-            _logger.debug(f"check alive info failed: {e!r}")
-            return None
+        """See :func:`bal.engine.context.check_alive_info`."""
+        return context.check_alive_info(self)
 
     def _normalize_check_alive(self):
-        """Mirror of ``BalWindow._normalize_check_alive`` (#80)."""
-        try:
-            old = self.will_settings.get("threshold")
-            new = normalize_check_alive(
-                self.will_settings,
-                built_locktime=Will.get_min_locktime(self.willitems),
-                creation_date=Will.get_creation_time(self.willitems),
-            )
-            if new != old:
-                _logger.info(f"check alive converted: {old!r} -> {new}")
-                self.will_settings["threshold"] = new
-                self.plugin.WILL_SETTINGS.set(self.will_settings)
-        except Exception as e:
-            _logger.debug(f"check alive conversion failed: {e!r}")
+        """See :func:`bal.engine.context.normalize_check_alive` (#80)."""
+        context.normalize_check_alive(self)
 
     def init_class_variables(self):
-        if not self.heirs:
-            raise will_mod.NoHeirsException(_("Heirs are not defined"))
-        # Items already invalidated on-chain must not anchor the dates (#79).
-        self._refresh_invalidated_items()
-        # An old Check Alive value becomes "N days before the delivery" (#80).
-        self._normalize_check_alive()
-        self.date_to_check = resolve_date_to_check(
-            self.plugin.is_basic_mode(),
-            self.will_settings,
-            built_locktime=Will.get_min_locktime(self.willitems),
-            creation_date=Will.get_creation_time(self.willitems),
-        )
-        self.no_willexecutor = bool(self.plugin.NO_WILLEXECUTOR.get())
-        self.willexecutors = Willexecutors.get_willexecutors(
-            self.plugin, update=True, task=False
-        )
-        delivery_date = resolve_delivery_date(
-            self.will_settings,
-            built_locktime=Will.get_min_locktime(self.willitems),
-        )
-        ensure_check_alive_valid(
-            self.plugin.is_basic_mode(),
-            self.date_to_check,
-            delivery_date=delivery_date,
-        )
-        self._init_heirs_to_locktime(self.plugin.ENABLE_MULTIVERSE.get())
+        """See :func:`bal.engine.context.init_class_variables`."""
+        context.init_class_variables(self)
 
     def _init_heirs_to_locktime(self, multiverse=False):
-        if multiverse:
-            return
-        locktime = self.will_settings["locktime"]
-        if not isinstance(locktime, (int, float, str)):
-            locktime = str(locktime)
-        updates = {
-            heir: [self.heirs[heir][0], self.heirs[heir][1], locktime]
-            for heir in list(self.heirs)
-        }
-        for heir, value in updates.items():
-            self.heirs[heir] = value
-        self.wallet.save_db()
+        """See :func:`bal.engine.context.init_heirs_to_locktime`."""
+        context.init_heirs_to_locktime(self, multiverse)
 
     def check_will(self):
-        return Will.is_will_valid(
-            self.willitems,
-            self.date_to_check,
-            self.will_settings["baltx_fees"],
-            self._available_utxos(),
-            heirs=self.heirs,
-            willexecutors=self.willexecutors,
-            self_willexecutor=self.no_willexecutor,
-            wallet=self.wallet,
-        )
+        """See :func:`bal.engine.context.check_will`."""
+        return context.check_will(self)
 
     def build_will(self, ignore_duplicate=True, keep_original=True):
         """Build (or rebuild) the inheritance transactions.
