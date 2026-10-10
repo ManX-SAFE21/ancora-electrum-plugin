@@ -196,19 +196,23 @@ async def willexecutors_list(self, wallet=None, plugin=None):
     return _call(plugin, wallet, "willexecutors_list")
 
 
+# The parameter is ``executor_url``, never ``url`` (CHANGELOG #100): Electrum's
+# command line reads any option called ``url`` as a payment request
+# (``run_electrum``: "unknown command: <url>"), so show/add/update/select
+# could not be used from the command line.
 @plugin_command("nw", plugin_name)
-async def willexecutors_show(self, url, wallet=None, plugin=None):
+async def willexecutors_show(self, executor_url, wallet=None, plugin=None):
     """Show the details of a single will-executor.
 
-    arg:str:url:The will-executor URL.
+    arg:str:executor_url:The will-executor URL.
     """
-    return _call(plugin, wallet, "willexecutors_show", url)
+    return _call(plugin, wallet, "willexecutors_show", executor_url)
 
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_add(
     self,
-    url,
+    executor_url,
     address="",
     base_fee=0,
     info=None,
@@ -217,18 +221,20 @@ async def willexecutors_add(
 ):
     """Add a new will-executor (not selected by default).
 
-    arg:str:url:The will-executor base URL.
+    arg:str:executor_url:The will-executor base URL.
     arg:str:address:The executor fee address for this network.
     arg:int:base_fee:The executor base fee in satoshis.
     arg:str:info:A human-readable description.
     """
-    return _call(plugin, wallet, "willexecutors_add", url, address, base_fee, info)
+    return _call(
+        plugin, wallet, "willexecutors_add", executor_url, address, base_fee, info
+    )
 
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_update(
     self,
-    url,
+    executor_url,
     address=None,
     base_fee=None,
     info=None,
@@ -239,7 +245,7 @@ async def willexecutors_update(
 ):
     """Update an existing will-executor (only the given fields).
 
-    arg:str:url:The will-executor URL to update.
+    arg:str:executor_url:The will-executor URL to update.
     arg:str:address:The new fee address.
     arg:int:base_fee:The new base fee in satoshis.
     arg:str:info:The new description.
@@ -250,7 +256,7 @@ async def willexecutors_update(
         plugin,
         wallet,
         "willexecutors_update",
-        url,
+        executor_url,
         address,
         base_fee,
         info,
@@ -261,14 +267,14 @@ async def willexecutors_update(
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_select(
-    self, url, value=True, wallet=None, plugin=None
+    self, executor_url, value=True, wallet=None, plugin=None
 ):
     """Select (or deselect) a will-executor.
 
-    arg:str:url:The will-executor URL.
-    arg:bool:value:True to select, False to deselect.
+    arg:str:executor_url:The will-executor URL.
+    arg:bool:value:True to select, False to deselect (``--value false``).
     """
-    return _call(plugin, wallet, "willexecutors_select", [url], value)
+    return _call(plugin, wallet, "willexecutors_select", [executor_url], value)
 
 
 @plugin_command("nw", plugin_name)

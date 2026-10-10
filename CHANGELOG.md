@@ -5598,3 +5598,26 @@ daemon, throwaway wallets): list/get/set/reset work with no wallet,
 including `bal_settings_set bal_will_settings` with a JSON object.
 
 **Outcome:** DONE.
+
+## 100. CLI/2: the will-executor commands work from the command line
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_willexecutors_show`, `_add`, `_update` and `_select` stopped
+with "unknown command: <url>": Electrum's `run_electrum` reads any option
+called `url` as a payment request and exits. Over JSON-RPC they worked.
+CLI review point 4, confirmed live.
+
+**What changed (plan approved by the owner):**
+
+- `bal/cli/commands.py`: the parameter is `executor_url` (was `url`) in the
+  four commands, with a comment that says why. JSON-RPC callers must use the
+  new name; the CLI is new, so the cost is low.
+- `bal_willexecutors_select` deselects with `--value false` (documented).
+- Tests: no `bal_*` command has a `url` parameter; Electrum's own parser
+  puts the URL in `executor_url`; add/show/select run.
+
+**Verification:** Whole `tests/` directory: 991 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: show, add, update and select work from
+the command line.
+
+**Outcome:** DONE.

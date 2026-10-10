@@ -95,3 +95,49 @@ def test_wallet_commands_still_need_a_wallet(plugin):
     with pytest.raises(UserFacingException, match="wallet not loaded"):
         run(plugin, "heirs_list")
     assert run(plugin, "heirs_list", wallet=FakeWallet()) == {}
+
+
+def _bal_commands():
+    """Every registered ``bal_*`` command (Electrum's ``known_commands``)."""
+    from electrum.commands import known_commands
+
+    return {n: c for n, c in known_commands.items() if n.startswith("bal_")}
+
+
+def test_no_command_has_a_url_parameter():
+    """#100: Electrum reads an option called ``url`` as a payment request and
+    stops with "unknown command: <url>"; no bal_* command may use the name."""
+    for name, cmd in _bal_commands().items():
+        assert "url" not in list(cmd.params) + list(cmd.options), name
+
+
+def test_command_line_parses_executor_commands():
+    """#100: parsed by Electrum's own parser, the URL lands in
+    ``executor_url`` and nothing in ``url`` (what ``run_electrum`` checks)."""
+    from electrum.commands import get_parser
+
+    url = "https://we.example.com"
+    for argv in (
+        ["bal_willexecutors_show", url],
+        ["bal_willexecutors_add", url, "--base_fee", "1000"],
+        ["bal_willexecutors_update", url, "--info", "x"],
+        ["bal_willexecutors_select", url, "--value", "false"],
+    ):
+        options = vars(get_parser().parse_args(argv))
+        assert options.get("url") is None, argv
+        assert options["executor_url"] == url, argv
+    options = vars(get_parser().parse_args(argv))
+    assert options["value"] is False
+
+
+def test_executor_commands_run(plugin):
+    """#100: add, show, select and deselect through the command layer."""
+    wallet = FakeWallet()
+    url = "https://we.example.com"
+    run(plugin, "willexecutors_add", url, base_fee=1000, wallet=wallet)
+    shown = run(plugin, "willexecutors_show", url, wallet=wallet)
+    assert shown["willexecutor"]["base_fee"] == 1000
+    assert run(plugin, "willexecutors_select", url, wallet=wallet) == {url: True}
+    assert run(plugin, "willexecutors_select", url, value=False, wallet=wallet) == {
+        url: False
+    }
