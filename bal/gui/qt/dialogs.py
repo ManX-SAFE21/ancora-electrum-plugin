@@ -55,8 +55,12 @@ from ...core.checkalive import (
     will_executable_now,
 )
 from ...core.messages import (
+    amounts_message,
+    build_failure_message,
     check_alive_message,
     no_valid_transaction,
+    past_date_message,
+    rebuild_reason_message,
     will_change_message,
 )
 from ...core.qrtransfer import (
@@ -67,7 +71,6 @@ from ...core.qrtransfer import (
 )
 from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
-from ...i18n import number_separators
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -2676,62 +2679,27 @@ class BalBuildWillDialog(BalDialog):
         self._finish_report()
         _logger.error(f"error phase2: {b}")
 
+    # The bridges below keep the method names of the helpers moved to the
+    # core (CHANGELOG #115): tests borrow them one by one, and they keep the
+    # old promise of never raising, even when the window state cannot be read.
+
     def _executed_inheritance_status(self):
-        """Return the on-chain status of an already-executed inheritance.
-
-        Task #7a (owner request). After an inheritance is executed the wallet is
-        fully emptied (the plugin always empties the wallet). Pressing CHECK on
-        such an empty wallet makes ``check_will`` raise NotCompleteWillException
-        (the heirs no longer match the empty wallet), which previously showed the
-        alarming "Found CHANGES ... a NEW WILL must be prepared" message even
-        though the inheritance was, in fact, correctly executed.
-
-        To reassure the user we look at the will items, whose status is already
-        set to CONFIRMED / MEMPOOL by ``Will.check_will`` (see core/will.py), and
-        return a short code describing the real situation:
-
-        Returns:
-            "CONFIRMED" if at least one will transaction is confirmed on-chain
-                (the inheritance is already executed);
-            "MEMPOOL" if none is confirmed but at least one is in the mempool
-                (waiting for confirmation);
-            None if neither (the change really has to be rebuilt).
-
-        CONFIRMED takes precedence over MEMPOOL, since a confirmed transaction is
-        the strongest evidence that the inheritance has gone through.
-        """
-        has_mempool = False
+        """See :meth:`Will.executed_inheritance_status` (moved in CHANGELOG #115)."""
         try:
-            for _wid, witem in self.bal_window.willitems.items():
-                if witem.get_status("CONFIRMED"):
-                    return "CONFIRMED"
-                if witem.get_status("MEMPOOL"):
-                    has_mempool = True
+            willitems = self.bal_window.willitems
         except Exception as _err:
-            # Never let this purely informational check break the flow.
             _logger.debug(f"_executed_inheritance_status error: {_err}")
-        return "MEMPOOL" if has_mempool else None
+            return None
+        return Will.executed_inheritance_status(willitems)
 
     def _unsigned_will_executors(self):
-        """Will-executor URLs of a will prepared earlier but never signed.
-
-        Returns the set of URLs of the VALID items that are neither signed
-        (``COMPLETE``) nor sent (``PUSHED``) - typically left by a Cancel at
-        the signing step (an item without will-executor adds ``None``) - or
-        ``None`` when there is no such item. Read-only; never raises.
-        """
+        """See :meth:`Will.unsigned_will_executors` (moved in CHANGELOG #115)."""
         try:
-            urls = {
-                (w.we or {}).get("url")
-                for w in self.bal_window.willitems.values()
-                if w.get_status("VALID")
-                and not w.get_status("COMPLETE")
-                and not w.get_status("PUSHED")
-            }
-            return urls or None
+            willitems = self.bal_window.willitems
         except Exception as e:
             _logger.debug(f"unsigned will check failed: {e!r}")
             return None
+        return Will.unsigned_will_executors(willitems)
 
     @staticmethod
     def _no_valid_transaction(e):
@@ -2739,40 +2707,18 @@ class BalBuildWillDialog(BalDialog):
         return no_valid_transaction(e)
 
     def _rebuild_reason_message(self, e):
-        """Name the real reason when the core's sentence would mislead.
+        """See :func:`bal.core.messages.rebuild_reason_message` (CHANGELOG #115).
 
-        Texts approved by the owner (CHANGELOG #77):
-
-        * right after this dialog broadcast an invalidation, the old items
-          are all INVALIDATED and the core reports "no valid transaction";
-          the real news is that the old will is gone and the new one comes
-          (with the new date for a postpone, else the time period set);
-        * after a Cancel at signing, the next Check discards the unsigned
-          items and reports "no valid transaction" or "will-executor not
-          covered" (for an executor of those items): say the will was not
-          signed. Any other cause (fee, heirs...) keeps its own message.
-
-        Returns ``None`` when neither applies.
+        Passes this dialog's state: whether it broadcast an invalidation,
+        whether that was a postpone, and the executors of the unsigned will
+        seen before ``check_will``.
         """
-        plain = self._no_valid_transaction(e)
-        if plain and self._invalidation_broadcast:
-            if self._postpone_invalidation:
-                return _(
-                    "Old will invalidated: preparing the new will with the "
-                    "new date."
-                )
-            return _(
-                "Old will invalidated: preparing the new will with the "
-                "time period you set."
-            )
-        unsigned = self._unsigned_executors
-        if unsigned and (
-            plain or (isinstance(e, WillExecutorNotPresent) and str(e) in unsigned)
-        ):
-            return _(
-                "The will prepared earlier was not signed: preparing it again."
-            )
-        return None
+        return rebuild_reason_message(
+            e,
+            self._invalidation_broadcast,
+            self._postpone_invalidation,
+            self._unsigned_executors,
+        )
 
     def _check_failure_message(self, e):
         """Return a precise explanation of why the will is no longer coherent.
@@ -2787,124 +2733,40 @@ class BalBuildWillDialog(BalDialog):
 
     @staticmethod
     def _amounts_message(info):
-        """Turn :meth:`Will.describe_amounts` into one plain sentence.
-
-        Texts approved by the owner (CHANGELOG #76). Percentages are shown
-        with one decimal (none when whole) and amounts in satoshi with the
-        separators of the current language (``bal.i18n.number_separators``).
-        Returns ``None`` when ``info`` is ``None``.
-        """
-        if not info:
-            return None
-        decimal, thousands = number_separators()
-
-        def pct(x):
-            s = "{:.1f}".format(x)
-            if s.endswith(".0"):
-                s = s[:-2]
-            return s.replace(".", decimal)
-
-        def sats(n):
-            return "{:,}".format(int(n)).replace(",", thousands)
-
-        if info["kind"] == "fixed_exceeds":
-            if info["percent_heirs"]:
-                return _(
-                    "The fixed amounts ({fixed} sat) exceed the balance available "
-                    "for the heirs ({balance} sat): the heirs with a percentage "
-                    "({names}) would receive nothing. Reduce the fixed amounts."
-                ).format(
-                    fixed=sats(info["fixed"]), balance=sats(info["balance"]),
-                    names=", ".join(info["percent_heirs"]),
-                )
-            return _(
-                "The fixed amounts ({fixed} sat) exceed the balance available "
-                "for the heirs ({balance} sat). Reduce the fixed amounts."
-            ).format(fixed=sats(info["fixed"]), balance=sats(info["balance"]))
-        shares = ", ".join(
-            "{} {}%".format(name, pct(share)) for name, share in info["shares"]
-        )
-        if info["kind"] == "fixed_scaled":
-            # Text approved by the owner (CHANGELOG #82).
-            return _(
-                "All the heirs have a fixed amount: the will always empties the "
-                "whole wallet, so the amounts are increased in proportion "
-                "({shares})."
-            ).format(shares=shares)
-        if info["with_fixed"]:
-            return _(
-                "The heirs' percentages add up to {total}%: the will always "
-                "empties the whole wallet, so the shares of what remains after "
-                "the fixed amounts are recalculated in proportion ({shares})."
-            ).format(total=pct(info["total"]), shares=shares)
-        return _(
-            "The heirs' percentages add up to {total}%: the will always "
-            "empties the whole wallet, so the shares are recalculated in "
-            "proportion ({shares})."
-        ).format(total=pct(info["total"]), shares=shares)
+        """See :func:`bal.core.messages.amounts_message` (moved in CHANGELOG #115)."""
+        return amounts_message(info)
 
     def _amount_warning_is_false_alarm(self, available_utxos):
-        """True when an AmountException is not a real amount problem.
+        """See :meth:`Will.amount_warning_is_false_alarm` (CHANGELOG #115).
 
-        WHY (BUG-5, CHANGELOG #76): the "adjust the amounts" warning flashed
-        in 12 Checks of the scenario matrix while no amount had changed. The
-        two causes, traced in the harness:
-
-        * the delivery date is in the past: heirs dated before the reference
-          are left out of the percentage sum, so it is 0 % instead of 100 %
-          (the past date is explained by :meth:`_past_date_message`);
-        * no spendable coin is visible at this moment (e.g. right after a
-          Cancel the wallet-local copy of the unsigned will still holds the
-          coins; the build frees them just after): with a balance of 0 the
-          fixed-amount check fails. A really empty wallet is reported by the
-          build step ("no spendable funds").
-
-        Never raises; on error the warning is shown (previous behaviour).
+        The date test is this dialog's :meth:`_past_date_message`, as before;
+        an error there still means "show the warning" (returns False).
         """
         try:
-            if self._past_date_message():
-                return True
-            return sum(u.value_sats() for u in (available_utxos or [])) <= 0
+            date_passed = bool(self._past_date_message())
         except Exception as _err:
             _logger.debug(f"_amount_warning_is_false_alarm: {_err}")
             return False
+        return Will.amount_warning_is_false_alarm(date_passed, available_utxos)
 
     def _past_date_message(self):
-        """Return the "delivery date already passed" message, or ``None``.
+        """See :func:`bal.core.messages.past_date_message` (CHANGELOG #115).
 
-        Uses :meth:`Will.past_delivery_date` on the will settings. WHY (BUG-4,
-        CHANGELOG #75): with a past date the Check used to say that an heir
-        was "not covered by the current will" and that there was "no delivery
-        date left to build", without naming the real cause. Never raises.
+        Reads the window's will settings; never raises, as before.
         """
         try:
-            past = Will.past_delivery_date(self.bal_window.will_settings)
+            will_settings = self.bal_window.will_settings
         except Exception as _err:
             _logger.debug(f"_past_date_message: {_err}")
             return None
-        if past is None:
-            return None
-        return _(
-            "The delivery date ({}) has already passed. Choose a future date, "
-            "then press Check again."
-        ).format(BalTimestamp._safe_fromtimestamp(past).strftime("%Y-%m-%d"))
+        return past_date_message(will_settings)
 
     def _build_failure_message(self):
-        """Return a plain-language explanation of why the will was not built.
+        """See :func:`bal.core.messages.build_failure_message` (CHANGELOG #115).
 
-        ``Heirs.buildTransactions`` records a reason code in
-        ``last_build_error`` every time it gives up (the codes are listed in
-        that method).  Here we turn that code into ONE specific sentence
-        telling the user what to fix.
-
-        WHY: this dialog used to print the same three "possible reasons"
-        (low balance / dust shares / check-alive after the delivery date)
-        whenever the build returned nothing.  The owner hit a real case where
-        all three were false - the actual cause was that no will-executor was
-        usable, which the list did not even mention - so the message actively
-        misled.  When the reason is unknown we now SAY that it is unknown and
-        list what to check, instead of asserting three guesses as if they were
-        the only possibilities.
+        Reads the reason code left by ``Heirs.buildTransactions`` in
+        ``last_build_error``. The past-date test runs only for
+        ``NO_FUTURE_DATE``, as before.
         """
         reason = None
         try:
@@ -2912,69 +2774,8 @@ class BalBuildWillDialog(BalDialog):
         except Exception as _err:
             # A diagnostic must never break the report it is explaining.
             _logger.debug(f"_build_failure_message: {_err}")
-
-        # "No future date" with a delivery date in the past: the past date is
-        # the cause, already explained on the "Checking your will" row (#75).
-        if reason == "NO_FUTURE_DATE" and self._past_date_message():
-            return _("Skipped")
-
-        messages = {
-            "NO_HEIRS": _(
-                "No heirs: add at least one heir before building the will."
-            ),
-            "NO_UTXO": _(
-                "The wallet has no spendable funds, so no inheritance "
-                "transaction can be created."
-            ),
-            "NO_WILLEXECUTOR_USABLE": _(
-                "No usable will-executor: none of the servers in the list is "
-                "both selected and valid. Open the will-executor settings, "
-                "select at least one server and check that it is reachable."
-            ),
-            "NO_FUTURE_DATE": _(
-                "No delivery date left to build: every heir's date is already "
-                "covered by the existing will. Choose a later delivery date, "
-                "or change an heir's date."
-            ),
-            "WILLEXECUTOR_FEE": _(
-                "The amount to send must cover the miner fees plus this "
-                "will-executor's fee, and the wallet balance is not enough: "
-                "select cheaper will-executors, or add funds to the wallet."
-            ),
-            "WILLEXECUTOR_FEE_TOO_HIGH": _(
-                "A will-executor asks for more than the maximum fee you "
-                "allowed: raise the maximum fee in the settings, or select a "
-                "cheaper will-executor."
-            ),
-            "TX_BUILD_FAILED": _(
-                "The inheritance transactions could not be assembled from the "
-                "available funds (the balance may not cover the miner fees)."
-            ),
-            "FIXED_EXCEEDS_BALANCE": _(
-                "The heirs' fixed amounts exceed the wallet balance left after "
-                "the miner and will-executor fees: reduce the fixed amounts."
-            ),
-            "WILLEXECUTOR_TX_ERROR": _(
-                "An unexpected error stopped the transactions being prepared "
-                "for a will-executor, so it was skipped. Try again, or select "
-                "a different will-executor."
-            ),
-        }
-
-        if reason in messages:
-            return "{}\n\n{}".format(messages[reason], _("Skipped"))
-
-        return "{}\n\n{}".format(
-            _(
-                "Could not build the will, and the exact cause could not be "
-                "determined. Please check that:\n"
-                "- the wallet balance covers the miner and will-executor fees,\n"
-                "- each heir's share is above the minimum (dust limit),\n"
-                "- the Check Alive date is EARLIER than the delivery date,\n"
-                "- at least one will-executor is selected and reachable."
-            ),
-            _("Skipped"),
-        )
+        date_passed = reason == "NO_FUTURE_DATE" and bool(self._past_date_message())
+        return build_failure_message(reason, date_passed)
 
     def msg_set_checking(self, status=None, row=None):
         # The default is resolved here, not in the signature: a default

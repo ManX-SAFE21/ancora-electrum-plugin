@@ -889,6 +889,97 @@ class Will:
         return None
 
     @staticmethod
+    def executed_inheritance_status(willitems):
+        """Return the on-chain status of an already-executed inheritance.
+
+        Task #7a (owner request). After an inheritance is executed the wallet
+        is fully emptied (the plugin always empties the wallet). Pressing
+        CHECK on such an empty wallet makes ``check_will`` raise
+        NotCompleteWillException (the heirs no longer match the empty
+        wallet), which previously showed the alarming "Found CHANGES ... a
+        NEW WILL must be prepared" message even though the inheritance was,
+        in fact, correctly executed.
+
+        To reassure the user we look at the will items, whose status is
+        already set to CONFIRMED / MEMPOOL by ``Will.check_will``, and return
+        a short code describing the real situation:
+
+        Returns:
+            "CONFIRMED" if at least one will transaction is confirmed
+                on-chain (the inheritance is already executed);
+            "MEMPOOL" if none is confirmed but at least one is in the
+                mempool (waiting for confirmation);
+            None if neither (the change really has to be rebuilt).
+
+        CONFIRMED takes precedence over MEMPOOL, since a confirmed
+        transaction is the strongest evidence that the inheritance has gone
+        through. Moved unchanged from the Check dialog (CHANGELOG #115).
+        """
+        has_mempool = False
+        try:
+            for _wid, witem in willitems.items():
+                if witem.get_status("CONFIRMED"):
+                    return "CONFIRMED"
+                if witem.get_status("MEMPOOL"):
+                    has_mempool = True
+        except Exception as _err:
+            # Never let this purely informational check break the flow.
+            _logger.debug(f"executed_inheritance_status error: {_err}")
+        return "MEMPOOL" if has_mempool else None
+
+    @staticmethod
+    def unsigned_will_executors(willitems):
+        """Will-executor URLs of a will prepared earlier but never signed.
+
+        Returns the set of URLs of the VALID items that are neither signed
+        (``COMPLETE``) nor sent (``PUSHED``) - typically left by a Cancel at
+        the signing step (an item without will-executor adds ``None``) - or
+        ``None`` when there is no such item. Read-only; never raises. Moved
+        unchanged from the Check dialog (CHANGELOG #115).
+        """
+        try:
+            urls = {
+                (w.we or {}).get("url")
+                for w in willitems.values()
+                if w.get_status("VALID")
+                and not w.get_status("COMPLETE")
+                and not w.get_status("PUSHED")
+            }
+            return urls or None
+        except Exception as e:
+            _logger.debug(f"unsigned will check failed: {e!r}")
+            return None
+
+    @staticmethod
+    def amount_warning_is_false_alarm(date_passed, available_utxos):
+        """True when an AmountException is not a real amount problem.
+
+        WHY (BUG-5, CHANGELOG #76): the "adjust the amounts" warning flashed
+        in 12 Checks of the scenario matrix while no amount had changed. The
+        two causes, traced in the harness:
+
+        * the delivery date is in the past (``date_passed``): heirs dated
+          before the reference are left out of the percentage sum, so it is
+          0 % instead of 100 % (the past date is explained by
+          :func:`bal.core.messages.past_date_message`);
+        * no spendable coin is visible at this moment (e.g. right after a
+          Cancel the wallet-local copy of the unsigned will still holds the
+          coins; the build frees them just after): with a balance of 0 the
+          fixed-amount check fails. A really empty wallet is reported by the
+          build step ("no spendable funds").
+
+        Never raises; on error the warning is shown (previous behaviour).
+        Moved unchanged from the Check dialog (CHANGELOG #115).
+        """
+        try:
+            if date_passed:
+                return True
+            return sum(u.value_sats() for u in (available_utxos or [])) <= 0
+        except Exception as _err:
+            _logger.debug(f"amount_warning_is_false_alarm: {_err}")
+            return False
+
+    @staticmethod
     def get_current_will_locktime(will, fallback=None):
         """Delivery date of the current will, as used by the still-active check.
 

@@ -2,8 +2,9 @@
 Tests for the v0.4.8 changes (Group H).
 
 These tests cover the small, GUI-free DECISION LOGIC introduced in v0.4.8,
-without importing the Qt widgets (which need PyQt6 + an Electrum window). For
-each behaviour we reproduce the exact rule the production code uses, so the
+without importing the Qt widgets (which need PyQt6 + an Electrum window). #7a
+runs the real core rule (``Will.executed_inheritance_status``, CHANGELOG
+#115); for #6 we reproduce the exact rule the production code uses, so the
 tests stay fast and headless while still pinning the contract.
 
 Covered behaviour:
@@ -26,6 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
+from bal.core.will import Will
 
 # ------------------------------------------------------------------ #
 # Mocks
@@ -42,21 +44,9 @@ class FakeWillItem:
         return status in self._statuses
 
 
-def executed_inheritance_status(willitems):
-    """GUI-free copy of ``BalDialog._executed_inheritance_status``.
-
-    Mirrors the production rule exactly (see bal/gui/qt/dialogs.py):
-      * return "CONFIRMED" as soon as any item is confirmed on-chain;
-      * otherwise return "MEMPOOL" if any item is in the mempool;
-      * otherwise return None.
-    """
-    has_mempool = False
-    for witem in willitems.values():
-        if witem.get_status("CONFIRMED"):
-            return "CONFIRMED"
-        if witem.get_status("MEMPOOL"):
-            has_mempool = True
-    return "MEMPOOL" if has_mempool else None
+# The #7a rule moved from the Check dialog to the core (CHANGELOG #115): the
+# tests below now run the real code instead of a copy that could drift.
+executed_inheritance_status = Will.executed_inheritance_status
 
 
 def advanced_phrase_ok(text, accepted):
