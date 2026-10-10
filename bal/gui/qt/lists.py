@@ -73,6 +73,7 @@ from .common import (
     write_json_file,
 )
 from .dialogs import BalBuildWillDialog, BalDialog
+from .report_actions import report_menu
 from .widgets import BalCheckBox, WillSettingsWidget
 
 if TYPE_CHECKING:
@@ -690,6 +691,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Broadcast"), self.broadcast)
         menu.addAction(_("Check"), self.check)
         menu.addAction(_("Invalidate"), self.invalidate_will)
+        # CHANGELOG #92: the inheritance plan report (save as file / print).
+        menu.addSeparator()
+        menu.addMenu(report_menu(self.bal_window, self, title=_("Will report")))
 
         # The Wizard is the main entry point to create an inheritance, so make
         # it stand out: show a bold label next to a slightly larger icon (the
