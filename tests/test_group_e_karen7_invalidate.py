@@ -27,12 +27,24 @@ import sys
 
 import pytest  # pyright: ignore[reportMissingImports]
 
+# CHANGELOG #97: tests/karen7 is the BAL author's regtest wallet and is not in
+# git (.gitignore). Without it these tests cannot run: skip them, saying why,
+# instead of an error while the file is collected.
+_WALLET_PATH = os.path.join(os.path.dirname(__file__), "karen7")
+if not os.path.exists(_WALLET_PATH):
+    pytest.skip(
+        "tests/karen7 (the BAL author's regtest wallet, not in git) is not "
+        "available",
+        allow_module_level=True,
+    )
+
 # ------------------------------------------------------------------ #
 # Electrum regtest mode (replaces mocking bitcoin.is_address)
 # ------------------------------------------------------------------ #
-from electrum import constants
-
-constants.net = constants.BitcoinRegtest
+# CHANGELOG #97: regtest per test (conftest ``regtest_net``), no longer
+# switched while the module is imported: that changed the network for every
+# test of the session.
+pytestmark = pytest.mark.usefixtures("regtest_net")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
@@ -52,7 +64,6 @@ from bal.core.will import Will, WillItem
 # Load karen7 wallet data
 # ------------------------------------------------------------------ #
 
-_WALLET_PATH = os.path.join(os.path.dirname(__file__), "karen7")
 with open(_WALLET_PATH) as _f:
     _KAREN7_DATA = json.load(_f)
 

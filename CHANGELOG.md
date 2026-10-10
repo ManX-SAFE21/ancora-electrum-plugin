@@ -5460,3 +5460,71 @@ directory: same failures as `main`; harness A1 OK (the will logic is
 unchanged); zip builds and loads.
 
 **Outcome:** DONE.
+
+## 97. 5c: a clean test suite (0 failed, 0 errors, nothing deselected by hand)
+
+**Date:** 2026-10-10
+
+**Problem:** the whole `tests/` directory had 27 failures and 3 collection
+errors inherited from BAL, and one test hung forever, so it had to be
+deselected by hand at every run. Every check compared against that list:
+a new failure could hide among the old ones (one did, see below).
+
+**Causes (each file run on its own, and against BAL `827a1d1`):**
+
+- Network pollution (21 failures). `test_group_e_karen7_invalidate.py` and
+  `test_no_willexecutor_karen7.py` switched Electrum to regtest while being
+  imported, during collection, before the first test. `conftest.py`
+  restored "the network before each test", which was already regtest, so
+  every test with mainnet addresses failed in the whole suite
+  (`test_auto_rebuild_on_new_tx`, `test_cli_autorebuild`,
+  `test_cli_controller_offline`); alone they passed.
+- A failure hidden behind it, from CHANGELOG #80:
+  `test_cli_autorebuild::test_auto_rebuild_invalidates_when_anticipation_crosses_threshold`
+  put the Check Alive 12 hours before the delivery (an absolute date). Since
+  #80 (decision D14) the Check Alive is only "N days before the delivery",
+  at least 1: that date cannot be kept, becomes 180 days, here already
+  passed (CheckAliveError). The scenario no longer exists by design: the
+  Check Alive is counted back from the will's own locktime, so a one-day
+  anticipation can never cross it. Not a code bug.
+- `tests/karen7`, the BAL author's regtest wallet, is not in git
+  (`.gitignore`): 3 modules failed while being collected, plus `test_e5`.
+- `test_heir_relative_anchor::test_karen7_frozen_delivery_not_expired`
+  failed already in BAL: its "150d" (after the creation) drifted with "now".
+- Audio: the KB/sec list comes from `amodem` (the package of Electrum's
+  audio_modem plugin). Without it 3 tests failed and
+  `test_audio_import_receive_wiring` hung (checked: killed by a 30 s timeout
+  without `amodem`, passes with it).
+- QR: `test_import_start_stop_scan_signal_wiring` needed the zbar library
+  (missing: `_start_scan` stopped before the camera wiring the test is about).
+
+**What changed (plan approved by the owner; tests only, no plugin code):**
+
+- `tests/conftest.py`: every test starts on the network Electrum starts
+  with (mainnet, taken when pytest loads the file) and gets it back after;
+  new `regtest_net` fixture for the tests on regtest data.
+- The karen7 modules switch to regtest per test (`regtest_net`), no longer
+  while being imported; without `tests/karen7` they are skipped, saying
+  why (`test_group_e_karen7_invalidate.py`, `test_no_willexecutor_karen7.py`,
+  `test_reproduce_none_type.py`, and `test_e5` in
+  `test_group_e_mock_karen7.py`).
+- `test_cli_autorebuild.py`: the hidden failure becomes
+  `test_auto_rebuild_anticipation_never_crosses_the_check_alive` (Check
+  Alive "-1d", one-day anticipation: the will is rebuilt, anticipated by
+  one day, the old tx replaced, nothing invalidated).
+- `test_heir_relative_anchor.py`: that test uses "-150d", the current form;
+  the window is then anchored to the frozen locktime, as the test means.
+- `test_gui_export_dialogs.py`: the 4 tests that need `amodem` are skipped,
+  saying why, when it is missing (no more hang).
+- `test_gui_qr_transfer.py`: the QR reader is mocked like the camera, so the
+  wiring test runs without zbar.
+- Test environment (outside the repository, owner's OK): `amodem` 1.16.0
+  installed with its dependency `numpy` 2.4.6, so the audio tests run here.
+
+**Verification:** whole `tests/` directory, nothing deselected: 949 passed,
+4 skipped (all karen7, with the reason), 0 failed, 0 errors; the same with
+the files in reverse order. Without `amodem` (uninstalled for the check):
+the 4 audio tests are skipped with the reason, the rest pass, no hang.
+`ruff` (same 3 pre-existing I001); harness A1 OK.
+
+**Outcome:** DONE.

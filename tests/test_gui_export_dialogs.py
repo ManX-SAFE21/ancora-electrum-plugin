@@ -13,10 +13,13 @@ Run:
 """
 
 import base64
+import importlib.util
 import json
 import sys
 import zlib
 from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
@@ -26,6 +29,15 @@ import bal.gui.qt.dialogs as dialogs
 from bal.core.qrtransfer import CHUNK_PRESETS
 
 _app = QApplication.instance() or QApplication(sys.argv)
+
+# CHANGELOG #97: the KB/sec list of the audio pages comes from ``amodem`` (the
+# package of Electrum's audio_modem plugin). Without it the list is empty:
+# these tests failed, and test_audio_import_receive_wiring hung the whole
+# suite. Skipped, saying why, when it is missing.
+needs_amodem = pytest.mark.skipif(
+    importlib.util.find_spec("amodem") is None,
+    reason="amodem (Electrum's audio_modem package) is not installed",
+)
 
 # A valid 1x1 transparent PNG, good enough for BalDialog's window icon.
 _PNG_BYTES = base64.b64decode(
@@ -298,6 +310,7 @@ def test_bal_window_set_audio_modem_bitrate():
 # WillExportDialog audio page
 # ------------------------------------------------------------------ #
 
+@needs_amodem
 def test_audio_export_page_send():
     bw = FakeBalWindow(audio_plugin=FakeAudioPlugin())
     items = _make_willitems(3, payload_len=30)
@@ -318,6 +331,7 @@ def test_audio_export_page_send():
     d.close()
 
 
+@needs_amodem
 def test_audio_export_page_send_tx_only():
     bw = FakeBalWindow(audio_plugin=FakeAudioPlugin())
     items = _make_willitems(3, payload_len=30)
@@ -350,6 +364,7 @@ def test_audio_export_page_plugin_missing():
 # WillImportDialog audio page
 # ------------------------------------------------------------------ #
 
+@needs_amodem
 def test_audio_import_page_build():
     bw = FakeBalWindow(audio_plugin=FakeAudioPlugin())
     d = dialogs.WillImportDialog(bw, bal_plugin=bw.bal_plugin)
@@ -370,6 +385,7 @@ def test_audio_import_page_plugin_missing():
     d.close()
 
 
+@needs_amodem
 def test_audio_import_receive_wiring():
     bw = FakeBalWindow(audio_plugin=FakeAudioPlugin())
     d = dialogs.WillImportDialog(bw, bal_plugin=bw.bal_plugin)
