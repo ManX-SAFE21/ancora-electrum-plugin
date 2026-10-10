@@ -1,0 +1,214 @@
+[
+ {
+  "action": "gui prepare",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [
+   {
+    "executor": "https://we0.test",
+    "fee": 13,
+    "label": "BitcoinAfterLife inheritance transaction - https://we0.test",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "VALID"
+    ],
+    "tx": "T1"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 13,
+    "label": "BitcoinAfterLife inheritance transaction - https://we1.test",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "VALID"
+    ],
+    "tx": "T2"
+   }
+  ],
+  "labels": {},
+  "popups": [
+   [
+    "message",
+    "Your will has been rebuilt and now needs to be signed and re-sent to the will-executors.\n\nNext steps (manual):\n  1. Press 'Sign' to sign the new transaction.\n  2. Press 'Broadcast will' to send it to the will-executors."
+   ]
+  ],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": {
+    "will items": 2
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {},
+  "verified": [],
+  "window_events": [
+   "history-refresh",
+   "history-refresh"
+  ]
+ },
+ {
+  "action": "gui menu sign",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [
+   {
+    "executor": "https://we0.test",
+    "fee": 13,
+    "label": "",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "COMPLETE",
+     "VALID"
+    ],
+    "tx": "T1"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 13,
+    "label": "",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "COMPLETE",
+     "VALID"
+    ],
+    "tx": "T2"
+   }
+  ],
+  "labels": {
+   "T1": "",
+   "T2": ""
+  },
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": null
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "COMPLETE",
+    "VALID"
+   ],
+   "T2": [
+    "COMPLETE",
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": [
+   "waiting window: Signing transactions...",
+   "history-refresh"
+  ]
+ },
+ {
+  "action": "we1 does not answer"
+ },
+ {
+  "action": "gui menu broadcast",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [
+   {
+    "executor": "https://we0.test",
+    "fee": 13,
+    "label": "",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T1"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 13,
+    "label": "",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "COMPLETE",
+     "VALID"
+    ],
+    "tx": "T2"
+   }
+  ],
+  "labels": {
+   "T1": "",
+   "T2": ""
+  },
+  "popups": [
+   [
+    "message",
+    "All transactions are broadcasted to respective Will-Executors"
+   ]
+  ],
+  "pushed": [
+   [
+    "https://we0.test",
+    "T1"
+   ]
+  ],
+  "questions": [],
+  "result": {
+   "returned": null
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "COMPLETE",
+    "VALID"
+   ],
+   "T2": [
+    "COMPLETE",
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": [
+   "waiting window: Selecting Will-Executors",
+   "waiting window text: Broadcasting Transactions to Will-Executors:\nhttps://we0.test: Waiting...\nhttps://we1.test: Waiting...",
+   "waiting window text: Broadcasting Transactions to Will-Executors:\nhttps://we0.test: Success\nhttps://we1.test: Waiting..."
+  ]
+ }
+]

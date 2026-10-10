@@ -30,6 +30,7 @@
    "Finished"
   ],
   "items": [],
+  "labels": {},
   "popups": [],
   "pushed": [],
   "questions": [],
@@ -93,6 +94,7 @@
    "locktime": "2032-09-23",
    "threshold": "-180d"
   },
+  "stored": {},
   "verified": [],
   "window_events": [
    "history-refresh"

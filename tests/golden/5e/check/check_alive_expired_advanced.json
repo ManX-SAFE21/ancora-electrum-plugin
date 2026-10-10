@@ -74,6 +74,10 @@
     "tx": "T2"
    }
   ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction"
+  },
   "popups": [],
   "pushed": [
    [
@@ -85,12 +89,7 @@
     "T2"
    ]
   ],
-  "questions": [
-   [
-    "password",
-    "Sign your will"
-   ]
-  ],
+  "questions": [],
   "report": {
    "boxes": {
     "changes": [
@@ -182,6 +181,20 @@
    "locktime": "2026-12-09",
    "threshold": "-30d"
   },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
   "verified": [
    [
     "https://we0.test",
@@ -203,7 +216,7 @@
   "action": "check",
   "broadcasts": [
    [
-    "invalidation(classic)",
+    "invalidation(transaction window)",
     "T3"
    ]
   ],
@@ -252,21 +265,29 @@
     "tx": "T2"
    }
   ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction"
+  },
   "popups": [
    [
     "message",
     "Your will has expired and must be invalidated before it can be rebuilt.\nA transaction window will now open:\nplease SIGN and then BROADCAST it to invalidate your old will.\nAfter the invalidation is confirmed, press the Check button to finish the will."
    ],
    [
-    "classic-invalidate",
+    "message",
+    "Please sign and broadcast this transaction to invalidate current will"
+   ],
+   [
+    "transaction window",
     "opened"
    ]
   ],
   "pushed": [],
   "questions": [
    [
-    "classic invalidate",
-    "transaction window"
+    "transaction window",
+    "sign and broadcast"
    ]
   ],
   "report": {
@@ -320,7 +341,23 @@
    "locktime": "2026-12-09",
    "threshold": "-30d"
   },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
   "verified": [],
-  "window_events": []
+  "window_events": [
+   "waiting window: Calculating Transactions"
+  ]
  }
 ]

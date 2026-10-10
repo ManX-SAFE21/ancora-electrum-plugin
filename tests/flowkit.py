@@ -51,6 +51,7 @@ from electrum.wallet import restore_wallet_from_text
 
 from bal.core.heirs import Heirs
 from bal.core.plugin_base import BalPlugin
+from bal.core.will import WillItem
 from bal.core.willexecutors import Willexecutors
 from bal.gui.qt import dialogs as dialogs_mod
 from bal.gui.qt import window as window_mod
@@ -291,9 +292,21 @@ class _Broadcast:
 class FakeNetwork:
     """The dialog's ``self.network`` (only what the invalidation uses)."""
 
-    def __init__(self, world, wallet):
+    def __init__(self, world, wallet, kind="invalidation(dialog)"):
         self.world = world
         self.wallet = wallet
+        self.kind = kind
+        # No fee estimate received yet: the invalidation pays the will's
+        # fee rate (Will.invalidation_fee_rate falls back to it).
+        self.fee_estimates = SimpleNamespace(eta_target_to_fee=lambda blocks: None)
+
+    def blockchain(self):
+        """A stale chain tip: transactions get locktime 0 (Util.get_current_height)."""
+        return SimpleNamespace(is_tip_stale=lambda: True, height=lambda: 0)
+
+    def get_server_height(self):
+        """No server height (not used with a stale tip)."""
+        return 0
 
     def broadcast_transaction(self, tx, timeout=None):
         """Return a marker; the broadcast happens in run_from_another_thread."""
@@ -306,7 +319,7 @@ class FakeNetwork:
         ask a server for the input transactions: offline there is none.
         """
         if isinstance(coro, _Broadcast):
-            self.world.record_broadcast(self.wallet, coro.tx, "invalidation(dialog)")
+            self.world.record_broadcast(self.wallet, coro.tx, self.kind)
             return None
         coro.close()
         return None
@@ -422,19 +435,82 @@ class User:
     """The scripted owner: answers the questions, records them.
 
     ``cancel_on`` holds words: a question whose text contains one of them
-    is answered "Cancel" / "Not now" / "No". Everything else is accepted
-    (a wallet without a password: the password prompt answers None).
+    is answered "Cancel" / "Not now" / "No". Everything else is accepted.
+    ``password`` is what the owner types in Electrum's password window
+    (only a wallet with a password opens it, as in Electrum).
     """
 
-    def __init__(self):
+    def __init__(self, password=None):
         self.cancel_on = set()
         self.asked = []
+        self.password = password
 
     def answer(self, kind, text):
         """Record the question; True to accept, False to cancel."""
         self.asked.append([kind, strip(text)])
         low = (kind + " " + str(text)).lower()
         return not any(word.lower() in low for word in self.cancel_on)
+
+    def password_dialog(self, msg=None, parent=None):
+        """Electrum's password window (``Plugin.password_dialog``).
+
+        Returns the typed password, or None for Cancel, like the real one.
+        """
+        if self.answer("password", msg or ""):
+            return self.password
+        return None
+
+
+class FakeWaitingDialog:
+    """``BalWaitingDialog`` without Qt (the "Please wait" window).
+
+    Same contract as the real one (dialogs.py): the task runs on the task
+    thread, then ``accept`` closes the window (which sets ``_stopping``,
+    through hideEvent) BEFORE ``on_success`` / ``on_error`` run, as
+    Electrum's ``TaskThread`` does; ``exe()`` returns only when the window
+    is closed (the real one runs a modal ``exec()``). The title and every
+    ``update`` text are recorded in the window's events.
+    """
+
+    def __init__(self, bal_window, message, task, on_success=None,
+                 on_error=None, on_cancel=None, exe=True):
+        self.bal_window = bal_window
+        self.task = task
+        self.on_success = on_success
+        self.on_error = on_error
+        self.on_cancel = on_cancel
+        self._stopping = False
+        bal_window.events.append("waiting window: " + strip(message))
+        if exe:
+            self.exe()
+
+    def exe(self):
+        """Run the task to its end (modal window)."""
+        OrderThread(self).add(self.task, self.on_success, self.accept, self.on_error)
+        run_until_idle()
+
+    def accept(self):
+        """The window closes: hideEvent sets ``_stopping``."""
+        self._stopping = True
+
+    def update(self, msg):
+        """A new text in the window."""
+        self.bal_window.events.append("waiting window text: " + strip(msg))
+
+
+class _ListWidget:
+    """The Heirs / Will list of the window: refreshes do nothing.
+
+    No ``will_settings_widget``: the toolbar fields are not drawn, so
+    ``update_widget_value`` fails on it and is caught, as on a list without
+    a toolbar.
+    """
+
+    def update(self, *a):
+        """Redraw the list."""
+
+    def update_will(self, willitems):
+        """New will items for the list."""
 
 
 # ---------------------------------------------------------------- window
@@ -471,10 +547,15 @@ class FlowWindow(BalWindow):
         self._menubar_initialized = True
         self._auto_rebuild_running = False
         self._auto_rebuild_cooldown_until = 0.0
-        self.heir_list_widget = None
-        self.will_list_widget = None
+        # The Heirs and Will lists exist in a real window: the flows refresh
+        # them (and would stop with an error on None).
+        self.heir_list_widget = _ListWidget()
+        self.will_list_widget = _ListWidget()
         self.popups = []
         self.events = []
+        # "Check your will" dialogs opened by the window itself (renewal
+        # from Prepare, the check at wallet close): see Session.
+        self.opened_dialogs = []
 
     # Qt edges ----------------------------------------------------------
 
@@ -508,32 +589,21 @@ class FlowWindow(BalWindow):
         """The Check Alive "Renew / Not now" question (#79)."""
         return self.user.answer("renew", text)
 
-    def get_wallet_password(self, message=None, parent=None):
-        """The password window: None = accepted (no password), False = Cancel."""
-        return None if self.user.answer("password", message or "") else False
+    def show_transaction(self, tx=None, txid=None, parent=None):
+        """Electrum's transaction window (the classic invalidation).
 
-    def invalidate_will(self, will=None):
-        """Tools > Invalidate: Electrum's transaction window, signed and sent.
-
-        The real method opens Electrum's transaction dialog, where the owner
-        signs and broadcasts. Here the scripted owner does it (or closes the
-        window when the question "classic invalidate" is cancelled).
+        The owner signs and broadcasts there; the scripted owner does it,
+        or closes the window when "transaction window" is cancelled. The
+        rest of ``invalidate_will`` (build, label, message) is the real one.
         """
-        from bal.core.will import Will
-
-        self.popups.append(["classic-invalidate", "opened"])
-        if not self.user.answer("classic invalidate", "transaction window"):
-            return
-        tx = Will.invalidate_will(
-            self.willitems, self.wallet,
-            self.will_settings.get("baltx_fees", 1),
-            history_label=self.bal_plugin.HISTORY_LABEL.get(),
-            will_locktime=Will.get_min_locktime(self.willitems),
-        )
-        if tx:
-            self.wallet.sign_transaction(tx, None)
-            self.wallet.set_label(tx.txid(), "Safe21 Heartbeat invalidation")
-            self.world.record_broadcast(self.wallet, tx, "invalidation(classic)")
+        if txid is not None and txid in self.willitems:
+            tx = self.willitems[txid].tx
+        self.popups.append(["transaction window", "opened"])
+        if not self.user.answer("transaction window", "sign and broadcast"):
+            return None
+        self.wallet.sign_transaction(tx, self.user.password)
+        self.world.record_broadcast(self.wallet, tx, "invalidation(transaction window)")
+        return None
 
 
 # ---------------------------------------------------------------- dialog
@@ -586,13 +656,18 @@ class FlowDialog(BalBuildWillDialog):
         self._still_active_warning = None
 
     def build_will_task(self):
-        """Queue phase 1 as the real one does; show_modal is not called."""
+        """Queue phase 1 as the real one does, then run it to the end.
+
+        The real one then calls ``show_modal``: the caller (wallet close,
+        renewal, Check button) waits until the dialog is closed.
+        """
         self.thread.add(
             self.task_phase1,
             on_success=self.on_success_phase1,
             on_done=self.on_accept,
             on_error=self.on_error_phase1,
         )
+        run_until_idle()
 
     # Every row ever written (rows are overwritten in the dialog).
     def msg_edit_row(self, line, row=None):
@@ -709,13 +784,15 @@ class Session:
     """
 
     def __init__(self, monkeypatch, mode="basic", fee=13, locktime=D0,
-                 threshold="-180d"):
+                 threshold="-180d", password=None):
         constants.net = constants.BitcoinTestnet
         ensure_event_loop()
         self.monkeypatch = monkeypatch
         self.clock = Clock()
         install_clock(monkeypatch, self.clock)
         monkeypatch.setattr(dialogs_mod, "TaskThread", OrderThread)
+        monkeypatch.setattr(window_mod, "BalWaitingDialog", FakeWaitingDialog)
+        monkeypatch.setattr(window_mod, "BalBuildWillDialog", self._open_dialog)
         OrderThread.queue.clear()
         self.world = World()
         install_world(monkeypatch, self.world)
@@ -729,8 +806,12 @@ class Session:
         seed = hashlib.sha256(_TEST_KEY_LABEL.encode()).digest()
         xprv = BIP32Node.from_rootseed(seed, xtype="p2wpkh").to_xprv(
             net=constants.BitcoinTestnet)
+        # ``password``: a test wallet with a password (the only kind that
+        # opens Electrum's password window, so the only one where Cancel
+        # exists). Test value, not a real password.
         self.wallet = restore_wallet_from_text(
             xprv, path=os.path.join(self.dir, "w"), config=self.config,
+            password=password,
         )["wallet"]
         self._coin_tags = iter(["cd", "ef", "a1", "a2", "a3"])
         self._add_coin(1_000_000, "ab")
@@ -739,7 +820,9 @@ class Session:
         ws["locktime"] = locktime
         ws["threshold"] = threshold
         self.plugin.WILL_SETTINGS.set(ws)
-        self.user = User()
+        self.user = User(password)
+        # Electrum's password window lives on the Qt Plugin object.
+        self.plugin.password_dialog = self.user.password_dialog
         self.bw = FlowWindow(self.plugin, self.wallet, self.user, self.world)
         self.bw.heirs["alice"] = [HEIR_ADDR["alice"], "60%", locktime]
         self.bw.heirs["bob"] = [HEIR_ADDR["bob"], "40%", locktime]
@@ -777,6 +860,8 @@ class Session:
         for name in list(self.bw.heirs.keys()):
             if name not in shares:
                 del self.bw.heirs[name]
+        # As BalWindow.delete_heirs: ``del`` alone does not reach the wallet.
+        self.bw.heirs.save()
         for name, amount in shares.items():
             self.bw.heirs[name] = [HEIR_ADDR[name], amount,
                                    self.bw.will_settings["locktime"]]
@@ -813,14 +898,117 @@ class Session:
         self.user.asked = []
         self.bw.popups = []
         self.bw.events = []
+        self.bw.opened_dialogs = []
         self.world.broadcast_log = []
         self.world.verified = []
         return len(self.world.pushed)
+
+    def _open_dialog(self, bal_window, parent=None, renew=False, closing=False):
+        """``BalBuildWillDialog`` as the window itself opens it (Qt-free)."""
+        dlg = FlowDialog(bal_window, renew=renew, closing=closing)
+        bal_window.opened_dialogs.append(dlg)
+        return dlg
+
+    # Other entry points (CHANGELOG #114) ---------------------------------
+
+    def act(self, label, action, cancel_on=()):
+        """Run one owner action outside the Check dialog and record it.
+
+        ``action()`` is called; what it returns (or the error it raises) is
+        recorded with everything the window showed and stored. The task
+        thread and Qt's pending events run to the end first.
+        """
+        pushed_before = self._begin(cancel_on)
+        try:
+            result = {"returned": action()}
+        except Exception as e:  # noqa: BLE001 - the error is the result
+            result = {"raised": "{}: {}".format(type(e).__name__, e)}
+        run_until_idle()
+        self.recorder.record_action(label, result, pushed_before)
+        return result
+
+    def prepare(self, cancel_on=()):
+        """Will tab menu > Prepare (``BalWindow.prepare_will``)."""
+        return self.act("gui prepare", lambda: _summary(self.bw.prepare_will()),
+                        cancel_on)
+
+    def auto(self, network=False):
+        """The automatic rebuild, through ``BalWindow.maybe_auto_rebuild``.
+
+        The option is switched on and the cooldown cleared first. With
+        ``network=True`` the wallet has a (fake) network, so the headless
+        invalidation can broadcast; without it, it stops there, as offline.
+        """
+        self.plugin.AUTO_REBUILD.set(True)
+        self.bw._auto_rebuild_cooldown_until = 0.0
+        if network:
+            self.monkeypatch.setattr(
+                self.wallet, "network",
+                FakeNetwork(self.world, self.wallet, "invalidation(automatic)"),
+                raising=False)
+        return self.act("gui automatic rebuild", self.bw.maybe_auto_rebuild)
+
+    def menu_sign(self, cancel_on=()):
+        """Will tab menu > Sign (``ask_password_and_sign_transactions``)."""
+        return self.act("gui menu sign",
+                        self.bw.ask_password_and_sign_transactions, cancel_on)
+
+    def menu_broadcast(self):
+        """Will tab menu > Broadcast will (``broadcast_transactions``)."""
+        return self.act("gui menu broadcast", self.bw.broadcast_transactions)
+
+    def row_check(self):
+        """Right click on the rows > check (``check_transactions``).
+
+        The list passes the selected rows: here every row of the will.
+        """
+        return self.act("gui row check",
+                        lambda: self.bw.check_transactions(dict(self.bw.willitems)))
+
+    def menu_invalidate(self, cancel_on=()):
+        """Will tab menu > Invalidate will (``BalWindow.invalidate_will``)."""
+        return self.act("gui menu invalidate", self.bw.invalidate_will, cancel_on)
+
+    def close_wallet(self):
+        """The wallet closes (``BalWindow.on_close``)."""
+        return self.act("gui wallet close", self.bw.on_close)
+
+    def cli(self, method, *args, **kwargs):
+        """One ``bal_*`` command: a fresh controller, errors as the daemon shows them.
+
+        Goes through ``bal.cli.commands._call``, so a domain error becomes
+        the same message the terminal prints (exit 1).
+        """
+        from bal.cli import commands as cli_commands
+
+        label = "cli {}{}".format(method, "".join(" " + str(a) for a in args))
+        return self.act(label, lambda: cli_commands._call(
+            self.plugin, self.wallet, method, *args, **kwargs))
+
+    def reload_window(self):
+        """The window reads the will again from the wallet (as when it opens).
+
+        After a command-line action the GUI copy is stale; a real window
+        would only see it after reopening the wallet.
+        """
+        self.bw.will = self.wallet.db.get_dict("will")
+        self.bw.willitems = {}
+        for wid, w in self.bw.will.items():
+            self.bw.willitems[wid] = WillItem(w, wallet=self.wallet)
+        self.bw.will_settings = self.plugin.WILL_SETTINGS.get()
+
+
+def _summary(value):
+    """What a GUI flow returned, short: the will items become their count."""
+    if isinstance(value, dict):
+        return {"will items": len(value)}
+    return value
 
 
 # ---------------------------------------------------------------- recording
 
 _HEX64 = re.compile(r"\b[0-9a-f]{64}\b")
+_RAW_TX = re.compile(r"^(?:[0-9a-f]+|cHNidP[A-Za-z0-9+/=]+)$")
 
 
 def strip(text):
@@ -848,8 +1036,19 @@ class Recorder:
         return self.names[txid]
 
     def text(self, value):
-        """Replace every transaction id inside ``value`` by its short name."""
+        """Replace every transaction id inside ``value`` by its short name.
+
+        A whole serialized transaction (raw hex or PSBT, as the command line
+        returns them) becomes ``<tx Tn>``.
+        """
         if isinstance(value, str):
+            if len(value) > 120 and _RAW_TX.match(value):
+                try:
+                    return "<tx {}>".format(self.name(tx_from_any(value).txid()))
+                except Exception:  # noqa: BLE001 - not a transaction after all
+                    return "<{} characters>".format(len(value))
+            # The temporary folder changes at every run.
+            value = value.replace(self.session.dir, "<dir>")
             return _HEX64.sub(lambda m: self.name(m.group(0)), value)
         if isinstance(value, (list, tuple)):
             return [self.text(v) for v in value]
@@ -877,17 +1076,43 @@ class Recorder:
             })
         return out
 
-    def record(self, dlg, pushed_before):
-        """Add one Check to the scenario's steps."""
-        s = self.session
+    def dialog(self, dlg):
+        """What a "Check your will" dialog showed."""
         report = dlg._report().snapshot()
-        ws = s.bw.will_settings
-        step = {
-            "action": "check",
+        return {
             "rows": self.text(dlg.labels),
             "history": self.text(list(dlg.history)),
             "report": self.text(json.loads(json.dumps(report, default=list))),
             "dialog_events": self.text(dlg.events),
+        }
+
+    def record_action(self, label, result, pushed_before):
+        """Add one action outside the Check dialog (CHANGELOG #114)."""
+        step = {"action": self.text(label),
+                "result": self.text(json.loads(json.dumps(result, default=self._plain)))}
+        dialogs = [self.dialog(d) for d in self.session.bw.opened_dialogs]
+        if dialogs:
+            step["dialogs_opened"] = dialogs
+        step.update(self.common(pushed_before))
+        self.steps.append(step)
+
+    def _plain(self, value):
+        """JSON for what json cannot write: a transaction becomes ``<tx Tn>``.
+
+        Anything else becomes its type name (a repr would carry a memory
+        address that changes at every run).
+        """
+        txid = getattr(value, "txid", None)
+        if callable(txid):
+            return "<tx {}>".format(self.name(txid()))
+        return "<{}>".format(type(value).__name__)
+
+    def common(self, pushed_before):
+        """The part of a record shared by every action."""
+        s = self.session
+        ws = s.bw.will_settings
+        stored = s.wallet.db.get_dict("will")
+        return {
             "window_events": self.text(s.bw.events),
             "popups": self.text(s.bw.popups),
             "questions": self.text(s.user.asked),
@@ -895,14 +1120,30 @@ class Recorder:
             "pushed": [[u, self.name(t)] for u, t, _raw in s.world.pushed[pushed_before:]],
             "verified": [[u, self.name(t)] for u, t in s.world.verified],
             "items": self.items(),
+            # The will as stored in the wallet file (what survives a crash
+            # or a restart): name -> statuses set.
+            "stored": {self.name(wid): sorted(
+                k for k in WillItem.STATUS_DEFAULT if w.get(k) is True)
+                for wid, w in stored.items()},
+            # Electrum's History label of every stored will transaction.
+            "labels": {self.name(wid): s.wallet.get_label_for_txid(wid) or ""
+                       for wid in stored},
             "settings": {
                 "locktime": fmt(ws.get("locktime")) if isinstance(ws.get("locktime"), int)
                 else ws.get("locktime"),
                 "threshold": ws.get("threshold"),
                 "baltx_fees": ws.get("baltx_fees"),
             },
-            "heirs": {k: list(v[:2]) for k, v in s.bw.heirs.items()},
+            # The heirs as stored in the wallet (the command line may delete
+            # some when it loads them).
+            "heirs": {k: list(v[:2]) for k, v in s.wallet.db.get("heirs", {}).items()},
         }
+
+    def record(self, dlg, pushed_before):
+        """Add one Check to the scenario's steps."""
+        step = {"action": "check"}
+        step.update(self.dialog(dlg))
+        step.update(self.common(pushed_before))
         self.steps.append(step)
 
 

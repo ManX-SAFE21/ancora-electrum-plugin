@@ -1,0 +1,306 @@
+[
+ {
+  "action": "check",
+  "broadcasts": [],
+  "dialog_events": [
+   "close-button"
+  ],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "history": [
+   "Checking variables:\t<b>Wait</b>",
+   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+   "Checking your will:\t<b>Waiting</b>",
+   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Building your will:\t<b>Wait</b>",
+   "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Heir:\t<font color=#05ad05><b>alice</b></font>",
+   "Heir:\t<font color=#05ad05><b>bob</b></font>",
+   "Signing your will:\t<b>Wait</b>",
+   "Signing your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Broadcasting your will to executors:\t<b>Wait</b>",
+   "Broadcasting your will to executors:\t<b>Broadcasting</b>",
+   "Broadcasting your will to executors:\t<b>Broadcasting 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
+   "https://we0.test : <font color='#05ad05'><b>Ok</b></font>",
+   "Broadcasting your will to executors:\t<b>Broadcasting 1/2 (0s / 20s) — waiting for: we1.test</b>",
+   "https://we1.test : <font color='#05ad05'><b>Ok</b></font>",
+   "Broadcasting your will to executors:\t<b>Broadcasting 2/2 (0s / 20s)</b>",
+   "Broadcasting your will to executors:\t<b>2/2 (0s)</b>",
+   "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Verifying your will with the executors:\t<b>Wait</b>",
+   "Verifying your will with the executors:\t<b>Verifying 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 1/2 (0s / 20s) — waiting for: we1.test</b>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 2/2 (0s / 20s)</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "",
+   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "Finished"
+  ],
+  "items": [
+   {
+    "executor": "https://we0.test",
+    "fee": 13,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T1"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 13,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T2"
+   }
+  ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction"
+  },
+  "popups": [],
+  "pushed": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ]
+  ],
+  "questions": [],
+  "report": {
+   "boxes": {
+    "changes": [
+     "The will contains no valid transaction: a new will must be prepared."
+    ],
+    "problems": [],
+    "warnings": []
+   },
+   "executors": [
+    [
+     "https://we0.test",
+     [
+      "verified",
+      null
+     ]
+    ],
+    [
+     "https://we1.test",
+     [
+      "verified",
+      null
+     ]
+    ]
+   ],
+   "heirs": [
+    [
+     "alice",
+     598058,
+     60.00002006495024
+    ],
+    [
+     "bob",
+     398705,
+     39.99997993504976
+    ]
+   ],
+   "result": [
+    "ok",
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2032-09-23</b> (in 5 years and 11 months)"
+   ],
+   "steps": [
+    [
+     "check",
+     "ok",
+     "ok"
+    ],
+    [
+     "prepare",
+     "ok",
+     "updated"
+    ],
+    [
+     "sign",
+     "ok",
+     "signed"
+    ],
+    [
+     "send",
+     "ok",
+     "2/2"
+    ],
+    [
+     "verify",
+     "ok",
+     "2/2"
+    ]
+   ],
+   "will_now": null
+  },
+  "rows": [
+   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Heir:\t<font color=#05ad05><b>alice</b></font>",
+   "Heir:\t<font color=#05ad05><b>bob</b></font>",
+   "Signing your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "https://we0.test : <font color='#05ad05'><b>Ok</b></font>",
+   "https://we1.test : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "",
+   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "Finished"
+  ],
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
+  "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ]
+  ],
+  "window_events": [
+   "history-refresh"
+  ]
+ },
+ {
+  "action": "gui menu invalidate",
+  "broadcasts": [
+   [
+    "invalidation(transaction window)",
+    "T3"
+   ]
+  ],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [
+   {
+    "executor": "https://we0.test",
+    "fee": 13,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T1"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 13,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2032-09-23",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T2"
+   }
+  ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction"
+  },
+  "popups": [
+   [
+    "message",
+    "Please sign and broadcast this transaction to invalidate current will"
+   ],
+   [
+    "transaction window",
+    "opened"
+   ]
+  ],
+  "pushed": [],
+  "questions": [
+   [
+    "transaction window",
+    "sign and broadcast"
+   ]
+  ],
+  "result": {
+   "returned": null
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": [
+   "waiting window: Calculating Transactions"
+  ]
+ }
+]
