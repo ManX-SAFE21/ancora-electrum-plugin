@@ -6188,3 +6188,54 @@ passed. `build_zip.py`: the zip holds `bal/engine/locks.py`; on Electrum
 134 Checks, 0 mismatches.
 
 **Outcome:** DONE. The owner tested the ZIP: it works.
+
+## 117. Phase 5e, step 5e-05: the engine's state bricks, taken from the command line
+
+**Date:** 2026-10-10
+
+**Problem:** the steps that load, save and check the will state are written
+twice: in the command line's `BalController` and in the GUI's `BalWindow`,
+with small differences (when the wallet file is written, how a setting is
+stored, the History redraw). Phase 5e gives them one home in the engine.
+
+**What changed (no visible change):**
+
+- New `bal/engine/context.py`: `load_willitems`, `save_willitems`,
+  `save_to_history`, `available_utxos`, `refresh_invalidated_items`,
+  `check_alive_info`, `normalize_check_alive`, `init_class_variables`,
+  `init_heirs_to_locktime`, `check_will`, copied without rewriting from
+  `bal/cli/controller.py`. They work on the state of their caller (the
+  "host").
+- New `bal/engine/host.py`: `WalletHost`, what the engine reads (the state
+  names the GUI and the command line already use, `bal_plugin` included)
+  and three hooks for what the two do differently: `store_will_setting`
+  (the Check Alive conversion of #80), `flush_wallet_db` (the command line
+  writes the wallet file at once), `after_history_saved` (the GUI redraws
+  the History tab).
+- `bal/cli/controller.py`: the ten methods keep their names as one-line
+  calls to the engine (the flows and the tests use them). New
+  `bal_plugin` property and the three hooks, which do what the controller
+  did before: `WILL_SETTINGS.set`, `wallet.save_db()`, nothing.
+- The engine uses BAL's translator, like `bal/core`: in the daemon it is
+  Electrum's (BAL's catalog is loaded only by the Qt plugin), so the
+  command line answers exactly as before; only in Electrum's Console tab
+  can "Heirs are not defined" now appear in the GUI language.
+- The GUI is not touched: `BalWindow` switches to these bricks in the next
+  step.
+- New `tests/test_engine_context.py` (16): each brick on a fake host with
+  the real plugin settings and three will-executors, each hook called
+  exactly where the old code did the same, and `BalController` as a host.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1201 passed, 0 failed, 0 errors (1185 + 16 new); the 93
+golden files of #112 and #114 (the 18 command-line ones included)
+unchanged. `ruff check bal/ tests/`: all checks passed; `test_layering`
+covers the two new modules. `build_zip.py`: the zip holds
+`bal/engine/context.py` and `host.py`; on Electrum 4.8.2
+`external_zip_test.py` and `smoke_test.py` pass. Live probe of #116 (daemon
+with a network, three fake will-executors on 127.0.0.1): send, check,
+automatic rebuild, list download and ping give the same results as after
+#116. Scenario harness (the GUI is not touched): log identical to the #112
+baseline, warn_matrix 134 Checks, 0 mismatches.
+
+**Outcome:** DONE. The owner tested the ZIP: it works.
