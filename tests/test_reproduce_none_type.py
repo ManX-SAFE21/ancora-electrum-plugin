@@ -7,7 +7,6 @@ but without requiring a full Qt event loop.
 """
 
 import contextlib
-import json
 import os
 import sys
 import time
@@ -16,19 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# CHANGELOG #97: tests/karen7 is the BAL author's regtest wallet and is not in
-# git (.gitignore). Without it this test cannot run: skip it, saying why,
-# instead of an error while the file is collected.
-wallet_path = os.path.join(os.path.dirname(__file__), "karen7")
-if not os.path.exists(wallet_path):
-    pytest.skip(
-        "tests/karen7 (the BAL author's regtest wallet, not in git) is not "
-        "available",
-        allow_module_level=True,
-    )
-
-# CHANGELOG #97: karen7 is a regtest wallet. The test used to get regtest
-# only because the other karen7 modules switched it for the whole session.
+# CHANGELOG #97: the wallet data is regtest. The test used to get regtest
+# only because the karen7 modules switched it for the whole session.
 pytestmark = pytest.mark.usefixtures("regtest_net")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
@@ -37,6 +25,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 ELECTRUM_DIR = os.path.expanduser("~/devel/bal/electrum")
 if os.path.isdir(ELECTRUM_DIR):
     sys.path.insert(0, ELECTRUM_DIR)
+
+from regtest_wallet_data import wallet_data
 
 from bal.core.heirs import Heirs
 from bal.core.plugin_base import BalPlugin, BalTimestamp
@@ -51,10 +41,10 @@ from bal.core.will import (
 from bal.core.willexecutors import Willexecutors
 
 # ------------------------------------------------------------------ #
-# Load karen7 wallet data
+# Load the wallet data: karen7's structure, made in code since CHANGELOG #98
+# (the real karen7, the BAL author's wallet, is not in git)
 # ------------------------------------------------------------------ #
-with open(wallet_path) as f:
-    KAREN7_DATA = json.load(f)
+KAREN7_DATA = wallet_data()
 
 # ------------------------------------------------------------------ #
 # Minimal UTXO stub
@@ -246,7 +236,11 @@ def test_simulate_task_phase1():
     _fake_txs = []
     def _fake_from_io(inputs, outputs, locktime, version):
         tx = MagicMock()
-        tx.txid.return_value = f"faketx_{len(_fake_txs):04x}"
+        # 64 hex characters like a real txid (CHANGELOG #98): with two
+        # delivery dates the builder reads the txid of the first transaction
+        # as hex; "faketx_..." stopped the build and the test passed building
+        # nothing.
+        tx.txid.return_value = f"{len(_fake_txs) + 1:064x}"
         tx.estimated_size.return_value = 100
         tx.get_fee.return_value = 100
         tx.input_value.return_value = sum(inp.value_sats() for inp in inputs)

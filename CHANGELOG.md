@@ -5528,3 +5528,46 @@ the 4 audio tests are skipped with the reason, the rest pass, no hang.
 `ruff` (same 3 pre-existing I001); harness A1 OK.
 
 **Outcome:** DONE.
+
+## 98. 5c/2: the karen7 tests run again, on a test wallet made in code
+
+**Date:** 2026-10-10
+
+**Problem:** after #97 the suite was clean, but 4 skips hid 34 tests: they
+read `tests/karen7`, the BAL author's regtest wallet, not in git. Among them
+the only tests that build a will with real Electrum transactions and then
+its invalidation transaction, and the "no will-executor selected" path.
+
+**What changed (plan approved by the owner; tests only, no plugin code):**
+
+- New `tests/regtest_wallet_data.py`: the two parts of karen7 the tests read,
+  made in code. Six heirs with karen7's names (percentages, a fixed amount,
+  two OP_RETURN heirs, one delivery date) and four coins, one already spent.
+  Valid regtest addresses from a hash of a label, made-up txids: no wallet
+  file, no seed, no key (the tests never sign); the same data at every run.
+- `test_group_e_karen7_invalidate.py`, `test_no_willexecutor_karen7.py`,
+  `test_reproduce_none_type.py`, `test_e5` in `test_group_e_mock_karen7.py`:
+  read that data; the karen7 file and the skips of #97 are gone.
+- Found on the way:
+  - #97 defect, invisible while the modules were skipped: the class setups
+    are autouse fixtures, which pytest runs before the `usefixtures`
+    marker, so they built the coins on mainnet ("invalid bitcoin address").
+    They now request `regtest_net` themselves.
+  - `test_all_invalidated_returns_none` expected nothing to invalidate when
+    every item is marked INVALIDATED. Since CHANGELOG #71 (BUG-3) every
+    wallet coin used by any will item is spent whatever its status (an item
+    wrongly marked INVALIDATED could stay executable). Now two tests:
+    items marked INVALIDATED still get their coins spent; no coin of the
+    will left in the wallet gives nothing to invalidate.
+  - The mocked transactions had ids like "faketx_0000", not hex: the build
+    stopped with "non-hexadecimal number", and `test_reproduce_none_type`
+    passed building nothing. Now 64 hex characters: it builds 1 transaction.
+  - One delivery date for all heirs: two dates chain a second transaction
+    on the change of the first, which the mocked tests cannot follow (they
+    passed with karen7, so its heirs left no change either).
+
+**Verification:** whole `tests/` directory, nothing deselected: 984 passed,
+0 skipped, 0 failed, 0 errors (35 more tests than #97); the same with the
+files in reverse order. `ruff` (same 3 pre-existing I001); harness A1 OK.
+
+**Outcome:** DONE.

@@ -22,7 +22,6 @@ Run:
         python3 -m pytest tests/test_group_e_mock_karen7.py -q
 """
 
-import json
 import os
 import sys
 import time
@@ -34,6 +33,8 @@ import pytest  # pyright: ignore[reportMissingImports]
 # Make the plugin package importable when run directly (tests/ is one level
 # below the repo root that contains the ``bal`` package).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
+
+from regtest_wallet_data import wallet_data
 
 from bal.core.heirs import Heirs
 from bal.core.reminders import (
@@ -522,25 +523,19 @@ def test_e4_compute_id():
 # E5 - Build inheritance from the real wallet file
 # ================================================================== #
 
-# CHANGELOG #97: the only test of this file that reads the real tests/karen7
-# (the BAL author's regtest wallet, not in git): skipped, saying why, when it
-# is missing, and run on regtest (its addresses are bcrt1).
-@pytest.mark.skipif(
-    not os.path.exists(os.path.join(os.path.dirname(__file__), "karen7")),
-    reason="tests/karen7 (the BAL author's regtest wallet, not in git) is not "
-    "available",
-)
+# CHANGELOG #98: the heirs and coins of karen7 (the BAL author's regtest
+# wallet, not in git) come from ``regtest_wallet_data``: same structure, made
+# in code. Run on regtest (its addresses are bcrt1).
 @pytest.mark.usefixtures("regtest_net")
 def test_e5_build_with_real_wallet_heirs_and_utxos():
-    """Read heirs and UTXOs from the real ``tests/karen7`` file, pass them
-    through ``Heirs.buildTransactions`` and report any unhandled error.
+    """Read heirs and UTXOs with karen7's structure (``regtest_wallet_data``),
+    pass them through ``Heirs.buildTransactions`` and report any unhandled
+    error.
 
     Reproduces the ``NoneType object has no attribute 'get'`` error the
     user saw when building an inheritance with the same data from the GUI.
     """
-    wallet_path = os.path.join(os.path.dirname(__file__), "karen7")
-    with open(wallet_path) as f:
-        data = json.load(f)
+    data = wallet_data()
 
     assert "heirs" in data, "karen7 wallet has no heirs"
 
@@ -610,7 +605,10 @@ def test_e5_build_with_real_wallet_heirs_and_utxos():
 
     def _fake_from_io(inputs, outputs, locktime, version):
         tx = MagicMock()
-        tx.txid.return_value = f"faketx_{len(_fake_txs):04x}"
+        # 64 hex characters like a real txid (CHANGELOG #98): with two
+        # delivery dates the builder reads the txid of the first transaction
+        # as hex, and "faketx_..." stopped it ("non-hexadecimal number").
+        tx.txid.return_value = f"{len(_fake_txs) + 1:064x}"
         tx.estimated_size.return_value = 100
         tx.get_fee.return_value = 100
         tx.input_value.return_value = sum(inp.value_sats() for inp in inputs)
