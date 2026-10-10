@@ -1,0 +1,493 @@
+[
+ {
+  "action": "cli will_status",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [],
+  "labels": {},
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": {
+    "count": 0,
+    "date_to_check": null,
+    "items": [],
+    "status_counts": {}
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {},
+  "verified": [],
+  "window_events": []
+ },
+ {
+  "action": "cli prepare_will",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [],
+  "labels": {
+   "T1": "BitcoinAfterLife inheritance transaction - https://we0.test",
+   "T2": "BitcoinAfterLife inheritance transaction - https://we1.test"
+  },
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": {
+    "message": "The will was rebuilt and needs to be signed and broadcast again",
+    "reason": "The will contains no valid transaction: a new will must be prepared.",
+    "result": "rebuilt",
+    "will": {
+     "count": 2,
+     "date_to_check": 1791633600.0,
+     "items": [
+      {
+       "description": "w!ll3x3c\"https://we0.test\"1979510400\nalice\nbob",
+       "heirs": [
+        "w!ll3x3c\"https://we0.test\"1979510400",
+        "alice",
+        "bob"
+       ],
+       "locktime": 1979510400,
+       "sigs_have": 0,
+       "sigs_required": 1,
+       "status": {
+        "ANTICIPATED": false,
+        "BROADCASTED": false,
+        "CHECKED": false,
+        "CHECK_FAIL": false,
+        "COMPLETE": false,
+        "CONFIRMED": false,
+        "ERROR": false,
+        "EXPIRED": false,
+        "EXPORTED": false,
+        "IMPORTED": false,
+        "INVALIDATED": false,
+        "MEMPOOL": false,
+        "PARTIALLY_SIGNED": false,
+        "PUSHED": false,
+        "PUSH_FAIL": false,
+        "REPLACED": false,
+        "RESTORED": false,
+        "UPDATED": false,
+        "VALID": true
+       },
+       "tx": "<tx T1>",
+       "tx_fees": 13,
+       "txid": "T1",
+       "willexecutor": "https://we0.test"
+      },
+      {
+       "description": "w!ll3x3c\"https://we1.test\"1979510400\nalice\nbob",
+       "heirs": [
+        "w!ll3x3c\"https://we1.test\"1979510400",
+        "alice",
+        "bob"
+       ],
+       "locktime": 1979510400,
+       "sigs_have": 0,
+       "sigs_required": 1,
+       "status": {
+        "ANTICIPATED": false,
+        "BROADCASTED": false,
+        "CHECKED": false,
+        "CHECK_FAIL": false,
+        "COMPLETE": false,
+        "CONFIRMED": false,
+        "ERROR": false,
+        "EXPIRED": false,
+        "EXPORTED": false,
+        "IMPORTED": false,
+        "INVALIDATED": false,
+        "MEMPOOL": false,
+        "PARTIALLY_SIGNED": false,
+        "PUSHED": false,
+        "PUSH_FAIL": false,
+        "REPLACED": false,
+        "RESTORED": false,
+        "UPDATED": false,
+        "VALID": true
+       },
+       "tx": "<tx T2>",
+       "tx_fees": 13,
+       "txid": "T2",
+       "willexecutor": "https://we1.test"
+      }
+     ],
+     "status_counts": {
+      "ANTICIPATED": 0,
+      "BROADCASTED": 0,
+      "CHECKED": 0,
+      "CHECK_FAIL": 0,
+      "COMPLETE": 0,
+      "CONFIRMED": 0,
+      "ERROR": 0,
+      "EXPIRED": 0,
+      "EXPORTED": 0,
+      "IMPORTED": 0,
+      "INVALIDATED": 0,
+      "MEMPOOL": 0,
+      "PARTIALLY_SIGNED": 0,
+      "PUSHED": 0,
+      "PUSH_FAIL": 0,
+      "REPLACED": 0,
+      "RESTORED": 0,
+      "UPDATED": 0,
+      "VALID": 2
+     }
+    }
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "VALID"
+   ],
+   "T2": [
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": []
+ },
+ {
+  "action": "cli sign_transactions None",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [],
+  "labels": {
+   "T1": "",
+   "T2": ""
+  },
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": {
+    "T1": "<tx T1>",
+    "T2": "<tx T2>"
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "COMPLETE",
+    "VALID"
+   ],
+   "T2": [
+    "COMPLETE",
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": []
+ },
+ {
+  "action": "cli broadcast_command",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [],
+  "labels": {
+   "T1": "",
+   "T2": ""
+  },
+  "popups": [],
+  "pushed": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ]
+  ],
+  "questions": [],
+  "result": {
+   "returned": {
+    "https://we0.test": "Success",
+    "https://we1.test": "Success"
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": []
+ },
+ {
+  "action": "cli check_transactions",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [],
+  "labels": {
+   "T1": "",
+   "T2": ""
+  },
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": {
+    "T1": {
+     "check_fail": false,
+     "checked": true,
+     "pushed": true,
+     "url": "https://we0.test"
+    },
+    "T2": {
+     "check_fail": false,
+     "checked": true,
+     "pushed": true,
+     "url": "https://we1.test"
+    }
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
+  "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ]
+  ],
+  "window_events": []
+ },
+ {
+  "action": "cli will_status",
+  "broadcasts": [],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "items": [],
+  "labels": {
+   "T1": "",
+   "T2": ""
+  },
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": {
+    "count": 2,
+    "date_to_check": null,
+    "items": [
+     {
+      "description": "w!ll3x3c\"https://we0.test\"1979510400\nalice\nbob",
+      "heirs": [
+       "w!ll3x3c\"https://we0.test\"1979510400",
+       "alice",
+       "bob"
+      ],
+      "locktime": 1979510400,
+      "sigs_have": 1,
+      "sigs_required": 1,
+      "status": {
+       "ANTICIPATED": false,
+       "BROADCASTED": false,
+       "CHECKED": true,
+       "CHECK_FAIL": false,
+       "COMPLETE": true,
+       "CONFIRMED": false,
+       "ERROR": false,
+       "EXPIRED": false,
+       "EXPORTED": false,
+       "IMPORTED": false,
+       "INVALIDATED": false,
+       "MEMPOOL": false,
+       "PARTIALLY_SIGNED": false,
+       "PUSHED": true,
+       "PUSH_FAIL": false,
+       "REPLACED": false,
+       "RESTORED": false,
+       "UPDATED": false,
+       "VALID": true
+      },
+      "tx": "<tx T1>",
+      "tx_fees": 13,
+      "txid": "T1",
+      "willexecutor": "https://we0.test"
+     },
+     {
+      "description": "w!ll3x3c\"https://we1.test\"1979510400\nalice\nbob",
+      "heirs": [
+       "w!ll3x3c\"https://we1.test\"1979510400",
+       "alice",
+       "bob"
+      ],
+      "locktime": 1979510400,
+      "sigs_have": 1,
+      "sigs_required": 1,
+      "status": {
+       "ANTICIPATED": false,
+       "BROADCASTED": false,
+       "CHECKED": true,
+       "CHECK_FAIL": false,
+       "COMPLETE": true,
+       "CONFIRMED": false,
+       "ERROR": false,
+       "EXPIRED": false,
+       "EXPORTED": false,
+       "IMPORTED": false,
+       "INVALIDATED": false,
+       "MEMPOOL": false,
+       "PARTIALLY_SIGNED": false,
+       "PUSHED": true,
+       "PUSH_FAIL": false,
+       "REPLACED": false,
+       "RESTORED": false,
+       "UPDATED": false,
+       "VALID": true
+      },
+      "tx": "<tx T2>",
+      "tx_fees": 13,
+      "txid": "T2",
+      "willexecutor": "https://we1.test"
+     }
+    ],
+    "status_counts": {
+     "ANTICIPATED": 0,
+     "BROADCASTED": 0,
+     "CHECKED": 2,
+     "CHECK_FAIL": 0,
+     "COMPLETE": 2,
+     "CONFIRMED": 0,
+     "ERROR": 0,
+     "EXPIRED": 0,
+     "EXPORTED": 0,
+     "IMPORTED": 0,
+     "INVALIDATED": 0,
+     "MEMPOOL": 0,
+     "PARTIALLY_SIGNED": 0,
+     "PUSHED": 2,
+     "PUSH_FAIL": 0,
+     "REPLACED": 0,
+     "RESTORED": 0,
+     "UPDATED": 0,
+     "VALID": 2
+    }
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": []
+ }
+]

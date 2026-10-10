@@ -21,6 +21,7 @@
    "<font color='#ff0000'><b>The fixed amounts (2,000,000 sat) exceed the balance available for the heirs (999,000 sat): the heirs with a percentage (bob) would receive nothing. Reduce the fixed amounts.</b></font>"
   ],
   "items": [],
+  "labels": {},
   "popups": [],
   "pushed": [],
   "questions": [],
@@ -76,6 +77,7 @@
    "locktime": "2032-09-23",
    "threshold": "-180d"
   },
+  "stored": {},
   "verified": [],
   "window_events": []
  }

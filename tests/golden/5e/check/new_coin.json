@@ -74,6 +74,10 @@
     "tx": "T2"
    }
   ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction"
+  },
   "popups": [],
   "pushed": [
    [
@@ -85,12 +89,7 @@
     "T2"
    ]
   ],
-  "questions": [
-   [
-    "password",
-    "Sign your will"
-   ]
-  ],
+  "questions": [],
   "report": {
    "boxes": {
     "changes": [
@@ -181,6 +180,20 @@
    "baltx_fees": 13,
    "locktime": "2032-09-23",
    "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
   },
   "verified": [
    [
@@ -301,6 +314,12 @@
     "tx": "T4"
    }
   ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction",
+   "T3": "Safe21 Heartbeat backup transaction",
+   "T4": "Safe21 Heartbeat backup transaction"
+  },
   "popups": [],
   "pushed": [
    [
@@ -312,12 +331,7 @@
     "T4"
    ]
   ],
-  "questions": [
-   [
-    "password",
-    "Sign your will"
-   ]
-  ],
+  "questions": [],
   "report": {
    "boxes": {
     "changes": [
@@ -409,6 +423,32 @@
    "baltx_fees": 13,
    "locktime": "2032-09-22",
    "threshold": "-180d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "REPLACED"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "REPLACED"
+   ],
+   "T3": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T4": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
   },
   "verified": [
    [

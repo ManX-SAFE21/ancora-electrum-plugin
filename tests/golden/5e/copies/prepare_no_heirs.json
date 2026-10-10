@@ -1,0 +1,23 @@
+[
+ {
+  "action": "gui prepare",
+  "broadcasts": [],
+  "heirs": {},
+  "items": [],
+  "labels": {},
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": null
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {},
+  "verified": [],
+  "window_events": []
+ }
+]

@@ -6001,3 +6001,66 @@ new one passes at all 8. Whole `tests/` directory: 1064 passed, 0 failed,
 0 errors. `ruff check bal/ tests/`: all checks passed.
 
 **Outcome:** DONE.
+
+## 114. Phase 5e, step 2: photographs of the other copies and the list of their differences
+
+**Date:** 2026-10-10
+
+**Problem:** besides the "Check your will" dialog (#112), the same flows
+exist in other copies: the Will tab menu Prepare, the automatic rebuild,
+the menus Sign, Broadcast will and Invalidate will, the row command
+"check", the check at wallet close and the command line. The Phase 5e
+analysis listed 58 differences between the copies (D1-D58), most of them
+deduced from the code and never run. Before one engine replaces the copies,
+each difference must be known, shown on real runs and decided by the owner.
+
+**What changed (tests only, no plugin file):**
+
+- New `tests/test_5e_char_copies.py`: 56 scenarios, each compared with a
+  golden file in `tests/golden/5e/copies/`: Prepare (13), the other menus,
+  row check and wallet close (8), the automatic rebuild through
+  `BalWindow.maybe_auto_rebuild` (11, with and without a network), the
+  command line through `bal.cli.commands._call` (18, the message the
+  terminal prints), and the same state through several copies (6).
+- New `tests/test_5e_divergences.py`: the list D1-D61 with a status for each
+  (pinned, partly, intentional, not reproduced, with the reason and the
+  Phase 5e step that deals with it) and one test per pinned difference
+  that reads the golden files and asserts today's outcomes side by side.
+  A later step that makes the copies agree flips its test in the same
+  commit, after the owner's decision.
+- `tests/flowkit.py`: entry points for these copies; every record now also
+  holds the will and the heirs as stored in the wallet and the History
+  labels. Two corrections to the #112 world, to be closer to the plugin:
+  the real `BalWindow.get_wallet_password` runs (a wallet without a
+  password never opens the password window, as in Electrum; the two Cancel
+  scenarios use a test wallet with a password and give the same result as
+  before), and the classic invalidation runs the real
+  `BalWindow.invalidate_will` (only Electrum's transaction window is
+  replaced). The #112 golden files change only in the password questions,
+  the new "stored" / "labels" fields and the two "expired" scenarios; rows,
+  reports, statuses and dates are identical.
+
+**Confirmed on real runs (were deductions):** D1 (`bal_will_prepare`
+refuses the README example "alice 50%" and fixed-only heirs), D7, D11 (the
+Prepare menu shows the #107 error after a fee change or new funds), D14
+(Prepare does not move the stored date), D16 (Prepare does not save the
+rebuilt will), D25 (the GUI automatic rebuild signs but never sends), D26
+(with a network the GUI automatic rebuild broadcasts an invalidation by
+itself; owner decision 2026-10-10: never), D29 (Cancel at the password
+does not stop the menu Sign), D32, D33 (the menu says "All transactions are
+broadcasted" when a will-executor did not answer), D35, D38, D44 (a
+command-line read deletes an invalid heir from the wallet). D3 was only
+partly right: with the will already sent, Check says "nothing to do".
+
+**Found while taking the photographs:** D59 (two different CLI sentences
+for "no will-executor"), D60 (the GUI automatic invalidation is not saved:
+the wallet keeps the old will VALID), D61 (`bal_will_prepare` on a will past
+its date answers with an amount error).
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1156 passed, 0 failed, 0 errors (1026 + 38 of #112 + 92
+new). The new golden files are the same in 3 runs in a row. `ruff check
+bal/ tests/`: all checks passed. No plugin file changed, so the scenario
+harness and the test ZIP are unchanged (baseline of #112).
+
+**Outcome:** DONE (tests only).

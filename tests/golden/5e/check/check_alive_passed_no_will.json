@@ -21,6 +21,7 @@
    "<font color='#ff0000'><b>The Check Alive date (2026-09-10) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive.</b></font>"
   ],
   "items": [],
+  "labels": {},
   "popups": [],
   "pushed": [],
   "questions": [],
@@ -76,6 +77,7 @@
    "locktime": "2026-12-09",
    "threshold": "-90d"
   },
+  "stored": {},
   "verified": [],
   "window_events": []
  }

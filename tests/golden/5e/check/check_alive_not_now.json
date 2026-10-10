@@ -74,6 +74,10 @@
     "tx": "T2"
    }
   ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction"
+  },
   "popups": [],
   "pushed": [
    [
@@ -85,12 +89,7 @@
     "T2"
    ]
   ],
-  "questions": [
-   [
-    "password",
-    "Sign your will"
-   ]
-  ],
+  "questions": [],
   "report": {
    "boxes": {
     "changes": [
@@ -182,6 +181,20 @@
    "locktime": "60d",
    "threshold": "-30d"
   },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
   "verified": [
    [
     "https://we0.test",
@@ -248,6 +261,10 @@
     "tx": "T2"
    }
   ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction"
+  },
   "popups": [],
   "pushed": [],
   "questions": [
@@ -323,6 +340,20 @@
    "baltx_fees": 13,
    "locktime": "60d",
    "threshold": "-30d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
   },
   "verified": [],
   "window_events": []

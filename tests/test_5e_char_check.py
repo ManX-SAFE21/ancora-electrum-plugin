@@ -285,9 +285,18 @@ def fee_too_high(make):
     return s
 
 
+# Test value: the password of the throw-away test wallets that have one.
+TEST_PASSWORD = "flowkit-test"
+
+
 def cancel_at_sign(make):
-    """Fee changed, Cancel at the password, then Check again."""
-    s = first_will_basic(make)
+    """Wallet with a password: fee changed, Cancel at signing, Check again.
+
+    Only a wallet with a password opens the password window, so only there
+    can the owner press Cancel.
+    """
+    s = make(mode="basic", password=TEST_PASSWORD)
+    s.check()
     s.recorder.note("fee 14; Cancel at 'Sign your will'")
     s.set_fee(14)
     s.check(cancel_on=("sign your will",))
@@ -296,8 +305,9 @@ def cancel_at_sign(make):
 
 
 def cancel_at_invalidate(make):
-    """Date later, Cancel at the invalidation password, then Check again."""
-    s = first_will_basic(make)
+    """Wallet with a password: date later, Cancel at the invalidation, again."""
+    s = make(mode="basic", password=TEST_PASSWORD)
+    s.check()
     s.recorder.note("date later; Cancel at 'Invalidate your old will'")
     s.set_date(fk.LATER)
     s.check(cancel_on=("invalidate",))

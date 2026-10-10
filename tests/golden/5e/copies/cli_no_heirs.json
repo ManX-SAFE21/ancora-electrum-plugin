@@ -1,0 +1,46 @@
+[
+ {
+  "action": "cli prepare_will",
+  "broadcasts": [],
+  "heirs": {},
+  "items": [],
+  "labels": {},
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "raised": "UserFacingException: Heirs are not defined: add at least one heir first"
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {},
+  "verified": [],
+  "window_events": []
+ },
+ {
+  "action": "cli auto_rebuild",
+  "broadcasts": [],
+  "heirs": {},
+  "items": [],
+  "labels": {},
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "result": {
+   "returned": {
+    "result": "no_heirs"
+   }
+  },
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "stored": {},
+  "verified": [],
+  "window_events": []
+ }
+]
