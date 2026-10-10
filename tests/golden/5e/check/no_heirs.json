@@ -1,0 +1,71 @@
+[
+ {
+  "action": "check",
+  "broadcasts": [],
+  "dialog_events": [
+   "no-heirs-buttons"
+  ],
+  "heirs": {},
+  "history": [
+   "Checking variables:\t<b>Wait</b>",
+   "Checking variables:\t<b><font color='#cfa808'>&#9888;</font> <b>No Heirs</b></b>"
+  ],
+  "items": [],
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "report": {
+   "boxes": {
+    "changes": [],
+    "problems": [],
+    "warnings": [
+     "No Heirs"
+    ]
+   },
+   "executors": [],
+   "heirs": null,
+   "result": [
+    "err",
+    "<b>No will in force</b>"
+   ],
+   "steps": [
+    [
+     "check",
+     "warn",
+     "attention"
+    ],
+    [
+     "prepare",
+     "skip",
+     "not needed"
+    ],
+    [
+     "sign",
+     "skip",
+     "not needed"
+    ],
+    [
+     "send",
+     "skip",
+     "not needed"
+    ],
+    [
+     "verify",
+     "todo",
+     ""
+    ]
+   ],
+   "will_now": null
+  },
+  "rows": [
+   "Checking variables:\t<b><font color='#cfa808'>&#9888;</font> <b>No Heirs</b></b>"
+  ],
+  "settings": {
+   "baltx_fees": 13,
+   "locktime": "2032-09-23",
+   "threshold": "-180d"
+  },
+  "verified": [],
+  "window_events": []
+ }
+]

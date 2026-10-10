@@ -5914,3 +5914,66 @@ changed), one blank line removed in each test file.
 **Verification:** `ruff check bal/ tests/`: All checks passed. Whole `tests/` directory: 1026 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: all checks passed.
 
 **Outcome:** DONE.
+
+## 112. Phase 5e, step 1: photographs of today's "Check your will" dialog
+
+**Date:** 2026-10-10
+
+**Problem:** Phase 5e (plan approved by the owner on 2026-10-10) moves the
+flows of the GUI and of the command line into one engine. The "Check your
+will" dialog holds about 1,700 lines of decisions, and no pytest test ran
+its real phase 1 or most of its endings: the existing tests call copies of
+that code or single helpers. A move could change what the owner sees
+without any test noticing.
+
+**What changed (tests only, no plugin file):**
+
+- New `tests/flowkit.py`: an offline world taken from the scenario harness
+  (which stays outside the repository). A real Electrum testnet wallet made
+  in a temporary folder from a key derived from a public label (no seed or
+  key stored, no funds); fake will-executors and chain; a fixed clock
+  (2026-10-10 12:00 UTC, moved only by a scenario); a stand-in for
+  Electrum's `TaskThread` with Electrum's callback order (`cb_done` before
+  `cb_success` / `cb_error`; the harness runs them the other way round).
+  The REAL `BalBuildWillDialog` and `BalWindow` run; only their Qt and
+  network edges are replaced and recorded. Everything is installed with
+  pytest's `monkeypatch`, so nothing leaks into other tests.
+- New `tests/test_5e_char_check.py`: 37 scenarios, each compared with a
+  golden file in `tests/golden/5e/check/`: first will (basic, advanced),
+  nothing changed, heir added / removed, fee changed, new coin, delivery
+  later (signed and sent, basic and advanced), earlier, in the past,
+  expired (basic, advanced), Check Alive passed with a fixed date / with a
+  relative date (Renew, Not now, Renew already chosen at wallet open),
+  Check Alive already past before the first will, no heirs, no
+  will-executor, fixed amounts over the balance, percentages adding up to
+  80 %, tiny fixed amounts, fee over the balance, Cancel at signing, Cancel
+  at the invalidation, a will-executor that does not answer, one that
+  answers "already present", one added, one deselected, Auto-sign off, an
+  error while signing, the inheritance already executed, an invalidation
+  Electrum does not see yet, the check at wallet close, Retry and Exclude.
+  Recorded: every row (also the overwritten ones), the report, the button
+  rows, popups, questions and password prompts, will items with statuses,
+  dates, fees and History labels, settings, heirs, broadcasts, pushes and
+  verifications. One more test runs a scenario twice and compares.
+- A golden file is rewritten only with `BAL_GOLDEN_UPDATE=1`, and only
+  together with a CHANGELOG line that says why.
+- Outside the repository (owner's OK): the scenario harness baseline on
+  `main` 5a4df32, `context/bal-test-harness/log-5e-baseline-5a4df32.txt`,
+  for the comparisons of the next steps.
+
+**Verification:** The 38 new tests pass 3 times in a row with the golden
+files unchanged. Whole `tests/` directory (normal order and files in reverse
+order): 1063 passed, 1 failed, 0 errors. The failure is not caused by this
+change: `test_cli_controller_offline.py::test_auto_rebuild_threshold_passed_does_not_invalidate`
+fails the same on unchanged `main` 5a4df32 whenever it runs after about
+13:00 UTC (it sets the Check Alive one hour in the past; #80 converts it to
+whole days before the delivery, rounded, and in the afternoon the rounding
+lands on tomorrow, so the Check Alive is no longer past). It passed in the
+morning runs of #99-#111; a separate fix is proposed to the owner.
+`ruff check bal/ tests/`: all checks passed. Harness baseline: full matrix
+as before (all OK or INFO, B2/B2adv one day earlier, the side effect
+accepted in #73); A17, A18, A19, B5fix2, B5self2 OK in 6 runs out of 6;
+both BUG-3 probes: nothing still executable, 6 runs out of 6; warn_matrix
+synced: 134 Checks, 0 mismatches.
+
+**Outcome:** DONE (tests only; the test ZIP would be identical, so none).
