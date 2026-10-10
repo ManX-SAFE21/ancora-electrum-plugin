@@ -5297,3 +5297,47 @@ and the report, checked above); translations complete; zip builds and
 loads.
 
 **Outcome:** DONE.
+
+## 94. 5d/14: one word for the will in the commands ("testamento")
+
+**Date:** 2026-10-10
+
+**Request (owner):** the tooltip of the Check button said "Controlla
+l'eredità", the menu "Invalida il piano", the log "Trasmissione del piano",
+next to "testamento" everywhere else. One term, aligned in every language.
+
+**What changed (list approved by the owner):**
+
+- The commands now say "will": "Broadcast will", "Invalidate will" (Will
+  tab's tools menu and the will preview dialog), "Check your will" (the
+  Check button's tooltip), "Rebroadcast will" (settings). Italian
+  "Trasmetti testamento", "Invalida testamento", "Controlla testamento",
+  "Trasmetti di nuovo il testamento"; Spanish "Transmitir testamento",
+  "Invalidar testamento", "Comprobar testamento", "Retransmitir el
+  testamento".
+- A real mismatch fixed on the way: the Italian hints said "press
+  'Trasmetti il piano'" while the menu entry read "Trasmissione"; every
+  hint now names the button exactly as it is translated ("press 'Broadcast
+  will'").
+- "Your inheritance has been rebuilt..." -> "Your will has been rebuilt...".
+- Italian rows and windows without "piano": "Invalida il vecchio
+  testamento", "Invalidazione del vecchio testamento", "Posticipato:
+  invalidazione del vecchio testamento", "Trasmissione del testamento ai
+  Will-Executor", "Firma e trasmetti questa transazione per invalidare il
+  testamento attuale", "Firma (e trasmetti) per confermare la modifica",
+  "trasmetti" (row menu); "il testamento non può essere creato" (heirs all
+  below the dust limit).
+- Kept on purpose: "eredità" where it means the inheritance itself (an
+  inheritance already executed, the inheritance transactions, the
+  inheritance process), and the report's title "REPORT DEL PIANO DI
+  EREDITÀ" (owner's choice).
+- New test: `tests/test_will_terms.py` (3: the commands say "will" in
+  Italian and Spanish, the hints name the real button, no "piano" in the
+  Italian will rows).
+
+**Verification:** `ruff` (same 3 pre-existing I001); whole `tests/` directory: same
+failures as `main`; the scenario matrix 6 times on `main` and on this
+branch: no scenario differs (only texts changed); no untranslated text
+in Italian and Spanish; zip builds and loads.
+
+**Outcome:** DONE.

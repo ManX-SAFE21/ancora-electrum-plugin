@@ -676,7 +676,8 @@ class Plugin(BalPlugin, EventListener):
             btn.clicked.connect(reset)
             return btn
 
-        heir_repush = QPushButton(_("Rebroadcast transactions"))
+        # CHANGELOG #94: "will", as everywhere else.
+        heir_repush = QPushButton(_("Rebroadcast will"))
         heir_repush.clicked.connect(partial(self.broadcast_transactions, True))
         bal_mode = QComboBox()
         options = ["Easy", "Advanced", "Experimental"]

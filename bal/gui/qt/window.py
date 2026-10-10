@@ -1241,19 +1241,20 @@ class BalWindow:
                 # will-executors.
                 if rebuilt_ok:
                     if self.no_willexecutor:
+                        # CHANGELOG #94: "will", as everywhere else.
                         next_steps = _(
-                            "Your inheritance has been rebuilt and now needs "
+                            "Your will has been rebuilt and now needs "
                             "to be signed again.\n\n"
                             "Next step (manual):\n"
                             "  1. Press 'Sign' to sign the new transaction."
                         )
                     else:
                         next_steps = _(
-                            "Your inheritance has been rebuilt and now needs "
+                            "Your will has been rebuilt and now needs "
                             "to be signed and re-sent to the will-executors.\n\n"
                             "Next steps (manual):\n"
                             "  1. Press 'Sign' to sign the new transaction.\n"
-                            "  2. Press 'Broadcast' to send it to the "
+                            "  2. Press 'Broadcast will' to send it to the "
                             "will-executors."
                         )
                     self.show_message(next_steps)
