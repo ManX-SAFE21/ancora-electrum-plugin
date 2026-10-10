@@ -2165,7 +2165,21 @@ class BalBuildWillDialog(BalDialog):
         self._close_layout = button_row
         self.vbox.addLayout(button_row)
         self._close_button.setFocus()
-        self._fit_height()
+        # CHANGELOG #96: the run is over, the dialog fits its content (it
+        # may have grown while the run showed more, e.g. the log). Qt shows
+        # the new widgets of a visible dialog only later (queued), so the
+        # fit would not count this row: show them now, unless hidden on
+        # purpose.
+        for i in range(button_row.count()):
+            widget = button_row.itemAt(i).widget()
+            if widget is not None and not widget.testAttribute(
+                Qt.WidgetAttribute.WA_WState_ExplicitShowHide
+            ):
+                widget.show()
+        self._fit_height(shrink=True)
+        # Safety net: once Qt has processed the queued events (widgets shown,
+        # layout done) measure again, so nothing is left hidden.
+        QTimer.singleShot(0, lambda: self._fit_height(shrink=True))
 
     # ------------------------------------------------------------------ #
     # A will-executor that did not get the will (CHANGELOG #93)
@@ -3179,42 +3193,125 @@ class BalBuildWillDialog(BalDialog):
         self.log_toggle.setText("{} {}".format(arrow, _("Details (log)")))
 
     def _on_log_toggled(self, checked):
-        """Show or hide the log under the report."""
+        """Show or hide the log under the report.
+
+        Closing it gives the room back (CHANGELOG #96): the dialog fits its
+        content again.
+        """
         self.message_label.setVisible(checked)
         self._set_log_toggle_text()
-        self._fit_height()
+        self._fit_height(shrink=not checked)
 
     #: Share of the screen's available height the dialog may take, and the
     #: height it opens with (both in logical pixels, see _fit_height).
-    MAX_SCREEN_SHARE = 0.85
+    #: CHANGELOG #96 (owner: too tall, then too short): 75% of the screen
+    #: at most (was 85%), 560 px at least: the height of the owner's
+    #: screenshot with a "what changed" box, the heirs, 4 will-executors and
+    #: the log link, all visible. On a 1366x768 notebook the cap (546 px)
+    #: wins.
+    MAX_SCREEN_SHARE = 0.75
     OPEN_HEIGHT = 560
 
-    def _fit_height(self):
-        """Grow the dialog to show its content, at most 85% of the screen.
+    def _content_height(self):
+        """Height the report needs inside the scroll area, never too small.
+
+        CHANGELOG #96, owner's screenshots: the dialog ended too short and
+        hid the will-executors box. Qt shows a widget added to a visible
+        dialog only later (a queued event), and a widget not shown yet counts
+        as empty, so a fit right after a redraw missed whole boxes. The
+        children not hidden on purpose are shown first. The measure is also
+        the larger of the layout's hint and its height for the width the
+        text really has: a wrapped sentence needs more height when narrow.
+        """
+        area = self.scroll_area
+        content = area.widget()
+        for child in content.findChildren(QWidget):
+            if not child.isWindow() and not child.testAttribute(
+                Qt.WidgetAttribute.WA_WState_ExplicitShowHide
+            ):
+                child.show()
+        layout = content.layout()
+        layout.invalidate()
+        height = content.sizeHint().height()
+        if layout.hasHeightForWidth():
+            margins = self.vbox.contentsMargins()
+            width = (
+                self.width() - margins.left() - margins.right()
+                - 2 * area.frameWidth()
+                - area.verticalScrollBar().sizeHint().width()
+            )
+            height = max(height, layout.totalHeightForWidth(max(width, 100)))
+        return height + 2 * area.frameWidth()
+
+    def _fit_height(self, shrink=False):
+        """Fit the dialog's height to its content, between 560 px and 75%.
 
         Owner (CHANGELOG #84b): the dialog was too short and its buttons
-        covered the will-executors box. It now opens at least
-        ``OPEN_HEIGHT`` tall and grows with its content up to
-        ``MAX_SCREEN_SHARE`` of the screen's available height (without the
-        taskbar), so it fits a notebook screen (1366x768: about 620 px);
-        beyond that the content scrolls and the buttons stay visible. It
-        never shrinks while open, so it does not jump. Never raises.
+        covered the will-executors box. It opens at least ``OPEN_HEIGHT``
+        tall and grows with its content up to ``MAX_SCREEN_SHARE`` of the
+        screen's available height (without the taskbar); beyond that the
+        content scrolls and the buttons stay visible. While the run goes on
+        it only grows, so it does not jump.
+
+        Owner (CHANGELOG #96): it was much taller than its content and its
+        buttons often ended below the screen; the first fix then made it too
+        short. Now:
+
+        * the room around the report is counted right. It was ~200 px too
+          big: ``QScrollArea.sizeHint()`` keeps the size its content had
+          when the dialog was created (~30 px), while the layout reserves at
+          least the scroll area's minimum (240 px) for it;
+        * the content is measured right (``_content_height``) and is never
+          cut: no scroll bar while it fits under the cap;
+        * never shorter than ``OPEN_HEIGHT``, so a short report does not
+          leave a dialog that hides the will-executors and the log link;
+        * ``shrink=True`` (the run is over, the log was closed): the dialog
+          fits its content, down to ``OPEN_HEIGHT``;
+        * after every change of height it is kept inside the screen
+          (``_keep_on_screen``).
+
+        Never raises.
         """
         try:
             screen = self.screen()
             available = screen.availableGeometry().height() if screen else 768
             limit = max(int(available * self.MAX_SCREEN_SHARE), 300)
-            content = self.scroll_area.widget().sizeHint().height()
-            content += 2 * self.scroll_area.frameWidth()
+            content = self._content_height()
             # Everything that is not the scroll area: margins, spacing and the
-            # rows of buttons under it.
-            others = self.vbox.sizeHint().height() - self.scroll_area.sizeHint().height()
-            wanted = max(content + max(others, 0), min(self.OPEN_HEIGHT, limit))
-            target = min(wanted, limit)
-            if target > self.height():
+            # rows of buttons under it. The scroll area's share is what the
+            # layout reserves for it (its item), not its own stale sizeHint().
+            index = self.vbox.indexOf(self.scroll_area)
+            reserved = self.vbox.itemAt(index).sizeHint().height()
+            others = self.vbox.sizeHint().height() - reserved
+            needed = max(content + max(others, 0),
+                         self.vbox.totalMinimumSize().height())
+            target = min(max(needed, self.OPEN_HEIGHT), limit)
+            if target > self.height() or (shrink and target < self.height()):
                 self.resize(max(self.width(), self.minimumWidth()), target)
+                self._keep_on_screen()
         except Exception as e:
             _logger.debug(f"build dialog sizing failed: {e!r}")
+
+    def _keep_on_screen(self):
+        """Move the dialog up when its bottom edge is below the screen.
+
+        CHANGELOG #96: Qt places a dialog inside the screen when it opens.
+        When it grows afterwards its top edge stays where it was, so the
+        bottom edge, with the buttons, could end below the screen. Only for
+        a visible dialog (before it opens, Qt places it). Never raises.
+        """
+        try:
+            if not self.isVisible():
+                return
+            screen = self.screen()
+            if screen is None:
+                return
+            area = screen.availableGeometry()
+            overflow = self.frameGeometry().bottom() - area.bottom()
+            if overflow > 0:
+                self.move(self.x(), max(area.top(), self.y() - overflow))
+        except Exception as e:
+            _logger.debug(f"build dialog position failed: {e!r}")
 
     # ---- the structured report (CHANGELOG #84b) ------------------------ #
     def _report(self):

@@ -302,7 +302,8 @@ def test_real_dialog_draws_and_opens_the_log_on_error():
 
 def test_dialog_height_follows_content_within_the_screen():
     """Owner: too short on a notebook. Opens tall enough, grows, never past
-    85% of the screen, never shrinks while open."""
+    MAX_SCREEN_SHARE of the screen, never shrinks while the run goes on
+    (it fits its content at the end: CHANGELOG #96)."""
     from PyQt6.QtWidgets import QWidget
 
     bw = _dialog({"a": _item("COMPLETE", "PUSHED", "CHECKED")}).bal_window
@@ -318,7 +319,7 @@ def test_dialog_height_follows_content_within_the_screen():
         for i in range(40):                     # a lot of content
             d.msg_edit_row(d.msg_alert("warning number {}".format(i)))
         d._add_close_button()
-        assert first <= d.height() <= limit
+        assert d.height() <= limit          # #96: it fits its content at the end
         tall = d.height()
         d._report().reset()                     # less content: no shrinking
         d.msg_update()
