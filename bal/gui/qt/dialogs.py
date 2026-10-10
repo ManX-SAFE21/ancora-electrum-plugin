@@ -2638,7 +2638,7 @@ class BalBuildWillDialog(BalDialog):
             if need_sign and need_push:
                 hint = _(
                     "Next steps (manual): press 'Sign' to sign your will, "
-                    "then 'Broadcast' to send it to the will-executors."
+                    "then 'Broadcast will' to send it to the will-executors."
                 )
             elif need_sign:
                 hint = _(
@@ -2646,8 +2646,8 @@ class BalBuildWillDialog(BalDialog):
                 )
             elif need_push:
                 hint = _(
-                    "Next step (manual): press 'Broadcast' to send your will "
-                    "to the will-executors."
+                    "Next step (manual): press 'Broadcast will' to send your "
+                    "will to the will-executors."
                 )
             else:
                 # Nothing left to do (already signed and, if needed, sent).
@@ -3563,14 +3563,15 @@ class WillDetailDialog(BalDialog):
         b.clicked.connect(self.ask_password_and_sign_transactions)
         hlayout.addWidget(b)
 
-        b = QPushButton(_("Broadcast"))
+        # CHANGELOG #94: the same command names as the Will tab's menu.
+        b = QPushButton(_("Broadcast will"))
         b.clicked.connect(self.broadcast_transactions)
         hlayout.addWidget(b)
 
         b = QPushButton(_("Export"))
         b.clicked.connect(self.export_will)
         hlayout.addWidget(b)
-        b = QPushButton(_("Invalidate"))
+        b = QPushButton(_("Invalidate will"))
         b.clicked.connect(self.invalidate_will)
         hlayout.addWidget(b)
         self.merge_button = None

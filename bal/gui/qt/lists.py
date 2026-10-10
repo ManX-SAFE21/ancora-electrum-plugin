@@ -688,9 +688,12 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Export"), self.export_will)
         menu.addAction(_("Import"), self.import_will)
         menu.addAction(_("Merge"), self.merge_will)
-        menu.addAction(_("Broadcast"), self.broadcast)
+        # CHANGELOG #94 (owner): "will" in every command, the same word as
+        # the rest of the plugin ("Broadcast" alone read "Trasmissione" and
+        # "Invalidate" read "Invalida il piano" in Italian).
+        menu.addAction(_("Broadcast will"), self.broadcast)
         menu.addAction(_("Check"), self.check)
-        menu.addAction(_("Invalidate"), self.invalidate_will)
+        menu.addAction(_("Invalidate will"), self.invalidate_will)
         # CHANGELOG #92: the inheritance plan report (save as file / print).
         menu.addSeparator()
         menu.addMenu(report_menu(self.bal_window, self, title=_("Will report")))
@@ -719,10 +722,10 @@ class PreviewList(MyTreeView, MessageBoxMixin):
                 self.bal_window.bal_plugin.read_file("icons/reload.png")
             )
         )
-        # Tooltip so the icon is self-explanatory when hovered. "Check
-        # Inheritance" makes it clear the button re-checks the inheritance/will
-        # state (not a generic refresh).
-        refresh.setToolTip(_("Check Inheritance"))
+        # Tooltip so the icon is self-explanatory when hovered: the button
+        # re-checks the will (not a generic refresh). "Check your will", not
+        # "Check Inheritance" (CHANGELOG #94, owner: one word, "will").
+        refresh.setToolTip(_("Check your will"))
         refresh.clicked.connect(self.check)
 
         widget = QWidget(self)
