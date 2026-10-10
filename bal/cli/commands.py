@@ -158,9 +158,9 @@ async def heirs_update(
 
 @plugin_command("nw", plugin_name)
 async def heirs_delete(self, names, wallet=None, plugin=None):
-    """Delete one or more heirs.
+    """Delete one or more heirs; ``not_found`` lists the unknown names.
 
-    arg:json:names:A JSON array of heir names (e.g. ``["Alice","Bob"]``).
+    arg:str:names:A heir name, or a JSON array of names (e.g. ``["Alice","Bob"]``).
     """
     return _call(plugin, wallet, "heirs_delete", names)
 
@@ -168,6 +168,9 @@ async def heirs_delete(self, names, wallet=None, plugin=None):
 @plugin_command("nw", plugin_name)
 async def heirs_import(self, path, wallet=None, plugin=None):
     """Import heirs from a JSON file (validated, merged).
+
+    Returns ``imported`` (heirs taken from the file), ``names``, ``skipped``
+    (each refused entry with the reason) and ``total``.
 
     arg:str:path:Path to the JSON file.
     """
@@ -279,9 +282,9 @@ async def willexecutors_select(
 
 @plugin_command("nw", plugin_name)
 async def willexecutors_delete(self, urls, wallet=None, plugin=None):
-    """Delete one or more will-executors.
+    """Delete one or more will-executors; ``not_found`` lists the unknown URLs.
 
-    arg:json:urls:A JSON array of executor URLs (e.g. ``["https://we.example.com"]``).
+    arg:str:urls:A will-executor URL, or a JSON array of URLs (e.g. ``["https://we.example.com"]``).
     """
     return _call(plugin, wallet, "willexecutors_delete", urls)
 
@@ -394,13 +397,15 @@ async def will_broadcast(
 ):
     """Send the signed will transactions to their will-executors (in parallel).
 
-    Updates the PUSHED/PUSH_FAIL statuses and persists.  Returns ``{url: status}``.
+    Updates the PUSHED/PUSH_FAIL statuses and persists.  Returns ``{url: status}``;
+    ``_failed`` maps each failed will-executor to the reason.  Ends with an
+    error (exit code 1) when no will-executor received the will.
 
     arg:str:txid:Optional transaction id to broadcast; all valid+signed ones when omitted.
     arg:bool:force:Force re-pushing transactions already marked as PUSHED.
     """
     txids = [txid] if txid is not None else None
-    return _call(plugin, wallet, "push_transactions_to_willexecutors", force, txids)
+    return _call(plugin, wallet, "broadcast_command", force, txids)
 
 
 @plugin_command("nw", plugin_name)

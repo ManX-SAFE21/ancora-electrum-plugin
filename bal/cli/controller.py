@@ -140,6 +140,18 @@ def _user_facing(e):
     return e
 
 
+def _as_name_list(names):
+    """A JSON array of names, or one name alone, as a list of strings.
+
+    Electrum decodes a positional argument as JSON when it can: ``'["a"]'``
+    becomes a list, a plain ``alice`` stays text and ``2024`` becomes a
+    number. Iterating a text gave its letters (CHANGELOG #105).
+    """
+    if not isinstance(names, (list, tuple)):
+        names = [names]
+    return [str(n) for n in names]
+
+
 def _check_alive_cli_message(info):
     """Passed Check Alive on the command line (CHANGELOG #79).
 
@@ -818,6 +830,10 @@ class BalController(BalSettingsController):
           ``bal_will_broadcast``.
         * ``rebuilt``       -> the will was rebuilt, signed and pushed; ``push``
           maps every will-executor URL to its broadcast status.
+        * ``rebuilt_not_sent`` -> the will was rebuilt and signed, but no
+          will-executor received it (``push["_failed"]`` says why, e.g.
+          offline): run ``bal_will_broadcast`` later (CHANGELOG #105; before,
+          this case also answered ``rebuilt``, "signed and pushed").
         """
         try:
             self.init_class_variables()
@@ -902,6 +918,18 @@ class BalController(BalSettingsController):
         except Exception as e:
             _logger.error(f"auto rebuild: push failed: {e}")
             push = {"_error": True, "_message": str(e)}
+        failed = push.get("_failed") or {}
+        sent = [url for url in push if not url.startswith("_") and url not in failed]
+        if push.get("_error") and not sent:
+            return {
+                "result": "rebuilt_not_sent",
+                "message": _(
+                    "The will was rebuilt and signed, but no will-executor "
+                    "received it: run bal_will_broadcast when they can be reached"
+                ),
+                "push": push,
+                "will": self._will_status_dict(),
+            }
         return {
             "result": "rebuilt",
             "message": _(
@@ -991,7 +1019,10 @@ class BalController(BalSettingsController):
         """Push the valid+signed will transactions to their will-executors.
 
         Returns ``{url: broadcast_status}`` and raises ``UserFacingException``
-        when no transaction matched the (optional) filter.
+        when no transaction matched the (optional) filter. When a push fails,
+        ``_error`` is true and ``_failed`` maps each failed URL to the reason
+        (CHANGELOG #105: before, only "Failed" was returned, so a script could
+        not tell "offline" from "refused by the server").
         """
         willitems = self.willitems
         if txids is not None:
@@ -1012,6 +1043,7 @@ class BalController(BalSettingsController):
 
         error = {"flag": False}
         already_present = []
+        failed = {}
 
         def on_each(url, willexecutor, ok, exc):
             if isinstance(exc, Willexecutors.AlreadyPresentException):
@@ -1026,9 +1058,25 @@ class BalController(BalSettingsController):
                     willitems[wid].set_status("PUSH_FAIL", True)
                 error["flag"] = True
                 willexecutor["broadcast_status"] = _("Failed")
+                failed[url] = (
+                    willexecutor.get("broadcast_error")
+                    or (str(exc) if exc else "")
+                    or _("unknown error")
+                )
             willexecutor.pop("txs", None)
 
         Willexecutors.push_transactions_parallel(willexecutors, on_each=on_each)
+        # A server still busy at the global deadline never reached on_each.
+        answered = set(failed) | set(already_present) | {
+            url
+            for url, we in willexecutors.items()
+            if we.get("broadcast_status") == _("Success")
+        }
+        for url in willexecutors:
+            if url not in answered:
+                error["flag"] = True
+                willexecutors[url]["broadcast_status"] = _("Failed")
+                failed[url] = _("no answer in time")
 
         for url in already_present:
             willexecutor = willexecutors[url]
@@ -1049,6 +1097,25 @@ class BalController(BalSettingsController):
         }
         if error["flag"]:
             out["_error"] = True
+            out["_failed"] = failed
+        return out
+
+    def broadcast_command(self, force=False, txids=None):
+        """``bal_will_broadcast``: push, and fail when nothing was sent.
+
+        CHANGELOG #105: when every push failed the command used to end with
+        exit code 0 and ``"Failed"`` only. Now, if no will-executor received
+        the will, it ends with an error that names each will-executor and its
+        reason; when at least one received it, the JSON result is returned
+        (``_failed`` lists the others).
+        """
+        out = self.push_transactions_to_willexecutors(force, txids)
+        failed = out.get("_failed") or {}
+        sent = [url for url in out if not url.startswith("_") and url not in failed]
+        if failed and not sent:
+            lines = [_("The will was not sent to any will-executor:")]
+            lines += ["- {}: {}".format(url, reason) for url, reason in failed.items()]
+            raise UserFacingException("\n".join(lines))
         return out
 
     def check_transactions(self, txids=None):
@@ -1210,6 +1277,10 @@ class BalController(BalSettingsController):
                     "bal_will_settings with the new JSON."
                 )
             )
+        self._check_locktime_value(locktime)
+
+    def _check_locktime_value(self, locktime):
+        """Refuse a delivery date that is not understood or already past."""
         when = Util.parse_locktime_string(locktime)
         if not when:
             raise UserFacingException(
@@ -1248,14 +1319,21 @@ class BalController(BalSettingsController):
         return {"name": name, "value": list(value)}
 
     def heirs_delete(self, names):
-        deleted = []
-        for name in names:
+        """Delete heirs by name; ``not_found`` lists the unknown names.
+
+        A single name is accepted too (CHANGELOG #105): Electrum passes a
+        plain name as text, and the loop then ran over its letters.
+        """
+        deleted, not_found = [], []
+        for name in _as_name_list(names):
             if name in self.heirs:
                 self.heirs.pop(name)
                 deleted.append(name)
+            else:
+                not_found.append(name)
         self.heirs.save()
         self.wallet.save_db()
-        return {"deleted": deleted}
+        return {"deleted": deleted, "not_found": not_found}
 
     def heirs_list(self):
         return {k: list(v) for k, v in self.heirs.items()}
@@ -1266,9 +1344,40 @@ class BalController(BalSettingsController):
         return {"name": name, "value": list(self.heirs[name])}
 
     def heirs_import(self, path):
-        self.heirs.import_file(path)
+        """Import heirs from a JSON file and say what was skipped and why.
+
+        CHANGELOG #105: ``imported`` used to be the total number of heirs,
+        and invalid entries were dropped silently (only an INFO log line).
+        Now ``imported`` counts the heirs taken from the file, ``names`` lists
+        them, ``skipped`` maps each refused entry to the reason and ``total``
+        is the number of heirs afterwards. With multiverse on, a delivery date
+        that is not understood or already past is refused too; with it off,
+        every heir gets the will's date anyway.
+        """
+        data = read_json_file(path)
+        if isinstance(data, dict) and isinstance(data.get("heirs"), dict):
+            data = data["heirs"]  # the nesting Heirs._validate accepts
+        if not isinstance(data, dict):
+            raise UserFacingException(_("Invalid heirs file: {}").format(path))
+        multiverse = self.plugin.ENABLE_MULTIVERSE.get()
+        valid, skipped = {}, {}
+        for name, value in data.items():
+            try:
+                valid[name] = Heirs.validate_heir(name, value)
+                if multiverse:
+                    self._check_locktime_value(value[2])
+            except Exception as e:
+                valid.pop(name, None)
+                skipped[name] = str(_user_facing(e))
+        self.heirs.update(valid)
+        self.heirs.save()
         self.wallet.save_db()
-        return {"imported": len(self.heirs)}
+        return {
+            "imported": len(valid),
+            "names": list(valid),
+            "skipped": skipped,
+            "total": len(self.heirs),
+        }
 
     def heirs_export(self, path):
         self.heirs.export_file(path)
@@ -1341,13 +1450,19 @@ class BalController(BalSettingsController):
         return self.willexecutors_show(url)
 
     def willexecutors_delete(self, urls):
-        deleted = []
-        for url in urls:
+        """Delete will-executors by URL; ``not_found`` lists the unknown ones.
+
+        A single URL is accepted too (CHANGELOG #105), as in ``heirs_delete``.
+        """
+        deleted, not_found = [], []
+        for url in _as_name_list(urls):
             if url in self.willexecutors:
                 del self.willexecutors[url]
                 deleted.append(url)
+            else:
+                not_found.append(url)
         Willexecutors.save(self.plugin, self.willexecutors)
-        return {"deleted": deleted}
+        return {"deleted": deleted, "not_found": not_found}
 
     def willexecutors_select(self, urls=None, select=True):
         """Select/deselect one, many or all will-executors."""
@@ -1455,9 +1570,17 @@ class BalController(BalSettingsController):
         return {"downloaded": len(result), "total": len(self.willexecutors)}
 
     def willexecutors_import(self, path):
+        """Add the will-executors of a JSON file that are not in the list yet.
+
+        Will-executors already in the list are left as they are. CHANGELOG
+        #105: ``imported`` counted every entry of the file, those already
+        present too; now it counts the added ones, and ``already_present``
+        lists the others.
+        """
         data = read_json_file(path)
         if not isinstance(data, dict):
             raise UserFacingException(_("Invalid will-executors file"))
+        added, already_present = [], []
         for url, we in data.items():
             if not isinstance(we, dict):
                 raise UserFacingException(
@@ -1469,8 +1592,15 @@ class BalController(BalSettingsController):
                 we.setdefault("status", "New")
                 we.setdefault("promo_code", None)
                 self.willexecutors[url] = we
+                added.append(url)
+            else:
+                already_present.append(url)
         Willexecutors.save(self.plugin, self.willexecutors)
-        return {"imported": len(data), "total": len(self.willexecutors)}
+        return {
+            "imported": len(added),
+            "already_present": already_present,
+            "total": len(self.willexecutors),
+        }
 
     def willexecutors_export(self, path):
         write_json_file(path, self.willexecutors)

@@ -5699,3 +5699,44 @@ this network: <address>". Tests for the five file commands and the address.
 code 1.
 
 **Outcome:** DONE.
+
+## 105. CLI/7: results that scripts and AI can read
+
+**Date:** 2026-10-10
+
+**Problem (CLI review point 10, confirmed live):**
+
+- `bal_will_broadcast`: when every push failed it ended with exit code 0 and
+  only "Failed"; the reason ("You are offline.", the server's answer) was
+  lost in a debug log.
+- `bal_will_autorebuild`: "rebuilt ... signed and pushed" even when no
+  will-executor received the will.
+- `bal_heirs_import`: `imported` was the total number of heirs, and invalid
+  entries were dropped silently (a file with three bad heirs said
+  `imported: 3` and added one).
+- `bal_willexecutors_import`: `imported` counted the entries already present.
+- `bal_heirs_delete`/`bal_willexecutors_delete`: a plain name (without the
+  JSON brackets) was refused, and unknown names were not reported.
+
+**What changed (plan approved by the owner):**
+
+- `bal/core/willexecutors.py`: a failed push keeps its reason
+  (`broadcast_error`, on the push copy of the record, never saved).
+- `push_transactions_to_willexecutors` returns `_failed: {url: reason}`; a
+  server still busy at the deadline is "no answer in time".
+- New `broadcast_command`: when no will-executor received the will, the
+  command ends with an error (exit code 1) that names each one and its
+  reason; otherwise the JSON result, with `_failed` for the others.
+- `bal_will_autorebuild` answers `rebuilt_not_sent` in that case.
+- `bal_heirs_import` returns `imported`, `names`, `skipped` (reason per
+  entry) and `total`; with multiverse on, a date not understood or past is
+  skipped too. `bal_willexecutors_import` returns `imported` (added ones),
+  `already_present` and `total`.
+- The delete commands take one name or a JSON array and return `not_found`.
+
+**Verification:** Whole `tests/` directory: 1010 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: broadcast offline ends with the reason
+per will-executor and exit code 1; autorebuild after new funds offline
+answers `rebuilt_not_sent`; the bad-heirs file gives `imported: 1` with two
+reasons.
+
+**Outcome:** DONE.

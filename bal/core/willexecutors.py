@@ -415,6 +415,10 @@ class Willexecutors:
                 raise Willexecutors.AlreadyPresentException() from None
             out = False
             willexecutor["broadcast_status"] = _("Failed")
+            # Keep the reason ("You are offline.", the server's answer...):
+            # the command line reports it (CHANGELOG #105). ``willexecutor`` is
+            # the push copy of the record, never saved in the wallet.
+            willexecutor["broadcast_error"] = str(e)
 
         return out
 

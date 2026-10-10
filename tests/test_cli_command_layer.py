@@ -12,8 +12,10 @@ Run:
 """
 
 import asyncio
+import json
 import os
 import sys
+import unittest.mock as mock
 
 import pytest
 
@@ -240,3 +242,131 @@ def test_bad_address_message_says_it_once(plugin):
     with pytest.raises(UserFacingException) as info:
         run(plugin, "heirs_add", "erin", "notanaddress", "10%", wallet=FakeWallet())
     assert str(info.value) == "Not a valid address for this network: notanaddress"
+
+
+def test_push_failure_keeps_the_reason():
+    """#105: the push of one will-executor keeps why it failed."""
+    from bal.core.willexecutors import Willexecutors
+
+    we = {"url": "https://we.example.com", "txs": "00"}
+    with mock.patch.object(
+        Willexecutors, "send_request", side_effect=Exception("You are offline.")
+    ):
+        assert Willexecutors.push_transactions_to_willexecutor(we) is False
+    assert we["broadcast_error"] == "You are offline."
+
+
+def _push_with(plugin, answers):
+    """Run the controller's push with fake servers.
+
+    ``answers`` maps each URL to ``True`` (received), a reason (failed) or
+    ``None`` (no answer before the global deadline).
+    """
+    from bal.cli.controller import BalController
+    from bal.core.willexecutors import Willexecutors
+
+    targets = {url: {"url": url, "txs": "00", "txsids": []} for url in answers}
+
+    def fake_parallel(willexecutors, on_each):
+        for url, we in willexecutors.items():
+            answer = answers[url]
+            if answer is True:
+                on_each(url, we, True, None)
+            elif answer is not None:
+                we["broadcast_error"] = answer
+                on_each(url, we, False, None)
+
+    controller = BalController(plugin, FakeWallet())
+    controller.willitems = {"x": object()}  # only checked for being non-empty
+    with mock.patch.object(
+        Willexecutors, "get_willexecutor_transactions", return_value=targets
+    ), mock.patch.object(
+        Willexecutors, "push_transactions_parallel", side_effect=fake_parallel
+    ), mock.patch.object(BalController, "save_willitems"):
+        try:
+            return controller.broadcast_command()
+        except UserFacingException as e:
+            return e
+
+
+def test_broadcast_fails_with_the_reasons_when_nothing_was_sent(plugin):
+    """#105: no will-executor received the will -> an error (exit code 1)
+    that names each one and its reason, not "Failed" with exit code 0."""
+    error = _push_with(plugin, {"https://a.example": "You are offline.",
+                                "https://b.example": None})
+    assert isinstance(error, UserFacingException)
+    text = str(error)
+    assert "not sent to any will-executor" in text
+    assert "https://a.example: You are offline." in text
+    assert "https://b.example: no answer in time" in text
+
+
+def test_broadcast_partial_success_returns_the_failed_ones(plugin):
+    """#105: when at least one received it, the JSON result lists the
+    others in ``_failed``."""
+    out = _push_with(plugin, {"https://a.example": True,
+                              "https://b.example": "refused"})
+    assert out["https://a.example"] == "Success"
+    assert out["_error"] is True
+    assert out["_failed"] == {"https://b.example": "refused"}
+
+
+def test_heirs_import_reports_what_it_skipped(plugin, tmp_path):
+    """#105: ``imported`` was the total of heirs and invalid entries vanished
+    silently; now the count, the names and the reasons are returned."""
+    path = tmp_path / "heirs.json"
+    path.write_text(json.dumps({
+        "ok": [VALID_ADDRESS, "50%", "1y"],
+        "bad_address": ["notanaddress", "10%", "1y"],
+        "bad_amount": [VALID_ADDRESS, "abc", "1y"],
+    }))
+    wallet = FakeWallet()
+    run(plugin, "heirs_add", "alice", VALID_ADDRESS, "50%", wallet=wallet)
+    out = run(plugin, "heirs_import", str(path), wallet=wallet)
+    assert (out["imported"], out["names"], out["total"]) == (1, ["ok"], 2)
+    assert set(out["skipped"]) == {"bad_address", "bad_amount"}
+    assert "notanaddress" in out["skipped"]["bad_address"]
+
+
+def test_heirs_import_checks_dates_with_multiverse(plugin, tmp_path):
+    """#105: with multiverse on, a date that is not understood is refused
+    ("ieri" was imported with a delivery date of 0)."""
+    plugin.ENABLE_MULTIVERSE.set(True)
+    path = tmp_path / "heirs.json"
+    path.write_text(json.dumps({"x3": [VALID_ADDRESS, "10%", "ieri"]}))
+    out = run(plugin, "heirs_import", str(path), wallet=FakeWallet())
+    assert out["imported"] == 0
+    assert "not understood" in out["skipped"]["x3"]
+
+
+def test_delete_takes_one_name_and_reports_unknown_ones(plugin):
+    """#105: one name without the JSON brackets works (it ran over the
+    letters), and unknown names are listed in ``not_found``."""
+    from electrum.commands import get_parser
+
+    wallet = FakeWallet()
+    run(plugin, "heirs_add", "alice", VALID_ADDRESS, "100%", wallet=wallet)
+    # The command line accepts a plain name (it used to refuse non-JSON).
+    assert vars(get_parser().parse_args(["bal_heirs_delete", "alice"]))["names"] == "alice"
+    out = run(plugin, "heirs_delete", ["alice", "nobody"], wallet=wallet)
+    assert out == {"deleted": ["alice"], "not_found": ["nobody"]}
+    run(plugin, "heirs_add", "bob", VALID_ADDRESS, "100%", wallet=wallet)
+    assert run(plugin, "heirs_delete", "bob", wallet=wallet)["deleted"] == ["bob"]
+    url = "https://we.example.com"
+    run(plugin, "willexecutors_add", url, wallet=wallet)
+    assert run(plugin, "willexecutors_delete", url, wallet=wallet)["deleted"] == [url]
+
+
+def test_willexecutors_import_counts_only_the_added_ones(plugin, tmp_path):
+    """#105: ``imported`` counted the entries already in the list too."""
+    wallet = FakeWallet()
+    known = "https://we.example.com"
+    run(plugin, "willexecutors_add", known, wallet=wallet)
+    path = tmp_path / "we.json"
+    path.write_text(json.dumps({
+        known: {"base_fee": 1, "address": "", "info": "x"},
+        "https://new.example.com": {"base_fee": 1, "address": "", "info": "y"},
+    }))
+    out = run(plugin, "willexecutors_import", str(path), wallet=wallet)
+    assert out["imported"] == 1
+    assert out["already_present"] == [known]

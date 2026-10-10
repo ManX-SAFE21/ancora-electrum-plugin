@@ -190,7 +190,7 @@ def test_willexecutors_crud():
         assert renamed in c.willexecutors
         assert new_url not in c.willexecutors
 
-        assert c.willexecutors_delete([renamed]) == {"deleted": [renamed]}
+        assert c.willexecutors_delete([renamed]) == {"deleted": [renamed], "not_found": []}
         assert renamed not in c.willexecutors
 
 

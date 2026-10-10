@@ -333,6 +333,35 @@ def test_auto_rebuild_anticipation_never_crosses_the_check_alive():
     )
 
 
+
+def test_auto_rebuild_says_when_no_will_executor_received_it():
+    """CHANGELOG #105: rebuilt and signed, but every push failed (offline):
+    the result is ``rebuilt_not_sent`` with the reasons, not "rebuilt ...
+    signed and pushed"."""
+    failed_push = {
+        "https://we.example.com": "Failed",
+        "_error": True,
+        "_failed": {"https://we.example.com": "You are offline."},
+    }
+    with _no_willexecutors():
+        with _Plugin() as plugin:
+            plugin.NO_WILLEXECUTOR.set(True)
+            wallet = FakeWallet([make_funding_input()])
+            c = _make_controller(plugin, wallet)
+            c.prepare_will()
+            wallet._utxos.append(make_funding_input("22" * 32))
+            with mock.patch.object(
+                BalController,
+                "push_transactions_to_willexecutors",
+                return_value=failed_push,
+            ):
+                result = c.auto_rebuild()
+
+    assert result["result"] == "rebuilt_not_sent", result
+    assert result["push"]["_failed"] == {"https://we.example.com": "You are offline."}
+    new_item = _item_spending(c, "11" * 32, "22" * 32)
+    assert new_item.get_status("COMPLETE"), "the will is still signed"
+
 def _run_all():
     tests = [fn for name, fn in sorted(globals().items()) if name.startswith("test_")]
     for fn in tests:
