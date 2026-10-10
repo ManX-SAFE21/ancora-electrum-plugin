@@ -5831,3 +5831,27 @@ every network, recognised by its URL):**
 message, `--info` works, another will-executor is deleted normally.
 
 **Outcome:** DONE.
+
+## 109. CLI/10: bal_will_autorebuild finishes the job
+
+**Date:** 2026-10-10
+
+**Problem:** `bal_will_autorebuild` is the command meant to run unattended
+(e.g. once a day), but a coherent will answered `valid` even when it was
+never signed, or signed but never received by a will-executor (the last
+send failed, e.g. offline), and nothing was retried.
+
+**What changed (owner decision, on Claude's advice):** `_finish_coherent_will`:
+a coherent will that is not signed is signed (passwordless wallets;
+encrypted ones get `needs_signing`), and one that no will-executor has
+received is sent again. New results: `signed`, `sent`, `not_sent` (with the
+reasons). Sending gives the selected will-executors the same signed
+transactions, as after a rebuild: no coin moves. The test that expected
+`valid` for a never-signed will now signs it first; new tests for the four
+cases.
+
+**Verification:** Whole `tests/` directory: 1021 passed, 0 failed, 0 errors. `ruff check bal/ tests/`: only the 3 I001 inherited from BAL. Live: prepare, then autorebuild offline
+answers `not_sent` (signed, reason "You are offline."); on the encrypted
+wallet `needs_signing`.
+
+**Outcome:** DONE.

@@ -369,11 +369,13 @@ async def will_autorebuild(self, wallet=None, plugin=None):
     and, only when the anticipated locktime crosses the Check Alive threshold,
     an invalidation transaction is returned instead.  A Check Alive already in
     the past is reported (``check_alive_passed``) and never invalidated on its
-    own.  Signing needs a passwordless wallet.
+    own.  Signing needs a passwordless wallet.  A coherent will that is not
+    signed yet, or that no will-executor has received, is signed and sent.
 
     Returns a JSON object with ``result``: ``valid``, ``no_heirs``,
     ``check_alive_passed``, ``invalidated`` (with ``invalidation_tx``),
-    ``nothing``, ``needs_signing`` or ``rebuilt``.
+    ``nothing``, ``needs_signing``, ``rebuilt``, ``rebuilt_not_sent``,
+    ``signed``, ``sent`` or ``not_sent``.
     """
     return _call(plugin, wallet, "auto_rebuild")
 

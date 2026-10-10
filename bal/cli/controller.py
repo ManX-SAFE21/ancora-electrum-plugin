@@ -866,7 +866,13 @@ class BalController(BalSettingsController):
 
         Returns a JSON object with ``result``:
 
-        * ``valid``         -> the will is still coherent; nothing was done.
+        * ``valid``         -> the will is still coherent, signed and with its
+          will-executors; nothing was done.
+        * ``signed`` / ``sent`` / ``not_sent`` -> the will was coherent but not
+          finished: it was signed (passwordless wallets) and/or sent to the
+          will-executors that did not have it yet (CHANGELOG #109, see
+          :meth:`_finish_coherent_will`). ``needs_signing`` here means a
+          coherent will that an encrypted wallet must sign.
         * ``no_heirs``      -> no valid heirs are configured.
         * ``check_alive_passed`` -> the Check Alive date has passed; nothing
           was done. ``message`` says how to renew (``renewable`` tells whether
@@ -912,7 +918,7 @@ class BalController(BalSettingsController):
 
         try:
             self.check_will()
-            return {"result": "valid", "will": self._will_status_dict()}
+            return self._finish_coherent_will()
         except will_mod.NoHeirsException as e:
             _logger.info(f"auto rebuild: no heirs ({e})")
             return {"result": "no_heirs"}
@@ -986,6 +992,76 @@ class BalController(BalSettingsController):
             "message": _(
                 "The will was rebuilt, signed and pushed to its will-executors"
             ),
+            "push": push,
+            "will": self._will_status_dict(),
+        }
+
+    def _finish_coherent_will(self):
+        """Sign and send what a coherent will still lacks (CHANGELOG #109).
+
+        ``bal_will_autorebuild`` is the command meant to run unattended (e.g.
+        once a day), so it must leave the will really in force. Before, a
+        coherent will answered ``valid`` even when it was never signed, or
+        signed but never received by a will-executor (sending failed, e.g.
+        offline), and nothing was retried. Sending means giving the selected
+        will-executors the same signed transactions, as after a rebuild: no
+        coin moves.
+
+        Returns ``valid`` (nothing missing), ``needs_signing`` (encrypted
+        wallet), ``signed`` (signed, nothing to send), ``sent`` (at least one
+        will-executor received it; ``push`` has the details) or ``not_sent``
+        (none did; ``push["_failed"]`` says why).
+        """
+        unsigned = [
+            wid for wid in Will.only_valid(self.willitems)
+            if not self.willitems[wid].get_status("COMPLETE")
+        ]
+        signed = 0
+        if unsigned:
+            if self.wallet.has_keystore_encryption():
+                return {
+                    "result": "needs_signing",
+                    "message": _(
+                        "The will is not signed yet and this wallet is "
+                        "encrypted: sign it with bal_will_sign and push it with "
+                        "bal_will_broadcast"
+                    ),
+                    "will": self._will_status_dict(),
+                }
+            try:
+                signed = len(self.sign_transactions(None, unsigned))
+            except Exception as e:
+                raise _user_facing(e) from e
+        pending = Willexecutors.get_willexecutor_transactions(
+            self.willitems, current_willexecutors=self.willexecutors
+        )
+        if not pending:
+            if signed:
+                return {"result": "signed", "signed": signed,
+                        "will": self._will_status_dict()}
+            return {"result": "valid", "will": self._will_status_dict()}
+        try:
+            push = self.push_transactions_to_willexecutors()
+        except Exception as e:
+            _logger.error(f"auto rebuild: push failed: {e}")
+            push = {"_error": True, "_message": str(e)}
+        failed = push.get("_failed") or {}
+        sent = [url for url in push if not url.startswith("_") and url not in failed]
+        if push.get("_error") and not sent:
+            return {
+                "result": "not_sent",
+                "message": _(
+                    "The will is valid, but no will-executor received it: run "
+                    "bal_will_broadcast when they can be reached"
+                ),
+                "signed": signed,
+                "push": push,
+                "will": self._will_status_dict(),
+            }
+        return {
+            "result": "sent",
+            "message": _("The will was sent to the will-executors that did not have it"),
+            "signed": signed,
             "push": push,
             "will": self._will_status_dict(),
         }
