@@ -376,6 +376,23 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         finally:
             self.editor.blockSignals(False)
 
+    def refresh_shown_value(self):
+        """Show a saved period again, as the date it gives now (#121).
+
+        The Date editor shows a period ("1054d") as the date it really
+        gives (``_value_for_editor``): the date of the will in force, or
+        today + the period with no will. The fields of the Will and Heirs
+        tabs are built when the window opens, before the will is loaded, so
+        they kept "today + the period": the next day, or after a rebuild that
+        moved the will one day earlier, the field and the will disagreed.
+        Called each time the toolbar's list is redrawn. Only shows (signals
+        blocked, nothing saved); a fixed date is shown as saved and the Raw
+        editor shows the period itself, so neither changes.
+        """
+        if Util._relative_days(self.current_value) is None:
+            return
+        self._show(self.current_value)
+
     # ------------------------------------------------------------------ edits
 
     def update_will_settings(
@@ -1407,6 +1424,18 @@ class WillSettingsWidget(QWidget):
             return None
 
     def on_locktime_change(self):
+        """Redraw what depends on the delivery and the Check Alive.
+
+        Called when one of the two fields is edited and each time the
+        toolbar's list (Will or Heirs tab) is redrawn: the resolved Check
+        Alive date, the date next to the Raw editor, the calendar dates, the
+        will summary. First a saved period is shown again as the date it
+        gives with the will now loaded (CHANGELOG #121).
+        """
+        try:
+            self.widgets["locktime"].refresh_shown_value()
+        except Exception as _e:
+            _logger.debug(f"refresh of the delivery field failed: {_e}")
         locktime = self.widgets["locktime"].get_value()
         threshold_raw = self.widgets["threshold"].get_value()
         # CHANGELOG #79: the REAL delivery date. With a will in force a
