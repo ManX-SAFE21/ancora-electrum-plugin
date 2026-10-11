@@ -48,8 +48,6 @@ from ...core.animated_qr import (
 )
 from ...core.build_report import BuildReport, heir_shares
 from ...core.checkalive import (
-    CheckAliveAfterDeliveryError,
-    CheckAliveError,
     resolve_date_to_check,
     resolve_relative_check_alive_date,
     will_executable_now,
@@ -59,7 +57,6 @@ from ...core.messages import (
     build_failure_message,
     check_alive_message,
     no_valid_transaction,
-    past_date_message,
     rebuild_reason_message,
     will_change_message,
 )
@@ -71,13 +68,12 @@ from ...core.qrtransfer import (
 )
 from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
-from ...engine import build
+from ...engine import build, check
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
     HEIR_REAL_AMOUNT,
     N_,
-    AmountException,
     Any,
     BalanceTooLowException,
     BalTimestamp,
@@ -114,7 +110,6 @@ from .common import (
     Util,
     WaitingDialog,
     Will,
-    WillExecutorFeeTooHighException,
     WillExecutorNotPresent,
     Willexecutors,
     WillExpiredException,
@@ -140,6 +135,7 @@ from .common import (
     tx_from_any,
     write_json_file,
 )
+from .flow_adapter import DialogFlowUI, DialogRun
 from .report_actions import report_menu
 from .widgets import (
     BuildReportView,
@@ -855,153 +851,27 @@ class BalBuildWillDialog(BalDialog):
         show_modal(self)
 
     def task_phase1(self):
+        """Phase 1 of the Check, on the dialog's worker thread.
+
+        The variables, the Check Alive and the amounts run in the engine
+        (:func:`bal.engine.check.check_variables`, CHANGELOG #120; its rows
+        are written by :class:`DialogFlowUI` as before), then the will in
+        force and the rebuild below. Returns the 2-tuple
+        ``_on_success_phase1_body`` unpacks as ``have_to_sign, tx`` (a stop
+        code and its transaction, or the sign flag and the built
+        transactions), or ``None`` when the dialog is closing.
+        """
         if self._stopping:
             return
         txs = None
         _logger.debug("close plugin phase 1 started")
-        varrow = self.msg_set_status(_("Checking variables"))
-        try:
-            self.bal_window.init_class_variables()
-        except CheckAliveAfterDeliveryError:
-            self.msg_set_status(
-                "Checking variables", varrow,
-                "Check Alive must be after today and before the delivery date",
-                self.COLOR_ERROR,
-            )
-            return "check_alive_before_delivery", None
-        except CheckAliveError as cae:
-            # CHANGELOG #79 (owner decision): a passed Check Alive is never
-            # invalidated on its own any more. It used to invalidate and then
-            # stop on "Checking variables: Wait" with NO will in force (the
-            # renewed will was never prepared). Now the owner is asked to
-            # renew (on_success_phase1); when a one-click renewal is not
-            # possible the reason is shown and nothing is invalidated.
-            _logger.debug(f"phase1: check alive passed: {cae}")
-            if self._invalidation_broadcast:
-                # Renewal invalidation already sent on the previous pass but
-                # not yet seen by the wallet: never invalidate twice.
-                return "invalidation_pending", None
-            info = self.bal_window.check_alive_info()
-            self._check_alive_info = info
-            if info and info.get("reason") == "expired":
-                # The will in force is already past its delivery date: it can
-                # be executed now. That is the EXPIRED case (invalidate at
-                # once, Electrum's classic window), not a Check Alive matter;
-                # stopping here would leave it executable (scenario C3adv).
-                self.msg_set_status(
-                    _("Checking variables"), varrow, _("Expired"),
-                    self.COLOR_ERROR,
-                )
-                return "invalidate_classic", None
-            tx = None
-            if info and info.get("renewable") and info.get("has_will"):
-                fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
-                tx = Will.invalidate_will(
-                    self.bal_window.willitems, self.bal_window.wallet,
-                    fee_per_byte,
-                    history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
-                    will_locktime=Will.get_min_locktime(
-                        self.bal_window.willitems,
-                        default_value=self.bal_window.date_to_check,
-                    ),
-                )
-            if tx:
-                self.msg_set_status(
-                    _("Checking variables"), varrow,
-                    _("Check Alive passed"), self.COLOR_WARNING,
-                )
-                return "check_alive_renew", tx
-            self.msg_set_status(
-                _("Checking variables"), varrow, _("Stopped"), self.COLOR_ERROR
-            )
-            if info:
-                self.msg_edit_row(self.msg_error(check_alive_message(info)))
-            else:
-                self.msg_edit_row(self.msg_error(str(cae)))
-            return "check_alive_stop", None
-        except NoHeirsException:
-            self.msg_set_status(
-                _("Checking variables"), varrow, self.msg_alert(_("No Heirs"))
-            )
-            return "no_heirs", None
-        except Exception as e:
-            raise e
-        available_utxos = []
-        try:
-            _logger.debug("checking variables")
-            available_utxos = Util.get_available_utxos(
-                self.bal_window.window.wallet,
-                self.bal_window.bal_plugin.HISTORY_LABEL.get(),
-                Will.get_min_locktime(
-                    self.bal_window.willitems,
-                    default_value=self.bal_window.date_to_check,
-                ),
-            )
-            Will.check_amounts(
-                self.bal_window.heirs,
-                self.bal_window.willexecutors,
-                available_utxos,
-                self.bal_window.date_to_check,
-                self.bal_window.window.wallet.dust_threshold(),
-                max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
-            )
-            _logger.debug("variables ok")
-            self.msg_set_status(_("Checking variables"), varrow, _("Ok"), self.COLOR_OK)
-        except AmountException as e:
-            # The explanation is computed in every case (CHANGELOG #82): the
-            # rescaled percentages / proportional fixed amounts depend only on
-            # the settings, not on the coins visible right now. With no coin
-            # visible (e.g. after a Cancel) check_amounts fails on its first,
-            # balance-based test, which used to hide the explanation too.
-            info = Will.describe_amounts(
-                self.bal_window.heirs,
-                self.bal_window.willexecutors,
-                available_utxos,
-                self.bal_window.date_to_check,
-                self.bal_window.window.wallet.dust_threshold(),
-            )
-            text = self._amounts_message(info)
-            false_alarm = self._amount_warning_is_false_alarm(available_utxos)
-            if info and info["kind"] == "fixed_exceeds":
-                # Owner decision (CHANGELOG #76): the build would silently
-                # leave the percentage heirs out, so stop and let the user
-                # correct the fixed amounts. Own row: never overwritten.
-                self.msg_set_status(
-                    _("Checking variables"), varrow, _("Stopped"), self.COLOR_ERROR
-                )
-                self.msg_edit_row(self.msg_error(text))
-                return "fixed_amounts_exceed", None
-            # Every other case ends with "Ok" on the first row (it used to stay
-            # on "Wait" when the warning below was overwritten, #82) and the
-            # explanation, if any, on its own row the next steps never
-            # overwrite.
-            self.msg_set_status(
-                _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
-            )
-            if text:
-                self.msg_edit_row(self.msg_alert(text))
-            elif false_alarm:
-                # BUG-5 (CHANGELOG #76): not an amount problem, see the helper.
-                _logger.debug(f"amount check skipped (not an amount problem): {e!r}")
-            else:
-                self.msg_edit_row(
-                    self.msg_alert(
-                        _(
-                            "In the inheritance process, "
-                            "the entire wallet will always be fully emptied. \n"
-                            "Your settings require an adjustment of the amounts"
-                        )
-                    )
-                )
-        except WillExecutorFeeTooHighException as e:
-            # Own row, never overwritten; the first row no longer stays on
-            # "Wait" (CHANGELOG #82).
-            self.msg_set_status(
-                _("Checking variables"), varrow, _("Ok"), self.COLOR_OK
-            )
-            self.msg_edit_row(
-                self.msg_alert(_("Will-executor fee too high: {}").format(e))
-            )
+        # A new DialogFlowUI / DialogRun at every pass: each pass writes its
+        # own "Checking variables" row, as the old local ``varrow`` did.
+        stop = check.check_variables(
+            self.bal_window, DialogRun(self), DialogFlowUI(self)
+        )
+        if stop is not None:
+            return stop.legacy()
 
         self.msg_set_checking()
         have_to_build = False
@@ -2737,29 +2607,38 @@ class BalBuildWillDialog(BalDialog):
         return amounts_message(info)
 
     def _amount_warning_is_false_alarm(self, available_utxos):
-        """See :meth:`Will.amount_warning_is_false_alarm` (CHANGELOG #115).
+        """See :func:`bal.engine.check.amount_warning_is_false_alarm`
+        (CHANGELOG #115; moved to the engine in #120).
 
-        The date test is this dialog's :meth:`_past_date_message`, as before;
-        an error there still means "show the warning" (returns False).
+        Reads this dialog's window. A window or will settings that cannot
+        be read count as "date not passed" (the coin test still decides), as
+        before; only an error in the date test itself means "show the
+        warning" (returns False). Tests borrow this method on their own
+        classes, so it uses nothing else of the dialog.
         """
         try:
-            date_passed = bool(self._past_date_message())
+            host = self.bal_window
         except Exception as _err:
+            # As before #120: a window that cannot be read means "no date
+            # message" (the engine helper treats None the same way).
             _logger.debug(f"_amount_warning_is_false_alarm: {_err}")
-            return False
-        return Will.amount_warning_is_false_alarm(date_passed, available_utxos)
+            host = None
+        return check.amount_warning_is_false_alarm(host, available_utxos)
 
     def _past_date_message(self):
-        """See :func:`bal.core.messages.past_date_message` (CHANGELOG #115).
+        """See :func:`bal.engine.check.past_date_message_of` (CHANGELOG
+        #115; moved to the engine in #120).
 
-        Reads the window's will settings; never raises, as before.
+        Reads the window's will settings; never raises, as before. Tests
+        borrow this method on their own classes, so it uses nothing else of
+        the dialog.
         """
         try:
-            will_settings = self.bal_window.will_settings
+            host = self.bal_window
         except Exception as _err:
             _logger.debug(f"_past_date_message: {_err}")
             return None
-        return past_date_message(will_settings)
+        return check.past_date_message_of(host)
 
     def _build_failure_message(self):
         """See :func:`bal.core.messages.build_failure_message` (CHANGELOG #115).

@@ -6370,3 +6370,119 @@ unchanged, since signed backup transactions are never kept in the wallet's
 local history (`Will.save_valid_transactions_to_history` removes complete
 ones); the "Safe21 Heartbeat backup transaction" label is stored on their
 txids (the golden file `heir_removed` records it).
+
+## 120. Phase 5e, step 5e-08: the Check's variables, Check Alive and amounts in the engine
+
+**Date:** 2026-10-11
+
+**Problem:** "Check your will" starts with the "Checking variables" row: the
+heirs, the Check Alive gate (after the delivery, passed: expired / renew /
+stop) and the heirs' amounts (fixed amounts above the balance, percentages
+not adding up to 100, a will-executor fee too high). That code was written
+inside the dialog (`BalBuildWillDialog.task_phase1`, about 150 lines), where
+the engine shared by the dialog, the automatic rebuild and the command line
+cannot use it.
+
+**What changed (no visible change):**
+
+- New `bal/engine/check.py`: `check_variables(host, run, ui)`, a line by line
+  port of that part of `task_phase1`; `Phase1Result` (why phase 1 stops
+  early) with `legacy()`, the `(kind, tx)` tuple `task_phase1` returned
+  before; `past_date_message_of` and `amount_warning_is_false_alarm`, the
+  rules of the dialog's `_past_date_message` and
+  `_amount_warning_is_false_alarm` (CHANGELOG #115), now in one place.
+- New `bal/engine/ui.py`: the engine reports with codes and plain data,
+  never texts or colours: `FlowUI` (`step`, `note`), `Step`, `CheckRun` (the
+  state a Check keeps between passes), `NullUI`, `RecordingUI` (tests).
+- New `bal/gui/qt/flow_adapter.py`: `DialogFlowUI` turns each event into the
+  very `msg_*` call the dialog made before (same label, translated or not,
+  status, colour, row and order), so the rows, the step bar and the report
+  boxes stay the same; `DialogRun` reads and writes the run state in the
+  dialog's own attributes (`_invalidation_broadcast`, `_check_alive_info`)
+  at the moment the engine does. Both are made anew at each pass, as the old
+  local row index was: no dialog attribute is added.
+- `bal/gui/qt/dialogs.py`: `task_phase1` calls `check_variables` and returns
+  `legacy()` when it stops; the rest of `task_phase1` is unchanged.
+  `_past_date_message` and `_amount_warning_is_false_alarm` call the engine
+  helpers (same results, also for the tests that borrow them). Five imports
+  with no use left are removed.
+- Kept as they were (owner decisions for later): the "Check Alive must be
+  after today and before the delivery date" row stays untranslated (in a
+  translated GUI the step bar does not recognise it); the "Will-executor fee
+  too high" branch, which `Will.check_amounts` seems never to reach (an
+  executor above the maximum fee is not valid there), is ported unchanged;
+  the settings write of a converted Check Alive still happens on the worker
+  thread through `update_setting_widgets`.
+- Differences from the written plan step (owner OK, 2026-10-11): the
+  questions asked between phases (`Questions`) and the `CANCELLED` answer
+  move to step 5e-11, where they are first used; `FlowUI` has only the two
+  events and `CheckRun` only the two fields this part uses. The bare
+  `except Exception as e: raise e` is not copied (the same exception reaches
+  the dialog's error path). Debug log lines of this part now come from the
+  logger `bal.engine.check`.
+- Catalogs not refreshed: no text was added, removed or changed (the set of
+  597 extracted texts is identical); only the source locations of eight
+  texts moved to `flow_adapter.py`, and the locations are already out of
+  date since #117. The next catalog refresh updates them all.
+- Tests:
+  - new `tests/test_gui_check_variables_rows.py` (25): written and run on
+    the code BEFORE the move, unchanged after it (re-run on `f2e9a1b`
+    without the engine module: 25 passed). It photographs every branch of
+    this part on the real dialog class, also the ones the golden files do
+    not reach (Check Alive after the delivery, an invalidation sent but not
+    seen yet, a Check Alive with no information, a renewal with no
+    transaction, a will-executor fee too high, other errors, a closing
+    dialog), with the rows ever written, the report, the return value and
+    the run state; the "invalidation sent but not seen yet" case also on
+    the real flow of `tests/flowkit.py` (Renew, the wallet lags);
+  - new `tests/test_engine_check_variables.py` (33): each branch through
+    `RecordingUI` on a fake host with three will-executors (own fee
+    addresses), two with the real heirs and amount checks (50% + 30%: the
+    sentence of the golden file `percentages_not_100`);
+  - new `tests/test_gui_flow_adapter.py` (18): each event writes today's
+    exact row and report entry, also in a translated GUI; every event the
+    engine declares has a row.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1315 passed, 0 failed, 0 errors (1239 + 76 new); the 93
+golden files of #112 and #114 unchanged. `ruff check bal/ tests/`: all
+checks passed. Mutation check of the new tests: 12 of 14 deliberate errors
+in the port make them fail; the other 2 change no behaviour. Scenario
+harness: log identical to the #112 baseline (192 lines), warn_matrix 134
+Checks, 0 mismatches. The full harness output (every dialog row, 3155
+lines) on `main` and on the branch: the 206 "Checking variables" rows are
+identical; the only other differences are the temporary folder names in
+the error tracebacks and, in scenario A16 (three will-executors), the order
+in which they answer the verification (it changes from run to run on `main`
+too: six runs each) and once the shown fee rate of the invalidation (13.12
+instead of 13.00 sat/vB, same fee; 13.00 in the twelve re-runs).
+`build_zip.py`: the zip holds `bal/engine/check.py`, `bal/engine/ui.py` and
+`bal/gui/qt/flow_adapter.py`; on Electrum 4.8.2 `external_zip_test.py` and
+`smoke_test.py` pass. Independent review: three reviewers (the port line by
+line; the rows, the report and the translation, with a probe comparing 48
+runs of the old and the new code byte by byte; tests and rules), each
+finding checked by two more: no behaviour difference; a wrong docstring and
+two weak or undocumented test helpers were fixed.
+
+**Outcome:** DONE. The owner tested the ZIP on his wallet (Electrum 4.8.2,
+basic mode): 1) a test heir with a fixed amount (50,000,000,000 sat) above
+the balance (59,576 sat): "Checking variables: Stopped" in red, the
+explanation in the problems box, "The check stopped: nothing was changed",
+only Close, no password asked; 2) the test heir removed, Check: Check ok,
+nothing to prepare, sign or send, verified 4/4, the will unchanged; 3)
+heirs at 50% + 30%: the amber "percentages add up to 80%" sentence, the will
+rebuilt one day earlier, signed, sent 4/4 and verified 4/4.
+
+Found during the test, not caused by #120 (a separate step): in basic mode
+the delivery field of the Will tab kept showing a date one day later than
+the will (also after a restart), while the will summary and the wizard
+showed the will's date. Cause: the owner's delivery setting is relative
+("1054d", set earlier in advanced mode); in basic mode the toolbar's date
+field turns it into a date when the window opens, before the will is
+loaded, so it shows "today + 1054 days" and is not redrawn afterwards.
+Reproduced on a test wallet with the real toolbar and wizard widgets: the
+same on this branch, on `main` `f2e9a1b` and on `74e3797` (before #119);
+with a fixed delivery date the field follows the will. Not a safety
+problem: a relative setting is resolved against the signed will, so the
+next Checks (heirs restored, the next day) neither invalidate nor ask
+anything (simulated on the test wallet).
