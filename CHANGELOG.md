@@ -6486,3 +6486,74 @@ with a fixed delivery date the field follows the will. Not a safety
 problem: a relative setting is resolved against the signed will, so the
 next Checks (heirs restored, the next day) neither invalidate nor ask
 anything (simulated on the test wallet).
+
+## 121. In basic mode the delivery field shows the date of the will in force
+
+**Date:** 2026-10-11
+
+**Problem:** found in the owner's ZIP test of #120 (see #120): in basic mode
+the delivery field of the Will tab showed a date one day later than the
+will in force, also after a restart, while the will summary of the Will tab
+and the wizard showed the will's date. The owner's delivery setting is a
+period ("1054d", saved earlier in advanced mode). In basic mode the field
+uses the Date editor, which shows a period as the date it gives: the date
+of the will in force, or today + the period with no will. The fields of the
+Will and Heirs tabs are built when the window opens, before the will is
+loaded, so they showed "today + 1054 days" and were never redrawn: the next
+day, or after a rebuild that moved the will one day earlier (#107), the
+field and the will disagreed. Display only: the stored setting and the
+Check were right (a period is resolved against the signed will, so the next
+Check neither invalidates nor asks anything), and the calendar export and
+the Check Alive date already used the earlier of the field and the will.
+The same behaviour on `main` before #120 and before #119.
+
+**What changed (visible: the date shown in basic mode):**
+
+- `bal/gui/qt/widgets.py`: new `BalTimeEditWidget.refresh_shown_value()`:
+  a saved period is shown again as the date it gives now. It only shows
+  (signals blocked, nothing saved); a fixed date is shown as saved and the
+  Raw editor of advanced mode shows the period itself, so neither changes.
+  `WillSettingsWidget.on_locktime_change` (called each time the Will or
+  Heirs list is redrawn: after the will is loaded, after each Check) calls
+  it first; the method got its docstring.
+- Not changed: the stored setting ("1054d" stays "1054d"), the Check, fixed
+  delivery dates, advanced mode, the wizard (built after the will is loaded,
+  it already showed the will's date), the heir dialog's own date field.
+
+**Tests:** new `tests/test_gui_delivery_field_refresh.py` (9), written first
+and run on `main` `a981d8d`: the two real-flow tests failed there by exactly
+one day (the bug), the advanced / fixed-date test passed (no change). The
+field alone: basic period with the will loaded later shows the will's date,
+without a will today + the period, advanced Raw text unchanged, fixed date
+unchanged in both modes, no edit signal and nothing saved. The real flow
+(`tests/flowkit.py`, three will-executors) with the real Will and Heirs tab
+toolbars and the wizard: a rebuild that moves the will one day earlier (both
+toolbars follow, the setting stays "1000d"); the next day a new window
+built before the will is loaded (both toolbars and the wizard show the
+will's date once it is loaded); advanced with a period and basic with a
+fixed date as before (#110).
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1324 passed, 0 failed, 0 errors (1315 + 9 new); the 93
+golden files unchanged. `ruff check bal/ tests/`: all checks passed. The
+owner's sequence on a test wallet with the real toolbar widgets (basic,
+"1000d"): on `main` the field stays on today + 1000 days after the rebuild
+and after the restart; on this branch it shows the will's date in both.
+Scenario harness: log identical to the #112 baseline (192 lines),
+warn_matrix 134 Checks, 0 mismatches (it draws no toolbar, as expected).
+`build_zip.py` + `external_zip_test.py` + `smoke_test.py` on Electrum
+4.8.2: pass. No text added or changed (no catalog update).
+
+**Outcome:** DONE. The owner tested the ZIP on his wallet (basic mode,
+delivery "1054d"): right after opening the wallet the delivery field of the
+Will tab and of the Heirs tab show 29/08/2029, the date of the will in
+force (before: 30/08/2029, today + 1054 days).
+
+Seen in the same test, not caused by #121 (to be fixed in a step of its
+own): the will items of the owner's wallet were saved unsigned. Electrum's
+log shows the check at wallet close (03:45:39, still on the #120 ZIP)
+finding "The delivery date of heir "1" changed" (the delivery setting had
+been edited in advanced mode), rebuilding transactions identical to the
+signed ones already sent (same txids), overwriting the signed copies, and
+the dialog closing before the signature. The will-executors keep the
+signed will.
