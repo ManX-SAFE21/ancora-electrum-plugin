@@ -1030,13 +1030,24 @@ class BalWindow:
 
                 self._schedule_history_refresh()
 
-                # Guide the user: the inheritance was just (re)built and is now
-                # in the "New" state, so it must be SIGNED and then BROADCAST
-                # again -- two manual steps the user has to perform.  Without
-                # this hint the user is left with a freshly rebuilt will and no
-                # indication that it still needs to be signed and re-sent to the
-                # will-executors.
-                if rebuilt_ok:
+                # Guide the user: say what is left to do after the rebuild.
+                # Usually the will is in the "New" state and must be SIGNED
+                # and then BROADCAST again (two manual steps). CHANGELOG #122:
+                # a rebuild can also give back the transactions already
+                # signed and sent (same txids: Will.update_will keeps them).
+                if rebuilt_ok and not Will.is_new(self.willitems):
+                    if Willexecutors.get_willexecutor_transactions(
+                        self.willitems, current_willexecutors=self.willexecutors
+                    ):
+                        self.show_message(
+                            _(
+                                "Next step (manual): press 'Broadcast will' to send your "
+                                "will to the will-executors."
+                            )
+                        )
+                    else:
+                        self.show_message(_("Your will is in force"))
+                elif rebuilt_ok:
                     if self.no_willexecutor:
                         # CHANGELOG #94: "will", as everywhere else.
                         next_steps = _(
