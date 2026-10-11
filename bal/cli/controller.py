@@ -686,12 +686,25 @@ class BalController(BalSettingsController):
             if rebuilt_ok:
                 self._after_rebuild()
                 self._save_to_history()
-                return {
-                    "result": "rebuilt",
-                    "message": _(
+                # CHANGELOG #122: the rebuilt transactions can be the ones
+                # already signed and sent (update_will keeps them).
+                if Will.is_new(self.willitems):
+                    message = _(
                         "The will was rebuilt and needs to be signed and "
                         "broadcast again"
-                    ),
+                    )
+                elif Willexecutors.get_willexecutor_transactions(
+                    self.willitems, current_willexecutors=self.willexecutors
+                ):
+                    message = _(
+                        "The will was rebuilt with the same signed "
+                        "transactions: send it with bal_will_broadcast"
+                    )
+                else:
+                    message = _("The will is coherent")
+                return {
+                    "result": "rebuilt",
+                    "message": message,
                     "reason": reason,
                     "will": self._will_status_dict(),
                 }
@@ -780,8 +793,10 @@ class BalController(BalSettingsController):
             _logger.info("auto rebuild: nothing was built")
             return {"result": "nothing"}
 
+        coherent = False
         try:
             self.check_will()
+            coherent = True
         except will_mod.NoHeirsException as e:
             _logger.info(f"auto rebuild: no heirs ({e})")
             return {"result": "no_heirs"}
@@ -793,6 +808,15 @@ class BalController(BalSettingsController):
         except will_mod.NotCompleteWillException:
             pass
         self._after_rebuild()
+
+        if coherent and not Will.is_new(self.willitems):
+            # CHANGELOG #122: the rebuilt will is coherent and its transactions
+            # are the ones already signed (same txids: update_will kept them).
+            # Nothing to sign, also on an encrypted wallet: save, then
+            # send what a will-executor does not have yet (#109).
+            self.save_willitems()
+            self._save_to_history()
+            return self._finish_coherent_will()
 
         if self.wallet.has_keystore_encryption():
             _logger.warning(

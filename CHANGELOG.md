@@ -6557,3 +6557,110 @@ been edited in advanced mode), rebuilding transactions identical to the
 signed ones already sent (same txids), overwriting the signed copies, and
 the dialog closing before the signature. The will-executors keep the
 signed will.
+
+## 122. A rebuilt will identical to the signed one keeps its signatures
+
+**Date:** 2026-10-11
+
+**Problem (the owner's wallet on 2026-10-11, see #121; reproduced with
+`tests/flowkit.py` on `main` `647f8d5`, three will-executors, test wallet
+with a password):** the will in force was built from a fixed delivery date,
+signed, sent and verified. The delivery setting then became the period
+giving the same day ("1054d", the Raw/Date switch of advanced mode). At
+wallet close the check rebuilt the will (the #81 rule) and the
+transactions were identical to the signed ones (same txids), but
+`Will.update_will` kept an old item only when its heirs were written
+exactly the same way ("Option A", #17, helper `_same_heirs`): the date was
+written another way, so fresh UNSIGNED copies replaced the signed and sent
+ones. The owner closed the password window: the will was saved unsigned,
+with an unsigned local copy in the History (balance shown as 0). The
+will-executors kept the signed will; the owner recovered with "Sign and
+send" (same signatures). The same happened, without any question, in the
+automatic rebuild and the command line, and for an heir renamed.
+
+**What changed (visible: no password asked when nothing changed in the
+transactions):**
+
+- `bal/core/will.py` `Will.update_will` (docstring added): a rebuilt
+  transaction with the txid of a VALID old item is the same transaction,
+  so the old item is kept (signatures valid, state signed/sent/verified
+  right) and the new heirs, will-executor, description and fee rate are
+  written on it. Every rebuild goes through it (Check, wallet close,
+  Prepare, automatic rebuild, command line). The same transaction for
+  another will-executor URL (same fee address and fee, e.g. an executor
+  that moved) keeps the fresh item, so it is sent to that URL; it gets the
+  signed transaction when the old one was signed (no password). Before,
+  `main` rewrote the URL on the old item and marked it sent there without
+  sending it. `_same_heirs` is removed.
+- The fee rate is copied too: a fee rate giving the same transactions
+  (13.001, possible with a JSON setting) made every Check say "Miner fee
+  rate changed" forever.
+- `bal/gui/qt/window.py` (Prepare) and `bal/cli/controller.py`
+  (`prepare_will`, `auto_rebuild`): after a rebuild that left nothing to
+  sign, no more "sign and send": Prepare says "Your will is in force", or
+  "Next step (manual): press 'Broadcast will'..." when only sending is left
+  (existing texts, no catalog update); the command line says "The will is
+  coherent" (or to send it), and `auto_rebuild` answers `valid`/`sent`
+  instead of `needs_signing`.
+- `bal/cli/controller.py` `auto_rebuild`: the will is called coherent
+  after the rebuild only when the check after the rebuild passed.
+- `make-release.sh`: the deleted `tests/test_group_f_heir_change_rebuild.py`
+  replaced by `tests/test_gui_date_form_change_flow.py` in its test list.
+- Not changed (known, see #123): the check still rebuilds when the date is
+  written as the equal period (row 'The delivery date of heir ... changed:
+  preparing a new will.', then "Signing your will: Nothing to do"); with a
+  period as delivery setting, an old replaced will built from a fixed date
+  is still taken for a postpone two days later (paid invalidation; also on
+  `main`). #123 removes the periods and converts the stored ones once to
+  the fixed date of the will in force. A first version of this step also
+  tried to fix those two in the plugin; a multi-agent review found that it
+  could hide a real postpone when the earlier will has other heirs, and the
+  owner decided to remove the periods (Raw) and the Check Alive instead.
+
+**Tests:** written first; run on `main` `647f8d5`: 19 failed, 1 passed (it
+pins behaviour that does not change).
+
+- `tests/test_core_identical_rebuild.py` (7, new; replaces
+  `tests/test_group_f_heir_change_rebuild.py`, 9 tests of `_same_heirs`,
+  removed with the helper): the owner's case at the engine (same txids,
+  still signed, sent and verified, same signed transactions and history,
+  the period written in them); the new heirs, will-executor, description
+  and fee rate written on the kept item; the same transaction for another
+  will-executor URL sent signed (and an unsigned one stays unsigned); a
+  replaced item not brought back; a backup transaction without
+  will-executor kept signed; a renamed heir keeps the signed will.
+- `tests/test_gui_date_form_change_flow.py` (13, new): the owner's sequence
+  with the real Check dialog: wallet close with Cancel at the password
+  (basic and advanced, one will and two wills): nothing asked, signed or
+  sent, the saved will still signed, sent and verified; one will: the
+  following days (+1, +2, +7) in order; the Check button; Prepare says
+  "Your will is in force"; command line `prepare_will` and `auto_rebuild`
+  on a wallet with a password; an executor that moved gets the signed will
+  without a password; a fee rate giving the same transactions settles
+  after one rebuild; a real postpone still asks for the invalidation.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1335 passed, 0 failed, 0 errors (1324 - 9 removed + 20
+new); the 93 golden files unchanged. `ruff check bal/ tests/`: all checks
+passed. Scenario harness: log identical to the #112 baseline (192 lines),
+warn_matrix 134 Checks, 0 mismatches. `build_zip.py` +
+`external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass. Probes
+on main and the branch (owner's sequence, basic and advanced, one and two
+wills, Cancel at the password, following days; Prepare, automatic rebuild
+and command line; executor that moved; fee rate 13.001; renamed heir;
+backup transaction). Multi-agent review of a first version (5 reviewers,
+2-3 skeptics per finding, a completeness critic): its findings on this
+part are fixed here (fee rate, executor that moved, Prepare and command
+line messages, make-release.sh, docstrings, tests). No text added or
+changed in the catalogs.
+
+**Outcome:** DONE. The owner tested the ZIP on his wallet (basic mode,
+four will-executors): Check "ok", preparation, signature and sending "not
+needed", verification 4/4, "Your will is in force", delivery 2029-08-29.
+
+Found by the review and left for steps of their own (also on `main`):
+replacing every heir together with a later date is rebuilt one day
+earlier instead of invalidated; a later date on a will left unsigned
+after a Cancel goes back to the old date; with per-heir dates (hidden
+"multiverse" option) `Will.change_input` links an anticipated child to
+its own txid; the GUI automatic rebuild never sends (`waiting_dialog`).

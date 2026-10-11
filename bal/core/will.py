@@ -408,48 +408,35 @@ class Will:
             Will.search_anticipate_rec(will, old_inputs)
 
     @staticmethod
-    def _same_heirs(old_heirs, new_heirs):
-        """Return True if two heir maps describe the SAME inheritance.
-
-        Used by update_will (Option A) to decide whether a rebuilt transaction
-        that kept the same txid can safely reuse the old (possibly already
-        signed) WillItem, or whether the heirs changed and the item must be
-        rebuilt as unsigned.
-
-        Two heir maps are considered equal when they have exactly the same heir
-        names (keys) and, for each heir, the same destination ADDRESS, the same
-        requested AMOUNT and the same LOCKTIME. Internal will-executor
-        pseudo-heirs (keys starting with the reserved ``w!ll3x3c"`` prefix) are
-        ignored, exactly as in check_willexecutors_and_heirs, because they are
-        bookkeeping entries and not real heirs.
-
-        Args:
-            old_heirs: heirs dict stored in the old (existing) WillItem.
-            new_heirs: heirs dict of the freshly rebuilt WillItem.
-
-        Returns:
-            bool: True if the real heirs are identical, False otherwise.
-        """
-        def _real_heirs(heirs):
-            # Keep only the real heirs and only the fields that define the
-            # inheritance (address/amount/locktime), so cosmetic or derived
-            # fields can never trigger a spurious "heirs changed" rebuild.
-            out = {}
-            for name, entry in (heirs or {}).items():
-                if str(name)[:9] == 'w!ll3x3c"':
-                    continue
-                # Heir entry layout (see heirs.py): [0]=address, [1]=amount,
-                # [2]=locktime. We compare exactly the same fields that
-                # check_willexecutors_and_heirs uses (their[0], their[1],
-                # their[2]); index literals are used here to avoid importing the
-                # heirs module (which would create a circular import).
-                out[name] = (entry[0], entry[1], entry[2])
-            return out
-
-        return _real_heirs(old_heirs) == _real_heirs(new_heirs)
-
-    @staticmethod
     def update_will(old_will, new_will):
+        """Prepare a rebuilt will ``new_will`` against the will in force.
+
+        The new transactions are first dated against the old ones
+        (``search_anticipate_rec``, then ``normalize_will``). A new
+        transaction with the txid of a VALID old item is the SAME
+        transaction (the txid covers inputs, outputs and locktime, not the
+        signatures), so (CHANGELOG #122):
+
+        * same will-executor URL (or none, a backup transaction): the OLD
+          item is kept. Its signatures are valid and its state (signed,
+          sent, verified) is right. The new heirs, will-executor,
+          description and fee rate are written on it, so it carries what
+          the will was rebuilt from and the next Check finds it coherent;
+        * another will-executor URL (same fee address and fee, e.g. an
+          executor that moved): the fresh item is kept, so the will is sent
+          to that URL. When the old item was signed, the fresh item gets
+          the signed transaction (``COMPLETE``: no password needed), and it
+          stays not sent.
+
+        Before #122 the old item was kept only when its heirs were written
+        exactly the same way ("Option A", CHANGELOG #17, helper
+        ``_same_heirs``). But the same transaction is also rebuilt when an
+        heir is renamed, or when the delivery date is written in another
+        form giving the same day (a period instead of a fixed date, the #81
+        rule: the owner's wallet, 2026-10-11): the fresh UNSIGNED copies took
+        the place of the signed and sent ones, and a Cancel at the password
+        left the will saved unsigned.
+        """
         all_old_inputs = Will.get_all_inputs(old_will, only_valid=True)
         # all_inputs_min_locktime = Will.get_all_inputs_min_locktime(all_old_inputs)
         # all_new_inputs = Will.get_all_inputs(new_will)
@@ -463,40 +450,24 @@ class Will:
             raise e
 
         for oid in Will.only_valid(old_will):
-            if oid in new_will:
-                new_heirs = new_will[oid].heirs
-                new_we = new_will[oid].we
-
-                # OPTION A (heir-change full rebuild, user-approved):
-                #
-                # Historically, whenever a rebuilt transaction kept the SAME
-                # txid as an old one, we REUSED the old WillItem object (which
-                # may already be signed/COMPLETE/PUSHED) and only copied the new
-                # heirs/will-executor onto it. That silently preserved the
-                # "already signed" status even when the HEIRS had actually
-                # changed (e.g. an heir was deleted, so amounts must be
-                # recomputed and the whole wallet re-swept). The downstream
-                # have_to_sign check then saw the item as COMPLETE and reported
-                # "Nothing to do", so the new will was never signed/broadcast
-                # (bugs E/F/K).
-                #
-                # We now reuse the old item ONLY when the heirs are IDENTICAL.
-                # If the heir set/values changed, we keep the freshly built
-                # item (status "New", not COMPLETE) so it is correctly detected
-                # as needing a new signature and broadcast. The will-executor is
-                # still refreshed in both cases.
-                if Will._same_heirs(old_will[oid].heirs, new_heirs):
-                    new_will[oid] = old_will[oid]
-                    new_will[oid].heirs = new_heirs
-                    new_will[oid].we = new_we
-                else:
-                    # Heirs changed: keep the new (unsigned) item but make sure
-                    # it carries the up-to-date will-executor.
-                    new_will[oid].we = new_we
-
+            if oid not in new_will:
                 continue
-            else:
+            old, new = old_will[oid], new_will[oid]
+            if (old.we or {}).get("url") != (new.we or {}).get("url"):
+                # Same transaction for another will-executor URL: the
+                # fresh item must be sent there (PUSHED/CHECKED stay
+                # cleared), but it needs no new signature.
+                if old.get_status("COMPLETE"):
+                    new.tx = old.tx
+                    new.sigs_have = old.sigs_have
+                    new.sigs_required = old.sigs_required
+                    new.set_status("COMPLETE", True)
                 continue
+            old.heirs = new.heirs
+            old.we = new.we
+            old.description = new.description
+            old.tx_fees = new.tx_fees
+            new_will[oid] = old
 
     @staticmethod
     def get_higher_input_for_tx(will):
@@ -1973,6 +1944,8 @@ class Will:
                                 # period: tomorrow it would read one day later,
                                 # i.e. a postpone (a paid invalidation). Rebuild
                                 # now instead (no fee; anticipation rule).
+                                # The rebuilt transactions are identical and
+                                # update_will keeps the signed items (#122).
                                 pass
                             elif new_locktime == tx_locktime:
                                 # Unchanged: this heir is still coherent.
