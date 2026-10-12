@@ -287,6 +287,27 @@ def test_build_ics_advanced_requires_threshold():
     raise AssertionError("expected ValueError for missing threshold in ADVANCED")
 
 
+def test_build_ics_basic_with_aware_locktime_and_no_now():
+    """CHANGELOG #126: the BASIC toolbar passes the delivery date with its
+    time zone (``BalTimestamp._safe_fromtimestamp`` is UTC-aware) and no
+    ``now``. ``now`` must then have the same kind, else "aware minus naive"
+    raised TypeError and no .ics file was made ("failed to generate .ics")."""
+    locktime = datetime.now(tz=timezone.utc) + timedelta(days=120)
+    kwargs = _common_kwargs()
+    kwargs["locktime"] = locktime
+    content = build_ics_reminders(basic_mode=True, **kwargs)
+    assert content is not None
+    assert content.count("BEGIN:VEVENT") == 3          # 30, 10 and 1 day before
+
+
+def test_build_ics_basic_with_naive_locktime_and_no_now():
+    """A naive delivery date (older callers) still works without ``now``."""
+    kwargs = _common_kwargs()
+    kwargs["locktime"] = datetime.now() + timedelta(days=120)
+    content = build_ics_reminders(basic_mode=True, **kwargs)
+    assert content is not None and content.count("BEGIN:VEVENT") == 3
+
+
 # ------------------------------------------------------------------ #
 # Main
 # ------------------------------------------------------------------ #
