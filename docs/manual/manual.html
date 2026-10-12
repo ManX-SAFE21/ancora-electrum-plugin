@@ -424,8 +424,8 @@ transactions can have in the WILL tab, on each will‑executor that is online.</
 <tbody>
 <tr>
 <td>1</td>
-<td><strong>New</strong></td>
-<td>TX new inheritance</td>
+<td><strong>Draft</strong></td>
+<td>TX prepared but never signed nor sent: it exists only in this wallet</td>
 <td>White (transparent)</td>
 <td><code>#FFFFFF</code></td>
 </tr>
@@ -487,6 +487,13 @@ transactions can have in the WILL tab, on each will‑executor that is online.</
 </tr>
 </tbody>
 </table>
+<p>A <strong>Draft</strong> is what a Cancel at the password leaves. When the will must be
+prepared again (Check, Prepare or the automatic rebuild), the drafts are
+discarded for free, and the new will is dated against the will in force
+(signed and sent), never against a draft: a signature cancelled again and
+again no longer moves the delivery date one more day each time. When the
+rebuilt will is exactly the will in force, the plugin keeps that one:
+nothing to sign, nothing to send.</p>
 <hr />
 <h2 id="will-tab-commands">WILL tab — commands</h2>
 <p><img alt="Figure 9 — WILL tab and Will‑Details window" src="./images/fig11.png" /></p>

@@ -57,7 +57,8 @@ def test_texts_follow_the_executor_state():
     assert will_status_text(_item("COMPLETE", "PUSHED", "CHECKED")) == "In force, verified"
     assert will_status_text(_item("COMPLETE", "PUSHED")) == "In force, to be verified"
     assert will_status_text(_item("COMPLETE")) == "Signed, to be sent"
-    assert will_status_text(_item()) == "To sign"
+    # CHANGELOG #128: never signed nor sent, it exists only in this wallet.
+    assert will_status_text(_item()) == "Draft"
 
 
 def test_executor_without_the_will_is_never_in_force():
@@ -75,6 +76,18 @@ def test_partially_signed_shows_the_signatures():
     item = _item()
     item.sigs_have, item.sigs_required = 1, 2
     assert will_status_text(item) == "To sign (1/2)"
+
+
+def test_a_draft_says_draft_not_its_signature_count():
+    """CHANGELOG #128 (owner's report "Da firmare (0/1)"): a will prepared
+    and never signed nor sent is a draft that the next build drops for free;
+    a partially signed one keeps its count."""
+    item = _item()
+    item.sigs_have, item.sigs_required = 0, 1
+    assert will_status_text(item) == "Draft"
+    item.set_status("PARTIALLY_SIGNED", True)
+    item.sigs_have, item.sigs_required = 1, 3
+    assert will_status_text(item) == "To sign (1/3)"
 
 
 def test_replaced_invalidated_mempool_executed_not_valid():

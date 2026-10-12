@@ -1244,7 +1244,9 @@ class BalWindow:
         Returns the will items, or None when it stops. CHANGELOG #123: with
         the settings unavailable it stops with the error; with the "which
         date?" question pending it asks it (as the Check does) and, with an
-        answer, starts again.
+        answer, starts again. CHANGELOG #128: the reason of a rebuild is
+        shown after the build, and not when the build only gave back the
+        will in force.
         """
         try:
             _logger.info(
@@ -1391,6 +1393,7 @@ class BalWindow:
                 # command line (bal.core.messages), instead of a vague title
                 # followed by the raw exception text. The popup is still shown
                 # only for the cases that showed one before.
+                change_text = None
                 if isinstance(
                     e,
                     (
@@ -1401,10 +1404,21 @@ class BalWindow:
                         HeirNotFoundException,
                     ),
                 ):
-                    self.show_message(will_change_message(e))
+                    change_text = will_change_message(e)
 
                 _logger.info("build will")
-                self.build_will(ignore_duplicate, keep_original)
+                # CHANGELOG #128: the sentence ("... preparing a new will") is
+                # shown after the build, and not at all when the build only
+                # dropped unsigned drafts and gave back the will in force
+                # (the popup below then says "Your will is in force").
+                replaced_before = Will.replaced_ids(self.willitems)
+                try:
+                    self.build_will(ignore_duplicate, keep_original)
+                finally:
+                    if change_text and not Will.only_brought_back(
+                        replaced_before, self.willitems
+                    ):
+                        self.show_message(change_text)
 
                 # Track whether the rebuild produced a coherent, ready-to-sign
                 # will, so we can guide the user through the remaining manual

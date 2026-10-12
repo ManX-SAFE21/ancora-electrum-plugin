@@ -1039,6 +1039,9 @@ class BalBuildWillDialog(BalDialog):
 
         if have_to_build:
             self.msg_set_building()
+            # CHANGELOG #128: which items were REPLACED before the build, to
+            # tell when the build only gave back the will in force.
+            replaced_before = Will.replaced_ids(self.bal_window.willitems)
             try:
                 txs = self.bal_window.build_will()
                 if not txs:
@@ -1053,7 +1056,10 @@ class BalBuildWillDialog(BalDialog):
                     return False, None
 
                 self.bal_window.check_will()
-                self._build_success_report()
+                if Will.only_brought_back(replaced_before, self.bal_window.willitems):
+                    self._in_force_kept_report()
+                else:
+                    self._build_success_report()
             except WillExecutorNotPresent:
                 self.msg_set_status(
                     _("Will-Executor excluded"), None, _("Skipped"), self.COLOR_ERROR
@@ -1243,6 +1249,28 @@ class BalBuildWillDialog(BalDialog):
                     continue
                 shown_heirs.add(hname)
                 self.msg_set_status(_("Heir"), None, str(hname), self.COLOR_OK)
+
+    def _in_force_kept_report(self):
+        """The rows when the build only gave back the will in force (#128).
+
+        The check found that the will prepared earlier (an unsigned draft)
+        differs from the settings and said so ("The delivery date changed:
+        preparing a new will."); the build then found that the will in
+        force, already signed and sent, is exactly that will
+        (``Will.only_brought_back``): nothing to sign, nothing to send. The
+        "Checking your will" row is rewritten to "Ok" and the "Building your
+        will" row says there was nothing to do, so the dialog does not end
+        on a sentence about a new will that does not exist. These are the
+        rows of a coherent will (existing msgids): the report's result
+        already says "Your will is in force" with the delivery date, and a
+        text on the check row would also be listed among the changes. The
+        labels and the stored date are kept in step as after any build
+        (:meth:`_build_success_report`).
+        """
+        build.label_rebuilt(self.bal_window, scope="valid")
+        self._sync_locktime_to_built_txs()
+        self.msg_set_checking(self.msg_ok())
+        self.msg_set_building(_("Nothing to do"))
 
     def _sync_locktime_to_built_txs(self):
         """Align the plugin's stored delivery date with the built transactions.

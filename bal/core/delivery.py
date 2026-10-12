@@ -145,6 +145,9 @@ ITEM_FLAGS = (
     "CONFIRMED",
     "MEMPOOL",
     "REPLACED",
+    # CHANGELOG #128: a partially signed item is never a draft
+    # (bal.core.will_state); will_in_force needs to tell them apart.
+    "PARTIALLY_SIGNED",
 )
 
 # The name prefix of the will-executor fee outputs stored among the heirs of
@@ -605,7 +608,14 @@ class ItemView:
     CONFIRMED: bool = False
     MEMPOOL: bool = False
     REPLACED: bool = False
+    PARTIALLY_SIGNED: bool = False
     recipes: tuple = ()
+
+    def get_status(self, flag):
+        """The flag ``flag`` (a name of :data:`ITEM_FLAGS`), as
+        ``WillItem.get_status`` gives it, so the duck-typed rules of
+        ``bal.core.will_state`` (CHANGELOG #128) read a view too."""
+        return bool(getattr(self, flag))
 
 
 def _flag(value):
@@ -1409,16 +1419,23 @@ def form_locked(items, synced, executable):
 def will_in_force(items, synced, executable):
     """True when a will is in force, for the period re-anchor (#127, policy b).
 
-    The meaning of #79: a VALID item exists (signed or not), or an item
-    sent to a will-executor, not VALID / INVALIDATED / CONFIRMED / MEMPOOL,
-    is still ``executable(wid)`` (no input spent by a broadcast
-    transaction: ``Will.sent_still_executable``). On a wallet that is not
-    synchronized (``synced`` False) any such sent item counts, so the
-    re-anchor waits. While a will is in force the period date is never
+    The meaning of #79: a VALID item signed, sent or partially signed
+    exists, or an item sent to a will-executor, not VALID / INVALIDATED /
+    CONFIRMED / MEMPOOL, is still ``executable(wid)`` (no input spent by a
+    broadcast transaction: ``Will.sent_still_executable``). On a wallet that
+    is not synchronized (``synced`` False) any such sent item counts, so
+    the re-anchor waits. While a will is in force the period date is never
     moved: only a renewal or the first build sets it.
+
+    CHANGELOG #128: a VALID DRAFT (never signed, no signature, never sent)
+    no longer counts. It exists only in this wallet and the next build
+    drops it, so it must not hold the period date back (it never locked
+    the form either, :func:`form_locked`). The rule is the one of
+    ``bal.core.will_state.is_draft``, written here on the view's flags
+    because this module imports no other plugin module.
     """
     items = list(items)
-    if any(i.VALID for i in items):
+    if any(i.VALID and (i.COMPLETE or i.PUSHED or i.PARTIALLY_SIGNED) for i in items):
         return True
     for i in items:
         if (
