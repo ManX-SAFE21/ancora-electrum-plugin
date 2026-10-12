@@ -250,9 +250,16 @@ def test_confirmed_or_executed_items_do_not_lock():
 
 
 def test_will_in_force_for_the_period_policy():
-    """A VALID item (signed or not), or a sent item not invalidated and
-    still executable; on an unsynchronized wallet any such sent item."""
-    assert dv.will_in_force([item("a", VALID=True)], True, all_spent)
+    """A VALID item signed, sent or partially signed, or a sent item not
+    invalidated and still executable; on an unsynchronized wallet any such
+    sent item. CHANGELOG #128: a VALID draft (never signed nor sent) is not
+    a will in force any more (it never locked the form either); until #128
+    ``item("a", VALID=True)`` counted."""
+    assert not dv.will_in_force([item("a", VALID=True)], True, nothing_spent)
+    assert dv.will_in_force([item("a", VALID=True, COMPLETE=True)], True, all_spent)
+    assert dv.will_in_force([item("a", VALID=True, PUSHED=True)], True, all_spent)
+    assert dv.will_in_force([item("a", VALID=True, PARTIALLY_SIGNED=True)], True,
+                            all_spent)
     sent = [item("a", PUSHED=True, REPLACED=True)]
     assert dv.will_in_force(sent, True, nothing_spent)
     assert not dv.will_in_force(sent, True, all_spent)

@@ -814,6 +814,9 @@ class BalController(BalSettingsController):
         Mirrors ``BalWindow.build_inheritance_transaction``:
 
         * ``coherent`` -> the existing will is still valid; nothing rebuilt.
+          Since CHANGELOG #128 also when the rebuild only dropped unsigned
+          drafts and gave back the will in force (signed and sent: nothing
+          to sign or send).
         * ``rebuilt``  -> the will was not coherent and has been rebuilt;
           ``reason`` says why, in the words of the Check dialog.
         * ``expired`` / ``postponed`` -> an invalidation transaction must be
@@ -913,6 +916,9 @@ class BalController(BalSettingsController):
             # CHANGELOG #78: say WHY it is rebuilt (returned as "reason"),
             # computed now: the rebuild below changes what the core reports.
             reason = will_change_message(e)
+            # CHANGELOG #128: which items were REPLACED before the build, to
+            # tell when the build only gave back the will in force.
+            replaced_before = Will.replaced_ids(self.willitems)
             if not self.build_will(ignore_duplicate, keep_original):
                 raise UserFacingException(
                     _(
@@ -949,6 +955,16 @@ class BalController(BalSettingsController):
             if rebuilt_ok:
                 self._after_rebuild()
                 self._save_to_history()
+                if Will.only_brought_back(replaced_before, self.willitems):
+                    # CHANGELOG #128: the drafts were dropped and the will in
+                    # force, signed and sent, came back: nothing to sign or
+                    # send, so the answer is the one of a coherent will, not
+                    # "rebuilt" with the reason of the unsigned draft.
+                    return {
+                        "result": "coherent",
+                        "message": _("The will is coherent"),
+                        "will": self._will_status_dict(),
+                    }
                 # CHANGELOG #122: the rebuilt transactions can be the ones
                 # already signed and sent (update_will keeps them).
                 if Will.is_new(self.willitems):

@@ -45,6 +45,7 @@ from electrum.util import (
 )
 
 from ..i18n import N_, _
+from . import will_state
 from .heirs import WillExecutorFeeTooHighException, is_op_return_address
 from .util import Util, copy_structure
 from .willexecutors import Willexecutors
@@ -408,25 +409,193 @@ class Will:
             Will.search_anticipate_rec(will, old_inputs)
 
     @staticmethod
-    def update_will(old_will, new_will):
+    def wallet_synced(wallet):
+        """True when ``wallet`` is synchronized (``wallet.is_up_to_date()``).
+
+        False without a wallet, or when it cannot be asked: the spends of
+        the will's coins are then not known (CHANGELOG #128 takes the safe
+        side, see :mod:`bal.core.will_state`).
+        """
+        if wallet is None:
+            return False
+        try:
+            return bool(wallet.is_up_to_date())
+        except Exception:
+            return False
+
+    @staticmethod
+    def drop_drafts(will):
+        """Remove the drafts from ``will`` (in place); return their ids.
+
+        A draft (:func:`bal.core.will_state.is_draft`: VALID, never signed
+        nor sent) exists only in this wallet, so dropping it is free
+        (CHANGELOG #128). Signed, sent and partially signed items are never
+        removed here.
+        """
+        dropped = will_state.draft_ids(will)
+        for wid in dropped:
+            del will[wid]
+        return dropped
+
+    @staticmethod
+    def in_force_items(will, wallet, synced):
+        """The items of ``will`` that belong to the will in force (#128).
+
+        :func:`bal.core.will_state.is_in_force`: signed and/or sent, VALID or
+        REPLACED, not INVALIDATED / CONFIRMED / MEMPOOL and, on a
+        synchronized wallet, still executable
+        (:meth:`_tx_still_executable`). Returns ``{wid: item}``.
+        """
+        return {
+            wid: w
+            for wid, w in will.items()
+            if will_state.is_in_force(
+                w,
+                synced,
+                lambda wid=wid: Will._tx_still_executable(wid, will, wallet),
+            )
+        }
+
+    @staticmethod
+    def anticipation_references(will, in_force):
+        """The old items a rebuilt will is dated against (CHANGELOG #128).
+
+        The will in force (``in_force``, see :meth:`in_force_items`) and the
+        VALID partially signed items. WHY the latter: a co-signer may still
+        complete one and send it, so a new will must not be dated after it
+        (safe side). The drafts are not here: they were never sent, and
+        beating them is what moved the owner's date back one day per
+        cancelled signature (known issue "P2").
+        """
+        refs = dict(in_force)
+        for wid, w in will.items():
+            if w.get_status("VALID") and will_state.is_partially_signed(w):
+                refs[wid] = w
+        return refs
+
+    @staticmethod
+    def _shares_coins(a, b):
+        """True when will items ``a`` and ``b`` spend at least one same coin."""
+        mine = {i.prevout.to_str() for i in a.tx.inputs()}
+        return any(i.prevout.to_str() in mine for i in b.tx.inputs())
+
+    @staticmethod
+    def bring_back_blocker(oid, will, new_item, wallet, synced, in_force):
+        """Why the REPLACED item ``will[oid]`` cannot be brought back, or None.
+
+        CHANGELOG #128 (owner decision 2026-10-12): a rebuilt transaction
+        equal to a replaced item of the will in force gives that item back
+        (VALID again, with its signatures and its sent / verified state)
+        only when ALL of these hold:
+
+        (a) same txid: the same transaction (inputs, outputs, locktime);
+        (b) the old item is signed (COMPLETE) and sent (PUSHED);
+        (c) it is still executable: not INVALIDATED / CONFIRMED / MEMPOOL
+            and no input spent by a broadcast transaction;
+        (d) no other signed or sent, still executable item on the same
+            coins is dated EARLIER (``in_force``): the will-executors would
+            execute that one, and the date shown would be false;
+        (e) the wallet is synchronized (``synced``): before, (c) and (d)
+            cannot be known.
+
+        The will-executor URL must also be the same (another URL with the
+        same transaction is the #122 case: a fresh item to send there).
+        Returns a short English reason for the log, or None.
+        """
+        old = will[oid]
+        if new_item.tx.txid() != old.tx.txid():
+            return "another transaction"
+        if not old.get_status("COMPLETE"):
+            return "not signed"
+        if not old.get_status("PUSHED"):
+            return "not sent"
+        if not synced:
+            return "wallet not synchronized"
+        if not will_state.may_be_in_force(old):
+            return "invalidated or executed"
+        if not Will._tx_still_executable(oid, will, wallet):
+            return "no longer executable"
+        for wid, w in in_force.items():
+            if (
+                wid != oid
+                and int(w.tx.locktime) < int(old.tx.locktime)
+                and Will._shares_coins(w, old)
+            ):
+                return "an earlier signed or sent will on the same coins"
+        if (old.we or {}).get("url") != (new_item.we or {}).get("url"):
+            return "another will-executor"
+        return None
+
+    @staticmethod
+    def _keep_signatures(new, old):
+        """Give the fresh item ``new`` the signatures of ``old`` (same txid).
+
+        Used when a rebuilt transaction is identical to a REPLACED item that
+        is signed (or partially signed) but cannot be brought back
+        (CHANGELOG #128, :meth:`bring_back_blocker`). The fresh item takes
+        the old one's place in the will (same txid), so without this an
+        UNSIGNED copy would replace a signed transaction: the password would
+        be asked again for nothing, and a VALID item neither signed nor sent
+        is not seen by the postpone check (``check_willexecutors_and_heirs``)
+        although the will-executors hold that transaction. As for the same
+        transaction for another will-executor URL (#122): the fresh item gets
+        the old signed transaction (``COMPLETE``, no password) and stays not
+        sent, so the will is sent (again) to its will-executor. A partially
+        signed transaction keeps its signatures too.
+        """
+        if old.get_status("COMPLETE"):
+            new.tx = old.tx
+            new.sigs_have = old.sigs_have
+            new.sigs_required = old.sigs_required
+            new.set_status("COMPLETE", True)
+        elif will_state.is_partially_signed(old):
+            new.tx = old.tx
+            new.sigs_have = old.sigs_have
+            new.sigs_required = old.sigs_required
+
+    @staticmethod
+    def update_will(old_will, new_will, wallet=None):
         """Prepare a rebuilt will ``new_will`` against the will in force.
 
-        The new transactions are first dated against the old ones
-        (``search_anticipate_rec``, then ``normalize_will``). A new
-        transaction with the txid of a VALID old item is the SAME
-        transaction (the txid covers inputs, outputs and locktime, not the
-        signatures), so (CHANGELOG #122):
+        ``old_will`` is the will so far (changed in place), ``wallet`` the
+        Electrum wallet (``None``: its synchronization and the spends are
+        unknown). Returns ``{"dropped": [...], "brought_back": [...],
+        "signed_copies": [...]}`` (ids), for the log and the callers.
 
-        * same will-executor URL (or none, a backup transaction): the OLD
-          item is kept. Its signatures are valid and its state (signed,
-          sent, verified) is right. The new heirs, will-executor,
-          description and fee rate are written on it, so it carries what
-          the will was rebuilt from and the next Check finds it coherent;
-        * another will-executor URL (same fee address and fee, e.g. an
-          executor that moved): the fresh item is kept, so the will is sent
-          to that URL. When the old item was signed, the fresh item gets
-          the signed transaction (``COMPLETE``: no password needed), and it
-          stays not sent.
+        CHANGELOG #128 (known issue "P2", owner decisions 2026-10-12):
+
+        1. The drafts are dropped first (:meth:`drop_drafts`): never signed
+           nor sent, they exist only in this wallet. Before, an unsigned
+           draft was the will a new one had to beat, so every cancelled
+           signature moved the delivery date one more day earlier.
+        2. The new transactions are dated only against the will in force
+           and the partially signed items (:meth:`anticipation_references`,
+           then ``search_anticipate_rec`` and ``normalize_will``). A sent
+           item that an unsigned draft had marked REPLACED is still in force
+           (the will-executors hold it), so a new will is never dated after
+           it.
+        3. A new transaction with the txid of a VALID old item is the SAME
+           transaction (the txid covers inputs, outputs and locktime, not
+           the signatures), so (CHANGELOG #122):
+
+           * same will-executor URL (or none, a backup transaction): the OLD
+             item is kept. Its signatures are valid and its state (signed,
+             sent, verified) is right. The new heirs, will-executor,
+             description and fee rate are written on it, so it carries what
+             the will was rebuilt from and the next Check finds it coherent;
+           * another will-executor URL (same fee address and fee, e.g. an
+             executor that moved): the fresh item is kept, so the will is
+             sent to that URL. When the old item was signed, the fresh item
+             gets the signed transaction (``COMPLETE``: no password
+             needed), and it stays not sent.
+        4. The same for a REPLACED old item of the will in force: it is
+           brought back (VALID again, REPLACED cleared, signatures and
+           sent / verified state kept) when :meth:`bring_back_blocker` finds
+           nothing against it. Otherwise the fresh item takes its place, as
+           before, but never as an unsigned copy of a signed transaction
+           (:meth:`_keep_signatures`): it is signed (no password) and will
+           be sent again. A REPLACED item never signed holds nothing and is
+           overwritten by the fresh copy, as before.
 
         Before #122 the old item was kept only when its heirs were written
         exactly the same way ("Option A", CHANGELOG #17, helper
@@ -437,12 +606,13 @@ class Will:
         the place of the signed and sent ones, and a Cancel at the password
         left the will saved unsigned.
         """
-        all_old_inputs = Will.get_all_inputs(old_will, only_valid=True)
-        # all_inputs_min_locktime = Will.get_all_inputs_min_locktime(all_old_inputs)
-        # all_new_inputs = Will.get_all_inputs(new_will)
-        # check if the new input is already spent by other transaction
-        # if it is use the same locktime, or anticipate.
-        Will.search_anticipate_rec(new_will, all_old_inputs)
+        dropped = Will.drop_drafts(old_will)
+        synced = Will.wallet_synced(wallet)
+        in_force = Will.in_force_items(old_will, wallet, synced)
+        references = Will.anticipation_references(old_will, in_force)
+        # check if the new input is already spent by a transaction of the
+        # will in force: if it is, use the same locktime, or anticipate.
+        Will.search_anticipate_rec(new_will, Will.get_all_inputs(references))
         other_inputs = Will.get_all_inputs(old_will, {})
         try:
             Will.normalize_will(new_will, others_inputs=other_inputs)
@@ -463,11 +633,73 @@ class Will:
                     new.sigs_required = old.sigs_required
                     new.set_status("COMPLETE", True)
                 continue
-            old.heirs = new.heirs
-            old.we = new.we
-            old.description = new.description
-            old.tx_fees = new.tx_fees
+            Will._carry_new_data(old, new)
             new_will[oid] = old
+
+        brought_back = []
+        signed_copies = []
+        for oid, old in list(old_will.items()):
+            if oid not in new_will or not old.get_status("REPLACED"):
+                continue
+            new = new_will[oid]
+            blocker = Will.bring_back_blocker(
+                oid, old_will, new, wallet, synced, in_force
+            )
+            if blocker is None:
+                old.set_status("REPLACED", False)
+                old.set_status("VALID", True)
+                Will._carry_new_data(old, new)
+                new_will[oid] = old
+                brought_back.append(oid)
+            elif old.get_status("COMPLETE") or will_state.is_partially_signed(old):
+                _logger.info(
+                    f"will in force {oid[:8]} not brought back ({blocker}): "
+                    "its signed transaction is kept, to be sent again"
+                )
+                Will._keep_signatures(new, old)
+                signed_copies.append(oid)
+        return {
+            "dropped": dropped,
+            "brought_back": brought_back,
+            "signed_copies": signed_copies,
+        }
+
+    @staticmethod
+    def _carry_new_data(old, new):
+        """Write on the kept item ``old`` what the will was rebuilt from
+        (heirs, will-executor, description, fee rate of ``new``), so the
+        next Check finds it coherent (CHANGELOG #122)."""
+        old.heirs = new.heirs
+        old.we = new.we
+        old.description = new.description
+        old.tx_fees = new.tx_fees
+
+    @staticmethod
+    def replaced_ids(will):
+        """The ids of the REPLACED items of ``will`` (a snapshot taken
+        before a build, for :meth:`only_brought_back`)."""
+        return {wid for wid, w in will.items() if w.get_status("REPLACED")}
+
+    @staticmethod
+    def only_brought_back(replaced_before, will):
+        """True when a build gave back the will in force and nothing new.
+
+        CHANGELOG #128: after the build, at least one VALID item was
+        REPLACED before it (``replaced_before``, see :meth:`replaced_ids`):
+        it was brought back; and every VALID item is signed and, when it
+        has a will-executor, sent: nothing to sign, nothing to send. The
+        callers then say that the will in force is kept, instead of "a new
+        will is being prepared".
+        """
+        valid = Will.only_valid_list(will)
+        if not valid or not any(wid in replaced_before for wid in valid):
+            return False
+        for w in valid.values():
+            if not w.get_status("COMPLETE"):
+                return False
+            if w.we and not w.get_status("PUSHED"):
+                return False
+        return True
 
     @staticmethod
     def get_higher_input_for_tx(will):

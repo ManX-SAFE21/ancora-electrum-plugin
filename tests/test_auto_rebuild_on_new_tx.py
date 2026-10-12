@@ -542,6 +542,14 @@ def test_auto_rebuild_invalidates_when_locktime_expired():
 
 
 def test_auto_rebuild_invalidates_when_anticipation_crosses_threshold():
+    """The anticipated locktime falls before the Check Alive: the old will
+    is invalidated on-chain and the rebuilt one is not signed or pushed.
+
+    CHANGELOG #128: the first will is SIGNED here. A rebuild is dated only
+    against the will in force (signed and/or sent); an unsigned first will
+    is a draft that the rebuild drops, so nothing would be anticipated and
+    this test would not reach the case it is about (the anticipation of a
+    will in force crossing the threshold)."""
     with _no_willexecutors():
         ctl = make_controller()
         now = time.time()
@@ -553,6 +561,7 @@ def test_auto_rebuild_invalidates_when_anticipation_crosses_threshold():
         ctl.will_settings["threshold"] = delivery - 12 * 3600
 
         ctl.prepare_will()
+        ctl.sign_transactions(None)  # the will in force (CHANGELOG #128)
         old_txid, _ = _single(ctl)
         ctl.wallet._utxos.append(make_funding_input("22" * 32))
 
@@ -592,13 +601,18 @@ def test_auto_rebuild_keeps_the_delivery_date_in_step():
     left the stored date one day later, so the next Check read it as a
     postponement and asked for an on-chain invalidation. The stored date now
     follows the rebuilt will, and the date widgets are refreshed afterwards
-    on the GUI thread."""
+    on the GUI thread.
+
+    CHANGELOG #128: the first will is SIGNED here, so it is the will in
+    force the rebuild is dated against; an unsigned first will is a draft
+    that the rebuild drops (nothing is anticipated against it)."""
     from bal.core import will as will_mod
 
     with _no_willexecutors():
         ctl = make_controller()  # default will settings: absolute dates
         assert not isinstance(ctl.will_settings["locktime"], str)
         ctl.prepare_will()
+        ctl.sign_transactions(None)  # the will in force (CHANGELOG #128)
         _, old_item = _single(ctl)
         old_locktime = int(old_item.tx.locktime)
         ctl.wallet._utxos.append(make_funding_input("22" * 32))

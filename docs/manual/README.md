@@ -497,7 +497,7 @@ transactions can have in the WILL tab, on each will‑executor that is online.
 
 | # | Status | Meaning | Colour | HEX |
 |---|--------|---------|--------|-----|
-| 1 | **New** | TX new inheritance | White (transparent) | `#FFFFFF` |
+| 1 | **Draft** | TX prepared but never signed nor sent: it exists only in this wallet | White (transparent) | `#FFFFFF` |
 | 2 | **Partially signed** | TX has some, but not all, of the required signatures | Amber | `#FFB347` |
 | 3 | **Signed** | TX inheritance signed into the wallet | Azure | `#2BC8ED` |
 | 4 | **Pushed** | TX sent to will‑executor | Azure‑green | `#73F3C8` |
@@ -508,6 +508,14 @@ transactions can have in the WILL tab, on each will‑executor that is online.
 | 9 | **Invalidated** | UTXO input is no longer available | Orange | `#F87838` |
 | 10 | **Replaced** | A backdated‑locktime transaction spends the same input | Violet | `#FF97E9` |
 | 11 | **Updated** | TX re‑issued keeping the same locktime and heirs | Light violet | `#B266B2` |
+
+A **Draft** is what a Cancel at the password leaves. When the will must be
+prepared again (Check, Prepare or the automatic rebuild), the drafts are
+discarded for free, and the new will is dated against the will in force
+(signed and sent), never against a draft: a signature cancelled again and
+again no longer moves the delivery date one more day each time. When the
+rebuilt will is exactly the will in force, the plugin keeps that one:
+nothing to sign, nothing to send.
 
 ---
 

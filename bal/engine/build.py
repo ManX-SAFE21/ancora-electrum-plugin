@@ -60,8 +60,10 @@ def build_will(host, *, with_creation_date):
     4. build the transactions with ``Heirs.get_transactions`` against
        ``date_to_check`` and the coins the will can use;
     5. wrap each one in a ``WillItem`` (same creation time for all) and merge
-       them into ``host.willitems`` (``Will.update_will`` anticipates and
-       reuses old items, then ``Will.normalize_will``).
+       them into ``host.willitems`` (``Will.update_will`` drops the unsigned
+       drafts, anticipates against the will in force and reuses or brings
+       back its items, CHANGELOG #128; then ``Will.normalize_will``). One
+       log line says how many drafts were dropped.
 
     Returns ``host.willitems`` (the whole live will), or ``{}`` when nothing
     was built. Exceptions are logged and raised again.
@@ -138,7 +140,15 @@ def build_will(host, *, with_creation_date):
             tx["heirs"] = copy_structure(txs[txid].heirs)
             tx["txchildren"] = []
             will[txid] = WillItem(tx, _id=txid, wallet=host.wallet)
-        Will.update_will(host.willitems, will)
+        # CHANGELOG #128: the drafts are dropped, the new will is dated
+        # against the will in force only, which may come back.
+        merged = Will.update_will(host.willitems, will, wallet=host.wallet)
+        if merged["dropped"]:
+            _logger.info(f"dropped {len(merged['dropped'])} unsigned drafts")
+        if merged["brought_back"]:
+            _logger.info(
+                f"will in force brought back: {len(merged['brought_back'])} items"
+            )
         host.willitems.update(will)
         Will.normalize_will(host.willitems, host.wallet)
     except Exception as e:

@@ -89,8 +89,10 @@ def will_status_text(will_item) -> str:
     executor never received the will). It replaced the whole status history
     ("New.Signed.Pushed.Checked"), now in the tooltip
     (:func:`will_status_tooltip`), and the separate "Server" column. Texts
-    approved by the owner.
+    approved by the owner. CHANGELOG #128: a VALID item never signed nor
+    sent is a "Draft" (:func:`bal.core.will_state.is_draft`).
     """
+    from ...core.will_state import is_draft
     from ...i18n import _
 
     if will_item.get_status("INVALIDATED"):
@@ -116,6 +118,12 @@ def will_status_text(will_item) -> str:
         if not getattr(will_item, "we", None):
             return _("In force")
         return _("Signed, to be sent")
+    if is_draft(will_item):
+        # CHANGELOG #128: never signed nor sent, it exists only in this
+        # wallet and the next build drops it (owner's report: "Da firmare
+        # (0/1)" read as a will waiting for him). A partially signed item
+        # keeps "To sign (n/m)".
+        return _("Draft")
     return _("To sign") + signature_suffix(will_item)
 
 

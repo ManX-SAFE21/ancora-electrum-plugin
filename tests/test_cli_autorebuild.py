@@ -256,21 +256,35 @@ def test_auto_rebuild_rebuilds_and_pushes_on_new_utxo():
 
 
 def test_auto_rebuild_encrypted_wallet_requires_manual_signing():
+    """An encrypted wallet: the rebuilt will is left for ``bal_will_sign``.
+
+    CHANGELOG #128: the first will is SIGNED here (with the password, as
+    the owner does), so it is the will in force and stays next to the
+    rebuilt one (2 items). An unsigned first will is a draft that the
+    rebuild drops: the will would hold 1 item and the test would no longer
+    show that the rebuilt will is left unsigned NEXT TO the will in force.
+    """
     with _no_willexecutors():
         with _Plugin() as plugin:
             plugin.NO_WILLEXECUTOR.set(True)
             wallet = FakeWallet([make_funding_input()], encrypted=True)
             c = _make_controller(plugin, wallet)
             c.prepare_will()
+            # Test value: the fake wallet signs with its fixed test key and
+            # ignores the password.
+            c.sign_transactions("test-password")
+            old_txid, _ = _single(c)
             wallet._utxos.append(make_funding_input("22" * 32))
 
             result = c.auto_rebuild()
 
     assert result["result"] == "needs_signing", result
     assert result["will"]["count"] == 2
-    assert not any(w.get_status("COMPLETE") for w in c.willitems.values()), (
+    new_item = _item_spending(c, "11" * 32, "22" * 32)
+    assert not new_item.get_status("COMPLETE"), (
         "an encrypted wallet must never be signed without the password"
     )
+    assert c.willitems[old_txid].get_status("COMPLETE"), "never dropped"
 
 
 def test_auto_rebuild_invalidates_when_locktime_expired():
@@ -307,6 +321,9 @@ def test_auto_rebuild_anticipation_never_crosses_the_check_alive():
     network pollution fixed in #97. The closest setting, one day before the
     delivery, shows the guarantee D14 was chosen for: the anticipated will
     is rebuilt, nothing is invalidated.
+
+    CHANGELOG #128: the first will is signed in the setup (see the comment
+    there).
     """
     with _no_willexecutors():
         with _Plugin() as plugin:
@@ -319,6 +336,10 @@ def test_auto_rebuild_anticipation_never_crosses_the_check_alive():
             c.will_settings["locktime"] = delivery
             c.will_settings["threshold"] = "-1d"
             c.prepare_will()
+            # CHANGELOG #128: signed, so it is the will in force the rebuild
+            # is dated against (an unsigned first will is a draft that the
+            # rebuild drops: nothing would be anticipated).
+            c.sign_transactions(None)
             old_txid, _ = _single(c)
             wallet._utxos.append(make_funding_input("22" * 32))
 

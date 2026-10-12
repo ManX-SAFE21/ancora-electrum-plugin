@@ -7348,3 +7348,114 @@ tuo testamento". Still open, for later steps: the fee field in BASIC (to
 hide in the new BASIC wizard, owner choice A), and P2 seen again on his
 wallet: a later date asked on an unsigned draft goes back to the draft's
 date at the Check (his signed will of 27/02/2027 stays in force).
+
+## 128. Unsigned drafts no longer move the delivery date
+
+**Date:** 2026-10-12
+
+**Problem (known issue "P2", the owner's wallet, 2026-10-12):** a will
+signed and sent to the will-executors for 2027-02-27 22:00 UTC, fee 21. The
+fee became 20: the wallet-close Check prepared a new will one day earlier
+(02-26) and the owner closed the password window. The fee went back to 21:
+the next Check prepared another will one day earlier again (02-25), because
+`Will.update_will` dated every rebuild against all the VALID items, so the
+UNSIGNED draft of 02-26 was the will to beat (`WillItem.set_anticipate`
+takes the minimum), and `search_rai` had marked the sent will REPLACED. The
+date set back to 27/02 and a Check: still 02-25, and the password asked
+again, while the will-executors held the will of 02-27 all along. The
+scenario harness showed the same as B2 / B2adv ("DANGER: delivery EARLIER
+than intended").
+
+**What changed (owner decisions of 2026-10-12):**
+
+- One derived classification of the will items, nothing new stored in the
+  wallet (`bal/core/will_state.py`, pure): a **draft** is VALID, never
+  signed and never sent; a **partially signed** item is its own state,
+  never dropped; the **will in force** is made of the items signed and/or
+  sent, VALID or REPLACED, not invalidated or executed and still executable
+  (on a wallet not synchronized: counted, the safe side); then replaced,
+  invalidated, executed. `delivery.ItemView` reads the same rules.
+- Every build (Check, wallet close, Prepare, automatic rebuild, command
+  line), in `Will.update_will`: first the drafts are dropped (log "dropped
+  N unsigned drafts"), then the new will is dated only against the will in
+  force (and the partially signed items, which a co-signer may still
+  send).
+- The will in force comes back: a rebuilt transaction identical to a
+  REPLACED item (same txid) gives that item back, VALID again, with its
+  signatures and its sent / verified state, only when it is signed and
+  sent, still executable, no other signed or sent item on the same coins is
+  dated earlier, and the wallet is synchronized. Otherwise the fresh item
+  takes its place as before, but never as an unsigned copy of a signed
+  transaction: it keeps the signed transaction (no password) and is sent
+  again.
+- Texts: when the build only gave back the will in force, the Check
+  dialog's rows end as for a coherent will ("Checking your will: Ok",
+  "Building your will: Nothing to do"; the result says "Your will is in
+  force" with the date), the Will tab's Prepare no longer shows "... a new
+  will must be prepared", and `bal_will_prepare` answers `coherent`. The
+  Will tab shows a draft as "Draft" (IT "Bozza", ES "Borrador") instead of
+  "To sign (0/1)"; a partially signed item keeps its signature count.
+- The period form of #127: a draft is no longer a will in force for the
+  period date (it never locked the form either).
+- Unchanged: a signed or sent item is never deleted; a later date than a
+  sent, still executable will (also a later hour of the same day) still
+  needs the paid invalidation; an earlier hour is a new will to sign.
+- Known, for later (owner): the fee put back ONLY, with the date left as
+  the draft stored it, keeps that date (one day before the will in force);
+  telling it apart needs stored state.
+- Catalogs: 1 new msgid ("Draft") with IT/ES. Docs:
+  `docs/manual/README.md` and `manual.html` (the "Draft" state). The
+  technical notes describe the classification and the rules.
+  `make-release.sh`: the new flow test file.
+
+**Tests:** new `tests/test_core_will_state.py` (the classification, on
+items and on `ItemView`), `tests/test_drafts_do_not_move_date.py` (three
+fake will-executors, BASIC and ADVANCED: the owner's case with the password
+cancelled at each step and its golden file `check/owner_drafts_128`, fee
+then fee back with the date, an earlier date cancelled then back, a draft
+never signed then a later date, a wallet not synchronized, the automatic
+rebuild with a draft and a new coin (D-1, not D-2), the command line, a
+signed earlier will kept and a later date still invalidated, the hour of
+the day earlier and later, multiverse, the period form with a draft and
+with a will in force, a draft left by another program). In
+`tests/test_core_identical_rebuild.py` the test "a replaced item is not
+brought back" became the tests of each condition (brought back when all
+hold, not brought back when each one fails, drafts dropped, partially
+signed and signed items kept). Updated: `test_status_column.py` ("Draft"),
+`test_core_delivery_months.py` (a draft is not a will in force for the
+period), and four tests that anticipated against an unsigned first will
+now sign it in their setup, keeping their intent (#97, #110):
+`test_auto_rebuild_on_new_tx.py` (2) and `test_cli_autorebuild.py` (2).
+Before the fix the new tests failed for the expected reasons (dates one
+day earlier per draft, the password asked again, `update_will` without a
+wallet); the hour and postpone tests passed before and after. Mutation
+checks (each applied alone): drafts not dropped, dating against the VALID
+items, each of the signed / sent / executable / earlier-will /
+synchronized conditions, the signed copy not kept, the "Draft" label, the
+period rule, the dialog rows, the command-line answer and a partially
+signed item taken for a draft each make tests fail. The explicit txid
+check is guaranteed by the lookup by txid (no test can fail on it alone).
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1848 passed, 0 failed, 0 errors (both); `ruff check bal/
+tests/`: all checks passed; no CRLF in the touched files. Golden files:
+none changed, one new (`check/owner_drafts_128`). Scenario harness (full
+matrix, 2-coin scenarios 6 times, BUG-3 probes, warn_matrix synced 1 and
+0) on Electrum 4.8.2: identical to the #125 log (ids masked) except B2 and
+B2adv, DANGER -> OK in every run (intended 2033-09-23: before 2033-09-22,
+the rebuild dated against the unsigned draft; now 2033-09-23). Catalogs:
+`check_catalogs.py` RESULT: OK, 1 new msgid, 0 fuzzy, 0 empty.
+
+**Outcome:** DONE. The owner tested the ZIP on his wallet (BASIC mode,
+2026-10-12), in the state of his P2 case: the signed will of 2027-02-27
+22:00 UTC (fee 21) in force at 4 will-executors and unsigned drafts at
+02-26 and 02-25. With the date 27/02/2027 23:00 and fee 21 the Check
+asked no password: "Checking your will: Ok", preparing, signing and
+sending not needed, verified 4/4, "Your will is in force", delivery
+2027-02-27. The log: "dropped 4 unsigned drafts", "will in force brought
+back: 4 items"; the wallet still holds its whole history (58 items; the
+replaced and invalidated rows were only hidden by his list options). The
+owner approved the deviation (an identical signed transaction that cannot
+be brought back keeps its signatures and is sent again, no password).
+Still open: putting back only the fee, with the date left where a draft
+stored it, keeps that date (one day earlier at most).

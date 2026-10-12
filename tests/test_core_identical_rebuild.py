@@ -18,7 +18,10 @@ same transaction, so its signatures are valid and its state (signed, sent,
 verified) is right. The new heirs, will-executor, description and fee rate
 are written on it. The same transaction for ANOTHER will-executor URL keeps
 the fresh item, so it is sent there, but with the signed transaction (no
-password). A replaced old item is never brought back.
+password). Until #128 a replaced old item was never brought back; since
+#128 the will in force that an unsigned draft replaced comes back under five
+conditions (see "bringing back" below), and every build first drops the
+drafts (never signed nor sent).
 
 Since CHANGELOG #123 a period is no longer accepted as the delivery
 setting, so the owner's case is reproduced at the engine: the period is
@@ -221,17 +224,179 @@ def test_an_unsigned_old_item_for_another_executor_stays_unsigned(flow_session):
     assert not fresh.get_status("COMPLETE")
 
 
-def test_a_replaced_item_is_not_brought_back(flow_session):
-    """Only VALID old items are reused: a replaced one with the same txid
-    leaves the fresh item in place (as before #122)."""
+# ------------------------------------------------- bringing back (CHANGELOG #128)
+#
+# Until #128 a REPLACED old item was never brought back: the fresh copy of
+# the same transaction took its place (the test
+# ``test_a_replaced_item_is_not_brought_back``). Since #128 the will in force
+# that an unsigned draft had replaced comes back, keeping its signatures and
+# its sent / verified state, only when ALL of these hold: (a) same txid;
+# (b) the old item is signed (COMPLETE) and sent (PUSHED); (c) it is still
+# executable; (d) no other signed or sent, still executable item on the same
+# coins is dated earlier; (e) the wallet is synchronized. Otherwise the fresh
+# item takes its place, as before, but a signed transaction is never
+# replaced by an UNSIGNED copy: the fresh item gets the signed transaction
+# (no password) and is sent again (the #122 rule for another URL).
+
+
+def _replaced(s, valid, monkeypatch, synced=True):
+    """The first item, marked REPLACED (as a draft leaves it), on a wallet
+    that says it is synchronized (or not)."""
+    monkeypatch.setattr(s.wallet, "is_up_to_date", lambda: synced)
+    wid, old = next(iter(valid.items()))
+    old.set_status("REPLACED", True)
+    return wid, old
+
+
+def _assert_not_brought_back(new_will, wid, old):
+    """The old item is not brought back: it stays REPLACED; the fresh item
+    takes its place with the signed transaction, not sent."""
+    new = new_will[wid]
+    assert new is not old
+    assert old.get_status("REPLACED") and not old.get_status("VALID")
+    assert new.get_status("COMPLETE") and str(new.tx) == str(old.tx)
+    assert not new.get_status("PUSHED") and not new.get_status("CHECKED")
+
+
+def test_a_replaced_will_in_force_is_brought_back(flow_session, monkeypatch):
+    """All five conditions hold: the old item comes back, VALID again, with
+    its signed transaction, its sent and verified state and the new data."""
+    s, valid = _sent_will(flow_session)
+    wid, old = _replaced(s, valid, monkeypatch)
+    raw = str(old.tx)
+    fresh = _fresh_copy(old, description="new description")
+    new_will = {wid: fresh}
+    result = Will.update_will(s.bw.willitems, new_will, wallet=s.wallet)
+    assert new_will[wid] is old
+    assert result["brought_back"] == [wid]
+    assert all(old.get_status(flag) for flag in SENT)
+    assert not old.get_status("REPLACED")
+    assert str(old.tx) == raw
+    assert old.description == "new description"
+
+
+def test_not_brought_back_another_transaction(flow_session, monkeypatch):
+    """(a) Another transaction (another date): nothing comes back, the new
+    one is kept as built."""
+    s, valid = _sent_will(flow_session)
+    wid, old = _replaced(s, valid, monkeypatch)
+    fresh = _fresh_copy(old)
+    fresh.tx.locktime = int(old.tx.locktime) - 2 * fk.DAY
+    nid = fresh.tx.txid()
+    new_will = {nid: fresh}
+    Will.update_will(s.bw.willitems, new_will, wallet=s.wallet)
+    assert new_will == {nid: fresh}
+    assert old.get_status("REPLACED") and not old.get_status("VALID")
+
+
+@pytest.mark.parametrize("clear", ["PUSHED", "COMPLETE"])
+def test_not_brought_back_unless_signed_and_sent(flow_session, monkeypatch, clear):
+    """(b) Signed but never sent, or sent but not signed: not brought back."""
+    s, valid = _sent_will(flow_session)
+    wid, old = _replaced(s, valid, monkeypatch)
+    old.STATUS[clear][1] = False
+    old.STATUS["CHECKED"][1] = False
+    new_will = {wid: _fresh_copy(old)}
+    Will.update_will(s.bw.willitems, new_will, wallet=s.wallet)
+    new = new_will[wid]
+    assert new is not old
+    assert old.get_status("REPLACED") and not old.get_status("VALID")
+    # Signed, never sent: the signature is kept (no password asked again).
+    assert new.get_status("COMPLETE") == (clear == "PUSHED")
+    assert not new.get_status("PUSHED")
+
+
+def test_not_brought_back_when_no_longer_executable(flow_session, monkeypatch):
+    """(c) An input spent by a broadcast transaction: never executable."""
+    s, valid = _sent_will(flow_session)
+    wid, old = _replaced(s, valid, monkeypatch)
+    spent = {i.prevout.to_str() for i in old.tx.inputs()}
+    monkeypatch.setattr(Will, "_funding_really_spent",
+                        staticmethod(lambda wallet, inp: inp in spent))
+    new_will = {wid: _fresh_copy(old)}
+    Will.update_will(s.bw.willitems, new_will, wallet=s.wallet)
+    assert new_will.get(wid) is not old
+    assert old.get_status("REPLACED") and not old.get_status("VALID")
+
+
+@pytest.mark.parametrize("flag", ["VALID", "REPLACED"])
+def test_not_brought_back_with_an_earlier_signed_will(flow_session, monkeypatch, flag):
+    """(d) Another signed and sent item on the same coins, dated earlier:
+    the will-executors would execute that one, so the old date would be
+    false.
+
+    In a real build the anticipation already dates the new transaction on
+    or before that earlier item (``WillItem.set_anticipate`` never leaves
+    it later than a will it shares coins with), so it cannot have the old
+    item's txid: (d) is a safety net, tested here alone with the
+    anticipation switched off."""
+    monkeypatch.setattr(Will, "search_anticipate_rec",
+                        staticmethod(lambda will, old_inputs: None))
+    s, valid = _sent_will(flow_session)
+    wid, old = _replaced(s, valid, monkeypatch)
+    earlier = old.copy()
+    earlier.tx.locktime = int(old.tx.locktime) - 3 * fk.DAY
+    earlier._id = earlier.tx.txid()
+    earlier.set_status("REPLACED", flag == "REPLACED")
+    earlier.STATUS["VALID"][1] = flag == "VALID"
+    s.bw.willitems[earlier._id] = earlier
+    new_will = {wid: _fresh_copy(old)}
+    Will.update_will(s.bw.willitems, new_will, wallet=s.wallet)
+    _assert_not_brought_back(new_will, wid, old)
+
+
+def test_not_brought_back_on_a_wallet_not_synchronized(flow_session, monkeypatch):
+    """(e) The wallet does not know yet whether a coin was spent."""
+    s, valid = _sent_will(flow_session)
+    wid, old = _replaced(s, valid, monkeypatch, synced=False)
+    new_will = {wid: _fresh_copy(old)}
+    Will.update_will(s.bw.willitems, new_will, wallet=s.wallet)
+    _assert_not_brought_back(new_will, wid, old)
+
+
+def test_without_a_wallet_nothing_is_brought_back(flow_session):
+    """No wallet given: synchronization unknown, as (e)."""
     s, valid = _sent_will(flow_session)
     wid, old = next(iter(valid.items()))
     old.set_status("REPLACED", True)
+    new_will = {wid: _fresh_copy(old)}
+    Will.update_will(s.bw.willitems, new_will)
+    _assert_not_brought_back(new_will, wid, old)
+
+
+def test_a_replaced_draft_is_overwritten(flow_session, monkeypatch):
+    """A REPLACED item never signed nor sent holds nothing: the fresh copy
+    of the same transaction takes its place, as before #128."""
+    s, valid = _sent_will(flow_session)
+    wid, old = _replaced(s, valid, monkeypatch)
+    unsigned = _fresh_copy(old)
+    unsigned.set_status("REPLACED", True)
+    s.bw.willitems[wid] = unsigned
     fresh = _fresh_copy(old)
     new_will = {wid: fresh}
-    Will.update_will(s.bw.willitems, new_will)
+    Will.update_will(s.bw.willitems, new_will, wallet=s.wallet)
     assert new_will[wid] is fresh
-    assert not fresh.get_status("COMPLETE")
+
+
+# ------------------------------------------------- drafts (CHANGELOG #128)
+
+def test_drafts_are_dropped_signed_and_partially_signed_items_are_not(flow_session):
+    """Every build drops the drafts first; a signed item and a partially
+    signed one (multisig: its own state, a co-signer may finish it) stay."""
+    s, valid = _sent_will(flow_session)
+    wid, signed = next(iter(valid.items()))
+    draft = _fresh_copy(signed)
+    partial = _fresh_copy(signed)
+    partial.set_status("PARTIALLY_SIGNED", True)
+    counted = _fresh_copy(signed)
+    counted.sigs_have, counted.sigs_required = 1, 2
+    for old_will, kept in (({"d": draft}, set()),
+                           ({"p": partial}, {"p"}),
+                           ({"c": counted}, {"c"}),
+                           ({"s": signed}, {"s"})):
+        result = Will.update_will(old_will, {})
+        assert set(old_will) == kept
+        assert result["dropped"] == ([] if kept else ["d"])
 
 
 def test_a_backup_transaction_keeps_its_signature(flow_session):
