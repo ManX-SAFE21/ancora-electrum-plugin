@@ -2019,7 +2019,14 @@ class Will:
                      if changes[h] == HeirNotFoundException.HEIR_ADDED]
             h = added[0] if added else missing[0]
             _logger.debug(f"heir: {h} not found ({changes[h]})")
-            raise HeirNotFoundException(h, changes[h])
+            # CHANGELOG #125: when every heir has the same delivery date (the
+            # normal case: multiverse off gives them the will's date), a new
+            # date concerns the whole will, not the heir named first.
+            same_date = len({str(heirs[x][2]) for x in heirs}) == 1
+            raise HeirNotFoundException(
+                h, changes[h],
+                all_heirs=changes[h] == HeirNotFoundException.HEIR_DATE and same_date,
+            )
         count_heirs = 0
         for h in heirs:
             if Util.parse_locktime_string(heirs[h][2]) >= check_date:
@@ -2398,7 +2405,9 @@ class HeirNotFoundException(NotCompleteWillException):
     what happened to that heir, so the Check dialog can name it (CHANGELOG
     #77): one of :data:`HEIR_REMOVED`, :data:`HEIR_ADDED`,
     :data:`HEIR_ADDRESS`, :data:`HEIR_AMOUNT`, :data:`HEIR_DATE`, or
-    ``None`` when unknown.
+    ``None`` when unknown. ``all_heirs`` (CHANGELOG #125) is True for a date
+    change when every heir has the same delivery date: the will's date
+    changed, not one heir's.
     """
 
     HEIR_REMOVED = "removed"
@@ -2407,11 +2416,12 @@ class HeirNotFoundException(NotCompleteWillException):
     HEIR_AMOUNT = "amount"
     HEIR_DATE = "date"
 
-    def __init__(self, heir, change=None):
+    def __init__(self, heir, change=None, all_heirs=False):
         """Keep ``heir`` as the only arg so ``str(e)`` stays the heir name."""
         super().__init__(heir)
         self.heir = heir
         self.change = change
+        self.all_heirs = all_heirs
 
 
 class WillPostponedException(NotCompleteWillException):

@@ -7123,3 +7123,50 @@ of the two settings ("Avviso Giallo/Rosso data eredità inferiore a
 the will 4 months away (the owner had moved his will to 2027-02-28 on
 purpose to see the colour), the date field in its normal colour, the two
 settings right below "User Type" with their new names and reset buttons.
+
+## 125. A new delivery date is reported for the will, not for one heir
+
+**Date:** 2026-10-12
+
+**Problem (owner's ZIP-2 test of #124):** after changing the delivery date,
+the Check said 'The delivery date of heir "1" changed: preparing a new
+will.' The owner has two heirs and asked why only one. Every heir has the
+will's date (multiverse off: `init_heirs_to_locktime` gives them the stored
+date), so the will's date changed; the core named the first heir it found
+(`Will.check_willexecutors_and_heirs`, CHANGELOG #77).
+
+**What changed (visible: one sentence; nothing else):**
+
+- `bal/core/will.py`: `HeirNotFoundException` gets `all_heirs` (default
+  False). `check_willexecutors_and_heirs` sets it for a date change when
+  every heir has the same delivery date.
+- `bal/core/messages.py` `will_change_message`: with `all_heirs`, "The
+  delivery date changed: preparing a new will." (text approved by the
+  owner; Italian "La data di consegna è cambiata: preparo un nuovo
+  testamento.", Spanish too). Heirs with different dates (the hidden
+  multiverse option) keep the sentence with the heir's name. The owner's
+  model for the future instalment inheritance (same dates for every heir,
+  one share per date) is noted in `PLAN.md`; the multiverse sentences will
+  be redone with it.
+- Catalogs: 1 new msgid with Italian and Spanish.
+- `make-release.sh`: the new test file.
+
+**Tests:** `tests/test_gui_delivery_date_message.py` (new; three fake
+will-executors, test wallet with a password): two heirs as the owner's, an
+earlier date, basic and advanced: the Check says the generic sentence and
+names no heir (both fail on `main` `12f7ae5`); multiverse with different
+dates: the heir is still named (passes on `main` too: unchanged).
+`tests/test_msg_rebuild_reasons.py`: the sentence for `all_heirs`.
+`tests/test_gui_date_form_change_flow.py`: Prepare's popup now says the
+generic sentence. Golden file `check/date_earlier`: the same sentence, the
+only change (3 lines).
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1691 passed, 0 failed, 0 errors; `ruff check bal/ tests/`:
+all checks passed. Scenario harness: log identical to the #124 log after masking the random ids; warn_matrix 134 Checks, 0 mismatches (synced=1 and 0). `build_zip.py` + `external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass (ZIP sha256 `1d4f90f0...`).
+
+**Outcome:** DONE. The owner tried the ZIP on his wallet (2026-10-12): a
+date one day earlier, then "Check your will": under "What changed" the
+window said "La data di consegna è cambiata: preparo un nuovo testamento."
+After this step the owner set a lighter rule for text-only steps (no
+scenario harness, no owner ZIP test; CLAUDE.md section 3).

@@ -133,6 +133,9 @@ def test_one_sentence_per_heir_change():
     assert _msg(hnf("bob", hnf.HEIR_REMOVED)) == 'Heir "bob" was removed: preparing a new will.'
     assert _msg(hnf("carol", hnf.HEIR_ADDED)) == 'Heir "carol" was added: preparing a new will.'
     assert "delivery date of heir \"alice\" changed" in _msg(hnf("alice", hnf.HEIR_DATE))
+    # CHANGELOG #125: every heir has the will's date -> the will's date changed.
+    assert _msg(hnf("alice", hnf.HEIR_DATE, all_heirs=True)) == (
+        "The delivery date changed: preparing a new will.")
     assert "amount of heir \"alice\" changed" in _msg(hnf("alice", hnf.HEIR_AMOUNT))
     assert "address of heir \"alice\" changed" in _msg(hnf("alice", hnf.HEIR_ADDRESS))
     assert "is not covered by the current will" in _msg(hnf("alice"))

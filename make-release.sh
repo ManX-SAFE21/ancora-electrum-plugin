@@ -75,7 +75,7 @@ if QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src python3 -m pytest \
       tests/test_gui_date_form_change_flow.py tests/test_group_g_basic_calendar.py \
       tests/test_group_h_v048.py \
       tests/test_per_wallet_settings_flow.py tests/test_gui_window_init_migration.py \
-      tests/test_gui_delivery_colours.py \
+      tests/test_gui_delivery_colours.py tests/test_gui_delivery_date_message.py \
       tests/test_i18n.py tests/test_translations.py \
       tests/test_cli_*.py tests/test_import_will_details.py \
       -q 2>&1; then

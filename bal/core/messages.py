@@ -95,6 +95,10 @@ def will_change_message(e):
             return _('Heir "{}" was removed: preparing a new will.').format(str(e))
         if change == HeirNotFoundException.HEIR_ADDED:
             return _('Heir "{}" was added: preparing a new will.').format(str(e))
+        if change == HeirNotFoundException.HEIR_DATE and getattr(e, "all_heirs", False):
+            # CHANGELOG #125 (owner): every heir has the will's date, so the
+            # will's date changed; naming only the first heir confused.
+            return _("The delivery date changed: preparing a new will.")
         if change == HeirNotFoundException.HEIR_DATE:
             return _(
                 'The delivery date of heir "{}" changed: preparing a new will.'

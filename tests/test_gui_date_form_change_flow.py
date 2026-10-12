@@ -327,7 +327,7 @@ def test_prepare_says_the_will_is_in_force(flow_session):
     s.prepare()
     step = s.recorder.steps[-1]
     assert [p[1] for p in step["popups"]] == [
-        'The delivery date of heir "alice" changed: preparing a new will.',
+        "The delivery date changed: preparing a new will.",      # #125
         "Your will is in force",
     ], step["popups"]
     _assert_same_signed_will(s, txids, raw, period)
