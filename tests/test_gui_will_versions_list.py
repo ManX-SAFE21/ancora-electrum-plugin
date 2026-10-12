@@ -141,6 +141,28 @@ def _history_with_invalidation(make):
     return s
 
 
+def test_only_the_version_in_force_has_in_force_rows(make):
+    """CHANGELOG #130, owner's ZIP test: an older version still held by the
+    will-executors (#1, replaced by the earlier #2) showed green "In force,
+    verified" rows under "Replaced (still held by the will-executors)".
+    Only the rows of THE version in force read "In force"."""
+    s = make()
+    s.check()
+    s.clock.travel(1)
+    s.set_date(D - fk.DAY)
+    s.check()
+    lst = _list(s)
+    older = _version_index(lst, 1)
+    current = _version_index(lst, 2)
+    assert lst._versions[older.data(lst.ROLE_KEY)].state == "replaced_held"
+    m = lst.model()
+    for r in range(3):
+        old_cells = _cells(lst, m.index(r + 1, 0, older))
+        assert old_cells[4] == will_status_text(s.bw.willitems[old_cells[1]])
+        assert not old_cells[4].startswith("In force")
+        assert _cells(lst, m.index(r + 1, 0, current))[4] == "In force, verified"
+
+
 def test_versions_and_the_paid_invalidation(make):
     s = _history_with_invalidation(make)
     lst = _list(s)

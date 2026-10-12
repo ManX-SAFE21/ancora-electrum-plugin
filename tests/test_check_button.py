@@ -4,12 +4,14 @@ The Check button of the Will tab, as big as the Wizard (CHANGELOG #95).
 Owner: Check is the command used most after the Wizard, but it was a small
 icon at the far right, next to "Tools". It now has its name on it ("Check
 your will"), the same look as the Wizard, and sits right after it:
-    Wizard | Check | Delivery time | Check Alive | Calendar
+    Wizard | Check | Calendar | Delivery time | Check Alive | fee
 
 To make room for it, ADVANCED mode lays the toolbar fields on two rows
-(delivery time | calendar, then Check Alive | fee); BASIC keeps its one row
-and its spacing. A BASIC <-> ADVANCED switch rearranges the existing
-toolbars without a restart.
+(delivery time, then Check Alive | fee); BASIC keeps its one row. A
+BASIC <-> ADVANCED switch rearranges the existing toolbars without a
+restart. CHANGELOG #130 (owner): in BASIC the toolbars hide the delivery
+date and the fee; the calendar is a big button of the Will tab (and a
+Tools entry), never in the toolbar fields, so the Heirs tab has none.
 
 Run (standalone or with pytest):
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \
@@ -66,16 +68,22 @@ class _Host(QWidget):
         return toolbar, QMenu()
 
     _big_button = lists_mod.PreviewList._big_button
+    _big_calendar_button = lists_mod.PreviewList._big_calendar_button
 
 
 def _row():
     host = _Host()
     settings = QWidget()
+    settings._ics_provider = lambda: None
     with patch.object(lists_mod, "WillSettingsWidget", return_value=settings), \
             patch.object(lists_mod, "report_menu", return_value=QMenu()):
         toolbar = lists_mod.PreviewList.create_toolbar(host, None)
+    host.toolbar_layout = toolbar
     row = toolbar.itemAt(2).widget().layout()
-    return host, settings, [row.itemAt(i).widget() for i in range(row.count())]
+    host.row_layout = row
+    # The widgets in order; the stretch between them is not a widget.
+    return host, settings, [row.itemAt(i).widget() for i in range(row.count())
+                            if row.itemAt(i).widget() is not None]
 
 
 def test_check_comes_right_after_the_wizard():
@@ -83,11 +91,26 @@ def test_check_comes_right_after_the_wizard():
     wizard, check = widgets[0], widgets[1]
     assert wizard.text().strip() == _("Build / Edit Your Will")      # #127
     assert check.text().strip() == _("Check your will")
-    assert widgets[2] is settings and len(widgets) == 3
+    assert widgets[2] is settings and len(widgets) == 4
+    # #130 (owner): the calendar on the right, after a stretch.
+    assert widgets[3] is host.calendar_button
+
+
+def test_buttons_stay_on_the_left_calendar_on_the_right():
+    """CHANGELOG #130, owner's ZIP test: with every field hidden in BASIC
+    the row shrank and the toolbar's stretch pushed both big buttons to
+    the right. The row now takes the free width (stretch 1) and has its
+    own stretch before the calendar."""
+    host, _settings, _widgets = _row()
+    assert host.toolbar_layout.stretch(2) == 1
+    row = host.row_layout
+    kinds = ["stretch" if row.itemAt(i).widget() is None else "widget"
+             for i in range(row.count())]
+    assert kinds == ["widget", "widget", "widget", "stretch", "widget"]
 
 
 def test_check_looks_like_the_wizard():
-    _host, _settings, (wizard, check, _rest) = _row()
+    _host, _settings, (wizard, check, _rest, _cal) = _row()
     assert isinstance(check, QPushButton)
     assert check.iconSize() == wizard.iconSize()
     assert check.minimumHeight() == wizard.minimumHeight() == 40
@@ -96,7 +119,7 @@ def test_check_looks_like_the_wizard():
 
 
 def test_check_runs_the_check_and_explains_itself():
-    host, _settings, (wizard, check, _rest) = _row()
+    host, _settings, (wizard, check, _rest, _cal) = _row()
     # assert_called_once, not ..._with(): a mock takes Qt's "checked"
     # argument, the real methods take none and Qt leaves it out.
     check.click()
@@ -170,16 +193,48 @@ def _lines(row):
 def test_basic_keeps_one_row_and_its_spacing():
     row = _settings_row(["basic"])
     w = row.widgets
-    assert _lines(row) == [
-        [w["locktime"], w["threshold"], row.calendar_button, w["baltx_fees"]], []]
+    assert _lines(row) == [[w["locktime"], w["threshold"], w["baltx_fees"]], []]
     forty = 40 * widgets_mod.char_width_in_lineedit()
     assert w["locktime"].minimumWidth() == forty
+
+
+def test_basic_toolbar_hides_date_fee_and_calendar():
+    """CHANGELOG #130 (owner): in BASIC the Will and Heirs toolbars show
+    neither the delivery date nor the fee; the calendar button is never in
+    these toolbars (the Will tab has its own big one)."""
+    row = _settings_row(["basic"])
+    w = row.widgets
+    assert w["locktime"].isHidden() and w["baltx_fees"].isHidden()
+    assert row.calendar_button.isHidden()
+
+
+def test_advanced_toolbar_keeps_date_and_fee_without_calendar():
+    row = _settings_row(["advanced"])
+    w = row.widgets
+    assert not w["locktime"].isHidden() and not w["baltx_fees"].isHidden()
+    assert row.calendar_button.isHidden()
+
+
+def test_will_tab_big_calendar_button_and_tools_entry():
+    """CHANGELOG #130: the calendar button of the Will tab is as tall as the
+    two main commands, with a doubled icon, and Tools has "Calendar
+    reminders" with the same Open / Open with... / Save."""
+    host, _settings, (wizard, _check, _rest, calendar) = _row()
+    assert calendar.iconSize() == wizard.iconSize()
+    assert calendar.minimumHeight() == wizard.minimumHeight() == 40
+    titles = [a.text() for a in host.menu.actions()]
+    assert _("Calendar reminders") in titles
+    sub = next(a.menu() for a in host.menu.actions()
+               if a.text() == _("Calendar reminders"))
+    assert sub is calendar.menu()
+    assert [a.text() for a in sub.actions()] == [
+        _("Open"), _("Open with..."), _("Save")]
 
 
 def test_advanced_uses_two_rows_packed_to_the_left():
     row = _settings_row(["advanced"])
     w = row.widgets
-    assert _lines(row) == [[w["locktime"], row.calendar_button],
+    assert _lines(row) == [[w["locktime"]],
                            [w["threshold"], w["baltx_fees"]]]
     assert w["locktime"].minimumWidth() == 0
 
@@ -190,13 +245,15 @@ def test_mode_switch_rearranges_the_existing_toolbar():
     w = row.widgets
     mode[0] = "advanced"
     row.apply_user_type_visibility()
-    assert _lines(row) == [[w["locktime"], row.calendar_button],
+    assert _lines(row) == [[w["locktime"]],
                            [w["threshold"], w["baltx_fees"]]]
+    assert not w["locktime"].isHidden()       # #130: shown again at once
     row.apply_user_type_visibility()          # every refresh: nothing moves
-    assert len(_lines(row)[0]) == 2
+    assert len(_lines(row)[0]) == 1
     mode[0] = "basic"
     row.apply_user_type_visibility()
-    assert _lines(row)[1] == [] and len(_lines(row)[0]) == 4
+    assert _lines(row)[1] == [] and len(_lines(row)[0]) == 3
+    assert w["locktime"].isHidden() and w["baltx_fees"].isHidden()
     assert w["locktime"].minimumWidth() == 40 * widgets_mod.char_width_in_lineedit()
 
 if __name__ == "__main__":
