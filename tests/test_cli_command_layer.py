@@ -15,7 +15,9 @@ import asyncio
 import json
 import os
 import sys
+import time
 import unittest.mock as mock
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +28,8 @@ from electrum.util import UserFacingException
 from test_cli_controller_offline import VALID_ADDRESS, FakeWallet, Plugin
 
 import bal  # noqa: F401  (importing the package registers the bal_* commands)
+from bal.core import delivery
+from bal.engine import context
 
 WALLET_PATH = "test_wallet"
 
@@ -78,12 +82,27 @@ def test_settings_commands_need_no_wallet(plugin):
     assert run(plugin, "settings_reset", "bal_tx_fees")["value"] == 100
 
 
-def test_settings_set_will_settings_json(plugin):
-    """#99: the will settings (a JSON object) can be saved from the command
-    line; Electrum's own ``setconfig`` refuses the key."""
+def test_will_settings_commands_point_to_the_delivery_commands(plugin):
+    """#99 saved the will settings (a JSON object) from the command line.
+
+    Since #123 each wallet keeps its own delivery date and fee rate, and
+    Electrum's global ``bal_will_settings`` (BAL's key) is never written
+    again (plan R1-8, deliberate): set, get and reset refuse it with a
+    pointer to ``bal_delivery_show`` / ``bal_delivery_set``, by config key
+    or attribute name, and the list hides it. The global is not created.
+    """
     value = '{"baltx_fees": 20, "threshold": "-180d", "locktime": "2y"}'
-    out = run(plugin, "settings_set", "bal_will_settings", value)
-    assert out["value"] == {"baltx_fees": 20, "threshold": "-180d", "locktime": "2y"}
+    with pytest.raises(UserFacingException, match="bal_delivery_set"):
+        run(plugin, "settings_set", "bal_will_settings", value)
+    for name in ("settings_get", "settings_reset"):
+        for key in ("bal_will_settings", "WILL_SETTINGS"):
+            with pytest.raises(UserFacingException, match="bal_delivery_show"):
+                run(plugin, name, key)
+    listing = run(plugin, "settings_list")
+    assert "TX_FEES" in listing
+    assert "WILL_SETTINGS" not in listing
+    assert "bal_will_settings" not in [v["name"] for v in listing.values()]
+    assert plugin.config.get("bal_will_settings") is None
 
 
 def test_settings_unknown_key_is_a_message(plugin):
@@ -169,33 +188,47 @@ def test_executor_update_with_every_field(plugin):
     assert out["willexecutor"]["promo_code"] is None
 
 
-def test_default_will_settings_are_saved_once(plugin):
-    """#102: the first wallet command saves the default will settings, so a
-    daemon restarted on a later day (a new default, one day later) keeps the
-    delivery date of the will already built."""
+def test_default_delivery_date_is_kept_by_the_wallet(plugin, monkeypatch):
+    """#102: the first wallet command stores the default delivery date, so a
+    daemon restarted on a later day (when the default would be later) keeps
+    the delivery date of the will already built.
+
+    Since #123 the date is stored in the WALLET (its ``will_settings``,
+    migrated once; a wallet without heirs or a will gets the default, today
+    + 12 months) and Electrum's global ``bal_will_settings`` is never
+    written (rule I1). The restart is three days later (on the engine's
+    clock, which the migration reads): two days in a row can give the same
+    default at the end of February.
+    """
     wallet = FakeWallet()
     assert plugin.config.get("bal_will_settings") is None
     run(plugin, "heirs_list", wallet=wallet)
-    saved = plugin.config.get("bal_will_settings")
-    assert saved and saved["locktime"] == plugin.WILL_SETTINGS.default["locktime"]
-    # A restart one day later: the plugin computes a new default.
-    later = dict(plugin.WILL_SETTINGS.default)
-    later["locktime"] += 24 * 3600
-    plugin.WILL_SETTINGS.default = later
+    saved = dict(wallet.db.get_dict("will_settings"))
+    assert saved["settings_version"] == 1
+    assert saved["migrated_from"] == "default"
+    assert delivery.as_delivery(saved["locktime"]) == saved["locktime"]
+    assert plugin.config.get("bal_will_settings") is None
+    # A restart three days later: the default would now be another date.
+    later = time.time() + 3 * 24 * 3600
+    assert delivery.default_delivery(later) != saved["locktime"]
+    monkeypatch.setattr(context, "time", SimpleNamespace(time=lambda: later))
     out = run(plugin, "heirs_add", "alice", VALID_ADDRESS, "100%", wallet=wallet)
     assert out["value"][2] == saved["locktime"]
-    assert plugin.config.get("bal_will_settings") == saved
+    assert dict(wallet.db.get_dict("will_settings")) == saved
+    assert plugin.config.get("bal_will_settings") is None
 
 
 def test_heir_locktime_refused_when_every_heir_shares_the_date(plugin):
     """#103: multiverse off (the default): a per-heir --locktime would be
-    overwritten by the will's date at the next check, so it is refused."""
+    overwritten by the will's date at the next check, so it is refused. The
+    message points to ``bal_delivery_set --date`` (#123: the date is the
+    wallet's own setting; ``bal_will_settings`` is not used any more)."""
     wallet = FakeWallet()
-    with pytest.raises(UserFacingException, match="bal_will_settings"):
+    with pytest.raises(UserFacingException, match="bal_delivery_set --date"):
         run(plugin, "heirs_add", "bob", VALID_ADDRESS, "50%", locktime="2y",
             wallet=wallet)
     run(plugin, "heirs_add", "bob", VALID_ADDRESS, "50%", wallet=wallet)
-    with pytest.raises(UserFacingException, match="bal_will_settings"):
+    with pytest.raises(UserFacingException, match="bal_delivery_set --date"):
         run(plugin, "heirs_update", "bob", locktime="2y", wallet=wallet)
     # Changing another field keeps working.
     out = run(plugin, "heirs_update", "bob", amount="40%", wallet=wallet)

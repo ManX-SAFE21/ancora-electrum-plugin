@@ -111,6 +111,9 @@ class BalTxFeesWidget(QWidget):
     current_value = None
 
     def __init__(self, bal_window, parent, value=None):
+        """The fee rate field; ``value`` defaults to the wallet's own fee
+        rate (``bal_window.will_settings``, CHANGELOG #123; before, the
+        shared ``bal_will_settings``)."""
         super().__init__(parent)
         self.bal_window = bal_window
         layout = QHBoxLayout(self)
@@ -124,7 +127,9 @@ class BalTxFeesWidget(QWidget):
         value = (
             value
             if value
-            else self.bal_window.bal_plugin.WILL_SETTINGS.get()["baltx_fees"]
+            else (getattr(self.bal_window, "will_settings", None) or {}).get(
+                "baltx_fees"
+            )
         )
         self.set_value(value)
         self.default_value = self.bal_window.bal_plugin.default_will_settings()[
@@ -219,6 +224,13 @@ class _LockTimeEditor(LockTimeEditor):
 class BalTimeEditWidget(QWidget, _LockTimeEditor):
     """The delivery date field: a Raw period ("1y") or a Date (CHANGELOG #81).
 
+    CHANGELOG #123: the Raw/Date selector is HIDDEN in both modes and the
+    Date editor is always used (:meth:`_index_for`): a period is no longer
+    accepted as the delivery date (it was read against the clock again at
+    every check). The Raw code stays until #127 removes it. The rest of
+    this docstring describes the #81 rules, which still hold for the Date
+    editor.
+
     Owner rule (#81): the saved delivery date changes ONLY when the user
     edits it - types a period, picks a date, or explicitly switches Raw/Date.
     Building the widget, switching BASIC/ADVANCED, refreshing or syncing
@@ -255,6 +267,9 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
     allow_negative_raw = False
 
     def __init__(self, bal_window, parent, default_locktime=None, save_to_settings=True):
+        """Build the field; ``default_locktime`` defaults to the wallet's own
+        setting (``bal_window.will_settings``, #123). The selector is hidden
+        and the Date editor used in both modes (#123)."""
         super().__init__(parent)
         self.bal_window = bal_window
         self.save_to_settings = save_to_settings
@@ -287,7 +302,9 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         # a later BASIC<->ADVANCED switch then keeps that choice.
         self._user_picked_editor = False
         if not default_locktime:
-            default_locktime = self.bal_window.bal_plugin.WILL_SETTINGS.get()[self.base_field]
+            default_locktime = (
+                getattr(self.bal_window, "will_settings", None) or {}
+            ).get(self.base_field)
         # #81: the editor follows the form of the saved value; the value is
         # never replaced by a default (that is what moved the delivery date).
         default_index = self._index_for(default_locktime)
@@ -319,8 +336,8 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         self.current_index = default_index
         self._show(default_locktime)
         hbox.addWidget(self.combo)
-        if self._basic_mode:
-            self.combo.setVisible(False)
+        # #123: hidden in both modes (only the Date editor is used).
+        self.combo.setVisible(False)
         for w in self.editors:
             hbox.addWidget(w)
 
@@ -333,10 +350,14 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
     # ---------------------------------------------------------------- helpers
 
     def _index_for(self, value):
-        """Editor for ``value``: Date (1) in BASIC or for a fixed date, else Raw (0)."""
-        if self.bal_window.bal_plugin.is_basic_mode():
-            return 1
-        return 0 if Util._relative_days(value) is not None else 1
+        """Editor for ``value``: always the Date editor (1) since #123.
+
+        Before #123 ADVANCED opened the Raw editor (0) for a period; a
+        period is now refused as the delivery date, so the Date editor shows
+        a stored period as the date it gives (:meth:`_value_for_editor`) and
+        nothing is saved.
+        """
+        return 1
 
     def _planned_timestamp(self, value):
         """The delivery date ``value`` really gives (see Will.planned_delivery)."""
@@ -469,14 +490,11 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         runs on every ``update_all()``/CHECK refresh). The per-mode editor
         choice lives in ``apply_user_type_editor_default()``, which runs ONLY
         on a real USER TYPE change.
+
+        CHANGELOG #123: the selector is hidden in BOTH modes (a period is no
+        longer accepted as the delivery date), so this only keeps it hidden.
         """
-        try:
-            basic = self.bal_window.bal_plugin.is_basic_mode()
-        except Exception:
-            # If the mode cannot be read, show the combo (the safe, most
-            # capable default for an existing widget).
-            basic = False
-        self.combo.setVisible(not basic)
+        self.combo.setVisible(False)
 
     def apply_user_type_editor_default(self):
         """Pick the editor for the new USER TYPE, never changing the value.
@@ -488,16 +506,11 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
                        one by hand (``_user_picked_editor``).
         The switch is programmatic: only the display changes (#81; it used to
         save "1y" or today + 1 year and so move the delivery date).
+
+        CHANGELOG #123: the Date editor in both modes (:meth:`_index_for`).
         """
         try:
-            basic = self.bal_window.bal_plugin.is_basic_mode()
-        except Exception:
-            basic = False
-        try:
-            if basic:
-                self.set_index(1)
-            elif not self._user_picked_editor:
-                self.set_index(self._index_for(self.current_value))
+            self.set_index(self._index_for(self.current_value))
         except Exception:
             # Never let a cosmetic editor switch break mode toggling.
             pass
@@ -632,11 +645,29 @@ class LockTimeDateEdit(QDateTimeEdit, _LockTimeEditor):
     max_allowed_value = _LockTimeEditor.get_max_allowed_timestamp()
 
     def __init__(self, parent=None, time_edit=None):
+        """Build the date editor, limited to UNIX timestamps (see GUARD above).
+
+        The editor takes focus only on a click or Tab (StrongFocus, not the
+        default WheelFocus), and the mouse wheel never changes its value
+        (see ``wheelEvent``): every change of this field stores the delivery
+        date at once, so a scroll over the tab must not move it.
+        """
         QDateTimeEdit.__init__(self, parent)
         self.setMinimumDateTime(datetime.fromtimestamp(self.min_allowed_value))
         self.setMaximumDateTime(datetime.fromtimestamp(self.max_allowed_value))
         #self.setDateTime(QDateTime.currentDateTime())
         self.time_edit = time_edit
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event):
+        """Ignore the mouse wheel, so the parent can scroll instead.
+
+        QAbstractSpinBox steps the value on a wheel tick even when the field
+        has no focus, so StrongFocus alone is not enough. One tick would store
+        a delivery date one day earlier (an earlier will) or later (a paid
+        invalidation) without any click.
+        """
+        event.ignore()
 
     def set_read_only(self, read_only=True):
         # Read-only display: keyboard editing disabled and the up/down spin
@@ -762,7 +793,10 @@ class ThresholdTimeWidget(QWidget):
         hbox.addWidget(self.label)
         hbox.addStretch(1)
         if init_value is None:
-            init_value = bal_window.bal_plugin.WILL_SETTINGS.get().get("threshold")
+            # #123: the wallet's own settings, not the shared global.
+            init_value = (getattr(bal_window, "will_settings", None) or {}).get(
+                "threshold"
+            )
         self.spin.setValue(self._days_for_display(init_value))
         self.current_value = self.get_value()
         self._update_hint()
@@ -892,9 +926,12 @@ class LockTimeWidget(BalTimeEditWidget):
 
     def __init__(self, bal_window, parent, init_value=None, save_to_settings=True):
         """``save_to_settings=False``: an heir's own date (heir dialog), never
-        written to the will's delivery setting (#81)."""
+        written to the will's delivery setting (#81). ``init_value``
+        defaults to the wallet's own delivery date (#123)."""
         if init_value is None:
-            init_value = bal_window.bal_plugin.WILL_SETTINGS.get()["locktime"]
+            init_value = (getattr(bal_window, "will_settings", None) or {}).get(
+                "locktime"
+            )
         super().__init__(bal_window, parent, init_value, save_to_settings)
         self.default_value = self.bal_window.bal_plugin.default_will_settings()[
             "locktime"
@@ -1430,7 +1467,9 @@ class WillSettingsWidget(QWidget):
         toolbar's list (Will or Heirs tab) is redrawn: the resolved Check
         Alive date, the date next to the Raw editor, the calendar dates, the
         will summary. First a saved period is shown again as the date it
-        gives with the will now loaded (CHANGELOG #121).
+        gives with the will now loaded (CHANGELOG #121). The two resolved
+        dates are kept on the window (``real_threshold``, ``real_locktime``;
+        before #123 they were written into the settings dict).
         """
         try:
             self.widgets["locktime"].refresh_shown_value()
@@ -1465,7 +1504,9 @@ class WillSettingsWidget(QWidget):
         )
         td = BalTimestamp._safe_fromtimestamp(resolved)
         self.widgets["threshold"].alarm=td
-        self.bal_window.will_settings["real_threshold"]=td.timestamp()
+        # #123: a display cache of the window (the Will Details window reads
+        # it), never a key of the stored settings.
+        self.bal_window.real_threshold = td.timestamp()
         try:
             # Red when already past (CHANGELOG #80).
             self.widgets["threshold"].show_resolved_date(td)
@@ -1475,7 +1516,7 @@ class WillSettingsWidget(QWidget):
         td = BalTimestamp._safe_fromtimestamp(planned)
         alarm = BalTimestamp(min_locktime).to_date()
         self.widgets["locktime"].alarm=alarm
-        self.bal_window.will_settings["real_locktime"]=td.timestamp()
+        self.bal_window.real_locktime = td.timestamp()
         try:
             label = self.widgets["locktime"].editor.label
             label.setText(td.strftime("%Y-%m-%d"))

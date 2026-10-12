@@ -261,7 +261,7 @@
   "pushed": [],
   "questions": [],
   "result": {
-   "raised": "UserFacingException: The Check Alive date has passed. To renew: run bal_will_invalidate, sign and broadcast the transaction, then run bal_will_prepare once it is confirmed."
+   "raised": "UserFacingException: The Check Alive date (2026-11-09) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid."
   },
   "settings": {
    "baltx_fees": 13,
@@ -334,7 +334,7 @@
   "pushed": [],
   "questions": [],
   "result": {
-   "raised": "UserFacingException: The Check Alive date has passed. To renew: run bal_will_invalidate, sign and broadcast the transaction, then run bal_will_prepare once it is confirmed."
+   "raised": "UserFacingException: The Check Alive date (2026-11-09) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid."
   },
   "settings": {
    "baltx_fees": 13,

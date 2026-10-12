@@ -48,9 +48,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import bal.gui.qt.window as window_mod  # noqa: E402
 from bal.core.heirs import Heirs  # noqa: E402
 from bal.core.plugin_base import BalConfig, BalPlugin  # noqa: E402
-from bal.core.util import Util  # noqa: E402
 from bal.core.will import Will  # noqa: E402
 from bal.core.willexecutors import Willexecutors  # noqa: E402
+from bal.engine import context  # noqa: E402
 from bal.gui.qt.plugin import Plugin  # noqa: E402
 from bal.gui.qt.window import BalWindow  # noqa: E402
 
@@ -80,11 +80,19 @@ def make_funding_input(prevout_hex="11" * 32):
 
 
 class FakeDB:
+    """The wallet file in memory: plain keys and live dicts."""
+
     def __init__(self):
         self._data = {}
 
     def get(self, key, default=None):
         return self._data.get(key, default)
+
+    def get_dict(self, key):
+        """The live dict stored under ``key``: the same object at every
+        call, as Electrum's ``StoredDict`` (an empty one the first time).
+        The wallet's own delivery settings live there (CHANGELOG #123)."""
+        return self._data.setdefault(key, {})
 
     def put(self, key, value):
         self._data[key] = value
@@ -206,7 +214,15 @@ class FakeWindow:
 
 
 def make_controller(utxos=None):
-    """Build a fully-wired BalWindow without constructing the Qt tabs."""
+    """Build a fully-wired BalWindow without constructing the Qt tabs.
+
+    The delivery settings are the wallet's own (CHANGELOG #123), loaded as
+    ``BalWindow.__init__`` loads them: the heirs first, then
+    ``context.load_will_settings``. A new wallet gets the default (today +
+    12 months, fee 20). Before #123 they were ``WILL_SETTINGS.get()``, the
+    plugin's mutable default object, so an assertion that read it back
+    could not fail.
+    """
     utxos = [make_funding_input()] if utxos is None else utxos
     config = FakeConfig()
     wallet = FakeWallet(utxos)
@@ -225,9 +241,9 @@ def make_controller(utxos=None):
     ctl.will = {}
     ctl.willitems = {}
     ctl.willexecutors = {}
-    ctl.will_settings = plugin.WILL_SETTINGS.get()
-    Util.fix_will_settings_tx_fees(ctl.will_settings)
     ctl.heirs = Heirs(wallet)
+    assert context.load_will_settings(ctl)
+    assert ctl.will_settings is wallet.db.get_dict("will_settings")
     ctl.heirs["alice"] = [ADDRESS, "100000", "1y"]
     ctl.heirs["bob"] = [ADDRESS, "100%", "1y"]
     ctl.no_willexecutor = True
@@ -437,12 +453,16 @@ def test_auto_rebuild_noop_when_will_valid():
 
 
 def test_auto_rebuild_rebuilds_and_pushes_on_new_utxo():
+    """A new coin: the automatic rebuild builds, signs and pushes a will
+    that spends both coins, no earlier than the old one, with no on-chain
+    invalidation; the stored date follows it and the next Check finds
+    the will valid."""
     with _no_willexecutors():
         ctl = make_controller()
-        # A relative delivery recipe keeps the will coherent after the rebuild
-        # anticipates the locktime by one day (an absolute recipe would read the
-        # anticipated tx as a postpone, see check_willexecutors_and_heirs).
-        ctl.will_settings["locktime"] = "1y"
+        # CHANGELOG #123: the delivery is the wallet's own DATE (a period is
+        # refused). Before, a "1y" recipe was written here so that a rebuild
+        # anticipated by one day stayed coherent; since #110 the stored date
+        # follows the rebuilt will, so the default date keeps it coherent.
         ctl.prepare_will()
         old_txid, old_item = _single(ctl)
         old_locktime = int(old_item.tx.locktime)
@@ -470,8 +490,14 @@ def test_auto_rebuild_rebuilds_and_pushes_on_new_utxo():
     assert int(new_item.tx.locktime) <= old_locktime
     assert new_item.get_status("COMPLETE"), "passwordless rebuild must sign"
     assert new_item.get_status("VALID")
+    # The stored date follows the rebuilt will (#110), in the wallet's own
+    # settings (#123).
+    assert ctl.will_settings["locktime"] == Will.get_min_locktime(ctl.willitems)
 
-    # The rebuilt will is still valid now: no further work.
+    # The rebuilt will is still valid now: no further work. The next Check
+    # starts like the wizard (#123: with a date, the heirs get the stored
+    # date there; the old "1y" recipe was coherent without it).
+    ctl.init_class_variables()
     assert ctl.check_will() is True
 
 
@@ -583,8 +609,12 @@ def test_auto_rebuild_keeps_the_delivery_date_in_step():
         ):
             assert ctl.maybe_auto_rebuild() is True
         assert inv.call_count == 0
-        assert int(ctl.will_settings["locktime"]) == old_locktime - 86400
-        assert int(ctl.bal_plugin.WILL_SETTINGS.get()["locktime"]) == old_locktime - 86400
+        # CHANGELOG #123: stored in the wallet's own settings (before, the
+        # second line read WILL_SETTINGS.get(), the same object as the
+        # first); Electrum's global bal_will_settings is never written.
+        assert ctl.will_settings is ctl.wallet.db.get_dict("will_settings")
+        assert ctl.wallet.db.get_dict("will_settings")["locktime"] == old_locktime - 86400
+        assert ctl.bal_plugin.config.get("bal_will_settings") is None
 
         # The next Check starts like the wizard: no postponement.
         ctl.init_class_variables()

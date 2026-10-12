@@ -554,43 +554,50 @@ def flow_session(monkeypatch):
     fk.stop_event_loop()
 
 
-def test_renewal_sent_but_not_seen_yet(flow_session):
-    """Real flow: the Check Alive passes, Renew; the renewal invalidation is
-    broadcast but the wallet does not see it yet. The second pass of phase
-    1 stops at once ("invalidation_pending"): its "Checking variables" row
-    stays on "Wait" and nothing is invalidated twice."""
+def test_passed_check_alive_after_the_update_invalidates_nothing(flow_session):
+    """Real flow on the seed of the old renewal test (CHANGELOG #123).
+
+    Before #123 this test (``test_renewal_sent_but_not_seen_yet``) renewed
+    a will built from the shared period "60d": the renewal invalidation was
+    broadcast, the wallet did not see it yet, and the second pass of phase
+    1 stopped at once ("invalidation_pending"). Since #123 that old period
+    becomes the wallet's fixed date when the window opens, so the one-click
+    renewal is not offered until #126 (plan, risk R1-3) and that flow
+    cannot be reached; ``test_invalidation_pending_keeps_wait`` keeps its
+    rows covered.
+
+    Now: the Check Alive passes and the Check stops on the reason (the date
+    is fixed). Nothing is asked or invalidated, also by the next Check
+    while the wallet still sees no new transaction.
+    """
     s = flow_session(mode="advanced", locktime="60d", threshold="-30d")
+    settings = s.bw.will_settings
+    assert settings is s.wallet.db.get_dict("will_settings")
+    assert settings["migrated_from"] == "global"
+    assert settings["legacy_locktime"] == "60d"
+    assert settings["locktime"] == fk.ts(2026, 12, 9)   # 60 days, now fixed
     s.check()
     s.clock.travel(40)
     s.world.wallet_lags = True
-    s.check()
-    step = s.recorder.steps[-1]
-    assert step["rows"] == [
-        PASSED,
-        "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-        WAIT,
-    ]
-    assert step["history"] == [WAIT, PASSED,
-                               "Invalidating old will:\t<b>Wait</b>",
-                               "Invalidating old will:\t<b>Broadcasting</b>",
-                               "Invalidating old will:\t<b><font color='#05ad05'>"
-                               "<b>Ok</b></font></b>"] + [
-        "Please wait {}secs".format(n) for n in range(10, 0, -1)] + [
-        WAIT,
-        "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-    ]
-    report = step["report"]
-    assert report["steps"][0] == ["check", "run", ""]
-    assert report["boxes"] == {"changes": [], "warnings": ["Check Alive passed"],
-                               "problems": []}
-    assert step["broadcasts"] == [["invalidation(dialog)", "T3"]]
-    assert [kind for kind, _text in step["questions"]] == ["renew"]
-    assert step["popups"] == [["message", (
-        "Your old will has been invalidated and the transaction was "
-        "broadcast.\nElectrum may need a little time to register it.\n"
-        "Please wait until the invalidation transaction is confirmed, then "
-        "press the Check button again to finish updating your will.")]]
-    assert step["dialog_events"] == ["close-button"]
+    reason = (
+        "The Check Alive date (2026-11-09) has passed. Your delivery is a "
+        "fixed date: choose a later delivery date to renew your will. Until "
+        "then your current will stays valid."
+    )
+    for label in ("first Check", "next Check"):
+        s.check()
+        step = s.recorder.steps[-1]
+        assert step["rows"] == [STOPPED, _error(reason)], label
+        assert step["history"] == [WAIT, STOPPED, _error(reason)], label
+        report = step["report"]
+        assert report["steps"][0] == ["check", "err", "error"], label
+        assert report["boxes"] == {"changes": [], "warnings": [],
+                                   "problems": [reason]}, label
+        assert step["broadcasts"] == [], label
+        assert step["questions"] == [], label
+        assert step["popups"] == [], label
+        assert step["dialog_events"] == ["close-button"], label
+    assert settings["locktime"] == fk.ts(2026, 12, 9)
 
 
 if __name__ == "__main__":

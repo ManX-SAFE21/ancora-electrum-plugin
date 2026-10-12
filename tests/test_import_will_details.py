@@ -220,6 +220,13 @@ def test_will_widget_shows_addresses_and_decodes_opreturn():
 # ------------------------------------------------------------------ #
 
 def _make_fake_bal_window(window_widget):
+    """A window for ``WillDetailDialog``: one live will item, the toolbar's
+    Check Alive date 9999 and the delivery date 8888.
+
+    Since CHANGELOG #123 the Check Alive date the toolbar shows is the
+    window's ``real_threshold`` attribute (before: a key of the shared
+    settings); ``will_settings`` holds only the wallet's own settings.
+    """
     bal_plugin = SimpleNamespace(read_file=lambda path: b"")
     return SimpleNamespace(
         window=window_widget,
@@ -227,11 +234,15 @@ def _make_fake_bal_window(window_widget):
         wallet=SimpleNamespace(),
         show_transaction=lambda *a, **k: None,
         willitems=_make_willitems(1),
-        will_settings={"real_threshold": 9999},
+        real_threshold=9999,
+        will_settings={"locktime": 8888},
     )
 
 
 def test_will_detail_dialog_external_threshold():
+    """An imported will shows its own latest date; the live will shows
+    the toolbar's Check Alive date, else (#123) the wallet's delivery
+    date."""
     from bal.gui.qt.dialogs import WillDetailDialog
 
     window_widget = QWidget()
@@ -256,6 +267,12 @@ def test_will_detail_dialog_external_threshold():
     assert dialog2._external_will is False
     assert dialog2.will is bal_window.willitems
     assert dialog2.threshold == 9999
+
+    # #123: before the toolbar set its Check Alive date, the live will
+    # shows the delivery date of the wallet's settings.
+    bal_window.real_threshold = None
+    dialog3 = WillDetailDialog(bal_window)
+    assert dialog3.threshold == 8888
 
 
 def test_will_detail_dialog_buttons_pass_will():
@@ -611,6 +628,8 @@ def test_merge_will_partial_signatures_update_counts():
 
 
 def test_will_detail_dialog_merge_switches_to_live():
+    """Merge: the dialog switches to the live will and its Check Alive
+    date (#123: the window's ``real_threshold``)."""
     from bal.gui.qt.dialogs import WillDetailDialog
 
     window_widget = QWidget()
@@ -639,7 +658,7 @@ def test_will_detail_dialog_merge_switches_to_live():
     assert merged == [imported]
     assert dialog._external_will is False
     assert dialog.will is live
-    assert dialog.threshold == bal_window.will_settings["real_threshold"]
+    assert dialog.threshold == bal_window.real_threshold == 9999
     assert dialog.merge_button.isHidden() is True
 
 

@@ -10,22 +10,44 @@ it reads and changes the host's state and calls the host's hooks where the
 GUI and the command line do different things (store a setting, write the
 wallet file, redraw the History).
 
+The delivery settings of the wallet (CHANGELOG #123) are loaded here too.
+Each wallet keeps its own delivery date, fee rate and Check Alive bridge in
+its own file, under the wallet key ``will_settings``; the rules live in
+:mod:`bal.core.delivery`. :func:`load_will_settings` points
+``host.will_settings`` at that live wallet dict, after a one-time migration
+and the anchor check; :func:`set_will_setting` is the one validated write.
+Electrum's global ``bal_will_settings`` (BAL's key) is never written: it is
+read raw, once per wallet, only as a migration source. When the settings
+cannot be prepared the host "fails closed" (``settings_unavailable``) and
+:func:`init_class_variables` stops every flow. The later date the old
+settings may have asked for is settled by :func:`apply_later_wish` at the
+start of the flows, once the wallet shows which will is in force.
+
 No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 """
 
 import json
 import time
+from collections.abc import MutableMapping
+from datetime import datetime, timedelta, timezone
 
 from electrum.logging import get_logger
 from electrum.util import MyEncoder
 
-from ..core import checkalive
-from ..core.util import Util
+from ..core import checkalive, delivery
+from ..core.heirs import Heirs
+from ..core.util import Util, copy_structure
 from ..core.will import NoHeirsException, Will, WillItem
 from ..core.willexecutors import Willexecutors
 from ..i18n import _
+from .locks import flow_lock_for
 
 _logger = get_logger(__name__)
+
+#: The settings a front-end may change through :func:`set_will_setting`.
+#: The other keys (schema, migration diagnostics, anchor, note, question,
+#: later wish) are written only by the rules of :mod:`bal.core.delivery`.
+SETTING_FIELDS = ("locktime", "baltx_fees", "threshold")
 
 
 def load_willitems(host):
@@ -41,7 +63,8 @@ def save_willitems(host):
     The transaction is stored serialized (exactly like the GUI, which
     avoids deep-copying a live Transaction holding a ``threading.RLock``)
     and every value is proven JSON-serializable before it is written.
-    Then ``host.flush_wallet_db()`` (the command line writes the file).
+    Then the anchor of the saved will (:func:`record_will_anchor`, #123)
+    and ``host.flush_wallet_db()`` (the command line writes the file).
     """
     keys = list(host.will.keys())
     for k in keys:
@@ -55,6 +78,8 @@ def save_willitems(host):
             _logger.error(f"save_willitems: will {wid} is not serializable: {e!r}")
             raise
         host.will[wid] = d
+    # Before the flush, so the command line writes both in one save.
+    record_will_anchor(host)
     host.flush_wallet_db()
 
 
@@ -145,17 +170,29 @@ def normalize_check_alive(host):
 def init_class_variables(host):
     """Prepare the state every check reads.
 
-    Refreshes the invalidated items and the Check Alive value, then sets
-    ``date_to_check``, ``no_willexecutor`` and ``willexecutors``, checks the
-    Check Alive against the delivery date and gives every heir the
-    delivery date (unless each heir has its own). Raises
-    ``NoHeirsException`` without heirs and the Check Alive errors of
-    ``bal.core.checkalive``.
+    First the two holds of the delivery settings (#123, rule I6, see
+    :func:`check_holds`): ``DeliverySettingsUnavailable`` or
+    ``DeliveryChoicePending`` (``bal.core.delivery``) stop the flow before
+    anything is read or changed. Every flow passes through here: Check,
+    Prepare, wallet close, the automatic rebuild and the command line.
+
+    Then refreshes the invalidated items, settles the later wish of the
+    migration (:func:`apply_later_wish`, #123: it reads the refreshed
+    items, and the dates below read the delivery date it may store),
+    refreshes the Check Alive value, sets ``date_to_check``,
+    ``no_willexecutor`` and ``willexecutors``, checks the Check Alive
+    against the delivery date and gives every heir the delivery date
+    (unless each heir has its own). Raises ``NoHeirsException`` without
+    heirs and the Check Alive errors of ``bal.core.checkalive``.
     """
+    check_holds(host)
     if not host.heirs:
         raise NoHeirsException(_("Heirs are not defined"))
     # Items already invalidated on-chain must not anchor the dates (#79).
     refresh_invalidated_items(host)
+    # #123 (FS-2): the will found at the migration may be one whose paid
+    # postpone the wallet has only now registered.
+    apply_later_wish(host)
     # An old Check Alive value becomes "N days before the delivery" (#80).
     normalize_check_alive(host)
     host.date_to_check = checkalive.resolve_date_to_check(
@@ -211,3 +248,474 @@ def check_will(host):
         self_willexecutor=host.no_willexecutor,
         wallet=host.wallet,
     )
+
+
+# --------------------------------------------------------------------------- #
+# The wallet's delivery settings (CHANGELOG #123)
+# --------------------------------------------------------------------------- #
+def utc_day_text(ts):
+    """``YYYY-MM-DD`` (UTC) of timestamp ``ts``, with the time when it is
+    not 00:00 UTC (a legacy date is kept to the second). For the log and
+    the command line (never translated).
+
+    Plain arithmetic from 1970, not ``datetime.fromtimestamp``, which fails
+    after 2038 where ``time_t`` is 32-bit.
+    """
+    moment = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=int(ts))
+    if moment.hour or moment.minute or moment.second:
+        return moment.strftime("%Y-%m-%d %H:%M:%S UTC")
+    return moment.strftime("%Y-%m-%d")
+
+
+def _wallet_settings(host):
+    """The wallet's own live settings dict (``wallet.db.get_dict``).
+
+    In a real wallet a ``StoredDict``, the same object at every call (an
+    empty one is created the first time). Rule I3 of the #123 plan: it is
+    changed item by item, never replaced with ``db.put`` (a reference
+    already handed out would no longer be the stored one).
+    """
+    return host.wallet.db.get_dict(delivery.WALLET_KEY)
+
+
+def _loaded_settings(host):
+    """``host.will_settings`` when it is the wallet's own live dict, else None.
+
+    The anchor is written only there: never into display-only values
+    (settings unavailable), the plain dict of a test host, or a dict that
+    belongs to Electrum's config.
+    """
+    d = getattr(host, "will_settings", None)
+    if getattr(host, "settings_unavailable", False):
+        return None
+    if not isinstance(d, MutableMapping):
+        return None
+    try:
+        return d if d is _wallet_settings(host) else None
+    except Exception:
+        return None
+
+
+def stored_willitems(host):
+    """The will as stored in the wallet, as ``{wid: WillItem}`` copies.
+
+    Read at wallet open, before the window or the controller loads its own
+    items. Each stored item is copied first (the plain values with
+    ``copy_structure``, the transaction as text, so no live ``Transaction``
+    is deep-copied: it holds a ``threading.RLock``). ``Util.fix_will_tx_fees``
+    then runs on the COPY: a legacy item with only ``tx_fees`` gives its
+    fee, not 0 (``WillItem`` reads ``baltx_fees`` with default 0), and the
+    wallet is not changed here (``init_will`` fixes it later anyway). The
+    items get no wallet: only their status flags, fee, heirs, creation
+    ``time`` and ``tx.locktime`` are read. A broken item raises (the caller
+    fails closed).
+    """
+    copies = {}
+    for wid, w in host.wallet.db.get_dict("will").items():
+        item = copy_structure({k: v for k, v in w.items() if k != "tx"})
+        item["tx"] = str(w["tx"])
+        copies[wid] = item
+    Util.fix_will_tx_fees(copies)
+    return {wid: WillItem(item, _id=wid) for wid, item in copies.items()}
+
+
+def _will_source(host, willitems=None):
+    """The will items the delivery rules read, as ``{wid: WillItem}``.
+
+    ``willitems`` when given and not empty, already loaded with their fees
+    fixed (the command line loads them first); else the stored will,
+    through :func:`stored_willitems`. An empty dict reads the stored will
+    too: a window whose items are not loaded (yet) must never migrate as if
+    the wallet had no will.
+    """
+    return willitems if willitems else stored_willitems(host)
+
+
+def will_views(host, willitems=None):
+    """The will items as the delivery rules read them (``ItemView`` list).
+
+    The items of :func:`_will_source` (``willitems`` when given and not
+    empty, else the stored will) through
+    :func:`bal.core.delivery.views_from`.
+    """
+    return delivery.views_from(_will_source(host, willitems))
+
+
+def _creation_time(host, willitems=None):
+    """The creation time of the will (``Will.get_creation_time``), or None.
+
+    Read from the items of :func:`_will_source`, only during the one-time
+    migration: an old positive Check Alive ("30d" after the creation of the
+    will) counts from it, as ``normalize_check_alive`` (#80) counted it
+    (see :func:`bal.core.delivery.convert_check_alive`). Nothing else reads
+    it, so an item without a usable ``time`` never stops the migration: the
+    time is then unknown and such a value counts from today, as #80 did
+    when the creation was unknown.
+    """
+    try:
+        return Will.get_creation_time(_will_source(host, willitems))
+    except Exception as e:
+        _logger.info(f"will settings: the creation time of the will is unknown: {e!r}")
+        return None
+
+
+def _has_plugin_data(host):
+    """True when the wallet already has heirs or a will.
+
+    Only such a wallet may take its date or fee from the old shared value:
+    a wallet created after the update gets the default, never the frozen
+    global (owner decision 2026-10-11, critic 2).
+    """
+    db = host.wallet.db
+    return bool(db.get("heirs")) or bool(db.get("will"))
+
+
+def _global_raw(host):
+    """Electrum's global ``bal_will_settings`` as stored (a copy), or None.
+
+    Read RAW with ``config.get``: ``BalConfig.get`` hands back its mutable
+    default when the key is missing. A copy, so nothing done with it can
+    reach the config. Never written (rule I1): it is BAL's key, and BAL
+    reads its ``threshold`` with no fallback.
+    """
+    plugin = host.bal_plugin
+    raw = plugin.config.get(plugin.WILL_SETTINGS.name)
+    return None if raw is None else copy_structure(raw)
+
+
+def heirs_periods_to_date(host, locktime):
+    """Give the delivery date to every heir that still holds a period.
+
+    A migration step of #123, multiverse off only: then every heir gets the
+    will's date anyway (:func:`init_heirs_to_locktime`), and an old recipe
+    such as ``"1054d"`` must not stay in the heirs, where it would be read
+    against the clock again. With multiverse on each heir keeps its own
+    value. Uses ``host.heirs`` when it is loaded, else the wallet's
+    ``Heirs`` (each change is saved by ``Heirs.__setitem__``). Returns the
+    names changed.
+    """
+    if host.bal_plugin.ENABLE_MULTIVERSE.get():
+        return []
+    heirs = host.heirs if host.heirs else Heirs(host.wallet)
+    changed = []
+    for name in list(heirs):
+        value = list(heirs[name])
+        if len(value) > 2 and Util._relative_days(value[2]) is not None:
+            value[2] = locktime
+            heirs[name] = value
+            changed.append(name)
+    return changed
+
+
+def ensure_will_settings(host, willitems=None, now=None):
+    """Prepare the wallet's own delivery settings; True when they can be used.
+
+    ``willitems``: see :func:`will_views`. ``now``: the caller's clock
+    (default ``time.time()``, the clock the test scenarios replace).
+
+    1. The will items are read (:func:`will_views`).
+    2. When the wallet dict is not current
+       (:func:`bal.core.delivery.is_current`), the one-time migration:
+       :func:`bal.core.delivery.migration_values` on the items, the global
+       read raw (:func:`_global_raw`), a copy of the dict as found, the
+       "plugin data" gate, the creation time of the will
+       (:func:`_creation_time`) and the multiverse setting (each heir with
+       its own date: the shared value was no wish); then the heirs'
+       periods become the date (:func:`heirs_periods_to_date`) and the
+       values are written item by item, the legacy keys dropped (rule I3).
+       One log line says where the date came from.
+    3. The anchor check (:func:`bal.core.delivery.check_anchor`): a will
+       signed by another program is followed, never reverted; an unsigned
+       draft of another program is not followed (one log line).
+    4. ``host.will_settings`` becomes the live wallet dict and
+       ``host.settings_unavailable`` False; ``host.flush_wallet_db()`` when
+       something was written (the command line saves the file, the GUI
+       leaves it to Electrum).
+
+    Any error fails closed (plan 3.4): it is logged,
+    ``host.settings_unavailable`` becomes True and ``host.will_settings``
+    holds display-only values (:func:`bal.core.delivery.display_only_values`:
+    the date and fee of the will in force, else the defaults). Never the
+    global, never a raw legacy dict: a period there is the day +2 paid
+    invalidation. Every flow then stops (:func:`check_holds`). Returns False.
+
+    The caller holds the wallet's flow lock (see :func:`load_will_settings`).
+    """
+    if now is None:
+        now = time.time()
+    items = []
+    try:
+        items = will_views(host, willitems)
+        d = _wallet_settings(host)
+        before = dict(d)
+        if not delivery.is_current(d):
+            values = delivery.migration_values(
+                items,
+                _global_raw(host),
+                copy_structure(d),
+                _has_plugin_data(host),
+                now,
+                creation_date=_creation_time(host, willitems),
+                multiverse=bool(host.bal_plugin.ENABLE_MULTIVERSE.get()),
+            )
+            # The heirs first: when they cannot be written, nothing is
+            # stored and the next load migrates again.
+            heirs_periods_to_date(host, values["locktime"])
+            delivery.write_values(d, values, drop=delivery.LEGACY_DROP)
+            _logger.info(
+                "will settings migrated: from {}, delivery {}, fee {}".format(
+                    values["migrated_from"],
+                    utc_day_text(values["locktime"]),
+                    values["baltx_fees"],
+                )
+            )
+            skipped = delivery.non_date_items(items)
+            if skipped:
+                _logger.info(
+                    "will settings: items without a date locktime ignored: "
+                    "{}".format(skipped)
+                )
+        anchor = delivery.check_anchor(d, items)
+        if anchor == delivery.NOTE_OUTSIDE_CHANGE:
+            _logger.info(
+                "will settings: the will was changed by another program; the "
+                "delivery date follows it: {}".format(utc_day_text(d["locktime"]))
+            )
+        elif anchor == delivery.ANCHOR_UNSIGNED:
+            _logger.info(
+                "will settings: another program left a will that is not "
+                "signed; the delivery date stays {}".format(
+                    utc_day_text(d["locktime"])
+                )
+            )
+        host.will_settings = d
+        host.settings_unavailable = False
+        if dict(d) != before:
+            host.flush_wallet_db()
+        return True
+    except Exception as e:
+        _logger.error(f"will settings migration failed: {e!r}")
+        host.settings_unavailable = True
+        host.will_settings = delivery.display_only_values(items, now)
+        return False
+
+
+def load_will_settings(host, willitems=None, lock_timeout=None):
+    """Load the wallet's own delivery settings into ``host.will_settings``.
+
+    Called when the wallet opens (``BalWindow.__init__``, the command-line
+    controller, the test windows), before anything reads the settings.
+    :func:`ensure_will_settings` does the work; this adds the wallet's flow
+    lock (``bal.engine.locks``) for a caller that does not hold it:
+
+    * ``lock_timeout=None``: no lock is taken (the command line already
+      holds it, see ``bal.cli.commands._call_locked``);
+    * a number of seconds (the GUI: 1.0): wait that long for the lock.
+      When another flow still holds it (a command migrating the same
+      wallet), nothing is migrated now: settings that are already current
+      are used as they are; anything else fails closed. The caller retries
+      with :func:`ensure_will_settings` later (the GUI in ``init_will``).
+
+    Returns True when :func:`ensure_will_settings` ran and succeeded, False
+    otherwise (a retry is needed).
+    """
+    if lock_timeout is None:
+        return ensure_will_settings(host, willitems)
+    lock = flow_lock_for(host.wallet)
+    if not lock.acquire(timeout=lock_timeout):
+        _logger.info("will settings: the wallet is busy, prepared later")
+        _use_without_migration(host, willitems)
+        return False
+    try:
+        return ensure_will_settings(host, willitems)
+    finally:
+        lock.release()
+
+
+def _use_without_migration(host, willitems=None):
+    """Settings for a wallet whose flow lock is busy (see
+    :func:`load_will_settings`): the live dict when it is already current,
+    else display-only values and ``settings_unavailable`` (fail closed)."""
+    try:
+        d = _wallet_settings(host)
+        if delivery.is_current(d):
+            host.will_settings = d
+            host.settings_unavailable = False
+            return
+    except Exception as e:
+        _logger.error(f"will settings could not be read: {e!r}")
+    try:
+        items = will_views(host, willitems)
+    except Exception as e:
+        _logger.error(f"will items could not be read: {e!r}")
+        items = []
+    host.settings_unavailable = True
+    host.will_settings = delivery.display_only_values(items, time.time())
+
+
+def check_holds(host):
+    """Raise the hold of the delivery settings that applies (rule I6).
+
+    ``DeliverySettingsUnavailable`` when ``host.settings_unavailable``
+    (the settings could not be prepared), else ``DeliveryChoicePending``
+    while the "which date?" question waits (``choice_pending``); both from
+    :mod:`bal.core.delivery`. Nothing is built, signed, pushed or
+    invalidated while one applies. Read with safe defaults: a host without
+    these attributes or keys (the fake hosts of the tests, a plain dict) is
+    never held.
+    """
+    delivery.check_holds(
+        getattr(host, "will_settings", None),
+        getattr(host, "settings_unavailable", False),
+    )
+
+
+def set_will_setting(host, field, value):
+    """The one validated write of a delivery setting (#123).
+
+    ``field``: one of :data:`SETTING_FIELDS`. The value must pass
+    :func:`bal.core.delivery.validate_values`: a fee rate of at least 1, a
+    delivery date of at least 500,000,000 (UNIX time), stored as an int (a
+    float or a numeric text is truncated to whole seconds; a period such as
+    ``"1054d"`` is refused: it would be read against the clock again; a
+    block height, a bool, NaN/inf or garbage is refused too), a Check
+    Alive ``"-Nd"``. Otherwise ``ValueError`` (English, for the log and
+    the command line) and nothing is written. Refused with
+    ``DeliverySettingsUnavailable`` while ``host.settings_unavailable``:
+    those values are for display only.
+
+    The value is written item by item into ``host.will_settings`` (after
+    :func:`load_will_settings`, the live wallet dict; never ``db.put``,
+    rule I3), and only when it changed. A delivery date written while the
+    "which date?" question is pending answers it: the question and its note
+    are cleared (to keep the date, write the stored date again; see
+    :func:`answer_delivery_choice`). Every delivery date written also drops
+    the later wish of the migration
+    (:func:`bal.core.delivery.drop_later_wish`): a date chosen now (or the
+    later wish itself, see :func:`apply_later_wish`) replaces it.
+
+    Nothing else: the caller makes it durable (the command line saves the
+    wallet) and refreshes what shows it. Returns the value as stored.
+    """
+    if getattr(host, "settings_unavailable", False):
+        raise delivery.DeliverySettingsUnavailable()
+    if field not in SETTING_FIELDS:
+        raise ValueError("not a delivery setting: {!r}".format(field))
+    values = delivery.validate_values({field: value})
+    d = host.will_settings
+    delivery.write_values(d, values)
+    if field == "locktime":
+        if d.get(delivery.CHOICE_KEY):
+            delivery.clear_choice(d)
+        delivery.drop_later_wish(d)
+    return values[field]
+
+
+def answer_delivery_choice(host, use_later=False):
+    """Answer the pending "which date?" question (#123, plan 3.3).
+
+    Keep (the default): the stored date, the will already prepared, stays
+    (no fee). ``use_later``: the later date of the old settings is stored;
+    the next Check then reads a postpone and asks for the invalidation of
+    the old will (miner fee). Both go through :func:`set_will_setting`,
+    which clears the question, its note and the later wish of the
+    migration. ``ValueError`` when no question is pending or the date to
+    store is unknown. Returns the date stored.
+    """
+    dates = delivery.choice_dates(getattr(host, "will_settings", None))
+    if dates is None:
+        raise ValueError("no delivery date question is pending")
+    keep, later = dates
+    chosen = later if use_later else keep
+    if chosen is None:
+        raise ValueError("the date of this answer is not known")
+    return set_will_setting(host, "locktime", chosen)
+
+
+def record_will_anchor(host):
+    """Store the anchor of the will Safe21 has just saved (plan 3.2).
+
+    :func:`bal.core.delivery.record_will_anchor` on the wallet's own
+    settings with the will AS STORED in the wallet (:func:`will_views`
+    with no items: ``wallet.db.get_dict("will")``), never with
+    ``host.willitems``. The anchor is compared at every load with the
+    stored will: taken from memory, it could describe a set the wallet
+    does not hold (FS-1 of the #123 review: after a Will tab Sign that
+    wrote only the signed items, the stale VALID flags of a will already
+    invalidated looked like a change made by another program, and the
+    stored date went back to that will). Called at the end of
+    :func:`save_willitems`, the one path that writes the will. Only into
+    the wallet's own live dict (:func:`_loaded_settings`). Never raises: a
+    missed anchor is harmless (Safe21 keeps the stored date on the earliest
+    VALID date, so the next load only records it again) and must never stop
+    a save.
+    """
+    d = _loaded_settings(host)
+    if d is None:
+        return
+    try:
+        delivery.record_will_anchor(d, will_views(host))
+    except Exception as e:
+        _logger.warning(f"will anchor not recorded: {e!r}")
+
+
+def _wallet_synced(host):
+    """True when the wallet is synchronized (``wallet.is_up_to_date()``):
+    the invalidated items it marks then follow the chain. False when it is
+    not, or when it cannot be asked."""
+    try:
+        return bool(host.wallet.is_up_to_date())
+    except Exception:
+        return False
+
+
+def apply_later_wish(host):
+    """Settle the later wish the migration kept (#123, FS-2 of the review).
+
+    Runs in :func:`init_class_variables`, after the holds and right after
+    :func:`refresh_invalidated_items`, so the items carry their on-chain
+    state. The decision is :func:`bal.core.delivery.later_wish_action`:
+
+    * no VALID item is left (the will found at the migration has been
+      invalidated, e.g. by the paid postpone of the old code, which the
+      wallet had not registered at the update): the later wish becomes the
+      delivery date through the host's validated write
+      (``host.store_will_setting``, which also refreshes the GUI fields and
+      drops the wish). It is later than the stored date: no anticipation
+      and no new fee, and the will is then built at the date already paid
+      for, as before #123;
+    * the wallet is synchronized and VALID items still exist (the owner
+      had cancelled the postpone): the wish is dropped;
+    * otherwise it is kept.
+
+    One log line for each change. Only on the wallet's own live dict
+    (:func:`_loaded_settings`): a test host's plain dict is never touched.
+    When the date cannot be stored, ``DeliverySettingsUnavailable`` stops
+    the flow: building at the earlier date is exactly what this prevents.
+    Returns the decision (None: no wish kept).
+    """
+    d = _loaded_settings(host)
+    if d is None or delivery.LATER_WISH_KEY not in d:
+        return None
+    action = delivery.later_wish_action(
+        d, delivery.views_from(host.willitems), _wallet_synced(host)
+    )
+    if action == delivery.WISH_APPLY:
+        wish = delivery.as_delivery(d.get(delivery.LATER_WISH_KEY))
+        _logger.info(
+            "will settings: the will found at the update is no longer in "
+            "force; the delivery date becomes the later date of the old "
+            "settings: {}".format(utc_day_text(wish))
+        )
+        host.store_will_setting("locktime", wish)
+        if delivery.as_delivery(d.get("locktime")) != wish:
+            _logger.error("will settings: the later delivery date was not stored")
+            raise delivery.DeliverySettingsUnavailable()
+        delivery.drop_later_wish(d)
+    elif action == delivery.WISH_DROP:
+        _logger.info(
+            "will settings: the will found at the update stays in force; the "
+            "later date of the old settings is dropped"
+        )
+        delivery.drop_later_wish(d)
+    return action

@@ -6,7 +6,9 @@ Phase 5e, step 5e-08. Ported line by line from the start of
 check the heirs' amounts. The dialog now calls :func:`check_variables`;
 its rows are written by ``bal.gui.qt.flow_adapter.DialogFlowUI`` with the
 same texts, colours and order as before. The next parts of phase 1 (the
-will in force, the rebuild) move in the next steps.
+will in force, the rebuild) move in the next steps. Since #123 phase 1 also
+stops on the two holds of the wallet's delivery settings (the "which
+date?" question, settings that could not be prepared).
 
 The functions work on a host (:class:`bal.engine.host.WalletHost`) that
 also has ``init_class_variables()`` and ``check_alive_info()`` (both
@@ -23,6 +25,7 @@ from typing import Any
 from electrum.logging import get_logger
 
 from ..core.checkalive import CheckAliveAfterDeliveryError, CheckAliveError
+from ..core.delivery import DeliveryChoicePending, DeliverySettingsUnavailable
 from ..core.heirs import WillExecutorFeeTooHighException
 from ..core.messages import amounts_message, past_date_message
 
@@ -45,6 +48,7 @@ VARIABLES_STATES = (
     "stopped",
     "no_heirs",
     "check_alive_before_delivery",
+    "delivery_choice",
 )
 VARIABLES_NOTES = (
     "check_alive_reason",
@@ -53,6 +57,7 @@ VARIABLES_NOTES = (
     "amounts_explained",
     "amounts_adjust",
     "executor_fee_too_high",
+    "delivery_settings_unavailable",
 )
 
 
@@ -62,7 +67,11 @@ class Phase1Result:
 
     ``kind`` is the code ``task_phase1`` returned first before #120
     ("no_heirs", "check_alive_renew", ...; ``_on_success_phase1_body``
-    decides on it). ``tx`` is the unsigned renewal invalidation for
+    decides on it). Since #123 also "delivery_choice" (the "which date?"
+    question must be asked; its dates are
+    ``bal.core.delivery.choice_dates(host.will_settings)``) and
+    "delivery_settings_unavailable" (the settings could not be prepared:
+    nothing is done). ``tx`` is the unsigned renewal invalidation for
     "check_alive_renew", else ``None``. The other ends of phase 1 (the
     invalidations, a failed build, the normal end with ``have_to_sign``
     and the built transactions) are added when their code moves.
@@ -123,7 +132,14 @@ def check_variables(host, run, ui):
     1. ``ui.step(Step.VARIABLES, "run")``, then
        ``host.init_class_variables()`` (which may store a converted Check
        Alive through ``host.store_will_setting``, as before);
-    2. the Check Alive gate. After the delivery date: stop
+    2. the two holds of the delivery settings (#123), which
+       ``init_class_variables`` raises before anything else. The "which
+       date?" question is pending: step "delivery_choice", stop
+       "delivery_choice" (the dialog asks it). The settings could not be
+       prepared: step "stopped", note "delivery_settings_unavailable", stop
+       "delivery_settings_unavailable". Nothing is built, signed, pushed or
+       invalidated;
+    3. the Check Alive gate. After the delivery date: stop
        "check_alive_before_delivery". Passed: if ``run.invalidation_broadcast``
        stop "invalidation_pending" (never invalidate twice; no outcome
        row), else ``run.check_alive_info = host.check_alive_info()`` and:
@@ -132,7 +148,7 @@ def check_variables(host, run, ui):
        "check_alive_renew" with it, so the dialog asks Renew / Not now;
        otherwise stop "check_alive_stop" with the reason. No heirs: stop
        "no_heirs";
-    3. the amounts (``Will.check_amounts`` on the coins the will can use).
+    4. the amounts (``Will.check_amounts`` on the coins the will can use).
        Fixed amounts above the balance stop "fixed_amounts_exceed"; any
        other amount warning, or a will-executor fee above the maximum,
        adds a note and phase 1 goes on.
@@ -150,7 +166,9 @@ def check_variables(host, run, ui):
       (:func:`bal.core.messages.amounts_message`, computed before the
       outcome row, as before);
     * ``"amounts_adjust"``: an amount problem with no explanation;
-    * ``"executor_fee_too_high"``, ``error``: the exception as text.
+    * ``"executor_fee_too_high"``, ``error``: the exception as text;
+    * ``"delivery_settings_unavailable"``: the delivery settings of the
+      wallet could not be prepared (no data; the front-end has the text).
 
     Returns a :class:`Phase1Result` when phase 1 stops here, ``None`` when
     it goes on. Any other exception (from ``init_class_variables``, the
@@ -160,6 +178,17 @@ def check_variables(host, run, ui):
     ui.step(Step.VARIABLES, "run")
     try:
         host.init_class_variables()
+    except DeliveryChoicePending:
+        # #123: an older setting asked for a later date than the will
+        # prepared and not yet signed. Nothing is built or signed until the
+        # owner answers (rule I6).
+        ui.step(Step.VARIABLES, "delivery_choice")
+        return Phase1Result("delivery_choice")
+    except DeliverySettingsUnavailable:
+        # #123, fail closed: the settings shown are for display only.
+        ui.step(Step.VARIABLES, "stopped")
+        ui.note("delivery_settings_unavailable")
+        return Phase1Result("delivery_settings_unavailable")
     except CheckAliveAfterDeliveryError:
         ui.step(Step.VARIABLES, "check_alive_before_delivery")
         return Phase1Result("check_alive_before_delivery")

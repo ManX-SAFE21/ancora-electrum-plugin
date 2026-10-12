@@ -32,7 +32,12 @@ from bal.core.messages import check_alive_message
 from bal.engine import check
 from bal.engine.ui import CheckRun, Step
 from bal.gui.qt.dialogs import BalBuildWillDialog
-from bal.gui.qt.flow_adapter import DialogFlowUI, DialogRun
+from bal.gui.qt.flow_adapter import (
+    CHOOSE_DATE,
+    SETTINGS_UNAVAILABLE,
+    DialogFlowUI,
+    DialogRun,
+)
 
 # Kept at module level: an unreferenced application object is destroyed at
 # once, and creating a widget afterwards aborts Python.
@@ -109,6 +114,11 @@ STATES = {
         "Checking variables:\t<font color=#ff0000><b>{}</b></font>".format(
             AFTER_DELIVERY_TEXT),
         "err", {"problems": [AFTER_DELIVERY_TEXT]}),
+    # CHANGELOG #123: the "which date?" question is asked next (amber).
+    "delivery_choice": (
+        "Checking variables:\t<font color=#cfa808><b>{}</b></font>".format(
+            CHOOSE_DATE),
+        "warn", {"warnings": [CHOOSE_DATE]}),
 }
 
 
@@ -144,6 +154,9 @@ def _notes():
                                   ("alert", "Will-executor fee too high: "
                                             "E: we1 fee:50000 > max:5000"),
                                   "warnings"),
+        # CHANGELOG #123, fail closed: no data, the text is the adapter's.
+        "delivery_settings_unavailable": ({}, ("error", SETTINGS_UNAVAILABLE),
+                                          "problems"),
     }
 
 

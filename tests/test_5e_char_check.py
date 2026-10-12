@@ -191,7 +191,10 @@ def check_alive_fixed_date(make):
 
 
 def check_alive_renew(make):
-    """Advanced, delivery 60 days after creation: Check Alive passes, Renew."""
+    """Advanced, delivery 60 days after creation: Check Alive passes, Renew.
+
+    Since #123 the old shared "60d" becomes a fixed date when the window
+    opens, so the renewal is not offered: the date is fixed (until #126)."""
     s = make(mode="advanced", locktime="60d", threshold="-30d")
     s.check()
     s.recorder.note("40 days pass")
@@ -201,7 +204,9 @@ def check_alive_renew(make):
 
 
 def check_alive_not_now(make):
-    """Advanced, delivery 60 days after creation: Check Alive passes, Not now."""
+    """Advanced, delivery 60 days after creation: Check Alive passes, Not now.
+
+    Since #123 a fixed date (see :func:`check_alive_renew`): no question."""
     s = make(mode="advanced", locktime="60d", threshold="-30d")
     s.check()
     s.recorder.note("40 days pass")
@@ -211,7 +216,9 @@ def check_alive_not_now(make):
 
 
 def check_alive_renew_approved(make):
-    """Advanced, relative delivery: Renew answered at wallet open (renew=True)."""
+    """Advanced, relative delivery: Renew answered at wallet open (renew=True).
+
+    Since #123 a fixed date (see :func:`check_alive_renew`)."""
     s = make(mode="advanced", locktime="60d", threshold="-30d")
     s.check()
     s.recorder.note("40 days pass; dialog opened after Renew")

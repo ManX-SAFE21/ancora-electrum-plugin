@@ -29,6 +29,7 @@ import threading
 import time
 import unittest.mock as mock
 import weakref
+from types import SimpleNamespace
 
 import pytest
 
@@ -50,6 +51,8 @@ from bal.engine.locks import flow_lock_for
 # Three local will-executors; the second one answers late.
 WE = ["https://we-a.test", "https://we-b.test", "https://we-c.test"]
 SLOW = {"https://we-b.test": 0.4}
+# The delivery date of the fake will items (2030-03-17 17:46 UTC).
+DELIVERY = 1_900_000_000
 # Stops a regression from hanging the suite: Electrum itself waits forever.
 GUARD = 8
 
@@ -203,11 +206,27 @@ def test_download_the_list(plugin, network):
 
 
 class _Item:
-    """A will item with just what the push and the check use."""
+    """A will item with just what the push and the check use.
+
+    Since #123 the controller also reads every will item when it loads the
+    wallet's delivery settings (``bal.core.delivery.views_from``): the
+    transaction's locktime (a date), the fee rate, the status table and the
+    heirs. Without them the settings fail closed and the send is refused
+    (rule I6), as for a broken will item in a real wallet.
+    """
 
     def __init__(self, url):
+        """One signed item for the will-executor ``url``."""
         self.we = {"url": url}
         self.status = {"VALID": True, "COMPLETE": True}
+        self.tx = SimpleNamespace(locktime=DELIVERY)
+        self.tx_fees = 13
+        self.heirs = {}
+
+    @property
+    def STATUS(self):  # noqa: N802 - the WillItem attribute name
+        """The status flags, as ``WillItem.STATUS`` (``{flag: bool}`` form)."""
+        return self.status
 
     def get_status(self, name):
         """True when the status flag ``name`` is set."""

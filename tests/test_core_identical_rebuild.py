@@ -20,6 +20,11 @@ are written on it. The same transaction for ANOTHER will-executor URL keeps
 the fresh item, so it is sent there, but with the signed transaction (no
 password). A replaced old item is never brought back.
 
+Since CHANGELOG #123 a period is no longer accepted as the delivery
+setting, so the owner's case is reproduced at the engine: the period is
+written straight into the heirs before the build (as heirs may still carry
+one: multiverse, an imported or older will). The rebuild rule is the same.
+
 Wallets, coins and will-executors come from ``tests/flowkit.py`` (three
 will-executors, throw-away test wallet with a password, fixed clock).
 
@@ -94,6 +99,22 @@ def _period_giving(s, locktime):
     return "{}d".format((int(locktime) - int(today.timestamp())) // fk.DAY)
 
 
+def _heirs_carry(s, recipe):
+    """Write ``recipe`` as the delivery of every heir, straight into the
+    wallet's heirs.
+
+    CHANGELOG #123: the delivery setting can no longer be a period (the
+    validated write refuses it, the Raw editor is hidden), so the owner's
+    #122 case is reproduced at the engine: after ``init_class_variables``
+    (which, multiverse off, gives every heir the stored date) the heirs
+    carry the period, and the build reads them as before #123.
+    """
+    for name in list(s.bw.heirs):
+        heir = list(s.bw.heirs[name])
+        heir[2] = recipe
+        s.bw.heirs[name] = heir
+
+
 def _recipes(item):
     """The delivery recipes of the real heirs of a will item."""
     return {h[2] for name, h in item.heirs.items() if not name.startswith('w!ll3x3c"')}
@@ -119,13 +140,18 @@ def _fresh_copy(item, heirs=None, we=None, description=None, fees=None):
 def test_identical_rebuild_keeps_the_signed_items(flow_session):
     """The owner's case at the engine: the date written as the equal
     period, then the will is rebuilt. Same txids; every item keeps its
-    signed transaction, its state and its history, and carries the period."""
+    signed transaction, its state and its history, and carries the period.
+
+    Since #123 the period is written into the heirs (:func:`_heirs_carry`);
+    as a delivery setting it is refused."""
     s, valid = _sent_will(flow_session)
     raw = {wid: str(w.tx) for wid, w in valid.items()}
     history = {wid: w.status for wid, w in valid.items()}
     period = _period_giving(s, Will.get_min_locktime(s.bw.willitems))
-    s.set_date(period)
-    s.bw.init_class_variables()         # every heir gets the period, as at a Check
+    with pytest.raises(ValueError, match="period"):
+        s.set_date(period)
+    s.bw.init_class_variables()
+    _heirs_carry(s, period)             # every heir gets the period
     build.build_will(s.bw, with_creation_date=True)
     now = {wid: w for wid, w in s.bw.willitems.items() if w.get_status("VALID")}
     assert set(now) == set(valid)       # identical transactions
@@ -219,8 +245,8 @@ def test_a_backup_transaction_keeps_its_signature(flow_session):
     assert len(valid) == 1 and all(w.we is None and w.get_status("COMPLETE")
                                    for w in valid.values())
     raw = {wid: str(w.tx) for wid, w in valid.items()}
-    s.set_date(_period_giving(s, Will.get_min_locktime(s.bw.willitems)))
     s.bw.init_class_variables()
+    _heirs_carry(s, _period_giving(s, Will.get_min_locktime(s.bw.willitems)))
     build.build_will(s.bw, with_creation_date=True)
     now = {wid: w for wid, w in s.bw.willitems.items() if w.get_status("VALID")}
     assert set(now) == set(valid)

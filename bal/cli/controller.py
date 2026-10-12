@@ -24,6 +24,7 @@ so a missing wallet or a network-less daemon can still start Electrum.
 
 import json
 import time
+from collections.abc import Mapping
 
 from electrum import bitcoin, constants
 from electrum.i18n import _
@@ -37,7 +38,7 @@ from electrum.util import (
     write_json_file,
 )
 
-from ..core import checkalive
+from ..core import checkalive, delivery
 from ..core import heirs as heirs_mod
 from ..core import will as will_mod
 from ..core.checkalive import (
@@ -46,6 +47,7 @@ from ..core.checkalive import (
     resolve_date_to_check,
     resolve_guard_threshold,
 )
+from ..core.delivery import DeliveryHold
 from ..core.heirs import Heirs, is_op_return_address
 from ..core.messages import (
     check_alive_message,
@@ -71,6 +73,8 @@ def _user_facing(e):
     """
     if isinstance(e, UserFacingException):
         return e
+    if isinstance(e, DeliveryHold):
+        return UserFacingException(_delivery_hold_message(e))
     if isinstance(e, will_mod.NoHeirsException):
         return UserFacingException(_("There are no valid heirs"))
     if isinstance(e, will_mod.WillExpiredException):
@@ -166,6 +170,115 @@ def _check_alive_cli_message(info):
     return check_alive_message(info)
 
 
+# CHANGELOG #123: the delivery date and the fee rate are kept by each wallet,
+# not in Electrum's global ``bal_will_settings`` (BAL's key, never written).
+_WILL_SETTINGS_MOVED = (
+    "bal_will_settings is not used any more: each wallet keeps its own "
+    "delivery date and fee rate. See them with bal_delivery_show and change "
+    "them with bal_delivery_set (--date YYYY-MM-DD, --fee N)."
+)
+# The setting names refused with that pointer (attribute and config key,
+# normalized as in ``BalSettingsController._config_key``).
+_MOVED_SETTINGS = ("WILL_SETTINGS", "BAL_WILL_SETTINGS")
+
+
+def _delivery_hold_message(e, settings=None):
+    """The command-line text of a hold of the delivery settings (#123).
+
+    ``e``: ``DeliveryChoicePending`` or ``DeliverySettingsUnavailable``.
+    ``settings``: the wallet's settings, for the two dates of the "which
+    date?" question (without them the text has no dates). Says that nothing
+    was done and which command answers. English, like every command-line
+    text.
+    """
+    if isinstance(e, delivery.DeliverySettingsUnavailable):
+        return _(
+            "The delivery settings of this wallet could not be prepared: "
+            "nothing was changed. Please restart Electrum and send the log."
+        )
+    dates = delivery.choice_dates(settings) if settings is not None else None
+    keep, later = dates if dates else (None, None)
+    if keep is None or later is None:
+        return _(
+            "The delivery date must be confirmed first, so nothing was built, "
+            "signed or sent. See bal_delivery_show, then keep the date of the "
+            "prepared will with bal_delivery_set --keep true, or set a later "
+            "date with bal_delivery_set --date YYYY-MM-DD."
+        )
+    return _(
+        "The delivery date must be confirmed first, so nothing was built, "
+        "signed or sent. The will prepared for {} is not signed and sent yet, "
+        "and an older setting asked for {}. To keep {} (no fee): "
+        "bal_delivery_set --keep true. To use a later date (if the old will "
+        "was sent, it must be invalidated first, miner fee): bal_delivery_set "
+        "--date YYYY-MM-DD. Details: bal_delivery_show."
+    ).format(
+        context.utc_day_text(keep),
+        context.utc_day_text(later),
+        context.utc_day_text(keep),
+    )
+
+
+def _as_bool(value, name):
+    """A command-line yes/no value as a bool (None means no).
+
+    Electrum's parser gives a bool for ``--keep true``; JSON-RPC callers may
+    send a bool, 0/1 or a text.
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in ("true", "1", "yes", "on"):
+            return True
+        if low in ("false", "0", "no", "off"):
+            return False
+    raise UserFacingException(_("Expected true or false for {}: {}").format(name, value))
+
+
+# The highest fee rate bal_delivery_set accepts: the maximum of the GUI fee
+# box (``bal/gui/qt/widgets.py``, a QSpinBox from 1 to 10000). Above it the
+# GUI would show another rate than the one the will is built with, and a
+# typo such as 2000 for 20 would make every rebuilt will pay that rate.
+_MAX_FEE_RATE = 10000
+
+
+def _as_fee(value):
+    """The fee rate typed on the command line, as a number.
+
+    An int or a float, or a text holding one; ``delivery.validate_values``
+    then refuses anything below 1. A bool is not a fee rate, and a rate
+    above :data:`_MAX_FEE_RATE` (the GUI fee box maximum) is refused.
+    """
+    if isinstance(value, bool):
+        raise UserFacingException(_("Not a fee rate: {}").format(value))
+    if isinstance(value, (int, float)):
+        number = value
+    else:
+        text = str(value).strip()
+        try:
+            number = int(text)
+        except ValueError:
+            try:
+                number = float(text)
+            except ValueError:
+                raise UserFacingException(
+                    _("Not a fee rate: {}").format(value)
+                ) from None
+    # validate_values refuses NaN, the infinities and anything below 1.
+    if number > _MAX_FEE_RATE:
+        raise UserFacingException(
+            _("The fee rate {} is too high: at most {} sat/vByte.").format(
+                value, _MAX_FEE_RATE
+            )
+        )
+    return number
+
+
 class BalSettingsController:
     """Plugin settings (``bal_*`` config keys) for the command line.
 
@@ -181,10 +294,15 @@ class BalSettingsController:
         self.plugin = plugin
 
     def _configs(self):
-        """Return ``{ATTRIBUTE: BalConfig}`` for every plugin setting."""
+        """Return ``{ATTRIBUTE: BalConfig}`` for every plugin setting.
+
+        ``WILL_SETTINGS`` (``bal_will_settings``) is left out since #123:
+        the delivery date and fee rate are kept by each wallet
+        (``bal_delivery_show`` / ``bal_delivery_set``).
+        """
         out = {}
         for attr in dir(self.plugin):
-            if not attr.isupper():
+            if not attr.isupper() or attr in _MOVED_SETTINGS:
                 continue
             value = getattr(self.plugin, attr, None)
             if isinstance(value, BalConfig):
@@ -193,13 +311,17 @@ class BalSettingsController:
 
     def _config_key(self, key):
         """Find a setting by attribute name (``TX_FEES``) or config key
-        (``bal_tx_fees``); raise a clear message for an unknown one."""
+        (``bal_tx_fees``); raise a clear message for an unknown one, and a
+        pointer to ``bal_delivery_show`` / ``bal_delivery_set`` for
+        ``bal_will_settings`` (#123: never read or written here again)."""
+        normalized = key.upper().replace("-", "_").replace(".", "_")
+        if normalized in _MOVED_SETTINGS:
+            raise UserFacingException(_WILL_SETTINGS_MOVED)
         configs = self._configs()
         aliases = {}
         for attr, cfg in configs.items():
             aliases[attr.upper().replace("-", "_").replace(".", "_")] = (attr, cfg)
             aliases[cfg.name.upper().replace("-", "_").replace(".", "_")] = (attr, cfg)
-        normalized = key.upper().replace("-", "_").replace(".", "_")
         if normalized not in aliases:
             raise UserFacingException(
                 _("Unknown BAL setting: {} (use bal_settings_list)").format(key)
@@ -297,8 +419,15 @@ class BalController(BalSettingsController):
     """
 
     def __init__(self, plugin, wallet):
-        """Load the wallet's heirs, will and the plugin's settings and
-        will-executors."""
+        """Load the wallet's heirs, will and delivery settings, and the
+        plugin's will-executors.
+
+        The order matters since #123: the delivery settings are migrated
+        from the will already loaded (its earliest VALID date and fee) and
+        only for a wallet with heirs or a will. The commands build the
+        controller under the wallet's flow lock (``commands._call_locked``),
+        so the migration never runs twice at once.
+        """
         super().__init__(plugin)
         self.wallet = wallet
         self.heirs = {}
@@ -306,6 +435,7 @@ class BalController(BalSettingsController):
         self.willitems = {}
         self.willexecutors = {}
         self.will_settings = {}
+        self.settings_unavailable = False
         self.date_to_check = None
         self.no_willexecutor = False
 
@@ -314,9 +444,9 @@ class BalController(BalSettingsController):
         # the config object does not expose it).
         plugin.get_decimal_point = self._get_decimal_point
 
-        self._init_settings()
         self._init_heirs()
         self._init_will()
+        self._init_settings()
         self._init_willexecutors()
 
     # ------------------------------------------------------------------ #
@@ -329,21 +459,18 @@ class BalController(BalSettingsController):
             return 8
 
     def _init_settings(self):
-        """Load the will settings; save the default the first time.
+        """Load the wallet's own delivery settings (CHANGELOG #123).
 
-        The default holds absolute dates computed when the plugin starts
-        (today + 1 year). Never saved, it moved by one day at every daemon
-        restart on a new day, and a signed will then looked "postponed",
-        asking for an on-chain invalidation (CHANGELOG #102). The GUI saves
-        the settings as soon as the wallet window opens; this does the same.
+        See :func:`bal.engine.context.load_will_settings`: ``will_settings``
+        becomes the live dict of the wallet file, migrated once from the
+        will in force (or, for a wallet with plugin data, the old shared
+        value read raw; else today + 12 months) and saved with the wallet.
+        The date is stored once, so it no longer moves at a daemon restart
+        (the #102 problem) and nothing is written to Electrum's global
+        ``bal_will_settings`` any more. When the settings cannot be
+        prepared, ``settings_unavailable`` is set and every flow stops.
         """
-        stored = self.plugin.config.get(self.plugin.WILL_SETTINGS.name)
-        self.will_settings = self.plugin.WILL_SETTINGS.get()
-        if not self.will_settings:
-            self.will_settings = self.plugin.default_will_settings()
-        Util.fix_will_settings_tx_fees(self.will_settings)
-        if not stored:
-            self.plugin.WILL_SETTINGS.set(self.will_settings)
+        context.load_will_settings(self, self.willitems)
 
     def _init_heirs(self):
         self.heirs = Heirs._validate(Heirs(self.wallet))
@@ -368,9 +495,12 @@ class BalController(BalSettingsController):
         return self.plugin
 
     def store_will_setting(self, field, value):
-        """Engine hook: set a will setting and store the settings."""
-        self.will_settings[field] = value
-        self.plugin.WILL_SETTINGS.set(self.will_settings)
+        """Engine hook: the validated write of one delivery setting into the
+        wallet's own dict (:func:`bal.engine.context.set_will_setting`),
+        then the wallet file is saved. Raises ``ValueError`` for a value
+        that is not accepted (nothing is written)."""
+        context.set_will_setting(self, field, value)
+        self.wallet.save_db()
 
     def flush_wallet_db(self):
         """Engine hook: the command line writes the wallet file at once."""
@@ -456,6 +586,38 @@ class BalController(BalSettingsController):
         """See :func:`bal.engine.context.init_class_variables`."""
         context.init_class_variables(self)
 
+    def _delivery_hold(self):
+        """The hold of the delivery settings that applies now, or None.
+
+        See :func:`bal.engine.context.check_holds` (#123, rule I6): the
+        "which date?" question is pending, or the settings could not be
+        prepared.
+        """
+        try:
+            context.check_holds(self)
+        except DeliveryHold as e:
+            return e
+        return None
+
+    def _hold_result(self, e):
+        """The JSON answer of a flow stopped by a delivery hold: ``result``
+        is the hold's code (``delivery_choice_pending`` or
+        ``delivery_settings_unavailable``) and ``message`` says what to do."""
+        return {
+            "result": e.code,
+            "message": _delivery_hold_message(e, self.will_settings),
+        }
+
+    def _refuse_when_held(self):
+        """Rule I6 for the commands that do not pass through
+        ``init_class_variables`` (sign, send, invalidate): a delivery hold
+        stops them with its message."""
+        hold = self._delivery_hold()
+        if hold is not None:
+            raise UserFacingException(
+                _delivery_hold_message(hold, self.will_settings)
+            ) from None
+
     def _init_heirs_to_locktime(self, multiverse=False):
         """See :func:`bal.engine.context.init_heirs_to_locktime`."""
         context.init_heirs_to_locktime(self, multiverse)
@@ -518,7 +680,9 @@ class BalController(BalSettingsController):
 
         Returns the raw ``PartialTransaction`` (or ``None`` when there is
         nothing to invalidate); the caller decides how to show/sign it.
+        Refused while a delivery hold applies (#123, rule I6).
         """
+        self._refuse_when_held()
         willitems = will if will is not None else self.willitems
         fee_per_byte = self.will_settings.get("baltx_fees", 1)
         tx = Will.invalidate_will(
@@ -549,13 +713,34 @@ class BalController(BalSettingsController):
         """Check the local coherence of the will (heirs, executors, fees).
 
         Returns ``{"valid": true}`` or raises a translated domain exception.
+        While a delivery hold applies (#123) nothing is checked: the answer
+        is ``{"valid": false, "result": <code>, "message": ...}`` with the
+        code ``delivery_choice_pending`` or ``delivery_settings_unavailable``
+        and the command that answers it. A passed Check Alive raises the
+        text of ``bal_will_autorebuild`` (see ``_check_alive_error``).
         """
         try:
             self.init_class_variables()
             self.check_will()
+        except DeliveryHold as e:
+            return dict(self._hold_result(e), valid=False)
+        except CheckAliveError as e:
+            raise self._check_alive_error() from e
         except Exception as e:
             raise _user_facing(e) from e
         return {"valid": True}
+
+    def _check_alive_error(self):
+        """The message of a passed Check Alive for ``bal_will_check`` and
+        ``bal_will_prepare``: the same text as ``bal_will_autorebuild``.
+
+        Built from this wallet's ``check_alive_info``: a fixed delivery date
+        gets "choose a later delivery date" (renewal by invalidation cannot
+        move a fixed date, since #123 every wallet has one), a renewable
+        will gets the renewal steps. Before, both commands always gave the
+        renewal steps (D42).
+        """
+        return UserFacingException(_check_alive_cli_message(self.check_alive_info()))
 
     def prepare_will(self, ignore_duplicate=True, keep_original=True):
         """Run the full "prepare inheritance" flow and return a status dict.
@@ -567,11 +752,23 @@ class BalController(BalSettingsController):
           ``reason`` says why, in the words of the Check dialog.
         * ``expired`` / ``postponed`` -> an invalidation transaction must be
           signed and broadcast before a new will can be prepared.
+        * ``delivery_choice_pending`` / ``delivery_settings_unavailable``
+          -> a delivery hold (#123): nothing was done; ``message`` says
+          which command answers it.
+
+        A passed Check Alive raises the text of ``bal_will_autorebuild``
+        (see ``_check_alive_error``).
         """
+        hold = self._delivery_hold()
+        if hold is not None:
+            return self._hold_result(hold)
         if not self.heirs:
             raise UserFacingException(_("Heirs are not defined: add at least one heir first"))
 
-        self.init_class_variables()
+        try:
+            self.init_class_variables()
+        except CheckAliveError as e:
+            raise self._check_alive_error() from e
         if self.date_to_check is None:
             raise UserFacingException(_("cannot resolve the check-alive date"))
         date_to_check: float = self.date_to_check
@@ -731,6 +928,9 @@ class BalController(BalSettingsController):
           :meth:`_finish_coherent_will`). ``needs_signing`` here means a
           coherent will that an encrypted wallet must sign.
         * ``no_heirs``      -> no valid heirs are configured.
+        * ``delivery_choice_pending`` / ``delivery_settings_unavailable``
+          -> a delivery hold (#123): nothing was built, signed or sent;
+          ``message`` says which command answers it.
         * ``check_alive_passed`` -> the Check Alive date has passed; nothing
           was done. ``message`` says how to renew (``renewable`` tells whether
           a renewal with the current settings is possible).
@@ -750,6 +950,9 @@ class BalController(BalSettingsController):
         """
         try:
             self.init_class_variables()
+        except DeliveryHold as e:
+            _logger.info(f"auto rebuild: delivery hold ({e.code}), nothing to do")
+            return self._hold_result(e)
         except will_mod.NoHeirsException as e:
             _logger.info(f"auto rebuild: no heirs ({e})")
             return {"result": "no_heirs"}
@@ -956,8 +1159,10 @@ class BalController(BalSettingsController):
 
         Returns ``{txid: raw_tx}`` for every signed transaction.  Raises
         ``UserFacingException`` when the wallet is encrypted and no password is
-        given.
+        given, and while a delivery hold applies (#123, rule I6: signing the
+        prepared will would answer the "which date?" question by itself).
         """
+        self._refuse_when_held()
         willitems = self.willitems
         if password is None and self.wallet.has_keystore_encryption():
             raise UserFacingException(_("Password required to sign transactions"))
@@ -1017,8 +1222,10 @@ class BalController(BalSettingsController):
         when no transaction matched the (optional) filter. When a push fails,
         ``_error`` is true and ``_failed`` maps each failed URL to the reason
         (CHANGELOG #105: before, only "Failed" was returned, so a script could
-        not tell "offline" from "refused by the server").
+        not tell "offline" from "refused by the server"). Refused while a
+        delivery hold applies (#123, rule I6).
         """
+        self._refuse_when_held()
         willitems = self.willitems
         if txids is not None:
             willitems = {t: willitems[t] for t in txids if t in willitems}
@@ -1161,6 +1368,8 @@ class BalController(BalSettingsController):
             self.willitems[wid].set_status("EXPORTED", True)
             self.will[wid] = self.willitems[wid].to_dict()
         write_json_file(path, self.will)
+        # Also records the anchor of the will (#123, plan 3.2): the direct
+        # item writes above are covered by this save.
         self.save_willitems()
         return {"exported": len(self.willitems), "path": path}
 
@@ -1238,6 +1447,181 @@ class BalController(BalSettingsController):
         return self.merge_will(willitems)
 
     # ------------------------------------------------------------------ #
+    # Delivery settings of this wallet (CHANGELOG #123)
+    # ------------------------------------------------------------------ #
+    def _will_in_force(self):
+        """The date of the will in force, or None.
+
+        The earliest date of the VALID will items; with no VALID item, the
+        earliest date of the items still pending at the will-executors
+        (sent, not invalidated or confirmed, in the future: the source
+        "sent" of the migration). See
+        :func:`bal.core.delivery.earliest_in_force`. Block heights are
+        ignored.
+        """
+        return delivery.earliest_in_force(
+            delivery.views_from(self.willitems), time.time()
+        )
+
+    @staticmethod
+    def _dated(ts):
+        """``{"locktime": ts, "date": "YYYY-MM-DD"}`` (UTC; the time is added
+        when it is not 00:00), or None when ``ts`` is not a date."""
+        ts = delivery.as_delivery(ts)
+        if ts is None:
+            return None
+        return {"locktime": ts, "date": context.utc_day_text(ts)}
+
+    def delivery_show(self):
+        """``bal_delivery_show``: the delivery settings of this wallet.
+
+        Read only. ``date`` / ``locktime``: the delivery date (UTC) and its
+        UNIX time; ``baltx_fees``: the fee rate; ``threshold``: the Check
+        Alive bridge; ``settings_version``, ``migrated_from``,
+        ``migrated_at`` and ``legacy_locktime`` (the old value found at the
+        migration, e.g. "1054d"); ``note``: the one-time note not yet shown
+        in the GUI, with its dates; ``choice_pending`` and ``choice`` (the
+        two dates of the "which date?" question); ``will_in_force``: the
+        date of the will in force (see ``_will_in_force``: the VALID items,
+        else the items still pending at the will-executors);
+        ``settings_unavailable``:
+        the settings could not be prepared (the values are for display
+        only).
+        """
+        ws = self.will_settings if isinstance(self.will_settings, Mapping) else {}
+        locktime = delivery.as_delivery(ws.get("locktime"))
+        out = {
+            "date": context.utc_day_text(locktime) if locktime is not None else None,
+            "locktime": locktime,
+            "baltx_fees": ws.get("baltx_fees"),
+            "threshold": ws.get("threshold"),
+            "settings_version": ws.get("settings_version"),
+            "migrated_from": ws.get("migrated_from"),
+            "migrated_at": ws.get("migrated_at"),
+            "legacy_locktime": ws.get("legacy_locktime"),
+            "note": None,
+            "choice_pending": bool(ws.get(delivery.CHOICE_KEY)),
+            "will_in_force": self._dated(self._will_in_force()),
+            "settings_unavailable": bool(self.settings_unavailable),
+        }
+        note = delivery.pending_note(ws)
+        if note is not None:
+            kind, old, new = note
+            out["note"] = {"kind": kind, "old": self._dated(old), "new": self._dated(new)}
+        dates = delivery.choice_dates(ws)
+        if dates is not None:
+            keep, later = dates
+            out["choice"] = {"keep": self._dated(keep), "later": self._dated(later)}
+        if self.settings_unavailable:
+            out["message"] = _delivery_hold_message(
+                delivery.DeliverySettingsUnavailable()
+            )
+        return out
+
+    def delivery_set(self, date=None, fee=None, keep=None, confirm_earlier=None):
+        """``bal_delivery_set``: change this wallet's delivery date or fee rate.
+
+        ``date``: ``YYYY-MM-DD`` (00:00 UTC) or a UNIX timestamp, read by
+        :func:`bal.core.delivery.parse_cli_date` (a period such as "1y", a
+        block height or a date not in the future is refused). A date
+        EARLIER than the will in force (or, with no will in force, than the
+        stored date) needs ``confirm_earlier`` (the heirs could receive
+        earlier; a typo in a script must not do it). A later date is
+        stored; if the will was already sent, the next ``bal_will_prepare``
+        asks to invalidate it first (miner fee), as the GUI Check does.
+        ``fee``: a fee rate from 1 to 10000 (the GUI fee box). ``keep``:
+        answer the "which date?" question by keeping the date of the
+        prepared will; a new ``date`` answers it too. ``keep`` and ``date`` together are refused.
+
+        Everything is checked before anything is written (through
+        :func:`bal.engine.context.set_will_setting`), then the wallet file
+        is saved. Refused while the settings could not be prepared. Returns
+        :meth:`delivery_show` with a ``message``.
+        """
+        keep = _as_bool(keep, "keep")
+        confirm_earlier = _as_bool(confirm_earlier, "confirm_earlier")
+        if self.settings_unavailable:
+            raise UserFacingException(
+                _delivery_hold_message(delivery.DeliverySettingsUnavailable())
+            )
+        if date is None and fee is None and not keep:
+            raise UserFacingException(
+                _("Nothing to change: give --date YYYY-MM-DD, --fee N or --keep true.")
+            )
+        if keep and date is not None:
+            raise UserFacingException(_("Give either --keep true or --date, not both."))
+        changes = {}
+        in_force = self._will_in_force()
+        # The reference of --confirm_earlier reads the VALID items only (with
+        # none, the stored date, which equals the earliest sent one).
+        valid_in_force = delivery.earliest_valid(delivery.views_from(self.willitems))
+        if date is not None:
+            try:
+                new_date = delivery.parse_cli_date(date, time.time())
+            except ValueError as e:
+                raise UserFacingException(str(e)) from None
+            stored = delivery.as_delivery(self.will_settings.get("locktime"))
+            reference = valid_in_force if valid_in_force is not None else stored
+            if reference is not None and new_date < reference and not confirm_earlier:
+                if valid_in_force is not None:
+                    text = _(
+                        "{} is earlier than the will in force ({}): the heirs "
+                        "could receive the bitcoin earlier. If this is what you "
+                        "want, run the command again with --confirm_earlier true."
+                    )
+                else:
+                    text = _(
+                        "{} is earlier than the current delivery date ({}). If "
+                        "this is what you want, run the command again with "
+                        "--confirm_earlier true."
+                    )
+                raise UserFacingException(
+                    text.format(
+                        context.utc_day_text(new_date), context.utc_day_text(reference)
+                    )
+                )
+            changes["locktime"] = new_date
+        if fee is not None:
+            changes["baltx_fees"] = _as_fee(fee)
+        try:
+            delivery.validate_values(changes)
+        except ValueError as e:
+            raise UserFacingException(str(e)) from None
+
+        messages = []
+        if keep:
+            if delivery.choice_dates(self.will_settings) is None:
+                messages.append(_("No question was pending: nothing to keep."))
+            else:
+                kept = context.answer_delivery_choice(self, use_later=False)
+                messages.append(
+                    _("The date of the prepared will is kept: {}.").format(
+                        context.utc_day_text(kept)
+                    )
+                )
+        for field, value in changes.items():
+            context.set_will_setting(self, field, value)
+        if changes:
+            messages.append(_("Stored."))
+            new_date = changes.get("locktime")
+            if new_date is not None and in_force is not None and new_date > in_force:
+                messages.append(
+                    _(
+                        "The new date is later than the will in force ({}). If "
+                        "that will was already sent to the will-executors, the "
+                        "next bal_will_prepare asks to invalidate it first "
+                        "(on-chain, miner fee)."
+                    ).format(context.utc_day_text(in_force))
+                )
+            messages.append(
+                _("Run bal_will_prepare to prepare the will with the new settings.")
+            )
+        self.wallet.save_db()
+        out = self.delivery_show()
+        out["message"] = " ".join(messages)
+        return out
+
+    # ------------------------------------------------------------------ #
     # Heirs CRUD
     # ------------------------------------------------------------------ #
     def _build_heir_entry(self, name, address, amount, locktime):
@@ -1267,9 +1651,8 @@ class BalController(BalSettingsController):
                 _(
                     "Every heir gets the delivery date of the will, so --locktime "
                     "cannot be set for one heir. To change the date for every "
-                    'heir, change "locktime" in the will settings: '
-                    "bal_settings_get bal_will_settings, then bal_settings_set "
-                    "bal_will_settings with the new JSON."
+                    "heir, use bal_delivery_set --date YYYY-MM-DD (see the "
+                    "current date with bal_delivery_show)."
                 )
             )
         self._check_locktime_value(locktime)

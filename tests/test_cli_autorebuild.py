@@ -378,6 +378,10 @@ def _rebuild_after_new_funds(run_rebuild):
     a relative "1y", which is resolved against the built will and never had
     the problem).
 
+    The stored locktime is read from the wallet's own settings (CHANGELOG
+    #123: ``will_settings`` in the wallet file); Electrum's global
+    ``bal_will_settings`` must never be written (rule I1).
+
     Returns ``(rebuild result, stored locktime, old locktime, next check)``.
     """
     with _no_willexecutors():
@@ -396,7 +400,11 @@ def _rebuild_after_new_funds(run_rebuild):
                 Will, "check_anticipate", return_value=old_locktime - 86400
             ):
                 result = run_rebuild(c)
-            stored = plugin.WILL_SETTINGS.get()["locktime"]
+            settings = wallet.db.get_dict("will_settings")
+            assert c.will_settings is settings, "the wallet's own live dict"
+            stored = settings["locktime"]
+            assert plugin.config.get("bal_will_settings") is None, (
+                "rule I1: the global bal_will_settings is never written")
             # The next command: a new controller, as for every CLI command.
             nxt = BalController(plugin, wallet)
             nxt.sign_transactions(None)

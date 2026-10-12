@@ -15,7 +15,17 @@ Now ``LockTimeWidget.refresh_shown_value`` shows a period again, and the
 toolbars call it each time their list is redrawn
 (``WillSettingsWidget.on_locktime_change``: after the will is loaded, after
 each Check). It only shows: the saved setting never changes. A fixed date
-and the ADVANCED Raw editor ("1054d") are shown as before.
+is shown as before.
+
+Since CHANGELOG #123 each wallet keeps its own delivery date, always a
+date: the old shared period becomes the wallet's fixed date when the window
+opens (the date of the will in force, or today + the period with no will),
+and the Raw/Date selector is hidden in both modes (the Date editor is
+always used). A period can still reach the field from settings that are
+not current (shown only, never saved): the field tests below keep it, in
+BASIC and ADVANCED. The toolbar flows start from the old shared "1000d"
+(migrated when the window opens) and check the wallet's own settings;
+Electrum's global ``bal_will_settings`` is never written.
 
 Run (standalone or with pytest):
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \\
@@ -134,13 +144,18 @@ def test_basic_period_without_a_will_shows_today_plus_the_period():
     _not_saved(bw, w, "1000d")
 
 
-def test_advanced_period_keeps_the_raw_text():
-    """ADVANCED: the Raw editor shows the period itself, before and after."""
+def test_advanced_period_shows_the_will_date_too():
+    """ADVANCED, since #123: the Raw editor is hidden, so a period is shown
+    in the Date editor as in BASIC (before: the Raw editor showed "1000d"
+    itself): today + 1000 days, then the will's date once it is loaded.
+    The setting stays "1000d"."""
     bw, w = _field("1000d")
-    assert w.current_index == 0 and w.get_value() == "1000d"
+    assert w.current_index == 1                     # the Date editor
+    assert w.combo.isHidden()
+    assert w.get_value() == TODAY + 1000 * DAY
     bw.willitems = _will("1000d", TODAY + 999 * DAY)
     w.refresh_shown_value()
-    assert w.get_value() == "1000d"
+    assert w.get_value() == TODAY + 999 * DAY
     _not_saved(bw, w, "1000d")
 
 
@@ -216,6 +231,22 @@ def _shown(toolbar):
     return toolbar.widgets["locktime"].get_value()
 
 
+def _stored(s):
+    """The wallet's own delivery settings (CHANGELOG #123)."""
+    return s.wallet.db.get_dict("will_settings")
+
+
+def _assert_migrated_from_the_shared_period(s):
+    """The window migrated the old shared "1000d" (CHANGELOG #123): the
+    wallet's own settings hold a date, and the global was not written."""
+    stored = _stored(s)
+    assert s.bw.will_settings is stored
+    assert stored["legacy_locktime"] == "1000d"
+    assert isinstance(stored["locktime"], int)
+    s.assert_global_unchanged()
+    assert s.config.get("bal_will_settings")["locktime"] == "1000d"
+
+
 @pytest.fixture
 def flow_session(monkeypatch):
     """``tests/flowkit.py`` sessions with Electrum's asyncio loop."""
@@ -238,8 +269,13 @@ def flow_session(monkeypatch):
 def test_basic_toolbars_follow_a_rebuild_that_moves_the_will(flow_session):
     """The owner's case: BASIC, delivery "1000d", a will sent; the heirs
     change and the Check rebuilds the will one day earlier. Both toolbars
-    then show the will's new date; the setting stays "1000d"."""
+    then show the will's new date.
+
+    Since #123 "1000d" is the old shared value: the wallet stores the date
+    it gave when the window opened, and the Check moves the stored date
+    with the will (#107/#110). The global keeps "1000d"."""
     s = flow_session(mode="basic", locktime="1000d")
+    _assert_migrated_from_the_shared_period(s)
     will_tb, heirs_tb = _toolbars(s.bw)
     s.check()
     first = Will.get_min_locktime(s.bw.willitems)
@@ -251,50 +287,65 @@ def test_basic_toolbars_follow_a_rebuild_that_moves_the_will(flow_session):
     s.bw.heir_list_widget.update()      # the Heirs tab redraws its list
     assert _shown(will_tb) == moved
     assert _shown(heirs_tb) == moved
-    assert s.plugin.WILL_SETTINGS.get()["locktime"] == "1000d"
+    assert _stored(s)["locktime"] == moved
+    s.assert_global_unchanged()
 
 
 def test_basic_toolbars_show_the_will_after_a_restart(flow_session):
     """The next day Electrum is opened again: the toolbars are built before
-    the will is loaded (today + 1000 days, one day after the will); once the
-    will is loaded they show the will's date, like the wizard."""
+    the will is loaded, and they show the will's date, like the wizard.
+
+    Before #123 they showed today + 1000 days (one day after the will)
+    until the will was loaded. Since #123 the date is the wallet's own,
+    fixed when the window first opened: it is the will's date at once, and
+    stays so once the will is loaded."""
     s = flow_session(mode="basic", locktime="1000d")
+    _assert_migrated_from_the_shared_period(s)
     s.check()
     will_date = Will.get_min_locktime(s.bw.willitems)
+    assert will_date == _stored(s)["locktime"]
     s.clock.travel(1)
     bw = fk.FlowWindow(s.plugin, s.wallet, s.user, s.world)
+    assert bw.will_settings is _stored(s)
     will_tb, heirs_tb = _toolbars(bw)
-    assert _shown(will_tb) == Util.parse_locktime_string("1000d")
-    assert _shown(will_tb) == will_date + DAY
+    assert _shown(will_tb) == will_date
+    assert Util.parse_locktime_string("1000d") == will_date + DAY
     bw.load_willitems()                 # the window loads the will
     bw.heir_list_widget.update()
     assert _shown(will_tb) == will_date
     assert _shown(heirs_tb) == will_date
     wizard = WillSettingsWidget(bw, None, "v", read_only=False)
     assert _shown(wizard) == will_date
-    assert s.plugin.WILL_SETTINGS.get()["locktime"] == "1000d"
+    assert _stored(s)["locktime"] == will_date
+    s.assert_global_unchanged()
 
 
-def test_advanced_and_fixed_toolbars_unchanged(flow_session):
-    """ADVANCED with a period: the Raw text "1000d" stays, the date next to
-    it is the will's. BASIC with a fixed date: the field follows the stored
-    date as before (CHANGELOG #110)."""
+def test_advanced_and_fixed_date_toolbars_follow_the_will(flow_session):
+    """ADVANCED with the old shared "1000d": before #123 the Raw text
+    "1000d" stayed, with the will's date next to it. Since #123 the Raw
+    editor is hidden and the period is the wallet's fixed date: the Date
+    editor shows the will's date, also after a rebuild one day earlier.
+    BASIC with a fixed date: the field follows the stored date as before
+    (CHANGELOG #110), now stored in the wallet's own settings."""
     s = flow_session(mode="advanced", locktime="1000d")
+    _assert_migrated_from_the_shared_period(s)
     will_tb, _heirs_tb = _toolbars(s.bw)
     s.check()
     s.set_heirs(alice="50%", bob="30%")
     s.check()
-    assert _shown(will_tb) == "1000d"
-    label = will_tb.widgets["locktime"].editor.label.text()
-    assert label == datetime.fromtimestamp(
-        Will.get_min_locktime(s.bw.willitems), tz=timezone.utc).strftime("%Y-%m-%d")
+    field = will_tb.widgets["locktime"]
+    assert field.current_index == 1 and field.combo.isHidden()
+    moved = Will.get_min_locktime(s.bw.willitems)
+    assert _shown(will_tb) == moved == _stored(s)["locktime"]
+    s.assert_global_unchanged()
     s = flow_session(mode="basic", locktime=fk.D0)
     will_tb, _heirs_tb = _toolbars(s.bw)
     s.check()
     s.set_heirs(alice="50%", bob="30%")
     s.check()
     assert _shown(will_tb) == fk.D0 - DAY
-    assert s.plugin.WILL_SETTINGS.get()["locktime"] == fk.D0 - DAY
+    assert _stored(s)["locktime"] == fk.D0 - DAY
+    assert s.config.get("bal_will_settings") is None
 
 
 if __name__ == "__main__":

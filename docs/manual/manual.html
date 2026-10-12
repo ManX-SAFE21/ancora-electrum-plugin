@@ -101,14 +101,20 @@ inheritance cases.</p>
 (3) Fees.</em></p>
 <h3 id="1-delivery-time-locktime">1 — Delivery Time (Locktime)</h3>
 <p>Indicates the date on which the inheritance of your wallet on the blockchain
-will be transferred to the recipient. You can enter the inheritance date either
-as <strong>Relative</strong> (example: 1 year from today → <code>RAW = 1y</code>) or as a <strong>Precise
-Date</strong> (<code>Date</code>).</p>
-<p>If you choose <strong>Raw</strong>, you can insert various options based on a suffix:</p>
-<ul>
-<li><code>d</code>: number of days after the current day (e.g. <code>1d</code> means tomorrow)</li>
-<li><code>y</code>: number of years after the current day (e.g. <code>1y</code> means one year from today)</li>
-</ul>
+will be transferred to the recipient. It is always a <strong>Precise Date</strong>.</p>
+<p><strong>Each wallet keeps its own Delivery Time and Fees</strong>, saved in the wallet file
+(see <em>Wallet security — saving your will</em>). Changing them in one wallet does
+not change your other wallets. A new wallet starts with a Delivery Time 12
+months from today.</p>
+<blockquote>
+<p><strong>NB:</strong> older versions also accepted a <strong>Relative</strong> duration (<code>RAW</code>, e.g.
+<code>1y</code> = one year from today). A duration is counted again from "today", so
+the date it gives moves every day. Durations are no longer accepted. The
+first time a wallet with heirs or a will is opened with this version, a
+saved duration becomes, once, a fixed date: the date of the wallet's will
+in force (without a will, the date the duration gives on that day). A
+message shows the new date once.</p>
+</blockquote>
 <p>* The locktime can be <strong>anticipated</strong> to update the will.</p>
 <h3 id="2-check-alive-threshold">2 — Check Alive (Threshold)</h3>
 <p><em>(i.e. check whether you are still alive, and then postpone the inheritance.)</em></p>
@@ -146,7 +152,7 @@ inheritance so as not to transfer it too soon while you are still alive.</p>
 <p>Denoted in <strong>satoshi/vbyte</strong>. This parameter indicates the fees that go to the
 <strong>miners</strong> to have the transaction validated on the blockchain at the time of
 inheritance. It is the classic fee/commission you pay every time you send
-bitcoin to another wallet.</p>
+bitcoin to another wallet. Like the Delivery Time, it is kept by each wallet.</p>
 <p>We recommend leaving the default value of <strong>100 sat/vbyte</strong>; this way you will be
 sure the inheritance is accepted by the miners, even on days when the blockchain
 is saturated and network costs are high. (As of January 2025, that is roughly
@@ -224,6 +230,11 @@ on‑chain fee, see the companion
 </blockquote>
 <hr />
 <h2 id="raw-settings">RAW settings</h2>
+<blockquote>
+<p><strong>NB:</strong> relative (<strong>RAW</strong>) durations are no longer offered, in either mode:
+the Delivery Time is always a precise date (see <em>1 — Delivery Time</em>). The
+<code>RAW‑1d</code> example below only concerns wills prepared with an older version.</p>
+</blockquote>
 <p>If you set, for example, <code>RAW‑1d</code> and it is, say, 5 p.m., the plugin will not
 execute the inheritance precisely 24 hours later (5 p.m. the next day) but will
 roughly estimate the blockchain block number corresponding to that time — so
@@ -289,7 +300,16 @@ drive, cloud, NAS, etc.):</p>
 <hr />
 <h2 id="wallet-security-saving-your-will">Wallet security — saving your will</h2>
 <p>To keep a copy of your will, simply save the wallet from Electrum
-(<strong>File → Save Backup</strong>).</p>
+(<strong>File → Save Backup</strong>). The wallet file also holds the wallet's own
+<strong>Delivery Time</strong> and <strong>Fees</strong>.</p>
+<blockquote>
+<p><strong>NB:</strong> do not use this plugin and the original BAL plugin (or an older
+version of this plugin) on the same wallet in turn. The other plugin reads
+the old Delivery Time, shared by every wallet. After any date change made
+here, including the automatic one-day move after new funds, it can prepare
+an EARLIER will and sign it when you close the wallet, or ask for an
+invalidation (miner fee).</p>
+</blockquote>
 <p>If, for example, your notebook is stolen or breaks down, just install Electrum on
 a new computer together with the BAL plugin and open the previously saved wallet.</p>
 <blockquote>

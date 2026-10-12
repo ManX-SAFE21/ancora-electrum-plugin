@@ -179,7 +179,11 @@ def prepare_fee_too_high(make):
 
 
 def prepare_check_alive_renew(make):
-    """Advanced, relative delivery, Check Alive passed: Prepare, then Renew."""
+    """Advanced, relative delivery, Check Alive passed: Prepare, then Renew.
+
+    Since #123 the old shared "60d" becomes a fixed date when the window
+    opens: Prepare says the date is fixed (the renewal comes back with
+    #126)."""
     s = sent_will(make, mode="advanced", locktime="60d", threshold="-30d")
     s.recorder.note("40 days pass")
     s.clock.travel(40)
@@ -339,7 +343,9 @@ def auto_expired_online(make):
 
 
 def auto_check_alive_passed(make):
-    """Advanced, relative delivery, Check Alive passed: automatic rebuild."""
+    """Advanced, relative delivery, Check Alive passed: automatic rebuild.
+
+    Since #123 a fixed date (see :func:`prepare_check_alive_renew`)."""
     s = sent_will(make, mode="advanced", locktime="60d", threshold="-30d")
     s.recorder.note("40 days pass")
     s.clock.travel(40)

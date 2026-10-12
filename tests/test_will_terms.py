@@ -27,6 +27,13 @@ HINTS = (
     "will-executors.\n\nNext steps (manual):\n  1. Press 'Sign' to sign the new "
     "transaction.\n  2. Press 'Broadcast will' to send it to the will-executors.",
 )
+# Hints of the delivery settings (#123) that name the 'Check your will' button.
+CHECK_HINTS = (
+    "Nothing is signed or sent until you choose the delivery date: press "
+    "'Check your will'.",
+    "To use the later date again, choose it and press 'Check your will': the "
+    "old will must be invalidated first (miner fee).",
+)
 
 
 def _catalog(lang):
@@ -54,6 +61,20 @@ def test_hints_name_the_real_button():
             assert "'{}'".format(button) in text, (lang, text)
             if "'Sign'" in msgid:
                 assert "'{}'".format(sign) in text, (lang, text)
+
+
+def test_check_hints_name_the_real_button():
+    """The #123 hints name the 'Check your will' button exactly as it is
+    translated, quoted like the #94 hints (not "the Check button")."""
+    for lang in ("it_IT", "es_ES"):
+        cat = _catalog(lang)
+        button = cat.get("Check your will").string
+        assert button, lang
+        for msgid in CHECK_HINTS:
+            assert "'Check your will'" in msgid, msgid
+            entry = cat.get(msgid)
+            assert entry is not None and "fuzzy" not in entry.flags, (lang, msgid)
+            assert "'{}'".format(button) in entry.string, (lang, entry.string)
 
 
 def test_italian_will_rows_without_piano():

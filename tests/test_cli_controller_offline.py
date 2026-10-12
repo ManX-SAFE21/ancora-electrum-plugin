@@ -241,13 +241,25 @@ def test_build_will_reanchors_date_to_check_to_new_locktime():
     ``date_to_check`` to the CURRENT heirs' earliest delivery before building,
     so an anticipated (shortened) rebuild is not blocked by the old built-will
     anchor (which would yield NO_FUTURE_DATE in ``get_transactions``).
+
+    CHANGELOG #123: the settings are the wallet's own, written through the
+    controller's validated store, and the delivery is always a DATE (a
+    period such as "2y" is refused). Before #123 they were seeded into
+    Electrum's global ``bal_will_settings`` (never written now) with the
+    delivery "2y". With a date the Check Alive is anchored to the stored
+    date (``resolve_delivery_date``), so the shortened delivery is stored
+    as the date the heirs' "1y" gives today: the old will is still frozen
+    at 2y and its stale anchor must not be the build filter.
     """
     with Plugin() as plugin:
         plugin.USER_TYPE.set("advanced")
         plugin.NO_WILLEXECUTOR.set(True)
         plugin.ENABLE_MULTIVERSE.set(True)
-        plugin.WILL_SETTINGS.set({"threshold": "-150d", "locktime": "2y", "baltx_fees": 20})
         c = _make_controller(plugin)
+        c.store_will_setting("threshold", "-150d")
+        c.store_will_setting("locktime", Util.parse_locktime_string("1y"))
+        c.store_will_setting("baltx_fees", 20)
+        assert c.will_settings is c.wallet.db.get_dict("will_settings")
         c.no_willexecutor = True
         c.heirs["alice"] = [VALID_ADDRESS, "100%", "1y"]
 
@@ -267,6 +279,7 @@ def test_build_will_reanchors_date_to_check_to_new_locktime():
         assert abs(c.date_to_check - expected) < 3600
         # ...and used THAT anchor as the build filter, not the stale 2y one.
         assert gt.call_args.args[-1] == c.date_to_check
+        assert plugin.config.get("bal_will_settings") is None
 
 
 # ------------------------------------------------------------------ #
