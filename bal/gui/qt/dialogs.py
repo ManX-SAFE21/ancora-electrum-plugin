@@ -3536,23 +3536,6 @@ class WillDetailDialog(BalDialog):
             self.merge_button.hide()
         self.update()
 
-    def toggle_replaced(self):
-        self.bal_window.bal_plugin.hide_replaced()
-        # Whole sentences, so a translation can change the word order.
-        text = _("Hide replaced")
-        if self.bal_window.bal_plugin._hide_replaced:
-            text = _("Unhide replaced")
-        self.toggle_replace_button.setText(text)
-        self.update()
-
-    def toggle_invalidated(self):
-        self.bal_window.bal_plugin.hide_invalidated()
-        text = _("Hide invalidated")
-        if self.bal_window.bal_plugin._hide_invalidated:
-            text = _("Unhide invalidated")
-        self.toggle_invalidate_button.setText(text)
-        self.update()
-
     def update(self):
         if not self._external_will:
             self.will = self.bal_window.willitems

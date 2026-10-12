@@ -518,9 +518,11 @@ class Plugin(BalPlugin, EventListener):
 
         # heir_enable_multiverse = BalCheckBox(self.ENABLE_MULTIVERSE,on_multiverse_change)
 
-        heir_hide_replaced = BalCheckBox(self.HIDE_REPLACED, on_multiverse_change)
-
-        heir_hide_invalidated = BalCheckBox(self.HIDE_INVALIDATED, on_multiverse_change)
+        # CHANGELOG #129: no "Hide Replaced" / "Hide Invalidated" options any
+        # more: the Will tab lists the will by versions, the last ones first,
+        # and "Show all history" shows the rest. The config keys
+        # (bal_hide_replaced / bal_hide_invalidated) stay readable in
+        # plugin_base but nothing uses them.
 
         # Auto-sign checkbox (Group B / B2). When ticked, the "Check" action
         # automatically signs and broadcasts the will after querying the
@@ -701,22 +703,8 @@ class Plugin(BalPlugin, EventListener):
         # NOTE: the "User Type" row is placed at row 5, right before the
         # advanced-only settings, so the user picks basic/advanced first; the
         # two remaining-time colour rows (#124) follow at rows 6 and 7.
-        add_widget(
-            grid,
-            _("Hide Replaced"),
-            heir_hide_replaced,
-            0,
-            _("Hide replaced transactions from will detail and list"),
-        )
-        grid.addWidget(_make_reset_btn(self.HIDE_REPLACED, heir_hide_replaced, "check"), 0, 3)
-        add_widget(
-            grid,
-            _("Hide Invalidated"),
-            heir_hide_invalidated,
-            1,
-            _("Hide invalidated transactions from will detail and list"),
-        )
-        grid.addWidget(_make_reset_btn(self.HIDE_INVALIDATED, heir_hide_invalidated, "check"), 1, 3)
+        # Rows 0 and 1 held the two hide options until #129; the other rows
+        # keep their numbers (code and tests refer to them).
         lbl_auto_sign = QLabel(_("Auto-sign on Check"))
         help_auto_sign = HelpButton(_(
             "When checking, automatically sign and broadcast the will "
@@ -1009,8 +997,6 @@ class Plugin(BalPlugin, EventListener):
             # both reset the stored value and update what the user sees.
             resets = [
                 (self.USER_TYPE, user_type_combo, "user_type"),
-                (self.HIDE_REPLACED, heir_hide_replaced, "check"),
-                (self.HIDE_INVALIDATED, heir_hide_invalidated, "check"),
                 (self.AUTO_SIGN, heir_auto_sign, "check"),
                 (self.EDITABLE_DATES, heir_editable_dates, "check"),
                 (self.NUM_REMINDERS, heir_num_reminders, "spin"),

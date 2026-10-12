@@ -2,7 +2,8 @@
 Tests for the Will-tab context menu and Will-Executor bulk-selection helpers
 in ``bal.gui.qt.lists``.
 
-Covers ``_can_sign`` / ``_can_broadcast`` / ``_can_delete`` and
+Covers ``_can_sign`` / ``_can_broadcast`` / ``_can_delete`` (CHANGELOG
+#129: never a transaction sent to its will-executor) and
 ``_apply_select_all`` (the pure logic behind the new context-menu actions and
 the "Select All" dropdown).
 
@@ -115,6 +116,42 @@ def test_can_delete_signed_and_pushed_false():
 def test_can_delete_signed_backup_tx_without_executor_false():
     """Signed txs without a will-executor (backup) stay protected."""
     assert _can_delete(_signed_valid(we=None)) is False
+
+
+def _old(we="https://we.example", **flags):
+    """A signed item that is no longer VALID (replaced or invalidated)."""
+    item = FakeWillItem(VALID=False, COMPLETE=True, **flags)
+    item.we = {"url": we, "selected": True} if we else None
+    return item
+
+
+def test_can_delete_sent_replaced_or_invalidated_false():
+    """CHANGELOG #129: a transaction SENT to its will-executor is never
+    deleted, also when it is replaced (still executable, part of the will
+    in force for #128) or invalidated. Before #129 both were deletable
+    (not VALID)."""
+    assert _can_delete(_old(REPLACED=True, PUSHED=True)) is False
+    assert _can_delete(_old(REPLACED=True, PUSHED=True, CHECKED=True)) is False
+    assert _can_delete(_old(INVALIDATED=True, REPLACED=True, PUSHED=True)) is False
+
+
+def test_can_delete_replaced_never_sent():
+    """Never sent: only this wallet has it, deleting it is free (#129)."""
+    assert _can_delete(_old(REPLACED=True)) is True
+    assert _can_delete(_old(REPLACED=True, PUSH_FAIL=True)) is True
+    assert _can_delete(_old(INVALIDATED=True)) is True
+
+
+def test_can_delete_replaced_backup_still_in_force_false():
+    """A signed backup (no will-executor) that is replaced still counts as
+    in force for ``will_state`` (#128): protected like the VALID one."""
+    assert _can_delete(_old(we=None, REPLACED=True)) is False
+
+
+def test_can_delete_draft_and_partially_signed():
+    """Drafts and partially signed ones were never sent."""
+    assert _can_delete(FakeWillItem(VALID=True)) is True
+    assert _can_delete(FakeWillItem(VALID=True, PARTIALLY_SIGNED=True)) is True
 
 
 # ------------------------------------------------------------------ #

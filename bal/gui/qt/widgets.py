@@ -1980,22 +1980,19 @@ class BalSpinBox(QSpinBox):
 
 class WillWidget(QWidget):
     def __init__(self, father=None, parent=None, will=None):
+        """The will items whose father is ``father``, each with its children.
+
+        CHANGELOG #129: every item is shown; it no longer reads the removed
+        "Hide Replaced" / "Hide Invalidated" options.
+        """
         super().__init__()
         vlayout = QVBoxLayout()
         self.setLayout(vlayout)
         self.will = will if will is not None else parent.bal_window.willitems
         self._bal_parent = parent
+        # CHANGELOG #129: every transaction is shown (the "Hide Replaced" /
+        # "Hide Invalidated" options are gone; this view is replaced later).
         for w in self.will:
-            if (
-                self.will[w].get_status("REPLACED")
-                and self._bal_parent.bal_window.bal_plugin._hide_replaced
-            ):
-                continue
-            if (
-                self.will[w].get_status("INVALIDATED")
-                and self._bal_parent.bal_window.bal_plugin._hide_invalidated
-            ):
-                continue
             f = self.will[w].father
             if father == f:
                 qwidget = QWidget()

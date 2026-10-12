@@ -478,12 +478,69 @@ properly stored on the servers: right‑click the inheritance transaction in the
 **WILL** tab and choose **Check**. The transaction will be tagged in the
 **Status** column as **Checked** if it is indeed online on the server.
 
-### WILL tab columns
+### WILL tab: the will by versions
+
+Every time the will is prepared again (a new coin, a new date, a new fee,
+a will‑executor added or excluded) the plugin makes a new **version** of it:
+one transaction for each will‑executor (plus the backup transaction, when
+that option is on). The WILL tab lists the will by versions:
+
+- one row per version, under the columns **N.** (its number), **Version**
+  (*Delivery 30/03/2027 00:00* in bold, local time; below it the heirs,
+  the miner fee and how many will‑executors received and verified it, or
+  *not sent*) and **Status** (its state, in colour);
+- under it, when it is open (click the arrow), a grey row with the names of
+  the transaction columns, then one row per transaction.
+
+Order: the **Draft** (if any) on top, without a number; the version **In
+force**; then the older versions, newest first (in the order they were
+made). Only versions with a transaction signed or sent get a number.
+The list stops after the last five numbered versions: the **Show all
+history** button under the list adds the older ones at the bottom, and
+**Hide history** hides them again. **Discarded drafts** (versions never
+signed nor sent that are no longer the current draft, left by older
+versions of the plugin) are shown in their place, without a number;
+nothing is deleted.
+
+Version states:
+
+| State | Meaning |
+|-------|---------|
+| **Draft** | prepared, never signed nor sent; the next build drops it |
+| **In force** | the version the will‑executors would deliver first (the earliest delivery date among the signed and sent ones) |
+| **Replaced (still held by the will‑executors)** | an older version, signed and sent, still valid on the blockchain; the version in force has an earlier date |
+| **Replaced** | an older version nobody can deliver any more |
+| **Invalidated** | its coins were spent by the paid invalidation |
+| **Partially signed** | some signatures are still missing (multisig) |
+| **Executed** | delivered to the heirs (or being delivered) |
+| **Discarded draft** | never signed nor sent, replaced by a later build (no number) |
+
+A **Paid invalidation** has its own row, between the versions it ended and
+the next one, with its miner fee and its txid; it says **On the blockchain**
+or **Mempool**.
+
+Transaction rows, in columns:
 
 a. **Locktime** — the date of inheritance.
-b. **Txid** — identification of the bitcoin transaction.
-c. **Will‑Executor** — address of the will‑executor.
-d. **Status** — see the table below.
+b. **Txid** — identification of the bitcoin transaction (always in full).
+c. **Will‑Executor** — address of the will‑executor, with its fee address
+   below it (the backup transaction says *No will‑executor (backup
+   transaction)*).
+d. **Executor fee** — the will‑executor's own fee paid by this transaction.
+e. **Status** — see the table below.
+
+Right‑click a transaction row for its commands (details, sign, broadcast,
+check, copy, delete; a double click opens it); right‑click a version row
+to sign its transactions or send them again (a double click opens or
+closes it). **Delete** is offered only for
+transactions never sent to a will‑executor (drafts, or a signed copy whose
+sending failed): a transaction a will‑executor holds cannot be cancelled by
+deleting it here, that needs an invalidation. The search box looks in the
+versions and in the transactions.
+
+The plugin settings no longer have **Hide Replaced** and **Hide
+Invalidated**: the list shows the last versions, and **Show all history**
+the rest.
 
 ---
 
