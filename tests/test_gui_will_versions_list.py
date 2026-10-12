@@ -180,12 +180,12 @@ def test_versions_and_the_paid_invalidation(make):
     assert texts[1].endswith("· mempool")
     assert [t.split(" ·")[0] for t in texts[2:]] == ["#3", "#2", "#1"]
     assert all(t.endswith("· invalidated") for t in texts[2:])
-    # Version rows span every column; only the version in force is open.
+    # Version rows span every column; every version starts closed (#131,
+    # owner: the transaction rows only when the user opens a version).
     m = lst.model()
     for r in range(m.rowCount()):
         assert lst.isFirstColumnSpanned(r, QModelIndex())
-    assert lst.isExpanded(m.index(0, 0))
-    assert not any(lst.isExpanded(m.index(r, 0)) for r in range(2, 5))
+    assert not any(lst.isExpanded(m.index(r, 0)) for r in range(m.rowCount()))
     # The custom painter draws the three columns of the version level:
     # the number, the delivery and summary, the state in its colour.
     paint = m.index(0, 0).data(lst.ROLE_CUSTOM_PAINT)
@@ -289,8 +289,9 @@ def test_two_line_executor_cell_is_tall_enough(make):
     lst = _list(s)
     s.host.resize(1400, 500)
     s.host.show()
-    _APP.processEvents()
     version = lst.model().index(0, 0)
+    lst.expand(version)                    # closed at first since #131
+    _APP.processEvents()
     child = lst.model().index(1, 2, version)
     line = QFontMetrics(QApplication.font()).height()
     assert lst.visualRect(child).height() >= 2 * line + 10
@@ -370,10 +371,12 @@ def test_last_five_versions_then_show_all(make):
 
 
 def test_open_and_closed_rows_survive_update(make):
-    """The owner closes the version in force and opens #5: update() and a
-    new build keep both (by version identity, not by row number)."""
+    """The owner opens and closes the version in force and opens #5:
+    update() and a new build keep both (by version identity, not by row
+    number)."""
     s = _seven_versions(make)
     lst = _list(s)
+    lst.expand(_version_index(lst, 7))
     lst.collapse(_version_index(lst, 7))
     lst.expand(_version_index(lst, 5))
     for _ in range(3):
@@ -386,7 +389,7 @@ def test_open_and_closed_rows_survive_update(make):
     s.set_date(D - 7 * fk.DAY)
     s.check()
     lst.update()
-    assert lst.isExpanded(_version_index(lst, 8))           # new in force
+    assert not lst.isExpanded(_version_index(lst, 8))       # new: closed (#131)
     assert not lst.isExpanded(_version_index(lst, 7))
     assert lst.isExpanded(_version_index(lst, 5))
 
@@ -434,13 +437,13 @@ def test_double_click_and_menu_on_a_transaction_row(make):
     # A double click on a version row opens / closes it, and opens no
     # transaction window.
     version = lst.model().index(0, 0)
-    assert lst.isExpanded(version)
+    lst.collapse(version)
     opened.clear()
     with patch.object(s.bw, "show_transaction", lambda tx=None, **kw: opened.append(tx)):
         lst.on_double_click(version)
-        assert not lst.isExpanded(version)
-        lst.on_double_click(version)
         assert lst.isExpanded(version)
+        lst.on_double_click(version)
+        assert not lst.isExpanded(version)
     assert opened == []
 
 
@@ -477,7 +480,8 @@ def test_draft_on_top_unnumbered_and_deletable(make):
     assert "not sent" in top[0][2] and "sent and verified" not in top[0][2]
     assert "sent and verified 3 of 3" in top[1][2]
     m = lst.model()
-    assert lst.isExpanded(m.index(0, 0)) and lst.isExpanded(m.index(1, 0))
+    # Closed at first (#131); the user opens them.
+    assert not lst.isExpanded(m.index(0, 0)) and not lst.isExpanded(m.index(1, 0))
     # Fix 1 (owner): the draft marked the sent will REPLACED (#128 keeps it
     # in force); its rows read in force, green, not "Replaced" in pink.
     in_force = m.index(1, 0)

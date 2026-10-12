@@ -3420,7 +3420,8 @@ class WillDetailDialog(BalDialog):
 
         ``will``/``threshold`` are passed when showing an IMPORTED will; the
         live will shows the Check Alive date of the toolbar
-        (:func:`_live_threshold`, #123).
+        (:func:`_live_threshold`, #123). For the live will a note at the top
+        points to the Future view of the Will tab (#131).
         """
         # ``will``/``threshold`` are passed when showing an IMPORTED (read-only)
         # will. In that case every action button below operates on the imported
@@ -3449,6 +3450,18 @@ class WillDetailDialog(BalDialog):
         self.setWindowTitle(_("Will Details"))
         self.setMinimumSize(670, 700)
         self.vlayout = QVBoxLayout()
+        # CHANGELOG #131: the graphic view is now "Future" in the Will tab;
+        # this window stays for the technical details. Only for the LIVE
+        # will: an imported will is not the one the Future view draws
+        # (shown again after a Merge, when the dialog shows the live will).
+        self.view_note = QLabel(_(
+            "Will plan view (technical details). The new graphic view is "
+            "'Future' in the Will tab."
+        ))
+        self.view_note.setWordWrap(True)
+        self.view_note.setStyleSheet("color:#555555;font-style:italic;")
+        self.view_note.setVisible(not self._external_will)
+        self.vlayout.addWidget(self.view_note)
         w = QWidget()
         hlayout = QHBoxLayout(w)
 
@@ -3526,7 +3539,8 @@ class WillDetailDialog(BalDialog):
         common method used by the tools-menu "Merge" action). Afterwards the
         dialog stops showing the read-only imported will and operates on the
         live wallet willitems directly, so any further Sign/Broadcast/Export/
-        Invalidate action targets the saved will items.
+        Invalidate action targets the saved will items, and the note about
+        the Future view (#131) appears.
         """
         self.bal_window.merge_will(self.will)
         self._external_will = False
@@ -3534,6 +3548,7 @@ class WillDetailDialog(BalDialog):
         self.threshold = _live_threshold(self.bal_window)
         if self.merge_button:
             self.merge_button.hide()
+        self.view_note.setVisible(True)
         self.update()
 
     def update(self):

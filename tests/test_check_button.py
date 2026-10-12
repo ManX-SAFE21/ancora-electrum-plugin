@@ -114,8 +114,11 @@ def test_check_looks_like_the_wizard():
     assert isinstance(check, QPushButton)
     assert check.iconSize() == wizard.iconSize()
     assert check.minimumHeight() == wizard.minimumHeight() == 40
-    assert check.styleSheet() == wizard.styleSheet()
-    assert "bold" in check.styleSheet()
+    assert "bold" in check.styleSheet() and "bold" in wizard.styleSheet()
+    # #131 (owner, option C, then "only on the first button"): the 2 px
+    # blue frame is on the Wizard only, not on the Check.
+    assert "border:2px solid #2F6FD6" in wizard.styleSheet()
+    assert "border" not in check.styleSheet()
 
 
 def test_check_runs_the_check_and_explains_itself():

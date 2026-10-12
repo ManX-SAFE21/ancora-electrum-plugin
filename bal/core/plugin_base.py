@@ -339,6 +339,11 @@ class BalPlugin(BasePlugin):
         # versions); kept so the users' config keys stay readable.
         self.HIDE_REPLACED = BalConfig(config, "bal_hide_replaced", True)
         self.HIDE_INVALIDATED = BalConfig(config, "bal_hide_invalidated", True)
+        # CHANGELOG #131: the Will tab shows the list by versions ("list")
+        # or the timeline ("future"); the last choice is remembered. Global
+        # like the other view settings: a preference of the person, not
+        # data of a will, so never in a wallet.
+        self.WILL_VIEW = BalConfig(config, "bal_will_view", "list")
         self.ALLOW_REPUSH = BalConfig(config, "bal_allow_repush", True)
         self.FIRST_EXECUTION = BalConfig(config, "bal_first_execution", True)
         # SIMPLE / ADVANCED mode (global, plugin-wide).

@@ -410,8 +410,9 @@ that option is on). The WILL tab lists the will by versions:</p>
   (<em>Delivery 30/03/2027 00:00</em> in bold, local time; below it the heirs,
   the miner fee and how many will‑executors received and verified it, or
   <em>not sent</em>) and <strong>Status</strong> (its state, in colour);</li>
-<li>under it, when it is open (click the arrow), a grey row with the names of
-  the transaction columns, then one row per transaction.</li>
+<li>under it, when it is open (double click or the arrow; every version
+  starts closed), a grey row with the names of the transaction columns,
+  then one row per transaction.</li>
 </ul>
 <p>Order: the <strong>Draft</strong> (if any) on top, without a number; the version <strong>In
 force</strong>; then the older versions, newest first (in the order they were
@@ -487,6 +488,41 @@ versions and in the transactions.</p>
 <p>The plugin settings no longer have <strong>Hide Replaced</strong> and <strong>Hide
 Invalidated</strong>: the list shows the last versions, and <strong>Show all history</strong>
 the rest.</p>
+<h3 id="will-tab-the-future-view">WILL tab: the Future view</h3>
+<p>Above the list, two buttons <strong>List | Future</strong> choose what the WILL tab
+shows. <strong>List</strong> is the will by versions described above. <strong>Future</strong> draws
+the will on a timeline: what happens if you do nothing more.</p>
+<ul>
+<li>On top, a ruler of the <strong>years</strong> (1 January of each year; every 2, 5 or
+  10 years when the time is long), on the same scale as the dates below.
+  Every date of the view is the <strong>UTC</strong> day and time (&ldquo;27/08/2027 22:00
+  UTC&rdquo;), the same day as the summary box above.</li>
+<li><strong>Today</strong> on the left (blue dot), the <strong>delivery to the heirs</strong> on the
+  right, with its date and time and the time left (&ldquo;in 4
+  months and 17 days&rdquo;), in the colour of the time left: green, yellow (less
+  than 12 months), red (less than 6 months or passed). In ADVANCED mode the
+  two thresholds are those of the plugin settings.</li>
+<li>The <strong>Check Alive</strong> as a flag at its date, when the will has one (not in
+  BASIC mode with a fixed date). For a renewable period, the period is
+  written under it.</li>
+<li>The <strong>will‑executors</strong> as small squares: green = received and verified,
+  grey = not yet (to sign, to send, to be verified), red = did not receive
+  it. Many will‑executors wrap on several rows. Hover a square to see its
+  address and state. A count line, a colour legend and one line explain
+  them.</li>
+<li>The sentence: <em>If the will is no longer checked or renewed, on &lt;date&gt;
+  the bitcoin will go to: alice 60%, bob 40%</em>. The shares are the REAL ones,
+  read from the will&rsquo;s transaction (the shares entered in the Heirs tab can
+  sum to more or less than 100 %: the will always spends the whole wallet).
+  Hover the sentence to see the amounts.</li>
+</ul>
+<p>The view always describes the will <strong>in force</strong> (the one the
+will‑executors would execute). With only a draft (not signed or sent) it
+says that no will is in force yet; with a draft newer than the will in
+force it says that the will sent before stays in force until the draft is
+signed and sent. The last choice (List or Future) is remembered.</p>
+<p><strong>Tools → Display</strong> (the Will‑Details window) stays, with the technical
+details; a note at its top points to the Future view.</p>
 <hr />
 <h2 id="colour-progression-of-transaction-statuses">Colour progression of transaction statuses</h2>
 <p>Transactions on the <strong>WILL</strong> page are coloured to conveniently display their
@@ -586,7 +622,8 @@ nothing to sign, nothing to send.</p>
    wallet password or hardware key).</li>
 <li><strong>Broadcast</strong> — sends the inheritance transaction to the online Will‑Executor
    servers on your <em>Will‑Executor Service List</em>.</li>
-<li><strong>Display</strong> — brings up the <em>Will‑Details</em> window, where you can see the
+<li><strong>Display</strong> — brings up the <em>Will‑Details</em> window (technical details; the
+   graphic view is <strong>Future</strong> in the WILL tab), where you can see the
    transactions with all available data:
    - Locktime (date of inheritance)
    - Creation time
