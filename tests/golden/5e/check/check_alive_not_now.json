@@ -178,7 +178,7 @@
   ],
   "settings": {
    "baltx_fees": 13,
-   "locktime": "60d",
+   "locktime": "2026-12-09",
    "threshold": "-30d"
   },
   "stored": {
@@ -230,8 +230,8 @@
   },
   "history": [
    "Checking variables:\t<b>Wait</b>",
-   "Checking variables:\t<font color=#cfa808><b>Check Alive passed</b></font>",
-   "<font color='#cfa808'>&#9888;</font> <b>Not now: nothing was changed, your current will stays valid.</b>"
+   "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
+   "<font color='#ff0000'><b>The Check Alive date (2026-11-09) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid.</b></font>"
   ],
   "items": [
    {
@@ -267,20 +267,14 @@
   },
   "popups": [],
   "pushed": [],
-  "questions": [
-   [
-    "renew",
-    "Are you still here? The Check Alive date (2026-11-09) has passed.\n\nRenew your will: the new delivery date will be 2027-01-18 (today + 60 days). The old will is invalidated on the blockchain (this costs a miner fee) and the new one is prepared right away.\n\nNot now: nothing changes, your current will stays valid."
-   ]
-  ],
+  "questions": [],
   "report": {
    "boxes": {
     "changes": [],
-    "problems": [],
-    "warnings": [
-     "Check Alive passed",
-     "Not now: nothing was changed, your current will stays valid."
-    ]
+    "problems": [
+     "The Check Alive date (2026-11-09) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid."
+    ],
+    "warnings": []
    },
    "executors": [
     [
@@ -300,29 +294,29 @@
    ],
    "heirs": null,
    "result": [
-    "warn",
-    "<b>The Check Alive date has passed: renew your will</b><br>Delivery to the heirs: <b>2026-12-09</b> (in 19 days)"
+    "err",
+    "<b>The check stopped: nothing was changed.</b>"
    ],
    "steps": [
     [
      "check",
-     "warn",
-     "attention"
+     "err",
+     "error"
     ],
     [
      "prepare",
-     "skip",
-     "not needed"
+     "todo",
+     ""
     ],
     [
      "sign",
-     "skip",
-     "not needed"
+     "todo",
+     ""
     ],
     [
      "send",
-     "skip",
-     "not needed"
+     "todo",
+     ""
     ],
     [
      "verify",
@@ -330,15 +324,15 @@
      "2/2"
     ]
    ],
-   "will_now": null
+   "will_now": "The Check Alive date has passed — Delivery to the heirs: 2026-12-09\nThe Check Alive date (2026-11-09) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid."
   },
   "rows": [
-   "Checking variables:\t<font color=#cfa808><b>Check Alive passed</b></font>",
-   "<font color='#cfa808'>&#9888;</font> <b>Not now: nothing was changed, your current will stays valid.</b>"
+   "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
+   "<font color='#ff0000'><b>The Check Alive date (2026-11-09) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid.</b></font>"
   ],
   "settings": {
    "baltx_fees": 13,
-   "locktime": "60d",
+   "locktime": "2026-12-09",
    "threshold": "-30d"
   },
   "stored": {

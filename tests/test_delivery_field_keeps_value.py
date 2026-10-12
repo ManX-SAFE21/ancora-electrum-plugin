@@ -6,14 +6,21 @@ delivery date with "1y", and back to BASIC with today + 1 year; building the
 widget in ADVANCED did the same, and the heir dialog wrote the heir's date
 into the will's setting. Now:
 
-* the editor follows the form of the saved value, nothing is saved when the
-  widget is built, when the mode changes or when another panel syncs it;
-* an explicit Raw/Date switch saves the SAME delivery written the other way;
+* nothing is saved when the widget is built, when the mode changes or when
+  another panel syncs it;
 * ``save_to_settings=False`` (heir dialog) never writes the will's setting;
 * core: a will built from a fixed date + a setting that is now a period
   giving the same date today is rebuilt now (a period cannot be anchored to
   a fixed-date will: the next day it read as a postpone, a paid
   invalidation).
+
+CHANGELOG #123: a period is no longer a delivery date. The Raw/Date selector
+is hidden in BOTH modes and the Date editor is always used; a period still
+found in older settings is shown as the date it gives (nothing is saved).
+The explicit Raw/Date switch of #81 is gone with the selector; the Raw code
+stays until #127, and a period it could still produce is refused by the
+window's validated write (``context.set_will_setting``): the stored date and
+the fields stay as they were.
 
 Run (standalone or with pytest):
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \
@@ -34,6 +41,7 @@ from PyQt6.QtWidgets import QApplication
 from bal.core.plugin_base import BalPlugin
 from bal.core.will import HeirNotFoundException, Will, WillItem
 from bal.gui.qt.widgets import LockTimeWidget
+from bal.gui.qt.window import BalWindow
 
 _app = QApplication.instance() or QApplication(sys.argv)
 
@@ -80,6 +88,29 @@ def _field(locktime, basic=False, **kw):
     return bw, LockTimeWidget(bw, None, locktime, **kw)
 
 
+def _real_window(locktime, basic=False):
+    """A ``BalWindow`` without Qt tabs whose ``update_setting_widgets`` is
+    the real one (#123: the validated write into ``will_settings``).
+
+    The two toolbars are stand-ins; ``update_widget_value`` records what
+    each field is told to show.
+    """
+    bw = object.__new__(BalWindow)
+    bw.will_settings = {"locktime": locktime}
+    bw.willitems = {}
+    bw.heir_list_widget = SimpleNamespace(name="heirs toolbar")
+    bw.will_list_widget = SimpleNamespace(name="will toolbar")
+    bw.update_widget_value = MagicMock()
+    bw.update_combo_setting_widgets = MagicMock()
+    bw.bal_plugin = SimpleNamespace(
+        is_basic_mode=lambda: basic,
+        default_will_settings=BalPlugin.default_will_settings,
+        default_will_settings_relative=BalPlugin.default_will_settings_relative,
+        default_will_settings_absolute=BalPlugin.default_will_settings_absolute,
+    )
+    return bw
+
+
 # ------------------------------------------------------------ building it
 
 def test_advanced_fixed_date_opens_the_date_editor_unchanged():
@@ -89,9 +120,13 @@ def test_advanced_fixed_date_opens_the_date_editor_unchanged():
     bw.update_setting_widgets.assert_not_called()
 
 
-def test_advanced_period_opens_the_raw_editor_unchanged():
+def test_advanced_period_opens_the_date_editor_unchanged():
+    """#123: ADVANCED shows a stored period in the Date editor too (before:
+    the Raw editor with "4y"), as the date it gives; nothing is saved."""
     bw, w = _field("4y")
-    assert w.current_index == 0 and w.get_value() == "4y"
+    assert w.current_index == 1
+    assert w.get_value() == TODAY + 4 * 365 * DAY
+    assert w.current_value == "4y"
     bw.update_setting_widgets.assert_not_called()
 
 
@@ -115,53 +150,80 @@ def test_switch_to_basic_and_back_keeps_a_fixed_date():
     bw.update_setting_widgets.assert_not_called()
 
 
-def test_switch_to_advanced_keeps_a_period():
+def test_switch_to_advanced_keeps_the_date_editor():
+    """#123: BASIC -> ADVANCED keeps the Date editor (before: the Raw
+    editor for a period); the shown date and the stored value stay."""
     bw, w = _field("4y", basic=True)
     bw.basic = False
     w.apply_user_type_editor_default()
-    assert w.current_index == 0 and w.get_value() == "4y"
+    w.apply_user_type_visibility()
+    assert w.current_index == 1
+    assert w.get_value() == TODAY + 4 * 365 * DAY
+    assert w.current_value == "4y"
     bw.update_setting_widgets.assert_not_called()
 
 
-# --------------------------------------------------- explicit Raw/Date switch
+# ---------------------------------------------- the Raw/Date selector (#123)
 
-def test_user_switch_raw_to_date_saves_the_same_date():
-    bw, w = _field("1y")
-    w.combo.setCurrentIndex(1)          # what a click on "Date" does
-    assert w.get_value() == TODAY + 365 * DAY
-    bw.update_setting_widgets.assert_called_once()
-    assert bw.update_setting_widgets.call_args.args[:2] == (TODAY + 365 * DAY, "locktime")
+def test_the_raw_date_selector_is_hidden_in_both_modes():
+    """#123 replaces the explicit Raw/Date switch of #81: the selector is
+    hidden in BASIC and ADVANCED, also after a mode change, so a period
+    cannot be typed as the delivery date."""
+    for basic in (True, False):
+        for value in (D, "4y"):
+            bw, w = _field(value, basic=basic)
+            assert w.combo.isHidden(), (basic, value)
+            bw.basic = not basic
+            w.apply_user_type_visibility()
+            w.apply_user_type_editor_default()
+            assert w.combo.isHidden(), (basic, value)
+            assert w.current_index == 1, (basic, value)
+            bw.update_setting_widgets.assert_not_called()
 
 
-def test_user_switch_date_to_raw_saves_the_days_to_the_same_date():
-    bw, w = _field(D)
-    w.combo.setCurrentIndex(0)          # what a click on "Raw" does
+def test_a_period_from_the_raw_code_is_refused():
+    """The Raw code stays until #127; a period it still produces (here the
+    hidden selector switched by code; before #123 a click on "Raw" saved
+    "400d") is refused by the window's validated write: the stored date
+    stays and both toolbars are told to show it again."""
+    bw = _real_window(D)
+    w = LockTimeWidget(bw, None, D)
+    w.combo.setCurrentIndex(0)
     assert w.get_value() == "400d"
-    assert bw.update_setting_widgets.call_args.args[:2] == ("400d", "locktime")
+    assert bw.will_settings == {"locktime": D}
+    shown = [c.args[1:] for c in bw.update_widget_value.call_args_list[-2:]]
+    assert shown == [("locktime", D), ("locktime", D)]
 
 
 # -------------------------------------------------------- sync and heir dialog
 
 def test_set_value_shows_but_never_saves():
-    bw, w = _field("4y")
-    w.set_value("5y")
-    assert w.get_value() == "5y" and w.current_value == "5y"
+    """Another panel syncs the field: shown, never saved (#123: a date;
+    before, a period)."""
+    bw, w = _field(D)
+    w.set_value(D + 30 * DAY)
+    assert w.get_value() == D + 30 * DAY and w.current_value == D + 30 * DAY
     bw.update_setting_widgets.assert_not_called()
 
 
 def test_heir_field_never_writes_the_will_setting():
-    bw, w = _field("4y", save_to_settings=False)
-    w.locktime_raw_e.set_value("2y")
-    w.valueEdited.emit()                # the user finished editing
-    assert w.current_value == "2y"
+    """The heir dialog's field (``save_to_settings=False``): a date picked
+    there never reaches the will's setting (#123: in the Date editor;
+    before, a period typed in the Raw editor)."""
+    bw, w = _field(D, save_to_settings=False)
+    w.locktime_date_e.set_value(D + 30 * DAY)    # the user picks a date
+    assert w.current_value == D + 30 * DAY
     bw.update_setting_widgets.assert_not_called()
 
 
 def test_normal_edit_is_saved():
-    bw, w = _field("4y")
-    w.locktime_raw_e.set_value("2y")
-    w.valueEdited.emit()
-    assert bw.update_setting_widgets.call_args.args[:2] == ("2y", "locktime")
+    """A date picked in the Date editor is stored by the window (#123: in
+    its own settings, through the validated write)."""
+    bw = _real_window(D)
+    w = LockTimeWidget(bw, None, D)
+    w.locktime_date_e.set_value(D + 30 * DAY)    # the user picks a date
+    assert w.current_value == D + 30 * DAY
+    assert bw.will_settings == {"locktime": D + 30 * DAY}
 
 
 # ------------------------------------------------------------------- core

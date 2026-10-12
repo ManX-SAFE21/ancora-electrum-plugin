@@ -6664,3 +6664,389 @@ earlier instead of invalidated; a later date on a will left unsigned
 after a Cancel goes back to the old date; with per-heir dates (hidden
 "multiverse" option) `Will.change_input` links an anticipated child to
 its own txid; the GUI automatic rebuild never sends (`waiting_dialog`).
+
+## 123. Each wallet keeps its own delivery date and fee rate
+
+**Date:** 2026-10-11
+
+**Problem (the owner's wallet on 2026-10-11, see #121 and #122; reproduced
+during the design with `tests/flowkit.py` probes on `c530db7`, the #122
+tree, three will-executors, test wallet with a password):** the delivery
+date, the fee rate and the Check Alive were ONE Electrum setting for every
+wallet (`bal_will_settings`, the key of the original BAL plugin). Changing
+them in one wallet changed them for all, and a new wallet got them too. The
+owner's setting was the period "1054d" (saved in advanced mode with the
+Raw/Date switch). A period is counted again from "today" at every Check, so
+from the second day an older will that was sent and then replaced, built
+from a fixed date, read as a postpone: the Check asked for a paid
+invalidation (Cancel cost nothing). Known since #122, also on `main`.
+Design: `context/reports/design-123/plan.md` (two critics); owner decisions
+and answers of 2026-10-11 in `PLAN.md` (series #123-#129).
+
+**What changed (visible: a one-time note when the wallet opens, the
+delivery field is always a date, two new command-line commands):**
+
+- Where the settings live: each wallet keeps its own delivery date
+  (`locktime`, a UNIX time, always a date), fee rate (`baltx_fees`) and
+  Check Alive (`threshold`, "-Nd", read until #128) in its own file, under
+  the wallet key `will_settings` (already registered, no new key). They are
+  read through `wallet.db.get_dict("will_settings")` and written item by
+  item, never with `db.put` or `dict.update`. Electrum's global
+  `bal_will_settings` is never written, deleted or reset again: it stays
+  for BAL (which reads its `threshold` with no fallback) and is read raw,
+  once per wallet, only as a migration source.
+- `bal/core/delivery.py` (new; pure: standard library only, no Qt, no
+  Electrum, never reads the clock): the rules. Month arithmetic
+  (`utc_midnight`, `add_months`); what a stored value means (`as_delivery`,
+  `is_fee`, `is_current`, `validate_values`: a delivery date must be a
+  UNIX time of at least 500,000,000, so a period or a block height is
+  refused; a float or a numeric text is truncated to whole seconds; a
+  stored float is not current, so the wallet is migrated again; a fee rate
+  must be at least 1); the one-time migration (`migration_values`,
+  `note_for`, `convert_check_alive`); the anchor (`record_will_anchor`,
+  `check_anchor`, `earliest_signed_valid`); the wish for a later date
+  (`later_wish_action`); the will in force for the command line
+  (`pending_sent`, `earliest_in_force`); the note and the question; the
+  two holds (`DeliveryChoicePending`, `DeliverySettingsUnavailable`);
+  `parse_cli_date` for the command line (`YYYY-MM-DD` means 00:00 UTC;
+  periods, block heights, values above 2^32-1, past dates and today are
+  refused).
+- One-time migration, when a wallet's settings are not current (no
+  `settings_version` 1, or the date is not an int date, or no fee rate of
+  at least 1). The date, first source that gives one: the earliest VALID
+  item of the stored will (`migrated_from` "will"); else the earliest item
+  sent to a will-executor and still pending, by the stored flags ("sent");
+  else, only for a wallet that already has heirs or a will, the old global
+  value, then the wallet's own old value (a period counts from today 00:00
+  UTC, an absolute date as is, only a future date); else today + 12 months
+  ("default"). The fee: the single fee rate of those items (read after
+  `Util.fix_will_tx_fees` on a copy, so a legacy item gives its fee, never
+  0), else the old value (only with heirs or a will), else 20. The Check
+  Alive: the first "-Nd" of the old values; else, only with heirs or a
+  will, an old fixed date (BAL 0.6.1 writes one) or an old "after creation"
+  period, converted to "-Nd" against the new date with the #80 rule (the
+  Check Alive date stays the same); else "-180d". Heirs that still hold a
+  period get the date (multiverse off). `tx_fees`, `real_threshold` and
+  `real_locktime` are removed; the old value, as found, stays in
+  `legacy_locktime` (for the owner "1054d"). One log line: "will settings
+  migrated: from will, delivery 2029-08-29, fee 13". The owner's wallet:
+  2029-08-29 00:00 UTC (1882656000), fee 13, note "converted". With the
+  multiverse option on (each heir carries its own date) the migration
+  gives only the informative note ("converted" or "date_differs"): no
+  "later_pending", no question, no later wish.
+- Anchor: every save of the will records the VALID items of the STORED
+  will (`anchor_valid`, `anchor_locktime`), never the list in memory. At
+  every load, when another program (BAL, an older Safe21, an older ZIP)
+  changed the will in force and that will is signed, the stored date
+  follows it (later or earlier), with a note, so this plugin never
+  rebuilds earlier to undo a paid postpone and never asks for a paid
+  invalidation to go back. Unsigned drafts left by another program are not
+  followed (`ANCHOR_UNSIGNED`): the date stays, no note, the anchor is
+  recorded again, one log line.
+- Later wish (`later_wish`): when the old shared value asked for a date at
+  least one day later than the will found at the update ("later_pending",
+  or a "sent" will), the migration keeps it. At every Check, right after
+  the invalidated items are refreshed (`context.apply_later_wish` in
+  `init_class_variables`): if no VALID item is left (the old will was
+  already invalidated, for example a paid postpone the wallet had not seen
+  yet), the later date is stored through the validated write and used
+  (no new fee); if the wallet is synced and VALID items remain, the wish
+  is dropped; otherwise it is kept. If the date cannot be stored the Check
+  stops (`DeliverySettingsUnavailable`), so nothing is built at the earlier
+  date. Every date written by the owner (GUI field, `bal_delivery_set`,
+  both answers to the question) drops the wish.
+- One-time notes, shown 2 s after the wallet opens and deleted only after
+  the message box closes: "converted" (a period became the date),
+  "date_differs" and "later_pending" (the old shared value asked for
+  another date; the wallet keeps the date of its will) and "outside_change"
+  (the will was changed by another program). In the rare "later_pending"
+  case with a will prepared but not signed and sent, the "which date?"
+  question waits (`choice_pending`): Keep the date of the prepared will (no
+  fee, the default) or Use the later date (the old will must be
+  invalidated, miner fee).
+- Holds (nothing is built, signed, sent or invalidated): while the question
+  waits, or when the settings could not be prepared ("fail closed": any
+  error in the migration leaves display-only values, never the shared value
+  or an unchecked old dict). The Check asks the question or shows the error
+  row; Prepare asks the question; wallet close and the automatic rebuild
+  skip with a log line; Sign, Broadcast and Invalidate say why they cannot
+  run.
+- `bal/engine/context.py`: `load_will_settings` / `ensure_will_settings`
+  (under the wallet flow lock), `stored_willitems`, `heirs_periods_to_date`,
+  `set_will_setting` (the one validated write), `answer_delivery_choice`,
+  `check_holds` (first step of `init_class_variables`), `apply_later_wish`,
+  `record_will_anchor` (end of `save_willitems`, from the stored will).
+  `bal/engine/check.py`: Phase 1 results "delivery_choice" and
+  "delivery_settings_unavailable". `bal/engine/host.py` documents the live
+  dict and `settings_unavailable`.
+- `bal/gui/qt/window.py`: the settings are loaded before the Heirs and Will
+  tabs are built (heirs first), and again in `init_will` when that failed
+  or the lock was busy. Settings are written through `set_will_setting`;
+  from a worker thread only the value is written and the fields are
+  refreshed on the GUI thread. The note, the question and the holds above.
+  The Will tab Sign and the export save the WHOLE live will through
+  `save_willitems` (which records the anchor), never only the signed
+  items. `bal/gui/qt/plugin.py`: the note is scheduled at wallet open.
+  `bal/gui/qt/widgets.py`: the toolbars read the wallet's own settings; the
+  Raw/Date selector is hidden in BOTH modes and the Date editor is always
+  used (the Raw code stays until #127); the display caches are window
+  attributes; the date editor takes focus only on a click or Tab and
+  ignores the mouse wheel (pulled forward from #127: one wheel tick on the
+  ADVANCED toolbar stored a new date at once, an earlier will or a paid
+  invalidation). `bal/gui/qt/dialogs.py` and `bal/gui/qt/flow_adapter.py`:
+  the question in the Check and its rows.
+- Command line (`bal/cli/controller.py`, `bal/cli/commands.py`): new
+  `bal_delivery_show` and `bal_delivery_set` (`--date YYYY-MM-DD`, `--fee
+  N` from 1 to 10000 like the GUI fee box, `--keep true`; a date earlier
+  than the will in force needs `--confirm_earlier true`). The will in force
+  is the earliest VALID item, else the earliest sent and still pending
+  item, so `bal_delivery_show.will_in_force` and the "later than the will
+  in force" warning also see a will that is only sent. `bal_settings_get/
+  set/reset bal_will_settings` are refused with a pointer to them, and
+  `bal_settings_list` no longer shows it. The default settings are no
+  longer saved into the global (#102). `bal_will_check`,
+  `bal_will_prepare` and `bal_will_autorebuild` answer
+  `delivery_choice_pending` / `delivery_settings_unavailable`;
+  `bal_will_sign`, `bal_will_broadcast` and `bal_will_invalidate` are
+  refused while a hold applies. On a passed Check Alive with a fixed date,
+  `bal_will_check` and `bal_will_prepare` now give the same "choose a
+  later delivery date" text as `bal_will_autorebuild` (D42: the command
+  line no longer advises a paid invalidation that cannot renew a fixed
+  date). The #103 message points to `bal_delivery_set --date`.
+- `bal/core/plugin_base.py`: comments (the `will_settings` key; the global
+  is BAL's key, never written, read raw only as a migration source) and a
+  docstring for `BalPlugin.__init__`.
+- Texts: 10 new GUI texts (the notes, the question and its two buttons, the
+  two hold texts, the "Choose the delivery date" row), with Italian and
+  Spanish translations, approved by the owner on 2026-10-11 with these
+  changes: the real button name ('Check your will' / 'Controlla
+  testamento' / 'Comprobar testamento'), "commissione dei miner",
+  "portafogli", "manda il log", and the question says the prepared will
+  "is not signed and sent yet". Existing texts reused where they fit
+  ("Check your will", "Cancel", "The check stopped: nothing was changed.",
+  "Checking variables"). Command-line texts stay English (not extracted).
+  Catalogs refreshed with the usual `pybabel extract` / `update`
+  (`--no-wrap`), then the existing entries put back in their committed
+  order by a scratch script (`reorder_pot.py`, outside the repository): the
+  template equals a fresh extraction in entries, locations and flags, but
+  not in order; besides the location lines and the creation date the only
+  change is the 10 new entries (597 -> 607).
+- Docs: `README.md` (the delivery commands, where the settings are kept,
+  the first date of each wallet, the hold codes); `docs/manual/README.md`
+  and `manual.html` (the Delivery Time is always a date and is kept by each
+  wallet; a saved duration becomes a fixed date once; do not use this
+  plugin and BAL, or an older version, on the same wallet in turn: the
+  other plugin reads the old Delivery Time shared by every wallet, so after
+  any date change made here, including the automatic one-day move after new
+  funds, it can prepare an EARLIER will and sign it when the wallet is
+  closed, or ask for an invalidation, miner fee).
+- `make-release.sh`: adds `tests/test_per_wallet_settings_flow.py` and
+  `tests/test_gui_window_init_migration.py` to the release test list (the
+  `test_core_*` and `test_cli_*` globs cover the other new files).
+- `tests/flowkit.py`: test windows load the settings like the real window;
+  `Session` seeds the wallet's own settings (options `legacy_global=` and
+  `legacy_wallet=`, or a period as locktime, take the migration path); the
+  Recorder checks at every step that the global is unchanged; a
+  second-wallet helper; the test clock also covers the command line.
+  Scenario harness (outside the repository): its window loads the settings
+  the same way, the heirs are written before it opens, and the travelling
+  clock also moves the engine.
+- Not changed: the global value itself (the owner's stays "1054d", for
+  BAL); the will-executor protocol; the wallet keys; the Check Alive field
+  of advanced mode (until #128).
+- Behaviour changes to know: `set_will_setting` refuses values the old
+  code stored (a block-height delivery date written by the #107 sync makes
+  the command-line prepare fail; a Check Alive outside 1..3650 days is only
+  logged); `check_alive_on_open` is skipped while a hold applies; a wallet
+  whose only will is "sent" (no VALID item) and whose old shared value is
+  an absolute date at least one day later applies that later date at the
+  first Check: if the sent will is still executable the Check asks for its
+  invalidation (miner fee, Cancel costs nothing), as on `main`;
+  `bal_delivery_set` on such a wallet with a later `--date` now gives the
+  invalidation warning.
+- Known, for later steps: the #79 renewal cannot be reached until #126
+  brings back the period form (no public release in the middle of the
+  series); the Date editor still shows local time (in Rome a 00:00 UTC date
+  shows 02:00) until #127; the help texts of the delivery field and of User
+  Type still mention the Raw/Date selector (#127); `bal/wallet_util`
+  (`fix`, `uninstall`) drops Electrum 4.8's appended changes, including
+  `will_settings` (documented in TECHNICAL-NOTES, a step of its own).
+  Reinstalling a ZIP older than #123 reads the frozen global again: never
+  do it on a migrated wallet. Pre-existing (also on `main` with one
+  plugin): when another program leaves unsigned VALID drafts EARLIER than
+  the stored date, the date stays and no note is written, but the next
+  Check still rebuilds at the draft's date (`Will.check_anticipate` and
+  `set_anticipate` keep the earlier locktime; the #107 sync then stores
+  it): the row "The delivery date of heir ... changed: preparing a new
+  will", then "Sign your will". The "which date?" question is also asked
+  for a will that is signed but not sent. The `--fee` cap applies to
+  `bal_delivery_set` only (a migrated legacy fee above 10000 is kept; the
+  GUI box shows at most 10000).
+
+**Review:** a multi-agent review of the whole change (5 reviewers: funds,
+migration, GUI, command line, quality; skeptics on every finding): 12
+confirmed, 0 refuted, 4 low unverified. Fixed here, each with a test that
+fails without the fix (mutation runs: 11 of 11 and 14 of 14 caught):
+
+- FS-1 (high): the Will tab Sign wrote only the signed items and recorded
+  the anchor from memory, so the stored will kept stale VALID flags and
+  the next load moved the date back to a will already paid to invalidate.
+  Now Sign and the export save the whole will, and the anchor is always
+  taken from the stored will.
+- FS-1 (high, other plugin): BAL or an older ZIP could leave unsigned
+  earlier drafts that the anchor presented as the will in force. Now only
+  a signed outside will is followed.
+- FS-2 (medium): the migration took the date of a will whose paid postpone
+  invalidation the wallet had not registered yet, so the next Check
+  re-signed at the earlier date. Now the later wish is kept and applied
+  once no VALID item is left.
+- GUI-1 (medium): the mouse-wheel guard on the date editor (pulled forward
+  from #127).
+- RQ-1 / RQ-2: the hold texts name the real 'Check your will' button
+  (`tests/test_will_terms.py`), and the question says "not signed and sent
+  yet". RQ-3: the "shared setting" wording is kept, as approved by the
+  owner. RQ-4: catalogs refreshed on the final tree. RQ-5 / RQ-6:
+  TECHNICAL-NOTES, the `plugin_base.py` comment and the `set_will_setting`
+  docstring describe floats, periods and the global correctly. RQ-7: a
+  test of the outside-anticipation note. RQ-8: this entry.
+- Low: CLI-01 (`bal_will_check` / `bal_will_prepare` on a passed Check
+  Alive with a fixed date), CLI-02 (the will in force includes a will that
+  is only sent), CLI-03 (fee rate 1 to 10000), multiverse (only the
+  informative note).
+
+**Tests:** whole `tests/` directory: 1650 tests.
+
+- `tests/test_core_delivery_settings.py` (new, 186): every source of the
+  migration (will / sent / old global period and date / old wallet value /
+  default), the "heirs or will" gate, the fee rules (legacy `tx_fees`
+  items, 0 ignored, 13.001 kept), `is_current` (type, range, period, float,
+  1970), every note, the anchor (unchanged / own save / outside postpone /
+  outside anticipation / no VALID item / unsigned drafts not followed /
+  a signed outside will followed, not its later draft), the later wish
+  (stored, kept by the note, apply / drop / keep), multiverse (no pending
+  postpone), the will in force with only sent items, `parse_cli_date`
+  refusals, the `add_months` examples, a second load writes nothing, no
+  clock reads and standard library only.
+- `tests/test_core_delivery_check_alive.py` (new, 30): the Check Alive
+  conversion of the migration, checked case by case against
+  `checkalive.normalize_check_alive`; the order of the old values and the
+  "heirs or will" gate; flowkit runs of an ADVANCED first build after the
+  migration and of a "30d" Check Alive counted from the creation of the
+  will.
+- `tests/test_per_wallet_settings_flow.py` (new, 46, flowkit, three
+  will-executors with their own fee addresses, password "flowkit-test"):
+  the owner's state (migrated to 29/08/2029, note "converted"; Checks at
+  +0, +1, +2 and +7 days, wallet close and command-line check: nothing
+  asked, signed, pushed or sent; basic and advanced); the outside postpone
+  followed; the owner's wallet back after an outside anticipation (note
+  with the "To use the later date again" suffix, then quiet Checks);
+  unsigned earlier drafts of another program not followed; the "which
+  date?" question (every flow held until answered, Keep signs, Use later
+  asks for the invalidation, Prepare asks first); a sent will earlier than
+  the will in force still read as a postpone; no will in force: the
+  earliest sent will; the Will tab Sign after a manual postpone keeps the
+  later date (reopened from the file, after a crash, automatic rebuild on
+  a wallet without password); the export saves the whole will; the anchor
+  taken from the stored will; the update after an unseen paid postpone
+  builds at the later date, and after a cancelled postpone keeps the will
+  and drops the wish; a date chosen by the owner replaces the wish;
+  multiverse; legacy `tx_fees` items on both paths; fail closed and
+  recovery in `init_will`; two wallets and a wallet created after the
+  update; no will with a shared period; BAL 0.6.1 "1y"; a BAL 0.2.x wallet
+  dict; a second load writes nothing; the validated write; GUI and command
+  line share one dict; the migration under the flow lock; the anchor after
+  every save; no plugin code uses the global settings object; the note
+  kept when showing it fails.
+- `tests/test_gui_window_init_migration.py` (new, 8): the real
+  `BalWindow.__init__` with a stub Electrum window, basic and advanced: the
+  settings are migrated before the toolbars are built, which show
+  29/08/2029; the note shown once after the window and kept when showing
+  fails; a write from a worker thread touches no widget; a busy flow lock
+  at opening, then `init_will`; a mouse-wheel tick (up and down) on the
+  ADVANCED Heirs and Will toolbar dates stores nothing.
+- `tests/test_cli_delivery_commands.py` (new, 40): `bal_delivery_show` /
+  `bal_delivery_set` (date, fee, keep, confirm_earlier, refused values
+  write nothing, fee rates up to 10000 stored and above refused, a new
+  date answers the question, a sent will with no VALID item is the will in
+  force), the settings unavailable, `bal_settings_*` on
+  `bal_will_settings` refused with the pointer, the commands registered
+  and parsed, the scenario clock, the #103 pointer, the window sees a
+  change made by a command, commands on one wallet run one at a time.
+- Rewritten (they read the global key, stored a period, used the Raw
+  editor, or did not know the new rows): `test_5e_char_check.py`,
+  `test_5e_char_copies.py`, `test_5e_divergences.py`,
+  `test_auto_rebuild_on_new_tx.py`, `test_cli_autorebuild.py`,
+  `test_cli_command_layer.py`, `test_cli_commands_registered.py`,
+  `test_cli_controller_offline.py`, `test_cli_off_loop.py`,
+  `test_core_identical_rebuild.py`, `test_delivery_field_keeps_value.py`,
+  `test_engine_build.py`, `test_engine_context.py`,
+  `test_gui_check_variables_rows.py`, `test_gui_date_form_change_flow.py`,
+  `test_gui_delivery_field_refresh.py`, `test_gui_flow_adapter.py`,
+  `test_gui_will_flows.py`, `test_import_will_details.py`;
+  `test_will_terms.py` gets the check of the two hints that name 'Check
+  your will'. Changes to know: the #122 GUI flows now run with multiverse
+  ON, with the period written into the heirs (+2 new #123 tests);
+  `test_core_identical_rebuild.py` writes the period into the heirs;
+  `test_renewal_sent_but_not_seen_yet` is replaced by
+  `test_passed_check_alive_after_the_update_invalidates_nothing` (the
+  real-flow renewal comes back with #126); D42 goes from "pinned" to
+  "partly" (its test now pins that `bal_will_check` and `bal_will_prepare`
+  give the `bal_will_autorebuild` text; the period renewal is not
+  reproduced); the two #81 explicit Raw<->Date switch tests are deleted.
+- Golden files: the 5 period-renewal files changed, as the design expected
+  (`check/check_alive_renew`, `check/check_alive_not_now`,
+  `check/check_alive_renew_approved`, `copies/prepare_check_alive_renew`,
+  `copies/auto_check_alive_passed`): their "60d" setting is now the fixed
+  date of their will, so a passed Check Alive says "Your delivery is a
+  fixed date: choose a later delivery date to renew your will" and nothing
+  is invalidated. They change again in #126. One more file changed by the
+  CLI-01 fix: `copies/cli_check_alive_fixed_date` (2 lines: both raised
+  texts are now the "choose a later delivery date" text). Guard: golden
+  files HEAD 93, now 93; only these 6 differ (JSON-aware); regeneration
+  byte-identical.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1650 passed each time, 0 failed, 0 errors, 0 skipped.
+`ruff check bal/ tests/`: all checks passed. Release test list
+(`make-release.sh`): 912 passed. Scenario harness: log identical to the
+#122 log after masking random txids (192 lines; the 39 matrix scenarios
+with the same verdicts, B2 and B2adv still DANGER as known; 2-coin scenarios and
+the two bug-3 probes 6 runs); warn_matrix 134 Checks, 0 warnings, 0
+mismatches (synced=1 and synced=0). `build_zip.py` (63 entries) +
+`external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass. Probes
+from the old tree to the new one (owner basic/advanced, edge, roundtrip,
+multi, nowill, legacy061 basic/advanced; 8 runs, rc=0, no traceback): the
+owner's wallet quiet at +0, +1, +2 (also `bal_will_check`) and +7 days and
+at wallet close; output identical to the implementation run except the
+approved question text. Review probes on the final tree: the FS-1 Sign
+case keeps 2033-09-23 (also after reopening the file and on the
+automatic rebuild), the FS-2 update after an unseen paid postpone pushes
+the will at 2033-09-23, as on `main`; with 2904b16 standing in for BAL
+("later, basic, Cancel") the stored 2030-08-29 is kept with no note (the
+pre-existing rebuild at the draft's date above follows). Live Electrum
+4.8.2 (offscreen, no network, testnet test wallet built by `2904b16` with
+the old "1054d", fee 13 and a VALID will at three will-executors; ZIP
+sha256
+`4745a0517381677be00d96dac9267c9b6c0f1eb213719fc0b60ba57599abdc70`,
+manifest 0.7.0): first open migrates (log "will settings migrated: from
+will, delivery 2029-08-29, fee 13"), shows "Your delivery date is now
+fixed: 29/08/2029." (Italian: "La tua data di consegna ora è fissa:
+29/08/2029."), both toolbars 29/08/2029, the global `bal_will_settings`
+byte-identical in the config file, will items unchanged, quiet close
+(checking ok, preparation, signature and sending not needed,
+verification 3/3); second open: no note, settings unchanged; Electrum's
+clock moved +1 and +6 days: Check and close quiet; no traceback, no error
+line. New texts approved by the owner on 2026-10-11 (English, Italian,
+Spanish).
+
+**Outcome:** DONE. The owner tested ZIP-1 (sha256 `4745a051...`) on his
+wallet (basic mode, four will-executors). At the first open the note said
+"La tua data di consegna ora è fissa: 28/08/2029." (not 29/08: the plugin
+log shows that on 2026-10-11 at 13:54 UTC, before ZIP-1, a Check rebuilt the
+will for the fee rate 20 -> 21, one day earlier, signed and sent it to the
+four will-executors; the migration then logged "will settings migrated:
+from will, delivery 2029-08-28, fee 21", the will really in force). Will
+tab: the will in force, 2029-08-28, 4 of 4 received and verified. "Check
+your will" on 2026-10-11 and 2026-10-12 (after 02:00 UTC): Check "ok",
+preparation, signature and sending "not needed", verification 4/4, no
+password, no question; closing and reopening: no note again.

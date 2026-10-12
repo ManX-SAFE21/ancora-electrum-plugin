@@ -78,6 +78,9 @@ EXPECTED_COMMANDS = {
     "bal_will_import_merge": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     "bal_will_invalidate": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     "bal_will_check_executor": {"requires_network": True, "requires_wallet": True, "requires_password": False},
+    # Delivery settings of the wallet (CHANGELOG #123)
+    "bal_delivery_show": {"requires_network": True, "requires_wallet": True, "requires_password": False},
+    "bal_delivery_set": {"requires_network": True, "requires_wallet": True, "requires_password": False},
 }
 
 

@@ -132,6 +132,7 @@ exposes `bal_*` commands that replicate the full inheritance cycle.
 | Category | Commands |
 |----------|----------|
 | Settings | `bal_settings_list`, `bal_settings_get`, `bal_settings_set`, `bal_settings_reset` |
+| Delivery (per wallet) | `bal_delivery_show`, `bal_delivery_set` |
 | Heirs | `bal_heirs_list`, `bal_heirs_show`, `bal_heirs_add`, `bal_heirs_update`, `bal_heirs_delete`, `bal_heirs_import`, `bal_heirs_export` |
 | Will-Executors | `bal_willexecutors_list`, `bal_willexecutors_show`, `bal_willexecutors_add`, `bal_willexecutors_update`, `bal_willexecutors_select`, `bal_willexecutors_delete`, `bal_willexecutors_ping`, `bal_willexecutors_download`, `bal_willexecutors_import`, `bal_willexecutors_export` |
 | Will | `bal_will_status`, `bal_will_check`, `bal_will_prepare`, `bal_will_autorebuild`, `bal_will_sign`, `bal_will_broadcast`, `bal_will_export`, `bal_will_import_merge`, `bal_will_invalidate`, `bal_will_check_executor` |
@@ -151,7 +152,9 @@ electrum stop
 All commands require a running daemon (Electrum's `plugin_command` enforces
 this). Wallet-bound commands (`bal_heirs_*`, `bal_will_*`, etc.) require the
 wallet to be loaded first. Signing commands require `--password` for encrypted
-wallets. The settings commands (`bal_settings_*`) need no wallet.
+wallets. The settings commands (`bal_settings_*`) need no wallet. The
+delivery commands (`bal_delivery_*`) work on the loaded wallet: each wallet
+keeps its own delivery date and fee rate.
 
 ### Syntax
 
@@ -170,14 +173,50 @@ electrum bal_willexecutors_update https://we.example.com --info "My executor"
 electrum bal_willexecutors_select https://we.example.com --value false   # deselect
 electrum bal_willexecutors_ping --urls '["https://we.example.com"]'
 
-# Settings: key, then value (JSON for the will settings)
-electrum bal_settings_get bal_will_settings
-electrum bal_settings_set bal_will_settings '{"baltx_fees": 20, "threshold": "-180d", "locktime": "1y"}'
+# Delivery date and fee rate of the loaded wallet
+electrum bal_delivery_show
+electrum bal_delivery_set --date 2029-08-29     # YYYY-MM-DD means 00:00 UTC
+electrum bal_delivery_set --fee 20              # sat/vByte, 1 or more
+
+# Plugin settings: key, then value (JSON for object-typed keys)
+electrum bal_settings_get bal_user_type
+electrum bal_settings_set bal_hide_replaced false
 ```
 
-Every heir gets the delivery date of the will (`"locktime"` in
-`bal_will_settings`), so `--locktime` for a single heir is refused unless
-`bal_enable_multiverse` is on.
+The delivery date is a fixed date (`YYYY-MM-DD` or a UNIX timestamp): a
+period such as `1y` or `730d` is refused. A date earlier than the will in
+force needs `--confirm_earlier true`. A later date is stored; if the will
+was already sent, the next `bal_will_prepare` answers `postponed`: the old
+will must be invalidated first (on-chain, miner fee). Every heir gets the
+delivery date of the will, so `--locktime` for a single heir is refused
+unless `bal_enable_multiverse` is on.
+
+Where the delivery settings are kept: in the wallet file, under the wallet
+key `will_settings`. Electrum's global `bal_will_settings` (the key of the
+original BAL plugin) is never changed. It is read only once per wallet, the
+first time the wallet is opened with this version. `bal_settings_list` no
+longer shows it, and `bal_settings_get`, `set` and `reset` on it are
+refused with a pointer to `bal_delivery_show` / `bal_delivery_set`.
+
+That first time, the delivery date becomes the date of the wallet's will in
+force. Without one, it is the earliest will already sent to the
+will-executors and still waiting for its date; else, only when the wallet
+already had heirs or a will, the old global setting (when it gives a future
+date); else today + 12 months. The fee rate comes from the same will, else
+from the old setting, else 20. A period saved by an older version (such as
+`1054d`) becomes that fixed date once. `bal_delivery_show` shows where the
+date came from (`migrated_from`) and the old value (`legacy_locktime`).
+
+In rare cases the plugin must ask which date to use: a will is prepared
+but not yet signed and sent, while the old setting asked for a later date.
+Until it is answered, `bal_will_check`, `bal_will_prepare` and
+`bal_will_autorebuild` answer `delivery_choice_pending`, and
+`bal_will_sign`, `bal_will_broadcast` and `bal_will_invalidate` are
+refused. Keep the date of the prepared will with
+`bal_delivery_set --keep true` (no fee), or set a later date with
+`bal_delivery_set --date YYYY-MM-DD`. If the delivery settings of a wallet
+cannot be prepared, the same commands answer
+`delivery_settings_unavailable` and nothing is built, signed or sent.
 
 ### Results and exit codes
 

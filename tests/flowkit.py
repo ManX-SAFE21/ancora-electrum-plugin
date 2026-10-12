@@ -28,10 +28,19 @@ outside the repository), reduced to what pytest needs:
   Everything else (phase 1, phase 2, the push and verify loops, the
   invalidation, the status half of ``update_all``) is the plugin's code.
 
+The delivery settings (CHANGELOG #123) live in the wallet, under the wallet
+key ``will_settings``: :class:`Session` seeds that dict (``settings_version``
+1) unless it is asked to start from the old shared value
+(``legacy_global=`` / ``legacy_wallet=``, or a period as ``locktime``), and
+the window loads it with ``bal.engine.context.load_will_settings``, as the
+real window does. Electrum's global ``bal_will_settings`` must never change:
+the :class:`Recorder` checks it at every step (rule I1).
+
 Not a test module (no ``test_`` prefix): pytest does not collect it.
 """
 
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -49,6 +58,7 @@ from electrum.simple_config import SimpleConfig
 from electrum.transaction import Transaction, tx_from_any
 from electrum.wallet import restore_wallet_from_text
 
+from bal.core import delivery
 from bal.core.heirs import Heirs
 from bal.core.plugin_base import BalPlugin
 from bal.core.will import WillItem
@@ -149,15 +159,19 @@ def install_clock(monkeypatch, clock):
     """Point every plugin clock read used by the flows at ``clock``.
 
     ``time`` is replaced only inside ``window``, ``dialogs``,
-    ``bal.engine.context`` and ``bal.engine.build`` (their ``time.time`` /
-    ``time.sleep`` / ``time.strftime``), never globally: Electrum's own
-    threads keep the real clock. ``sleep`` returns at once (the 10 s pause
-    after an invalidation), ``strftime`` gives a fixed value (the log row
-    times). The engine's ``refresh_invalidated_items`` is the window's former
+    ``bal.engine.context``, ``bal.engine.build`` and the command line's
+    ``bal.cli.controller`` (their ``time.time`` / ``time.sleep`` /
+    ``time.strftime``), never globally: Electrum's own threads keep the real
+    clock. ``sleep`` returns at once (the 10 s pause after an invalidation),
+    ``strftime`` gives a fixed value (the log row times). The engine's
+    ``refresh_invalidated_items`` is the window's former
     ``_refresh_invalidated_items`` (CHANGELOG #118) and ``build_will`` its
     former ``build_will`` with the creation time of the items (CHANGELOG
     #119), so they read the same clock. (The command line's builds now get
-    the scenario clock too; before #119 they read the real one.)
+    the scenario clock too; before #119 they read the real one.) The
+    delivery settings (#123): ``bal.engine.context`` reads "now" for the
+    migration, the controller for ``bal_delivery_set``;
+    ``bal.core.delivery`` never reads the clock.
     """
     import importlib
 
@@ -174,6 +188,9 @@ def install_clock(monkeypatch, clock):
     monkeypatch.setattr(dialogs_mod, "time", fake_time)
     monkeypatch.setattr(engine_context, "time", fake_time)
     monkeypatch.setattr(engine_build, "time", fake_time)
+    controller = importlib.import_module("bal.cli.controller")
+    if hasattr(controller, "time"):
+        monkeypatch.setattr(controller, "time", fake_time)
 
 
 # ---------------------------------------------------------------- world
@@ -450,9 +467,13 @@ class User:
     """
 
     def __init__(self, password=None):
+        """``password``: what the owner types in the password window."""
         self.cancel_on = set()
         self.asked = []
         self.password = password
+        # The answer to the "which date?" question (#123): "keep" (the
+        # default button) or "later". Cancel through ``cancel_on``.
+        self.delivery_answer = "keep"
 
     def answer(self, kind, text):
         """Record the question; True to accept, False to cancel."""
@@ -531,9 +552,15 @@ class FlowWindow(BalWindow):
     + ``Will.check_invalidated``) is plugin logic and runs; its widget half
     fails on the missing widgets and is caught by the method itself, as it
     would be for a window without tabs.
+
+    The delivery settings are loaded as ``BalWindow.__init__`` loads them
+    (CHANGELOG #123): the heirs first, then
+    ``bal.engine.context.load_will_settings`` with the one-second flow lock
+    (the one-time migration and the anchor check run here).
     """
 
     def __init__(self, plugin, wallet, user, world):
+        """Set what ``BalWindow.__init__`` sets, without the Qt tabs."""
         # BalWindow.__init__ builds the Qt tabs: set what it would set.
         self.bal_plugin = plugin
         self.window = SimpleNamespace(
@@ -549,7 +576,11 @@ class FlowWindow(BalWindow):
         self.will = wallet.db.get_dict("will")
         self.willitems = {}
         self.willexecutors = {}
-        self.will_settings = plugin.WILL_SETTINGS.get()
+        self.will_settings = None
+        self.settings_unavailable = False
+        self._settings_ready = engine_context.load_will_settings(
+            self, lock_timeout=1.0
+        )
         self.ok = True
         self.disable_plugin = False
         self.no_willexecutor = False
@@ -597,6 +628,23 @@ class FlowWindow(BalWindow):
     def ask_renew_will(self, text, parent=None):
         """The Check Alive "Renew / Not now" question (#79)."""
         return self.user.answer("renew", text)
+
+    def ask_delivery_choice(self, parent=None):
+        """The "which date?" question (#123): the scripted owner answers.
+
+        The real texts are recorded (``BalWindow.delivery_choice_texts``);
+        the answer is ``user.delivery_answer`` ("keep" or "later"), or
+        Cancel (None) when the question matches ``user.cancel_on``. Without
+        both dates the real method decides (no box is shown then).
+        """
+        dates = delivery.choice_dates(self.will_settings)
+        if dates is None or None in dates:
+            return BalWindow.ask_delivery_choice(self, parent)
+        text, keep_text, later_text = self.delivery_choice_texts(*dates)
+        if not self.user.answer(
+                "delivery date", " | ".join((text, keep_text, later_text))):
+            return None
+        return self.user.delivery_answer
 
     def show_transaction(self, tx=None, txid=None, parent=None):
         """Electrum's transaction window (the classic invalidation).
@@ -783,6 +831,31 @@ def _funding_tx(addr, value, tag):
     return Transaction(raw)
 
 
+def _make_wallet(config, path, password, label):
+    """A testnet wallet at ``path`` whose key is derived from ``label``.
+
+    ``label`` is public (no seed or key is stored anywhere); a different
+    label gives a different wallet. ``password``: a test wallet with a
+    password (the only kind that opens Electrum's password window, so the
+    only one where Cancel exists). Test value, not a real password.
+    """
+    seed = hashlib.sha256(label.encode()).digest()
+    xprv = BIP32Node.from_rootseed(seed, xtype="p2wpkh").to_xprv(
+        net=constants.BitcoinTestnet)
+    return restore_wallet_from_text(
+        xprv, path=path, config=config, password=password,
+    )["wallet"]
+
+
+# Numbers of the wallets made by Session.second_wallet (own file, own key).
+_MORE_WALLETS = itertools.count(2)
+
+
+def _is_period(value):
+    """True for an old period recipe such as ``"60d"`` or ``"1y"``."""
+    return isinstance(value, str) and delivery.as_delivery(value) is None
+
+
 class Session:
     """One owner, one wallet, one world: the start of a scenario.
 
@@ -790,10 +863,30 @@ class Session:
     (alice 60 %, bob 40 %), two will-executors, fee ``fee`` sat/vB,
     delivery ``locktime``, Check Alive 180 days before the delivery
     (advanced only; ``threshold``). Nothing is built yet: the first Check builds the will.
+
+    The delivery settings (CHANGELOG #123) are the wallet's own. By
+    default the wallet dict is seeded with ``settings_version`` 1, the date,
+    the fee and the Check Alive: the window finds them current and migrates
+    nothing. To start from the time before #123 instead (the window then
+    migrates, as when an owner installs the new version):
+
+    * ``legacy_global``: Electrum's global ``bal_will_settings`` as an older
+      plugin left it (a dict, written raw);
+    * ``legacy_wallet``: the wallet's own ``will_settings`` as found (a BAL
+      0.2.x dict, no ``settings_version``);
+    * a period as ``locktime`` (``"60d"``): it can only be an old shared
+      value, so it becomes ``legacy_global`` (fee, period, Check Alive).
+
+    On that path the heirs are in the wallet before the window opens (a
+    wallet used before the update), so the old values may be migrated.
+    The global is never written by the plugin: :class:`Recorder` checks it
+    at every step (:meth:`snapshot_global`).
     """
 
     def __init__(self, monkeypatch, mode="basic", fee=13, locktime=D0,
-                 threshold="-180d", password=None):
+                 threshold="-180d", password=None, legacy_global=None,
+                 legacy_wallet=None):
+        """Build the world, the wallet and its window (see the class)."""
         constants.net = constants.BitcoinTestnet
         ensure_event_loop()
         self.monkeypatch = monkeypatch
@@ -806,41 +899,135 @@ class Session:
         self.world = World()
         install_world(monkeypatch, self.world)
         self.dir = tempfile.mkdtemp(prefix="bal_flowkit_")
+        self._owns_dir = True
         self.config = SimpleConfig(
             {"electrum_path": self.dir, "testnet": True, "offline": True},
             read_user_config_function=lambda path: {},
         )
         self.plugin = BalPlugin(SimpleNamespace(), self.config, "bal")
         self.plugin.USER_TYPE.set(mode)
-        seed = hashlib.sha256(_TEST_KEY_LABEL.encode()).digest()
-        xprv = BIP32Node.from_rootseed(seed, xtype="p2wpkh").to_xprv(
-            net=constants.BitcoinTestnet)
-        # ``password``: a test wallet with a password (the only kind that
-        # opens Electrum's password window, so the only one where Cancel
-        # exists). Test value, not a real password.
-        self.wallet = restore_wallet_from_text(
-            xprv, path=os.path.join(self.dir, "w"), config=self.config,
-            password=password,
-        )["wallet"]
+        self.wallet = _make_wallet(
+            self.config, os.path.join(self.dir, "w"), password, _TEST_KEY_LABEL)
         self._coin_tags = iter(["cd", "ef", "a1", "a2", "a3"])
         self._add_coin(1_000_000, "ab")
-        ws = self.plugin.WILL_SETTINGS.get()
-        ws["baltx_fees"] = fee
-        ws["locktime"] = locktime
-        ws["threshold"] = threshold
-        self.plugin.WILL_SETTINGS.set(ws)
+        if legacy_global is None and legacy_wallet is None and _is_period(locktime):
+            legacy_global = {
+                "baltx_fees": fee, "locktime": locktime, "threshold": threshold}
+        if legacy_global is not None:
+            # BAL's key as an older plugin left it (Safe21 never writes it).
+            self.config.set_key(self.plugin.WILL_SETTINGS.name, legacy_global)
+        self.snapshot_global()
         self.user = User(password)
         # Electrum's password window lives on the Qt Plugin object.
         self.plugin.password_dialog = self.user.password_dialog
-        self.bw = FlowWindow(self.plugin, self.wallet, self.user, self.world)
-        self.bw.heirs["alice"] = [HEIR_ADDR["alice"], "60%", locktime]
-        self.bw.heirs["bob"] = [HEIR_ADDR["bob"], "40%", locktime]
+        legacy = legacy_global is not None or legacy_wallet is not None
+        self._open_window(locktime, fee, threshold, seed=not legacy,
+                          legacy_wallet=legacy_wallet, plugin_data=True)
         self.recorder = Recorder(self)
         self.last = None
 
+    def _open_window(self, locktime, fee, threshold, seed, legacy_wallet,
+                     plugin_data):
+        """Seed the wallet's delivery settings and open its window.
+
+        ``seed``: the wallet dict gets ``settings_version`` 1 with
+        ``locktime`` / ``fee`` / ``threshold`` (written item by item, as the
+        plugin does). Otherwise ``legacy_wallet`` (if any) is written as
+        found and the window migrates. ``plugin_data`` (only without
+        ``seed``): the heirs are written before the window opens, so the
+        wallet counts as one used before the update; without it they come
+        after (a wallet created after the update).
+        """
+        heirs = {
+            "alice": [HEIR_ADDR["alice"], "60%", locktime],
+            "bob": [HEIR_ADDR["bob"], "40%", locktime],
+        }
+        settings = self.wallet.db.get_dict(delivery.WALLET_KEY)
+        if seed:
+            values = {"settings_version": delivery.SCHEMA_VERSION,
+                      "locktime": locktime, "baltx_fees": fee,
+                      "threshold": threshold}
+        else:
+            values = dict(legacy_wallet or {})
+        for key, value in values.items():
+            settings[key] = value
+        heirs_first = plugin_data and not seed
+        if heirs_first:
+            stored = Heirs(self.wallet)
+            for name, heir in heirs.items():
+                stored[name] = heir
+        self.bw = FlowWindow(self.plugin, self.wallet, self.user, self.world)
+        if not heirs_first:
+            for name, heir in heirs.items():
+                self.bw.heirs[name] = heir
+
     def close(self):
-        """Remove the temporary wallet folder."""
-        shutil.rmtree(self.dir, ignore_errors=True)
+        """Remove the temporary wallet folder (a second wallet shares it)."""
+        if getattr(self, "_owns_dir", True):
+            shutil.rmtree(self.dir, ignore_errors=True)
+
+    # Electrum's global settings (rule I1, CHANGELOG #123) -----------------
+
+    def global_text(self):
+        """Electrum's global ``bal_will_settings`` as JSON (None: missing)."""
+        return json.dumps(self.config.get(self.plugin.WILL_SETTINGS.name))
+
+    def snapshot_global(self):
+        """Take the global as it is now as the reference of rule I1.
+
+        Called at the start; a test that changes the global on purpose (as
+        BAL or an older plugin would) calls it again afterwards.
+        """
+        self._global_before = self.global_text()
+
+    def assert_global_unchanged(self):
+        """Rule I1: the global ``bal_will_settings`` is byte-identical."""
+        now = self.global_text()
+        assert now == self._global_before, (
+            "rule I1: Electrum's global bal_will_settings changed: "
+            "{} -> {}".format(self._global_before, now))
+
+    # More wallets in the same Electrum (CHANGELOG #123) -------------------
+
+    def second_wallet(self, locktime=D0, fee=13, threshold="-180d",
+                      password=None, seed=True, plugin_data=True,
+                      legacy_wallet=None):
+        """Another wallet in the same Electrum: same config (so the same
+        global), plugin, clock and will-executors; its own key, coin, heirs,
+        owner and window. Returns its :class:`Session`.
+
+        ``seed`` / ``legacy_wallet`` / ``plugin_data``: see
+        :meth:`_open_window`. ``seed=False, plugin_data=False`` is a wallet
+        created after the update: it gets the default date, never the old
+        shared value. Call :meth:`activate` before acting on a wallet when
+        both have a password.
+        """
+        other = object.__new__(Session)
+        other.monkeypatch = self.monkeypatch
+        other.clock = self.clock
+        other.world = self.world
+        other.dir = self.dir
+        other._owns_dir = False
+        other.config = self.config
+        other.plugin = self.plugin
+        number = next(_MORE_WALLETS)
+        other.wallet = _make_wallet(
+            self.config, os.path.join(self.dir, "w{}".format(number)),
+            password, "{} (wallet {})".format(_TEST_KEY_LABEL, number))
+        other._coin_tags = iter(["c2", "e2", "b1", "b2", "b3"])
+        other._add_coin(1_000_000, "ba")
+        other._global_before = self._global_before
+        other.user = User(password)
+        other.activate()
+        other._open_window(locktime, fee, threshold, seed=seed,
+                           legacy_wallet=legacy_wallet, plugin_data=plugin_data)
+        other.recorder = Recorder(other)
+        other.last = None
+        return other
+
+    def activate(self):
+        """Point the shared plugin's password window at this wallet's owner."""
+        self.plugin.password_dialog = self.user.password_dialog
 
     # The owner's actions ------------------------------------------------
 
@@ -857,12 +1044,30 @@ class Session:
         self._add_coin(value, next(self._coin_tags))
 
     def set_date(self, t):
-        """Change the delivery date in the Will tab."""
-        self.bw.update_setting_widgets(t, "locktime")
+        """Change the delivery date in the Will tab.
+
+        Through the one validated write (``context.set_will_setting``,
+        CHANGELOG #123), as the window's ``update_setting_widgets`` does; a
+        value it refuses raises here (``ValueError``: a period such as
+        ``"1054d"`` is no longer a delivery date), so a test cannot store
+        it by mistake. A past date is a date and is stored.
+        """
+        engine_context.set_will_setting(self.bw, "locktime", t)
 
     def set_fee(self, f):
-        """Change the transaction fee in the Will tab."""
-        self.bw.update_setting_widgets(f, "baltx_fees")
+        """Change the transaction fee in the Will tab (validated, see
+        :meth:`set_date`: a fee below 1 raises ``ValueError``)."""
+        engine_context.set_will_setting(self.bw, "baltx_fees", f)
+
+    def set_threshold(self, value):
+        """Change the Check Alive (ADVANCED; ``"-Nd"``, validated, see
+        :meth:`set_date`)."""
+        engine_context.set_will_setting(self.bw, "threshold", value)
+
+    def show_note(self):
+        """The one-time note of the delivery settings, as ``load_wallet``
+        shows it two seconds after the wallet opens (CHANGELOG #123)."""
+        return self.act("gui delivery note", self.bw.show_delivery_note)
 
     def set_heirs(self, **shares):
         """Replace the heirs: ``alice="40%"`` (dates = the will's date)."""
@@ -998,13 +1203,16 @@ class Session:
         """The window reads the will again from the wallet (as when it opens).
 
         After a command-line action the GUI copy is stale; a real window
-        would only see it after reopening the wallet.
+        would only see it after reopening the wallet. The delivery settings
+        are loaded again as ``BalWindow.__init__`` loads them (CHANGELOG
+        #123: migration if needed, then the anchor check).
         """
         self.bw.will = self.wallet.db.get_dict("will")
         self.bw.willitems = {}
         for wid, w in self.bw.will.items():
             self.bw.willitems[wid] = WillItem(w, wallet=self.wallet)
-        self.bw.will_settings = self.plugin.WILL_SETTINGS.get()
+        self.bw._settings_ready = engine_context.load_will_settings(
+            self.bw, lock_timeout=1.0)
 
 
 def _summary(value):
@@ -1117,8 +1325,14 @@ class Recorder:
         return "<{}>".format(type(value).__name__)
 
     def common(self, pushed_before):
-        """The part of a record shared by every action."""
+        """The part of a record shared by every action.
+
+        First rule I1 of CHANGELOG #123: Electrum's global
+        ``bal_will_settings`` must be byte-identical to the reference
+        (:meth:`Session.assert_global_unchanged`), else the step fails.
+        """
         s = self.session
+        s.assert_global_unchanged()
         ws = s.bw.will_settings
         stored = s.wallet.db.get_dict("will")
         return {

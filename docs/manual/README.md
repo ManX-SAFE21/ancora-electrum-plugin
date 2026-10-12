@@ -81,28 +81,35 @@ inheritance cases.
 The plugin has two usage modes, chosen from the plugin settings
 (**Tools → Plugins → BAL**, *User Type* selector):
 
-- **BASIC** (default) — hides the advanced controls: the **Delivery Time** is
-  entered only as a precise **Date** (the relative **RAW** durations and the
-  Raw/Date selector are hidden), the **Check Alive** field is hidden, and the
-  postpone-on-open behaviour is disabled.
-- **ADVANCED** — reveals the **Raw/Date selector** (relative durations such as
-  `1y` or `30d`) and the **Check Alive** field, and enables the postpone
+- **BASIC** (default) — hides the advanced controls: the **Check Alive** field
+  is hidden, and the postpone-on-open behaviour is disabled.
+- **ADVANCED** — reveals the **Check Alive** field and enables the postpone
   behaviour described below. Switching to ADVANCED requires typing the
   confirmation phrase **"at My Risk"**.
+
+In both modes the **Delivery Time** is a precise **Date**: the relative
+**RAW** durations (such as `1y` or `30d`) and the Raw/Date selector are no
+longer offered.
 
 The rest of this section describes the full (ADVANCED) parameter set.
 
 ### 1 — Delivery Time (Locktime)
 
 Indicates the date on which the inheritance of your wallet on the blockchain
-will be transferred to the recipient. You can enter the inheritance date either
-as **Relative** (example: 1 year from today → `RAW = 1y`) or as a **Precise
-Date** (`Date`).
+will be transferred to the recipient. It is always a **Precise Date**.
 
-If you choose **Raw**, you can insert various options based on a suffix:
+**Each wallet keeps its own Delivery Time and Fees**, saved in the wallet file
+(see *Wallet security — saving your will*). Changing them in one wallet does
+not change your other wallets. A new wallet starts with a Delivery Time 12
+months from today.
 
-- `d`: number of days after the current day (e.g. `1d` means tomorrow)
-- `y`: number of years after the current day (e.g. `1y` means one year from today)
+> **NB:** older versions also accepted a **Relative** duration (`RAW`, e.g.
+> `1y` = one year from today). A duration is counted again from "today", so
+> the date it gives moves every day. Durations are no longer accepted. The
+> first time a wallet with heirs or a will is opened with this version, a
+> saved duration becomes, once, a fixed date: the date of the wallet's will
+> in force (without a will, the date the duration gives on that day). A
+> message shows the new date once.
 
 \* The locktime can be **anticipated** to update the will.
 
@@ -154,7 +161,7 @@ Today is **January 1, 2025**. I set the inheritance for **December 1, 2025**
 Denoted in **satoshi/vbyte**. This parameter indicates the fees that go to the
 **miners** to have the transaction validated on the blockchain at the time of
 inheritance. It is the classic fee/commission you pay every time you send
-bitcoin to another wallet.
+bitcoin to another wallet. Like the Delivery Time, it is kept by each wallet.
 
 We recommend leaving the default value of **100 sat/vbyte**; this way you will be
 sure the inheritance is accepted by the miners, even on days when the blockchain
@@ -244,8 +251,9 @@ plugin will notify you that you need to update the inheritance.
 
 ## RAW settings
 
-> **NB:** relative (**RAW**) durations are available only in **ADVANCED** mode;
-> in **BASIC** the Delivery Time is entered only as a precise date.
+> **NB:** relative (**RAW**) durations are no longer offered, in either mode:
+> the Delivery Time is always a precise date (see *1 — Delivery Time*). The
+> `RAW‑1d` example below only concerns wills prepared with an older version.
 
 If you set, for example, `RAW‑1d` and it is, say, 5 p.m., the plugin will not
 execute the inheritance precisely 24 hours later (5 p.m. the next day) but will
@@ -338,7 +346,15 @@ drive, cloud, NAS, etc.):
 ## Wallet security — saving your will
 
 To keep a copy of your will, simply save the wallet from Electrum
-(**File → Save Backup**).
+(**File → Save Backup**). The wallet file also holds the wallet's own
+**Delivery Time** and **Fees**.
+
+> **NB:** do not use this plugin and the original BAL plugin (or an older
+> version of this plugin) on the same wallet in turn. The other plugin reads
+> the old Delivery Time, shared by every wallet. After any date change made
+> here, including the automatic one-day move after new funds, it can prepare
+> an EARLIER will and sign it when you close the wallet, or ask for an
+> invalidation (miner fee).
 
 If, for example, your notebook is stolen or breaks down, just install Electrum on
 a new computer together with the BAL plugin and open the previously saved wallet.

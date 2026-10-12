@@ -1215,8 +1215,8 @@ class BalBuildWillDialog(BalDialog):
         correct and required so the new transaction can be mined BEFORE the old
         one it replaces.
 
-        However the plugin's own stored delivery date
-        (WILL_SETTINGS["locktime"]) was NOT updated and stayed at the original
+        However the plugin's own stored delivery date (the ``locktime`` of
+        the will settings) was NOT updated and stayed at the original
         date. On the next Check the plugin compared the stored date (original)
         with the transaction locktime (original minus one day) and, since
         stored > tx, mistook the automatic anticipation for a user POSTPONE,
@@ -1231,20 +1231,19 @@ class BalBuildWillDialog(BalDialog):
         desired behaviour, and that the date shown in the panel/wizard must
         reflect this anticipated date (so the calendar .ics also uses it).
 
-        RELATIVE recipes ("30d"/"1y") are PRESERVED: they are resolved against
-        the built will's frozen locktime on every check (via
-        ``Util.resolve_locktime_against_tx`` for the postpone detection and
-        ``resolve_date_to_check(..., built_locktime=...)`` for the reference
-        timestamp), so they no longer drift away from the built transactions
-        and never trigger the daily invalidate prompt.  Freezing them to an
-        absolute timestamp here would silently erase the user's relative
-        choice from WILL_SETTINGS.
+        Since CHANGELOG #123 the stored date is always an absolute date of
+        THIS wallet (the period form "30d"/"1y" is refused, the Raw editor
+        is hidden), kept in the wallet's own settings
+        (``wallet.db.get_dict("will_settings")``); Electrum's global
+        ``bal_will_settings`` is never written.
 
         We route the update through BalWindow.update_setting_widgets, which is
-        the single place that (1) stores the value in WILL_SETTINGS, (2)
-        persists it to Electrum's database and (3) refreshes the date widgets in
-        every panel/wizard, so the visible date and the .ics export stay
-        consistent.
+        the single place that (1) stores the value through the one validated
+        write (``bal.engine.context.set_will_setting``) and (2) refreshes the
+        date fields of both tabs, so the visible date and the .ics export stay
+        consistent. This runs on the dialog's worker thread: there only the
+        value is written, and the fields are refreshed on the GUI thread
+        (rule I5 of #123). The wallet file is saved by Electrum.
         """
         # The rule itself lives in bal.core (CHANGELOG #110) and the steps in
         # bal.engine.build (CHANGELOG #119), shared with the automatic
@@ -1748,6 +1747,35 @@ class BalBuildWillDialog(BalDialog):
         )
         self._add_close_button()
 
+    def _ask_delivery_choice(self):
+        """Ask the "which date?" question, then run phase 1 again (#123).
+
+        Phase 1 stopped on ``Phase1Result("delivery_choice")``: an older
+        setting asked for a later date than the will prepared and not yet
+        signed (plan 3.3). This runs on the GUI thread (``on_success``).
+        "Keep" (the default) keeps the date of the prepared will (no fee);
+        "Use" stores the later date, and the next pass reads the postpone and
+        asks for the invalidation of the old will (miner fee). Cancel stops:
+        nothing was changed. Never at wallet close (rule I6: no question
+        while the wallet closes; the window skips the check then anyway).
+        """
+        if self._closing:
+            _logger.info("wallet close: the delivery date question is pending")
+            self._add_close_button()
+            return
+        if not self.bal_window.choose_delivery_date(parent=self):
+            self.msg_edit_row(
+                self.msg_alert(_("The check stopped: nothing was changed."))
+            )
+            self._add_close_button()
+            return
+        self.thread.add(
+            self.task_phase1,
+            on_success=self.on_success_phase1,
+            on_done=self.on_accept,
+            on_error=self.on_error_phase1,
+        )
+
     def on_success_phase1(self, result):
         try:
             self._on_success_phase1_body(result)
@@ -1756,6 +1784,14 @@ class BalBuildWillDialog(BalDialog):
             _logger.error(f"NoneType_catch on_success_phase1: {e}\n{traceback.format_exc()}")
 
     def _on_success_phase1_body(self, result):
+        """Act on the end of phase 1 (GUI thread): ``result`` is the
+        ``(have_to_sign, tx)`` pair of :meth:`task_phase1`.
+
+        A stop code ends the dialog (or asks a question: the Check Alive
+        renewal, and since #123 the "which date?" question of
+        :meth:`_ask_delivery_choice`); otherwise the invalidation or phase 2
+        (sign, send, verify) follows.
+        """
         if self._stopping:
             return
         self.have_to_sign, tx = list(result)
@@ -1845,6 +1881,16 @@ class BalBuildWillDialog(BalDialog):
             # Passed Check Alive that cannot be renewed with one click (#79):
             # the reason is on its own red row; nothing was invalidated.
             self._add_close_button()
+            return
+
+        if self.have_to_sign == "delivery_settings_unavailable":
+            # #123, fail closed: the error is on its own red row; nothing was
+            # built, signed, sent or invalidated.
+            self._add_close_button()
+            return
+
+        if self.have_to_sign == "delivery_choice":
+            self._ask_delivery_choice()
             return
 
         if self.have_to_sign == "invalidation_pending":
@@ -3278,8 +3324,28 @@ class BalBuildWillDialog(BalDialog):
 
 
 
+def _live_threshold(bal_window):
+    """The Check Alive date of the live will, as the toolbar shows it.
+
+    ``bal_window.real_threshold``: the display cache the toolbar sets
+    (``WillSettingsWidget.on_locktime_change``); before #123 it was a key of
+    the shared settings. When the toolbar did not set it yet, the delivery
+    date of the wallet's settings is shown instead.
+    """
+    threshold = getattr(bal_window, "real_threshold", None)
+    if threshold is None:
+        threshold = (getattr(bal_window, "will_settings", None) or {}).get("locktime")
+    return threshold
+
+
 class WillDetailDialog(BalDialog):
     def __init__(self, bal_window, will=None, threshold=None):
+        """The Will Details window of the live will, or of an imported one.
+
+        ``will``/``threshold`` are passed when showing an IMPORTED will; the
+        live will shows the Check Alive date of the toolbar
+        (:func:`_live_threshold`, #123).
+        """
         # ``will``/``threshold`` are passed when showing an IMPORTED (read-only)
         # will. In that case every action button below operates on the imported
         # will, never on the live wallet state.
@@ -3290,7 +3356,7 @@ class WillDetailDialog(BalDialog):
         elif self._external_will:
             self.threshold = max(wi.tx.locktime for wi in self.will.values())
         else:
-            self.threshold = bal_window.will_settings["real_threshold"]
+            self.threshold = _live_threshold(bal_window)
 
         self.bal_window = bal_window
         Will.add_willtree(self.will)
@@ -3389,7 +3455,7 @@ class WillDetailDialog(BalDialog):
         self.bal_window.merge_will(self.will)
         self._external_will = False
         self.will = self.bal_window.willitems
-        self.threshold = self.bal_window.will_settings["real_threshold"]
+        self.threshold = _live_threshold(self.bal_window)
         if self.merge_button:
             self.merge_button.hide()
         self.update()

@@ -16,6 +16,7 @@ Run:
 
 import os
 import sys
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -327,7 +328,14 @@ def test_dialog_store_sets_the_flag_first():
 
 def test_auto_rebuild_store_marks_the_date_after_saving():
     """The automatic rebuild stores the setting (no widgets: worker
-    thread) and marks the date for the GUI-thread refresh."""
+    thread) and marks the date for the GUI-thread refresh.
+
+    Since #123 the date goes through the one validated write into the
+    window's own settings (``context.set_will_setting``); Electrum's global
+    ``bal_will_settings`` is never written (``WILL_SETTINGS.set`` is not
+    called). Run on a worker thread, as the automatic rebuild runs: no
+    field is refreshed there (rule I5; the window's queued signal does it
+    on the GUI thread, and this bare window has none)."""
     saved = []
     win = object.__new__(BalWindow)
     win.willitems = {}
@@ -335,12 +343,27 @@ def test_auto_rebuild_store_marks_the_date_after_saving():
     win.bal_plugin = SimpleNamespace(
         WILL_SETTINGS=SimpleNamespace(set=lambda s: saved.append(dict(s))))
     win.update_setting_widgets = MagicMock()
+    win.refresh_setting_fields = MagicMock()
+    errors = []
+
+    def worker():
+        """The rebuild's worker thread."""
+        try:
+            BalWindow._sync_delivery_after_auto_rebuild(win)
+        except Exception as e:  # pragma: no cover - reported below
+            errors.append(e)
+
     with patch.object(Will, "anticipated_delivery_to_store",
                       return_value=DELIVERY - 86400):
-        BalWindow._sync_delivery_after_auto_rebuild(win)
-    assert saved == [{"locktime": DELIVERY - 86400}]
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join(timeout=10)
+    assert errors == []
+    assert win.will_settings == {"locktime": DELIVERY - 86400}
+    assert saved == []
     assert win._auto_rebuild_synced_locktime == DELIVERY - 86400
     win.update_setting_widgets.assert_not_called()
+    win.refresh_setting_fields.assert_not_called()
 
 
 def test_auto_rebuild_rule_error_is_only_logged():
@@ -357,7 +380,8 @@ def test_auto_rebuild_rule_error_is_only_logged():
 
 def test_command_line_labels_then_syncs_even_after_a_label_error(plugin):
     """The command line logs a label it cannot write and still moves the
-    date, through its own store hook."""
+    date, through its own store hook: since #123 into the wallet's own
+    settings (the global ``bal_will_settings`` is never written)."""
     wallet = FakeWallet()
     c = BalController(plugin, wallet)
     c.willitems = {"v": _Item(True)}
@@ -366,8 +390,9 @@ def test_command_line_labels_then_syncs_even_after_a_label_error(plugin):
                       return_value=DELIVERY - 86400):
         c._after_rebuild()
     wallet.set_label.assert_called_once_with("v", build.BACKUP_LABEL)
-    assert c.will_settings["locktime"] == DELIVERY - 86400
-    assert plugin.WILL_SETTINGS.get()["locktime"] == DELIVERY - 86400
+    assert c.will_settings is wallet.db.get_dict("will_settings")
+    assert wallet.db.get_dict("will_settings")["locktime"] == DELIVERY - 86400
+    assert plugin.config.get("bal_will_settings") is None
 
 
 if __name__ == "__main__":

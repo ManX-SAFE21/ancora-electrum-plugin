@@ -15,9 +15,12 @@ it with the GUI.
 """
 
 import threading
+from datetime import datetime, timedelta, timezone
 
+from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import QMessageBox
 
+from ...core import delivery
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
@@ -96,19 +99,131 @@ from .dialogs import (
     _complete_import,
     decode_will_payload,
 )
+from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
 from .lists import HeirListWidget, PreviewList
 from .widgets import LockTimeWidget, PercAmountEdit, WillSummaryWidget
 
+# The setting fields of the toolbars, refreshed together (CHANGELOG #123).
+_SETTING_FIELDS = ("locktime", "threshold", "baltx_fees")
+
+
+def _on_gui_thread():
+    """True on the thread that runs Qt's GUI (Electrum's main thread).
+
+    The Check's worker (``TaskThread``) and the automatic rebuild run on
+    other threads: there a settings write must not touch a widget (rule I5
+    of the #123 plan).
+    """
+    return threading.current_thread() is threading.main_thread()
+
+
+def _hold_code(host):
+    """The code of the delivery settings hold that applies, or None.
+
+    See :func:`bal.engine.context.check_holds` (CHANGELOG #123, rule I6).
+    A plain function, not a method: the window's methods that call it also
+    run on test windows that are not ``BalWindow`` objects.
+    """
+    try:
+        context.check_holds(host)
+    except delivery.DeliveryHold as e:
+        return e.code
+    return None
+
+
+def _stopped_by_hold(window):
+    """True (and the owner is told) when a hold of the delivery settings
+    stops a Sign / Broadcast / Invalidate command (rule I6).
+
+    The settings could not be prepared: the error. The "which date?"
+    question waits: press the Check button first.
+    """
+    code = _hold_code(window)
+    if code is None:
+        return False
+    _logger.info(f"command refused: delivery hold ({code})")
+    if code == delivery.DeliverySettingsUnavailable.code:
+        window.show_error(_(SETTINGS_UNAVAILABLE))
+    else:
+        window.show_message(_(CHOOSE_DATE_FIRST))
+    return True
+
+
+def _utc_day(ts):
+    """``DD/MM/YYYY`` of a delivery date, read as a UTC day (CHANGELOG #123).
+
+    Safe21 stores 00:00 UTC; the UTC day is the day the transaction uses.
+    Plain arithmetic from 1970, not ``datetime.fromtimestamp``, which fails
+    after 2038 where ``time_t`` is 32-bit.
+    """
+    moment = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=int(ts))
+    return moment.strftime("%d/%m/%Y")
+
+
+class _SettingsRelay(QObject):
+    """Brings a settings refresh from a worker thread to the GUI thread.
+
+    CHANGELOG #123, rule I5: a delivery setting written off the GUI thread
+    (the Check's worker, the automatic rebuild) only changes the stored
+    value; ``changed`` is emitted there and the queued connection runs
+    ``callback`` (which refreshes the fields) on the thread this object
+    lives in, the GUI thread that built the window.
+    """
+
+    changed = pyqtSignal()
+
+    def __init__(self, callback):
+        """``callback``: called on the GUI thread after each ``changed``."""
+        super().__init__()
+        self._callback = callback
+        self.changed.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
+
+    @pyqtSlot()
+    def _deliver(self):
+        """Run the callback (GUI thread); an error is only logged."""
+        try:
+            self._callback()
+        except Exception as e:
+            _logger.debug(f"settings refresh failed: {e!r}")
+
 
 class BalWindow:
+    """The plugin's part of one Electrum wallet window.
+
+    It builds the Heirs and Will tabs and the menu, holds the wallet's
+    heirs, will and delivery settings (since CHANGELOG #123 the wallet's own
+    ``will_settings``, see ``bal.engine.context.load_will_settings``) and is
+    the GUI host of the engine (``bal.engine.host.WalletHost``).
+    """
+
     # Automatic rebuild-on-new-transaction flow (AUTO_REBUILD setting):
     # the debounce window collapses bursts of wallet events into one run, and
     # the cooldown prevents the flow from re-triggering right after a rebuild
     # (the freshly persisted txs can themselves fire wallet events).
     _AUTO_REBUILD_DEBOUNCE_MS = 5000
     _AUTO_REBUILD_COOLDOWN = 10.0
+    # CHANGELOG #123: True when the wallet's delivery settings could not be
+    # prepared (``bal.engine.context.ensure_will_settings``): every flow
+    # stops. Class-level defaults, so a window built without ``__init__``
+    # (the tests, the scenario harness) reads them too.
+    settings_unavailable = False
+    # The dates the toolbar shows (Check Alive, delivery), kept for the Will
+    # Details window. Display caches of the window, never stored in the
+    # settings (before #123 they were keys of the shared settings).
+    real_threshold = None
+    real_locktime = None
 
     def __init__(self, bal_plugin: "BalPlugin", window: "ElectrumWindow"):
+        """Build the window state, the delivery settings and the two tabs.
+
+        CHANGELOG #123: the heirs are read first, then the wallet's own
+        delivery settings are loaded (:func:`bal.engine.context.
+        load_will_settings`: a one-time migration, the anchor check), and
+        only then the tabs are built, so their fields show the migrated
+        values. The load waits at most one second for the wallet's flow lock
+        (a command migrating the same wallet); if it is busy, it is done
+        again in :meth:`init_will`.
+        """
         self.bal_plugin = bal_plugin
         self.window = window
         self.heirs = {}
@@ -116,6 +231,11 @@ class BalWindow:
         self.willitems = {}
         self.willexecutors = {}
         self.will_settings = None
+        self.settings_unavailable = False
+        # True once the delivery settings were prepared (see init_will).
+        self._settings_ready = False
+        # Refreshes the setting fields on the GUI thread (rule I5).
+        self._settings_relay = _SettingsRelay(self.refresh_setting_fields)
         self.ok = False
         self.disable_plugin = True
         # Guard against wiring the menu/tabs more than once for the same window.
@@ -132,10 +252,13 @@ class BalWindow:
 
         if self.window.wallet:
             self.wallet = self.window.wallet
-            if not self.will_settings:
-                self.will_settings = self.bal_plugin.WILL_SETTINGS.get()
-                Util.fix_will_settings_tx_fees(self.will_settings)
+            # The heirs first: the migration reads them ("plugin data", the
+            # heirs' old periods). Electrum's global bal_will_settings is
+            # never written again (#123).
             self.heirs = Heirs(self.wallet)
+            self._settings_ready = context.load_will_settings(
+                self, lock_timeout=1.0
+            )
 
             self.heirs_tab = self.create_heirs_tab()
             self.will_tab = self.create_will_tab()
@@ -193,8 +316,14 @@ class BalWindow:
     # Engine host (bal.engine.host.WalletHost, CHANGELOG #118)
     # ------------------------------------------------------------------ #
     def store_will_setting(self, field, value):
-        """Engine hook: set a will setting, store it and refresh the fields
-        that show it (the call the window made before #118)."""
+        """Engine hook: store a delivery setting and refresh the fields that
+        show it (the call the window made before #118).
+
+        Since #123 :meth:`update_setting_widgets` writes through the one
+        validated write into the wallet's own settings, and on a worker
+        thread (the Check's phase 1) it only writes: the fields are then
+        refreshed on the GUI thread (rule I5).
+        """
         self.update_setting_widgets(value, field, update_all=True)
 
     def flush_wallet_db(self):
@@ -223,6 +352,14 @@ class BalWindow:
         context.save_willitems(self)
 
     def init_will(self):
+        """Load the heirs, the will-executors and the will of the wallet.
+
+        Called when the wallet opens (``load_wallet``, or the hot enable).
+        CHANGELOG #123: when the delivery settings could not be prepared in
+        ``__init__`` (the wallet was busy, or an error), they are prepared
+        again here, with the will items loaded; a success clears the hold and
+        the fields show the stored values.
+        """
         _logger.info("********************init_____will____________**********")
         if not self.willexecutors:
             self.willexecutors = Willexecutors.get_willexecutors(
@@ -246,23 +383,199 @@ class BalWindow:
                     )
                     self.close_wallet()
                     return
+        # #123: prepare the delivery settings again when __init__ could not.
+        if getattr(self, "settings_unavailable", False) or not getattr(
+            self, "_settings_ready", True
+        ):
+            self._settings_ready = context.load_will_settings(
+                self, self.willitems or None, lock_timeout=1.0
+            )
+            self.refresh_setting_fields()
         # The will items are known now: convert an old Check Alive value
         # against the delivery the will really uses (#80).
         self._normalize_check_alive()
         # ...and the will summary can describe them (#84a).
         self.update_will_summary()
 
-        # if not self.will_settings:
-        #    self.will_settings = self.wallet.db.get_dict("will_settings")
-        #    Util.fix_will_settings_tx_fees(self.will_settings)
+    # ------------------------------------------------------------------ #
+    # The wallet's delivery settings (CHANGELOG #123)
+    # ------------------------------------------------------------------ #
+    def refresh_setting_fields(self):
+        """Show the stored delivery settings in the toolbar fields.
 
-        #    _logger.info("will_settings: {}".format(self.will_settings))
-        #    if not self.will_settings:
-        #        Util.copy(self.will_settings, self.bal_plugin.default_will_settings())
-        #        _logger.debug("not_will_settings {}".format(self.will_settings))
-        #    self.bal_plugin.validate_will_settings(self.will_settings)
-        #    self.heir_list_widget.update_will_settings()
-        #    self.heir_list_widget.update()
+        GUI thread only: :meth:`update_setting_widgets` calls it there, and
+        through ``_SettingsRelay`` after a write made on a worker thread.
+        Never raises.
+        """
+        settings = self.will_settings or {}
+        for field in _SETTING_FIELDS:
+            if field not in settings:
+                continue
+            for widget in (
+                getattr(self, "heir_list_widget", None),
+                getattr(self, "will_list_widget", None),
+            ):
+                if widget is not None:
+                    self.update_widget_value(widget, field, settings[field])
+        try:
+            self.update_will_summary()
+        except Exception as e:
+            _logger.debug(f"will summary refresh failed: {e!r}")
+
+    def _request_fields_refresh(self):
+        """Refresh the setting fields now on the GUI thread, else later there.
+
+        Off the GUI thread the relay's queued signal does it (rule I5); a
+        window built without ``__init__`` has no relay and is skipped.
+        """
+        if _on_gui_thread():
+            self.refresh_setting_fields()
+            return
+        relay = getattr(self, "_settings_relay", None)
+        if relay is not None:
+            relay.changed.emit()
+
+    def delivery_note_text(self, note):
+        """The text of the one-time note ``(kind, old, new)`` (plan 3.3).
+
+        Neutral wording: the old value was SHARED by every wallet of this
+        Electrum, so it may have been changed from another wallet. ``None``
+        for a note this version does not know.
+        """
+        kind, old, new = note
+        new_day = _utc_day(new) if delivery.as_delivery(new) else None
+        old_day = _utc_day(old) if delivery.as_delivery(old) else None
+        if kind == delivery.NOTE_CONVERTED and new_day:
+            return _("Your delivery date is now fixed: {}.").format(new_day)
+        if kind in (delivery.NOTE_DATE_DIFFERS, delivery.NOTE_LATER_PENDING):
+            if not (old_day and new_day):
+                return None
+            text = _(
+                "The shared setting (possibly changed from another wallet) "
+                "was {old}; this wallet keeps the date of its will, {new}."
+            ).format(old=old_day, new=new_day)
+            if self.will_settings.get(delivery.CHOICE_KEY):
+                text += "\n\n" + _(CHOOSE_DATE_FIRST)
+            return text
+        if kind == delivery.NOTE_OUTSIDE_CHANGE and new_day:
+            text = _(
+                "Your will was changed by another program. The delivery date "
+                "now follows the will in force: {new} (before: {old})."
+            ).format(new=new_day, old=old_day or "-")
+            if old_day and int(new) < int(old):
+                # An anticipation was followed: choosing the later date again
+                # is a postpone, which costs a fee.
+                text += "\n\n" + _(
+                    "To use the later date again, choose it and press "
+                    "'Check your will': the old will must be invalidated "
+                    "first (miner fee)."
+                )
+            return text
+        return None
+
+    def show_delivery_note(self):
+        """Show the one-time note of the delivery settings (plan 3.3).
+
+        Scheduled by ``load_wallet`` two seconds after the wallet opens, so
+        it appears after the main window. The note is deleted only after the
+        message box returns: when showing it fails, it stays and is shown at
+        the next opening. While the "which date?" question waits, its two
+        dates stay (the Check asks it). Never raises.
+        """
+        try:
+            if self.disable_plugin or self.settings_unavailable:
+                return
+            settings = self.will_settings
+            note = delivery.pending_note(settings)
+            if note is None:
+                return
+            text = self.delivery_note_text(note)
+            if text is None:
+                _logger.info(f"delivery note {note[0]!r} not shown: unknown")
+            else:
+                self.show_message(text)
+            delivery.mark_note_shown(settings)
+        except Exception as e:
+            _logger.error(f"delivery note not shown: {e!r}")
+
+    def delivery_choice_texts(self, keep, later):
+        """The "which date?" question: ``(text, keep button, later button)``.
+
+        ``keep``: the date of the will already prepared (no fee); ``later``:
+        the later date an older setting asked for (the old will must be
+        invalidated first, miner fee). Plan 3.3.
+        """
+        text = _(
+            "The will prepared for {keep} is not signed and sent yet. The "
+            "shared setting (possibly changed from another wallet) asked for "
+            "a later date: {later}. Which date do you want?"
+        ).format(keep=_utc_day(keep), later=_utc_day(later))
+        keep_text = _("Keep {} (the will already prepared, no fee)").format(
+            _utc_day(keep)
+        )
+        later_text = _(
+            "Use {} (later: the old will must be invalidated, miner fee)"
+        ).format(_utc_day(later))
+        return text, keep_text, later_text
+
+    def ask_delivery_choice(self, parent=None):
+        """Ask the "which date?" question; ``"keep"``, ``"later"`` or None.
+
+        Asked by the Check (and by Prepare) while ``choice_pending`` is set,
+        never at wallet close. "Keep" is the default button; Esc and closing
+        the box are Cancel (None: nothing changes). When the later date was
+        lost, only Keep makes sense: it is chosen without asking (logged).
+        """
+        dates = delivery.choice_dates(self.will_settings)
+        if dates is None or dates[0] is None:
+            return None
+        keep, later = dates
+        if later is None:
+            _logger.info("delivery choice: the later date is unknown, kept")
+            return "keep"
+        text, keep_text, later_text = self.delivery_choice_texts(keep, later)
+        box = QMessageBox(parent or self.window)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(_("Check your will"))
+        box.setText(text)
+        keep_button = box.addButton(keep_text, QMessageBox.ButtonRole.AcceptRole)
+        later_button = box.addButton(later_text, QMessageBox.ButtonRole.ActionRole)
+        cancel = box.addButton(_("Cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(keep_button)
+        box.setEscapeButton(cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is keep_button:
+            return "keep"
+        if clicked is later_button:
+            return "later"
+        return None
+
+    def answer_delivery_choice(self, use_later=False):
+        """Store the answer to the "which date?" question, then show it.
+
+        See :func:`bal.engine.context.answer_delivery_choice` (the question
+        and its note are cleared). GUI thread. Returns the date stored.
+        """
+        stored = context.answer_delivery_choice(self, use_later=use_later)
+        self.refresh_setting_fields()
+        return stored
+
+    def choose_delivery_date(self, parent=None):
+        """Ask the "which date?" question and store the answer.
+
+        True when a date was chosen (the caller may go on), False on Cancel
+        or when the answer could not be stored (logged).
+        """
+        answer = self.ask_delivery_choice(parent=parent)
+        if answer is None:
+            return False
+        try:
+            self.answer_delivery_choice(use_later=answer == "later")
+        except Exception as e:
+            _logger.error(f"delivery choice not stored: {e!r}")
+            return False
+        return True
 
     def init_wizard(self):
         wizard_dialog = BalWizardDialog(self)
@@ -713,12 +1026,35 @@ class BalWindow:
         update_will_dialog=False,
         update_heirs_dialog=False,
     ):
-        if update_all or update_heirs_dialog:
-            self.update_widget_value(self.heir_list_widget, field, new_value)
-        if update_all or update_will_dialog:
-            self.update_widget_value(self.will_list_widget, field, new_value)
-        self.will_settings[field] = new_value
-        self.bal_plugin.WILL_SETTINGS.set(self.will_settings)
+        """Store one delivery setting and show it in the toolbar fields.
+
+        CHANGELOG #123: the value goes through the one validated write,
+        :func:`bal.engine.context.set_will_setting`, into the wallet's own
+        settings; Electrum's global ``bal_will_settings`` is never written.
+        A value it refuses (a period, a fee below 1, the settings not
+        available) is not stored: it is logged and the fields show the
+        stored value again.
+
+        On a worker thread (the Check's phase 1, the automatic rebuild) only
+        the setting is written; the fields are refreshed on the GUI thread
+        through a queued signal (rule I5). On the GUI thread the fields are
+        updated first and the value stored after, as before #123. Returns the
+        value stored, or None when nothing was stored.
+        """
+        if _on_gui_thread():
+            if update_all or update_heirs_dialog:
+                self.update_widget_value(self.heir_list_widget, field, new_value)
+            if update_all or update_will_dialog:
+                self.update_widget_value(self.will_list_widget, field, new_value)
+        try:
+            stored = context.set_will_setting(self, field, new_value)
+        except (ValueError, delivery.DeliveryHold) as e:
+            _logger.warning(f"delivery setting {field} not stored: {e}")
+            self._request_fields_refresh()
+            return None
+        if not _on_gui_thread():
+            self._request_fields_refresh()
+        return stored
 
     def init_heirs_to_locktime(self, multiverse=False):
         """See :func:`bal.engine.context.init_heirs_to_locktime`: every heir
@@ -804,6 +1140,13 @@ class BalWindow:
                 return
             if not Will.get_min_locktime(self.willitems):
                 return
+            # #123: no question on settings that are on hold (display-only
+            # values, or the "which date?" question the Check asks first).
+            try:
+                context.check_holds(self)
+            except delivery.DeliveryHold as e:
+                _logger.info(f"check alive on open skipped: {e.code}")
+                return
             # A will already invalidated on-chain is not "in force".
             self._refresh_invalidated_items()
             info = self.check_alive_info()
@@ -824,11 +1167,16 @@ class BalWindow:
 
         Errors are logged as before #118: "no heirs" is raised without a log
         (it came before the old ``try``), every later error is logged with
-        ``log_error`` and raised again.
+        ``log_error`` and raised again. The two holds of the delivery
+        settings (#123, ``bal.core.delivery.DeliveryHold``) come first and
+        are expected states, not errors: one info line, then raised.
         """
         try:
             context.init_class_variables(self)
         except NoHeirsException:
+            raise
+        except delivery.DeliveryHold as e:
+            _logger.info(f"init_class_variables: delivery hold ({e.code})")
             raise
         except Exception as e:
             log_error(e )
@@ -860,6 +1208,13 @@ class BalWindow:
         return self.date_to_check is not None and locktime < self.date_to_check
 
     def build_inheritance_transaction(self, ignore_duplicate=True, keep_original=True):
+        """The Will tab's "Prepare": check the will and rebuild it if needed.
+
+        Returns the will items, or None when it stops. CHANGELOG #123: with
+        the settings unavailable it stops with the error; with the "which
+        date?" question pending it asks it (as the Check does) and, with an
+        answer, starts again.
+        """
         try:
             _logger.info(
                 "BAL-plugin \u25b8 STEP 1/7: prepare inheritance "
@@ -892,6 +1247,18 @@ class BalWindow:
                     self.window.wallet.dust_threshold(),
                     max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                 )
+            except delivery.DeliverySettingsUnavailable:
+                # #123, fail closed: nothing is prepared on display-only values.
+                self.show_error(_(SETTINGS_UNAVAILABLE))
+                return
+            except delivery.DeliveryChoicePending:
+                # #123: the "which date?" question first, as in the Check;
+                # with an answer, Prepare starts again (once).
+                if self.choose_delivery_date():
+                    return self.build_inheritance_transaction(
+                        ignore_duplicate, keep_original
+                    )
+                return
             except AmountException as e:
                 self.show_warning(
                     _(
@@ -1113,6 +1480,14 @@ class BalWindow:
         return self.show_transaction_real(tx, parent=parent)
 
     def invalidate_will(self, will=None):
+        """Build the invalidation and open it in Electrum's transaction window.
+
+        The Will tab's "Invalidate will", the Will Details window and the
+        Check (expired or postponed will). CHANGELOG #123: refused while a
+        hold of the delivery settings applies (rule I6).
+        """
+        if _stopped_by_hold(self):
+            return
         # The reference timestamp is normally set by init_class_variables();
         # fall back to "now" so a first-action invalidation always has it.
         if not hasattr(self, "date_to_check") or self.date_to_check is None:
@@ -1383,6 +1758,12 @@ class BalWindow:
             #    means the old will must be invalidated on-chain.
             try:
                 self.init_class_variables()
+            except delivery.DeliveryHold as e:
+                # CHANGELOG #123 (rule I6): the "which date?" question waits
+                # for the Check, or the settings are not available. Never a
+                # question here: skipped.
+                _logger.info(f"auto rebuild: delivery hold ({e.code}), nothing to do")
+                return False
             except CheckAliveAfterDeliveryError:
                 _logger.info(
                     "auto rebuild: check-alive not before the delivery, "
@@ -1554,17 +1935,23 @@ class BalWindow:
 
         Same rule as the Check dialog (``Will.anticipated_delivery_to_store``,
         CHANGELOG #110). This runs on the auto-rebuild worker thread, so only
-        the setting is stored here; the date widgets are refreshed by
-        :meth:`_after_auto_rebuild` on the GUI thread. The steps live in
+        the setting is stored here, through the one validated write into the
+        wallet's own settings (``context.set_will_setting``, #123; a
+        ``StoredDict`` item may be written from a worker thread, only its
+        ``save_db`` may not). The date widgets are refreshed on the GUI
+        thread: by :meth:`_after_auto_rebuild` and by the queued signal of
+        :meth:`_request_fields_refresh` (rule I5). The steps live in
         :func:`bal.engine.build.sync_delivery_date` (CHANGELOG #119); an
-        error of the rule is logged and nothing is stored, as before.
+        error of the rule, or a value the write refuses, is logged and
+        nothing is stored, as before.
         """
 
         def store(field, value):
+            """Validated write only; the fields follow on the GUI thread."""
             _logger.info("auto rebuild: delivery date synced to {}".format(value))
-            self.will_settings[field] = value
-            self.bal_plugin.WILL_SETTINGS.set(self.will_settings)
-            self._auto_rebuild_synced_locktime = value
+            stored = context.set_will_setting(self, field, value)
+            self._auto_rebuild_synced_locktime = stored
+            self._request_fields_refresh()
 
         build.sync_delivery_date(
             self,
@@ -1610,6 +1997,14 @@ class BalWindow:
             _logger.error("auto rebuild: push failed: {}".format(e))
 
     def on_close(self):
+        """The wallet closes: check the will (setting "Rebuild will on wallet
+        close"), save it and remove the plugin's tabs and menu.
+
+        CHANGELOG #123 (rule I6): with the "which date?" question pending or
+        the settings unavailable, the check is skipped with one log line:
+        nothing is built, signed or sent, and no question is ever asked while
+        the wallet closes.
+        """
         # Wallet is closing: run the closing "build will" task and tear down
         # the plugin's tabs/menu.  Each step is isolated so that one failure
         # does not leave the GUI half-initialised (which previously forced the
@@ -1625,7 +2020,10 @@ class BalWindow:
         # wallet is closing and why it is working; it also verifies with the
         # will-executors what it sent, like the Check button.
         try:
-            if self.bal_plugin.REBUILD_ON_CLOSE.get():
+            hold = _hold_code(self)
+            if hold is not None:
+                _logger.info(f"wallet close: delivery hold ({hold}), will not checked")
+            if self.bal_plugin.REBUILD_ON_CLOSE.get() and hold is None:
                 close_window = BalBuildWillDialog(self, closing=True)
                 close_window.build_will_task()
             self.save_willitems()
@@ -1663,18 +2061,37 @@ class BalWindow:
         self._menubar_initialized = False
 
     def ask_password_and_sign_transactions(self, callback=None, will=None, txids=None):
+        """Ask the password and sign the will (the Will tab's "Sign").
+
+        Also the Will Details window and the will summary. CHANGELOG #123:
+        refused while a hold of the delivery settings applies (rule I6); for
+        the live will the WHOLE will is then saved with its current flags
+        (:meth:`save_willitems`, which records the will anchor).
+        """
+        if _stopped_by_hold(self):
+            return
         external = will is not None
         willitems = will if external else self.willitems
 
         def on_success(txs):
+            """Put the signed transactions into the will items, then check
+            the signatures and run ``callback``. For the live will also:
+            save the whole will with the anchor (#123), redraw the Will tab
+            and update the History."""
             if txs:
                 for txid, tx in txs.items():
                     # Re-parse instead of deepcopy: the signed tx may carry
                     # wallet-derived input info holding a threading.RLock, which
                     # copy.deepcopy cannot pickle (see sign_transactions above).
                     willitems[txid].tx = Will.get_tx_from_any(str(tx))
-                    if not external:
-                        self.will[txid] = willitems[txid].to_dict()
+                if not external:
+                    # #123 (FS-1 of the review): save EVERY item, as the
+                    # Check's signing does (dialogs.py, task_phase2). Writing
+                    # only the signed ones left the stale VALID flag of a
+                    # will already invalidated (Prepare after a postpone) in
+                    # the wallet; the next load took it for the will in
+                    # force and moved the delivery date back to it.
+                    self.save_willitems()
                 try:
                     Will.check_signatures(willitems, self.wallet)
                 except Exception as e:
@@ -1706,6 +2123,14 @@ class BalWindow:
         self.waiting_dialog.exe()
 
     def broadcast_transactions(self, force=False, will=None, txids=None):
+        """Send the will to its will-executors (the Will tab's "Broadcast will").
+
+        Also the Will Details window, the will summary and the settings'
+        re-send. CHANGELOG #123: refused while a hold of the delivery
+        settings applies (rule I6).
+        """
+        if _stopped_by_hold(self):
+            return
         external = will is not None
 
         def on_success(sulcess):
@@ -1833,10 +2258,17 @@ class BalWindow:
             return True
 
     def export_json_file(self, path, will=None):
+        """Write the will as a JSON file (``will``: an imported will instead).
+
+        The live will's items are marked EXPORTED and the whole will is
+        saved first; CHANGELOG #123: through :meth:`save_willitems`, so the
+        stored will matches the items in memory and the will anchor
+        describes exactly what is stored.
+        """
         if will is None:
             for wid in self.willitems:
                 self.willitems[wid].set_status("EXPORTED", True)
-                self.will[wid] = self.willitems[wid].to_dict()
+            self.save_willitems()
             write_json_file(path, self.will)
         else:
             write_json_file(path, {wid: wi.to_dict() for wid, wi in will.items()})

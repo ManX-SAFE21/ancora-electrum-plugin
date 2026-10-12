@@ -269,7 +269,12 @@ def test_check_will_passes_the_hosts_state(plugin):
 
 def test_the_controller_is_a_host(plugin):
     """``BalController`` has the state and the three hooks, and its hooks do
-    what its own code did before #117."""
+    what its own code did before #117.
+
+    Since #123 the store hook writes the wallet's own settings through the
+    one validated write and saves the wallet file; Electrum's global
+    ``bal_will_settings`` is never written, and a value the write refuses
+    (a period as delivery date) changes nothing."""
     wallet = FakeWallet()
     c = BalController(plugin, wallet)
     for name in WalletHost.__annotations__:
@@ -278,9 +283,16 @@ def test_the_controller_is_a_host(plugin):
     with mock.patch.object(wallet, "save_db") as save_db:
         c.flush_wallet_db()
     save_db.assert_called_once_with()
-    c.store_will_setting("threshold", "-90d")
-    assert plugin.WILL_SETTINGS.get()["threshold"] == "-90d"
+    with mock.patch.object(wallet, "save_db") as save_db:
+        c.store_will_setting("threshold", "-90d")
+    save_db.assert_called_once_with()
+    assert c.will_settings is wallet.db.get_dict("will_settings")
     assert c.will_settings["threshold"] == "-90d"
+    before = dict(c.will_settings)
+    with pytest.raises(ValueError):
+        c.store_will_setting("locktime", "1054d")
+    assert dict(c.will_settings) == before
+    assert plugin.config.get("bal_will_settings") is None
     assert c.after_history_saved() is None
 
 

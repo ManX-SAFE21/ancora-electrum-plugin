@@ -178,7 +178,7 @@
   ],
   "settings": {
    "baltx_fees": 13,
-   "locktime": "60d",
+   "locktime": "2026-12-09",
    "threshold": "-30d"
   },
   "stored": {
@@ -265,7 +265,7 @@
   },
   "settings": {
    "baltx_fees": 13,
-   "locktime": "60d",
+   "locktime": "2026-12-09",
    "threshold": "-30d"
   },
   "stored": {

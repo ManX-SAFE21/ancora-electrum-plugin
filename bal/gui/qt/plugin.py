@@ -338,6 +338,13 @@ class Plugin(BalPlugin, EventListener):
 
     @hook
     def load_wallet(self, wallet, main_window):
+        """Electrum hook: a wallet window opened; load the will and schedule
+        the questions that follow the opening.
+
+        CHANGELOG #123: the one-time note of the delivery settings after 2 s
+        (``BalWindow.show_delivery_note``), so it appears after the main
+        window and before the Check Alive question (3 s, #79).
+        """
         _logger.debug("HOOK load wallet")
         w = self.get_window(main_window)
         # havetoupdate = Util.fix_will_settings_tx_fees(wallet.db)
@@ -351,6 +358,9 @@ class Plugin(BalPlugin, EventListener):
         # load_wallet is fired on the recreated window during a hot enable too;
         # use it as an extra trigger to auto-close the leftover manager dialog.
         QTimer.singleShot(350, self._close_plugins_manager_dialog)
+        # CHANGELOG #123: the one-time note (e.g. "Your delivery date is now
+        # fixed"), after the main window is shown.
+        QTimer.singleShot(2000, w.show_delivery_note)
         # CHANGELOG #79: a passed Check Alive asks to renew when the wallet
         # opens. Deferred so the window is shown and the wallet has a moment
         # to sync (an invalidation already on-chain is then recognised).

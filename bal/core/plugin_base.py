@@ -128,6 +128,8 @@ except ImportError:
 
 _register_will_dict("heirs", tuple)
 _register_will_dict("will", dict)
+# The wallet's own delivery settings since CHANGELOG #123 (flat values; the
+# key name is also bal.core.delivery.WALLET_KEY).
 _register_will_dict("will_settings", lambda x: x)
 
 
@@ -209,6 +211,8 @@ class BalPlugin(BasePlugin):
         return get_version()
 
     def __init__(self, parent, config, name):
+        """Set up the plugin's data folder and every ``bal_*`` setting
+        (``BalConfig`` objects over Electrum's config)."""
         self.logger = get_logger(__name__)
         BasePlugin.__init__(self, parent, config, name)
 
@@ -413,6 +417,15 @@ class BalPlugin(BasePlugin):
                 },
             },
         )
+        # BAL's key; never written by Safe21 since CHANGELOG #123 (each
+        # wallet keeps its own delivery settings under the wallet key
+        # "will_settings", see bal.core.delivery). BAL reads its
+        # ['threshold'] without a fallback, so it is never deleted or reset
+        # either. Read only raw (config.get), as a migration source, when a
+        # wallet's settings are migrated (bal.engine.context). Its date and
+        # fee (and an old fixed or positive Check Alive) count only for a
+        # wallet with heirs or a will; its Check Alive "-Nd" counts for every
+        # wallet. The rules: bal.core.delivery.migration_values.
         self.WILL_SETTINGS = BalConfig(
             config,
             "bal_will_settings",

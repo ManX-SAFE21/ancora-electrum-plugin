@@ -19,11 +19,32 @@ as in the tests and the scenario harness, works unchanged).
 
 The texts are translated when the event arrives, never at import (the
 catalog is loaded later).
+
+Since #123 also the two holds of the wallet's delivery settings: the
+"which date?" question (state ``delivery_choice``; the dialog then asks it)
+and settings that could not be prepared (note
+``delivery_settings_unavailable``). Their texts are marked here and shared
+with the window (``bal.gui.qt.window``), which shows them too.
 """
 
 from ...core.messages import check_alive_message
 from ...engine.ui import Step
-from ...i18n import _
+from ...i18n import N_, _
+
+#: The delivery settings of the wallet could not be prepared (#123, fail
+#: closed). Shown by the Check, Prepare and the Sign / Broadcast /
+#: Invalidate commands.
+SETTINGS_UNAVAILABLE = N_(
+    "The delivery settings of this wallet could not be prepared: nothing "
+    "was changed. Please restart Electrum and send the log."
+)
+#: The "which date?" question waits (#123): the Check asks it.
+CHOOSE_DATE_FIRST = N_(
+    "Nothing is signed or sent until you choose the delivery date: press "
+    "'Check your will'."
+)
+#: The status of the "Checking variables" row while the question is asked.
+CHOOSE_DATE = N_("Choose the delivery date")
 
 
 class DialogFlowUI:
@@ -48,6 +69,8 @@ class DialogFlowUI:
 
         ``Step.VARIABLES`` is the "Checking variables" row; each state makes
         the call ``task_phase1`` made before #120 (dialogs.py:862-1001).
+        ``delivery_choice`` (#123) is new: an amber "Choose the delivery
+        date".
         """
         d = self._dialog
         if step != Step.VARIABLES:
@@ -91,6 +114,12 @@ class DialogFlowUI:
             d.msg_set_status(
                 _("Checking variables"), row, _("Stopped"), d.COLOR_ERROR
             )
+        elif state == "delivery_choice":
+            # #123: the "which date?" question is asked next (the dialog
+            # does it on the GUI thread, then runs phase 1 again).
+            d.msg_set_status(
+                _("Checking variables"), row, _(CHOOSE_DATE), d.COLOR_WARNING
+            )
         else:
             raise ValueError(f"unknown state {state!r} of step {step!r}")
 
@@ -99,7 +128,8 @@ class DialogFlowUI:
 
         Errors in red (``msg_error``), warnings after the amber sign
         (``msg_alert``); ``msg_edit_row`` also puts them in the report's
-        problems / warnings box.
+        problems / warnings box. ``delivery_settings_unavailable`` (#123) is
+        an error row with :data:`SETTINGS_UNAVAILABLE`.
         """
         d = self._dialog
         if code == "check_alive_reason":
@@ -126,6 +156,9 @@ class DialogFlowUI:
                     _("Will-executor fee too high: {}").format(data["error"])
                 )
             )
+        elif code == "delivery_settings_unavailable":
+            # #123, fail closed: nothing was built, signed or sent.
+            d.msg_edit_row(d.msg_error(_(SETTINGS_UNAVAILABLE)))
         else:
             raise ValueError(f"unknown note {code!r}")
 

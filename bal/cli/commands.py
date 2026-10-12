@@ -142,7 +142,10 @@ async def settings_list(self, plugin=None):
 async def settings_get(self, key, plugin=None):
     """Show the current value of one BAL configuration option.
 
-    arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
+    The delivery date and the fee rate of a wallet are not plugin options:
+    see ``bal_delivery_show``.
+
+    arg:str:key:The configuration key (e.g. ``bal_user_type``).
     """
     return await _settings_call_off_loop(plugin, "settings_get", key)
 
@@ -151,8 +154,11 @@ async def settings_get(self, key, plugin=None):
 async def settings_set(self, key, value, plugin=None):
     """Set a BAL configuration option (booleans, integers, strings, JSON).
 
+    The delivery date and the fee rate of a wallet are not plugin options:
+    change them with ``bal_delivery_set`` (e.g. ``--fee 20``).
+
     arg:str:key:The configuration key (e.g. ``bal_user_type``).
-    arg:str:value:The new value; JSON for object-typed keys such as ``bal_will_settings``.
+    arg:str:value:The new value; JSON for object-typed keys.
     """
     return await _settings_call_off_loop(plugin, "settings_set", key, value)
 
@@ -161,9 +167,60 @@ async def settings_set(self, key, value, plugin=None):
 async def settings_reset(self, key, plugin=None):
     """Reset a BAL configuration option to its default value.
 
-    arg:str:key:The configuration key (e.g. ``bal_tx_fees``).
+    The delivery date and the fee rate of a wallet are not plugin options:
+    change them with ``bal_delivery_set``.
+
+    arg:str:key:The configuration key (e.g. ``bal_user_type``).
     """
     return await _settings_call_off_loop(plugin, "settings_reset", key)
+
+
+# --------------------------------------------------------------------------- #
+# Delivery settings of the wallet (CHANGELOG #123)
+# --------------------------------------------------------------------------- #
+@plugin_command("nw", plugin_name)
+async def delivery_show(self, wallet=None, plugin=None):
+    """Show the delivery settings of the current wallet.
+
+    Each wallet keeps its own delivery date and fee rate. Returns the date
+    (``date``, UTC, and ``locktime``, its UNIX time), the fee rate
+    (``baltx_fees``), ``settings_version``, where a migrated date came from
+    (``migrated_from``), the old value found then (``legacy_locktime``),
+    the note not yet shown (``note``), whether a "which date?" question is
+    pending (``choice_pending``, with both dates in ``choice``) and the
+    date of the will in force (``will_in_force``).
+    """
+    return await _call_off_loop(plugin, wallet, "delivery_show")
+
+
+@plugin_command("nw", plugin_name)
+async def delivery_set(
+    self,
+    date=None,
+    fee=None,
+    keep=None,
+    confirm_earlier=None,
+    wallet=None,
+    plugin=None,
+):
+    """Change the delivery date or the fee rate of the current wallet.
+
+    The delivery date is fixed: a period such as ``1y`` is refused. A date
+    earlier than the will in force needs ``--confirm_earlier true``. A
+    later date is stored; if the will was already sent, the next
+    ``bal_will_prepare`` asks to invalidate it first (on-chain, miner fee).
+    ``--keep true`` answers the "which date?" question by keeping the date
+    of the prepared will. Returns the settings as ``bal_delivery_show``,
+    with a ``message``.
+
+    arg:str:date:The new delivery date, YYYY-MM-DD (00:00 UTC) or a UNIX timestamp.
+    arg:int:fee:The new fee rate in sat/vByte (1 to 10000).
+    arg:bool:keep:true keeps the date of the prepared will (answers the "which date?" question).
+    arg:bool:confirm_earlier:true confirms a date earlier than the will in force.
+    """
+    return await _call_off_loop(
+        plugin, wallet, "delivery_set", date, fee, keep, confirm_earlier
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -409,6 +466,9 @@ async def will_check(self, wallet=None, plugin=None):
     """Check the local coherence of the will (heirs, executors, fees, locktime).
 
     Returns ``{"valid": true}`` when coherent, or raises a descriptive error.
+    While the delivery settings are on hold nothing is checked: the answer
+    is ``{"valid": false}`` with ``result`` ``delivery_choice_pending`` or
+    ``delivery_settings_unavailable`` and a ``message`` saying what to do.
     """
     return await _call_off_loop(plugin, wallet, "will_check")
 
@@ -419,7 +479,9 @@ async def will_prepare(self, wallet=None, plugin=None):
 
     Returns a JSON object with ``result`` (``coherent``, ``rebuilt``,
     ``expired``, ``postponed``) and, when needed, the invalidation
-    transaction to sign and broadcast.
+    transaction to sign and broadcast. While the delivery settings are on
+    hold nothing is done: ``result`` is ``delivery_choice_pending`` or
+    ``delivery_settings_unavailable``, with a ``message``.
     """
     return await _call_off_loop(plugin, wallet, "prepare_will")
 
@@ -439,7 +501,9 @@ async def will_autorebuild(self, wallet=None, plugin=None):
     Returns a JSON object with ``result``: ``valid``, ``no_heirs``,
     ``check_alive_passed``, ``invalidated`` (with ``invalidation_tx``),
     ``nothing``, ``needs_signing``, ``rebuilt``, ``rebuilt_not_sent``,
-    ``signed``, ``sent`` or ``not_sent``.
+    ``signed``, ``sent`` or ``not_sent``; or, while the delivery settings
+    are on hold (nothing done), ``delivery_choice_pending`` or
+    ``delivery_settings_unavailable`` with a ``message``.
     """
     return await _call_off_loop(plugin, wallet, "auto_rebuild")
 
@@ -449,6 +513,7 @@ async def will_sign(self, txid=None, password=None, wallet=None, plugin=None):
     """Sign the valid, not-yet-complete will transactions (or just one).
 
     Updates the COMPLETE status and the signature counters and persists.
+    Refused while the delivery settings are on hold (see ``bal_delivery_show``).
 
     arg:str:txid:Optional transaction id to sign; signs all valid ones when omitted.
     """
@@ -465,7 +530,8 @@ async def will_broadcast(
 
     Updates the PUSHED/PUSH_FAIL statuses and persists.  Returns ``{url: status}``;
     ``_failed`` maps each failed will-executor to the reason.  Ends with an
-    error (exit code 1) when no will-executor received the will.
+    error (exit code 1) when no will-executor received the will. Refused
+    while the delivery settings are on hold (see ``bal_delivery_show``).
 
     arg:str:txid:Optional transaction id to broadcast; all valid+signed ones when omitted.
     arg:bool:force:Force re-pushing transactions already marked as PUSHED.
@@ -497,7 +563,8 @@ async def will_invalidate(self, wallet=None, plugin=None):
     """Build the on-chain invalidation transaction for the current will.
 
     Returns ``{txid, tx}`` (or nulls when there is nothing to invalidate); the
-    transaction still needs to be signed and broadcast.
+    transaction still needs to be signed and broadcast. Refused while the
+    delivery settings are on hold (see ``bal_delivery_show``).
     """
     return await _call_off_loop(plugin, wallet, "invalidate_will_command")
 

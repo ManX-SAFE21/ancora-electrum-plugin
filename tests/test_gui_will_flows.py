@@ -43,6 +43,7 @@ from bal.core.plugin_base import BalPlugin  # noqa: E402
 from bal.core.util import Util  # noqa: E402
 from bal.core.will import Will  # noqa: E402
 from bal.core.willexecutors import Willexecutors  # noqa: E402
+from bal.engine import context  # noqa: E402
 from bal.gui.qt.window import BalWindow  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -77,11 +78,19 @@ def make_funding_input():
 
 
 class FakeDB:
+    """The wallet file in memory: plain keys and live dicts."""
+
     def __init__(self):
         self._data = {}
 
     def get(self, key, default=None):
         return self._data.get(key, default)
+
+    def get_dict(self, key):
+        """The live dict stored under ``key``: the same object at every
+        call, as Electrum's ``StoredDict`` (an empty one the first time).
+        The wallet's own delivery settings live there (CHANGELOG #123)."""
+        return self._data.setdefault(key, {})
 
     def put(self, key, value):
         self._data[key] = value
@@ -207,7 +216,14 @@ class FakeWindow:
 
 
 def make_controller(utxos=None):
-    """Build a fully-wired BalWindow without constructing the Qt tabs."""
+    """Build a fully-wired BalWindow without constructing the Qt tabs.
+
+    The delivery settings are the wallet's own (CHANGELOG #123), loaded as
+    ``BalWindow.__init__`` loads them: the heirs first, then
+    ``context.load_will_settings``. A new wallet gets the default (today +
+    12 months, fee 20). Before #123 they were ``WILL_SETTINGS.get()``, the
+    plugin's mutable default object.
+    """
     utxos = [make_funding_input()] if utxos is None else utxos
     config = FakeConfig()
     wallet = FakeWallet(utxos)
@@ -228,9 +244,8 @@ def make_controller(utxos=None):
     ctl.will = {}
     ctl.willitems = {}
     ctl.willexecutors = {}
-    ctl.will_settings = plugin.WILL_SETTINGS.get()
-    Util.fix_will_settings_tx_fees(ctl.will_settings)
     ctl.heirs = Heirs(wallet)
+    assert context.load_will_settings(ctl)
     ctl.heirs["alice"] = [ADDRESS, "100000", "1y"]
     ctl.heirs["bob"] = [ADDRESS, "100%", "1y"]
     ctl.no_willexecutor = True
@@ -260,6 +275,9 @@ def _single(controller):
 # --------------------------------------------------------------------------- #
 
 def test_prepare_will_builds_and_persists():
+    """Prepare builds one unsigned will item at the wallet's own delivery
+    date and fee rate (#123), labels it and tells the owner to sign;
+    nothing is pushed or saved to the history."""
     with _no_willexecutors():
         ctl = make_controller()
         will = ctl.prepare_will()
@@ -274,6 +292,13 @@ def test_prepare_will_builds_and_persists():
     ), "raw tx id expected (64-char hex, not a label/short id)"
     assert not item.tx.is_complete(), "unsigned will must not be complete"
     assert isinstance(item.tx.locktime, int) and item.tx.locktime > 0
+    # CHANGELOG #123: built at the wallet's own delivery date; Electrum's
+    # global bal_will_settings is never written.
+    settings = ctl.wallet.db.get_dict("will_settings")
+    assert ctl.will_settings is settings
+    assert item.tx.locktime == settings["locktime"]
+    assert item.tx_fees == settings["baltx_fees"] == 20
+    assert ctl.bal_plugin.config.get("bal_will_settings") is None
 
     # Will item metadata mirrors the funded heir.
     heirs = item.heirs
