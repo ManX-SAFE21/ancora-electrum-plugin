@@ -407,7 +407,11 @@ def test_box_goes_between_toolbar_and_list():
         tab = BalWindow.create_will_tab(fake)
     layout = tab.layout()
     assert layout.indexOf(fake.will_summary_widget) == 1
-    assert layout.indexOf(lst) == 2
+    # CHANGELOG #131: the "List | Future" selector between the box and the
+    # list, the Future view (in its scroll area) right after the list.
+    assert layout.indexOf(fake.will_view_switch) == 2
+    assert layout.indexOf(lst) == 3
+    assert layout.indexOf(fake.future_area) == 4
     fake.update_will_summary.assert_called_once()
 
 

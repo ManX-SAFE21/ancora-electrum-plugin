@@ -489,8 +489,9 @@ that option is on). The WILL tab lists the will by versions:
   (*Delivery 30/03/2027 00:00* in bold, local time; below it the heirs,
   the miner fee and how many will‑executors received and verified it, or
   *not sent*) and **Status** (its state, in colour);
-- under it, when it is open (click the arrow), a grey row with the names of
-  the transaction columns, then one row per transaction.
+- under it, when it is open (double click or the arrow; every version
+  starts closed), a grey row with the names of the transaction columns,
+  then one row per transaction.
 
 Order: the **Draft** (if any) on top, without a number; the version **In
 force**; then the older versions, newest first (in the order they were
@@ -542,6 +543,44 @@ The plugin settings no longer have **Hide Replaced** and **Hide
 Invalidated**: the list shows the last versions, and **Show all history**
 the rest.
 
+### WILL tab: the Future view
+
+Above the list, two buttons **List | Future** choose what the WILL tab
+shows. **List** is the will by versions described above. **Future** draws
+the will on a timeline: what happens if you do nothing more.
+
+- On top, a ruler of the **years** (1 January of each year; every 2, 5 or
+  10 years when the time is long), on the same scale as the dates below.
+  Every date of the view is the **UTC** day and time ("27/08/2027 22:00
+  UTC"), the same day as the summary box above.
+- **Today** on the left (blue dot), the **delivery to the heirs** on the
+  right, with its date and time and the time left ("in 4
+  months and 17 days"), in the colour of the time left: green, yellow (less
+  than 12 months), red (less than 6 months or passed). In ADVANCED mode the
+  two thresholds are those of the plugin settings.
+- The **Check Alive** as a flag at its date, when the will has one (not in
+  BASIC mode with a fixed date). For a renewable period, the period is
+  written under it.
+- The **will‑executors** as small squares: green = received and verified,
+  grey = not yet (to sign, to send, to be verified), red = did not receive
+  it. Many will‑executors wrap on several rows. Hover a square to see its
+  address and state. A count line, a colour legend and one line explain
+  them.
+- The sentence: *If the will is no longer checked or renewed, on <date>
+  the bitcoin will go to: alice 60%, bob 40%*. The shares are the REAL ones,
+  read from the will's transaction (the shares entered in the Heirs tab can
+  sum to more or less than 100 %: the will always spends the whole wallet).
+  Hover the sentence to see the amounts.
+
+The view always describes the will **in force** (the one the
+will‑executors would execute). With only a draft (not signed or sent) it
+says that no will is in force yet; with a draft newer than the will in
+force it says that the will sent before stays in force until the draft is
+signed and sent. The last choice (List or Future) is remembered.
+
+**Tools → Display** (the Will‑Details window) stays, with the technical
+details; a note at its top points to the Future view.
+
 ---
 
 ## Colour progression of transaction statuses
@@ -587,7 +626,8 @@ nothing to sign, nothing to send.
    wallet password or hardware key).
 3. **Broadcast** — sends the inheritance transaction to the online Will‑Executor
    servers on your *Will‑Executor Service List*.
-4. **Display** — brings up the *Will‑Details* window, where you can see the
+4. **Display** — brings up the *Will‑Details* window (technical details; the
+   graphic view is **Future** in the WILL tab), where you can see the
    transactions with all available data:
    - Locktime (date of inheritance)
    - Creation time

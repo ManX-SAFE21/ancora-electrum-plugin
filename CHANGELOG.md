@@ -7686,3 +7686,125 @@ BASIC toolbar without date and fee, the big calendar button and the Tools
 entry; after the first ZIP he asked to keep the two big buttons on the
 left and the calendar on the right, and noticed the green "In force" rows
 of the older version #15 (fixed here); the second ZIP: ok.
+
+## 131. The Will tab shows the will's future on a timeline
+
+**Date:** 2026-10-12
+
+**Problem (the owner, after #129):** the Will tab lists the will by
+versions, a precise history, but it does not say in one look what happens
+if the owner does nothing more: when the heirs receive the bitcoin, how
+much time is left, whether the will-executors hold the will and who gets
+what. Tools -> Display (the Will Details window) shows technical details
+only.
+
+**What changed:**
+
+- `bal/core/future.py` (new, no Qt): `build_future` builds the data of
+  the view from the will items, the wallet's delivery settings and the
+  clock. It describes THE will in force (`will_versions.build_history`,
+  the in-force version with the earliest delivery, #128/#129), not the
+  VALID items; the heirs with their REAL shares, read from the outputs of
+  the will's transaction (the shares entered can sum to more or less than
+  100 %: 60 % + 50 % gives 54.55 % / 45.45 %); the delivery date, the time
+  left ("4 months and 17 days") and its #124 colour; the Check Alive (none
+  in BASIC with a fixed date); the renewal period of the period form
+  (#127); each will-executor and where it stands. A list of instalments,
+  so multiverse (hidden option) does not break it: every instalment on
+  the time line, and as lines under the sentence. Display only: nothing is
+  written.
+- `bal/gui/qt/future_view.py` (new): the selector "List | Future" (IT
+  "Elenco" / "Futuro", ES "Lista" / "Futuro") under the will summary; the
+  last choice is remembered in Electrum's config (`bal_will_view`,
+  plugin-wide like the other view settings, never in a wallet). The Future
+  view draws a ruler of the years on top (1 January of each year at its
+  true place; a label every 1, 2, 5 or 10 years so labels never overlap,
+  owner's idea after the first preview), today, the Check Alive flag, the
+  delivery in its colour, the later instalments on the same scale, the
+  will-executors as small squares (green received and verified, grey not
+  yet, red not received; they wrap on several rows, tested with 30), a
+  count line, a colour legend, one line that says what a will-executor is
+  (IT "I will-executor conservano una copia del tuo testamento e la
+  trasmettono alla data di consegna.") and the sentence "If the will is no
+  longer checked or renewed, on {} the bitcoin will go to: {}" (IT "Se il
+  testamento non viene più controllato né rinnovato, il {} i bitcoin
+  andranno a: {}", ES "Si el testamento ya no se comprueba ni se renueva,
+  el {} los bitcoin irán a: {}"). Tooltips: each square its URL and state,
+  the sentence the amounts. Every date is the UTC day and time
+  ("27/08/2027 22:00 UTC", owner's choice after the first preview: the
+  local time read one day after the summary box for a delivery at 22:00
+  UTC). Only a draft: "No will in force" with "Will
+  prepared: it must be signed and sent"; a draft over the will in force:
+  the summary's "Until you sign and send it, the will sent before stays in
+  force"; no will: "No will in force". The drawing (`paint_future`) takes
+  a plain scene and any `QPainter`, so the PDF report (#132) can reuse it.
+  It follows the refreshes of the summary and is recomputed only while
+  shown; an error is logged and only today is drawn.
+- `bal/gui/qt/window.py`: `create_will_tab` adds the selector and the view;
+  `update_will_summary` refreshes the view. `bal/core/plugin_base.py`:
+  `WILL_VIEW`.
+- `bal/gui/qt/dialogs.py` `WillDetailDialog` (Tools -> Display) stays,
+  with a note at the top for the live will only: "Will plan view
+  (technical details). The new graphic view is 'Future' in the Will tab."
+  (IT "Vista del piano ereditario (dettagli tecnici). La nuova vista
+  grafica è 'Futuro' nella scheda Testamento."); not for an imported will
+  (shown after a Merge).
+- Catalogs: 5 new msgids (EN/IT/ES); every other text reuses existing
+  msgids (summary, report, #127/#128/#129).
+- Manual (`docs/manual/README.md`, `manual.html`): "WILL tab: the Future
+  view"; `make-release.sh`: the two new test files.
+- The Will tab list (#129): every version now starts closed, the draft
+  and the version in force too (owner: the transaction rows with txids
+  and addresses only when the user opens a version, by double click or
+  the arrow; too much data at first sight frightens a user). What the
+  user opens stays open while the window lives.
+- "Build / Edit Your Will", the main entry point of the Will tab, gets a
+  2 px blue frame so it stands out (owner: option C of the mockup, then
+  only on that button, not on "Check your will";
+  `lists.FRAMED_BUTTON_STYLE`, with its own padding, rounded corners and
+  hover / pressed backgrounds from the palette).
+
+**Tests:** `tests/test_core_future.py` (flowkit, three fake
+will-executors with their own fee addresses, test password, fixed clock):
+will in force (dates, time left, red, 3 of 3 verified), real shares equal
+to the transaction outputs, entered shares over 100 %, BASIC fixed date
+(no Check Alive), ADVANCED (Check Alive), period form (24 months), only a
+draft, a draft over the will in force, no will, a will-executor that did
+not receive it, multiverse (two instalments), nothing written, the
+time-left texts. `tests/test_gui_future_view.py`: the selector switches
+and is remembered (config, not wallet), an unknown value reads as the
+list, the view paints (pixmap) and its texts, the Check Alive and the
+square tooltips, period / draft / no will, an error in the data, busy, 30
+will-executors (rows inside the width, nothing over the sentence, count and
+legend), the Display note for the live will only; after the owner's
+preview: UTC dates (a 22:00 UTC delivery reads its UTC day, also after
+2038), the year ticks at their true places with no overlapping labels
+(2026 -> 2028, 2026 -> 2045 at four widths), the label rows, 9
+will-executors x 4 instalments.
+`tests/test_will_summary.py`: the Will tab layout with the selector.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed; the whole
+`tests/` directory once in the normal order (owner rule for a step that
+changes only the look): 1918 passed, 0 failed, 0 errors; golden files
+unchanged; catalogs checked against HEAD and a fresh extraction (only the
+5 new entries, translated, no fuzzy), `test_translations` / `test_i18n`
+pass; no scenario harness (no logic that builds, signs, sends or dates).
+After the owner's preview (UTC dates, year ruler; owner rule for small
+fixes): the affected tests only (`test_core_future`,
+`test_gui_future_view`, `test_will_summary`: 65 passed), ruff clean, the
+catalogs checked again (unchanged texts, locations refreshed: OK).
+Then the blue frame and the closed versions (affected tests: 81 passed).
+Before the commit the whole `tests/` directory once in the normal order:
+1926 passed, 0 failed, 0 errors; ruff clean; golden files unchanged;
+`test_translations` / `test_i18n` pass; the ZIP equals the one the owner
+tested. Offscreen previews in Italian: will in force (ADVANCED with Check Alive),
+BASIC fixed date, the Will tab with the selector, 30 will-executors, 9
+will-executors x 4 instalments.
+
+**Outcome:** DONE. The owner tested the ZIPs on his wallet (2026-10-13)
+and asked, after a simulation with 9 will-executors and 4 instalments,
+for the year ruler and the UTC dates (option A, the same day as the
+summary box); then the blue frame on "Build / Edit Your Will" only, and
+every version of the list closed at first. Last ZIP: ok. The full
+multiverse timeline (every instalment with its shares and will-executors)
+is left for when the multiverse is enabled again.

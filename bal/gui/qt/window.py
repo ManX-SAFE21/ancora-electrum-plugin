@@ -101,6 +101,7 @@ from .dialogs import (
     decode_will_payload,
 )
 from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
+from .future_view import FutureView, WillViewSwitch, make_future_area
 from .lists import HeirListWidget, PreviewList
 from .widgets import LockTimeWidget, PercAmountEdit, WillSummaryWidget
 
@@ -625,6 +626,18 @@ class BalWindow:
         layout = tab.layout()
         index = layout.indexOf(self.will_list_widget)
         layout.insertWidget(max(index, 0), self.will_summary_widget)
+        # CHANGELOG #131: under the summary, the "List | Future" selector;
+        # the Future view (in a scroll area) takes the list's place when
+        # chosen. The selector restores the last choice.
+        self.future_view = FutureView(self)
+        self.future_area = make_future_area(self.future_view)
+        index = layout.indexOf(self.will_list_widget)
+        layout.insertWidget(index + 1, self.future_area, 1)
+        self.will_view_switch = WillViewSwitch(
+            self.bal_plugin.WILL_VIEW, self.will_list_widget,
+            self.future_area, self.future_view,
+        )
+        layout.insertWidget(index, self.will_view_switch)
         self.update_will_summary()
         return tab
 
@@ -633,8 +646,17 @@ class BalWindow:
 
         Called whenever the transaction list or the heirs list is redrawn
         and when the delivery / Check Alive settings change, so the box
-        always matches what the list shows. Read-only; never raises.
+        always matches what the list shows. Since #131 it also refreshes
+        the Future view of the Will tab. Read-only; never raises.
         """
+        # CHANGELOG #131: the Future view follows the same refreshes (it
+        # recomputes only while it is shown).
+        future = getattr(self, "future_view", None)
+        if future is not None:
+            try:
+                future.refresh()
+            except Exception as e:
+                _logger.warning(f"future view refresh failed: {e!r}")
         widget = getattr(self, "will_summary_widget", None)
         if widget is None:
             return

@@ -617,6 +617,24 @@ def _executor_fee(item):
         return None
 
 
+#: The look of the two main commands of the Will tab: bold text.
+BIG_BUTTON_STYLE = "QPushButton{font-weight:bold;}"
+
+#: "Build / Edit Your Will" only (CHANGELOG #131, owner: option C of the
+#: mockup, then "only on the first button"): bold text and a 2 px blue
+#: frame so the main entry point stands out. Setting a border drops Qt's
+#: native button look, so the padding, the rounded corners and the hover /
+#: pressed backgrounds are given here too (palette colours: they follow
+#: the theme).
+FRAMED_BUTTON_STYLE = (
+    "QPushButton{font-weight:bold; border:2px solid #2F6FD6;"
+    " border-radius:6px; padding:4px 12px;"
+    " background-color:palette(button);}"
+    "QPushButton:hover{background-color:palette(light);}"
+    "QPushButton:pressed{background-color:palette(midlight);}"
+)
+
+
 class PreviewList(MyTreeView, MessageBoxMixin):
     """The Will tab list: the will by versions (CHANGELOG #129).
 
@@ -1211,10 +1229,15 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         return out
 
     def _default_expanded(self, version):
-        """The draft and the version in force are open; the history closed."""
-        return version.state in (
-            will_versions.VERSION_DRAFT, will_versions.VERSION_IN_FORCE
-        )
+        """Every version starts closed (CHANGELOG #131, owner).
+
+        #129 opened the draft and the version in force; the owner then
+        asked that the transaction rows (txids, addresses) appear only when
+        the user opens a version (double click or the arrow): too much data
+        at first sight frightens a user. What the user opens stays open
+        while the window lives (``self._expanded``).
+        """
+        return False
 
     def _restore_expanded(self):
         """Open or close each row as the owner left it, else the default."""
@@ -1462,6 +1485,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         wizard = self._big_button(
             _("Build / Edit Your Will"), "icons/wizard.png",
             _("Wizard - Build your will"), self.bal_window.init_wizard,
+            framed=True,
         )
         # display = QPushButton(_("Display"))
         # display.clicked.connect(self.bal_window.preview_modal_dialog)
@@ -1511,11 +1535,12 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         self.toolbar = toolbar
         return toolbar
 
-    def _big_button(self, text, icon_path, tooltip, slot):
+    def _big_button(self, text, icon_path, tooltip, slot, framed=False):
         """A main toolbar command: bold name next to a larger icon.
 
         Used for the Wizard and the Check (CHANGELOG #95), so the two main
-        commands always look the same.
+        commands look the same; ``framed`` adds the blue frame of
+        :data:`FRAMED_BUTTON_STYLE` (#131: the Wizard only).
         """
         button = QPushButton("  {}".format(text))
         button.setIcon(
@@ -1523,7 +1548,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         )
         button.setIconSize(QSize(28, 28))
         button.setMinimumHeight(40)
-        button.setStyleSheet("QPushButton{font-weight:bold;}")
+        button.setStyleSheet(FRAMED_BUTTON_STYLE if framed else BIG_BUTTON_STYLE)
         button.setToolTip(tooltip)
         button.clicked.connect(slot)
         return button
