@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from ..i18n import _
 from . import delivery as _delivery
-from .checkalive import check_alive_renewal, resolve_date_to_check
+from .checkalive import check_alive_basic, check_alive_renewal, resolve_date_to_check
 from .messages import _day, check_alive_cannot_renew
 from .will import Will
 
@@ -245,7 +245,8 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         willitems: ``{txid: WillItem}`` (the plugin's ``willitems``).
         heirs_count: number of heirs defined in the wallet.
         will_settings: the will settings (``"locktime"``, ``"threshold"``).
-        is_basic_mode: ``True`` in BASIC mode (no Check Alive line).
+        is_basic_mode: ``True`` in BASIC mode (no Check Alive line, except
+            for a will in the period form, #127).
         now: overridable clock for tests.
         still_active: the sent txs still executable on-chain, as returned by
             ``Will.find_still_active_older_txs`` (``(item, locktime, url)``).
@@ -321,7 +322,10 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
 
     renewal = None
     check_row = None
-    if not is_basic_mode and will_settings.get("threshold") is not None:
+    # BASIC hides the Check Alive of a fixed date only: a period-form will
+    # keeps its renewal in BASIC (#127, owner decision 5).
+    if (not check_alive_basic(is_basic_mode, will_settings)
+            and will_settings.get("threshold") is not None):
         renewal = check_alive_renewal(
             False, will_settings, built_locktime=delivery,
             creation_date=creation, now=now,

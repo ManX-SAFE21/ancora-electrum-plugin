@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from electrum.util import MyEncoder
+from PyQt6.QtCore import QEvent
 
 from ...core.animated_qr import (
     AnimatedQrError,
@@ -48,6 +49,7 @@ from ...core.animated_qr import (
 )
 from ...core.build_report import BuildReport, heir_shares
 from ...core.checkalive import (
+    check_alive_basic,
     resolve_date_to_check,
     resolve_relative_check_alive_date,
     will_executable_now,
@@ -237,12 +239,45 @@ class BalWizardDialog(BalDialog):
         self.layout.addWidget(self.widget)
 
     def next_widget(self, widget):
+        """Show wizard page ``widget`` in place of the current one.
+
+        CHANGELOG #127: the dialog keeps its size when the page changes, so
+        a taller page (the settings page with the mode selector) was squeezed
+        under its minimum: the rows overlapped and the "BASIC" box was
+        unreadable until the owner moved the window. The layout is now
+        activated at once and the dialog grows to the new page's size hint
+        (it never shrinks). The page is shown first: a widget added to a
+        visible dialog is shown only later by Qt, and a hidden one does not
+        count in the size hint.
+        """
         self.layout.removeWidget(self.widget)
         self.widget.close()
         self.widget = widget
         self.layout.addWidget(self.widget)
-        # self.update()
-        # self.repaint()
+        self.widget.show()
+        self.layout.activate()
+        self._grow_to_fit()
+
+    def _grow_to_fit(self):
+        """Grow the dialog to its size hint, never shrink it (#127).
+
+        The minimum size alone gives every row only its minimum height
+        (the "BASIC" box 19 pixels instead of 22); the size hint gives
+        each row its normal height.
+        """
+        self.resize(self.size().expandedTo(self.sizeHint()))
+
+    def event(self, event):
+        """After every new layout of the page, grow to fit it (#127).
+
+        Qt sends ``LayoutRequest`` to the dialog whenever a widget of its
+        page is shown, hidden or resized, e.g. the rows that ADVANCED adds
+        when it is chosen in the page's own mode selector.
+        """
+        result = super().event(event)
+        if event.type() == QEvent.Type.LayoutRequest:
+            self._grow_to_fit()
+        return result
 
     def on_next_heir(self):
         self.next_widget(
@@ -896,7 +931,11 @@ class BalBuildWillDialog(BalDialog):
             # Electrum's classic transaction window (which sets the label). This
             # makes the CHECK button and the WIZARD behave identically and fixes
             # the missing-label bug (#03).
-            if not self.bal_window.bal_plugin.is_basic_mode() and not will_executable_now(
+            # #127: a period-form will keeps its Check Alive in BASIC too.
+            if not check_alive_basic(
+                self.bal_window.bal_plugin.is_basic_mode(),
+                self.bal_window.will_settings,
+            ) and not will_executable_now(
                 Will.get_min_locktime(self.bal_window.willitems)
             ):
                 # CHANGELOG #80: the will cannot be executed yet; it is only

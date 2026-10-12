@@ -877,6 +877,11 @@ class Session:
     * a period as ``locktime`` (``"60d"``): it can only be an old shared
       value, so it becomes ``legacy_global`` (fee, period, Check Alive).
 
+    ``period_months`` (CHANGELOG #127): the wallet is seeded in the period
+    form of N calendar months, as the wizard leaves it before the first
+    will (``period_start`` today, ``locktime`` today + N months; the
+    ``locktime`` argument is not used then).
+
     On that path the heirs are in the wallet before the window opens (a
     wallet used before the update), so the old values may be migrated.
     The global is never written by the plugin: :class:`Recorder` checks it
@@ -885,7 +890,7 @@ class Session:
 
     def __init__(self, monkeypatch, mode="basic", fee=13, locktime=D0,
                  threshold="-180d", password=None, legacy_global=None,
-                 legacy_wallet=None):
+                 legacy_wallet=None, period_months=None):
         """Build the world, the wallet and its window (see the class)."""
         constants.net = constants.BitcoinTestnet
         ensure_event_loop()
@@ -922,12 +927,13 @@ class Session:
         self.plugin.password_dialog = self.user.password_dialog
         legacy = legacy_global is not None or legacy_wallet is not None
         self._open_window(locktime, fee, threshold, seed=not legacy,
-                          legacy_wallet=legacy_wallet, plugin_data=True)
+                          legacy_wallet=legacy_wallet, plugin_data=True,
+                          period_months=period_months)
         self.recorder = Recorder(self)
         self.last = None
 
     def _open_window(self, locktime, fee, threshold, seed, legacy_wallet,
-                     plugin_data):
+                     plugin_data, period_months=None):
         """Seed the wallet's delivery settings and open its window.
 
         ``seed``: the wallet dict gets ``settings_version`` 1 with
@@ -936,8 +942,12 @@ class Session:
         found and the window migrates. ``plugin_data`` (only without
         ``seed``): the heirs are written before the window opens, so the
         wallet counts as one used before the update; without it they come
-        after (a wallet created after the update).
+        after (a wallet created after the update). ``period_months`` (only
+        with ``seed``): the period form of #127, see :class:`Session`.
         """
+        if seed and period_months is not None:
+            dates = delivery.period_values(self.clock.now, period_months)
+            locktime = dates["locktime"]
         heirs = {
             "alice": [HEIR_ADDR["alice"], "60%", locktime],
             "bob": [HEIR_ADDR["bob"], "40%", locktime],
@@ -947,6 +957,10 @@ class Session:
             values = {"settings_version": delivery.SCHEMA_VERSION,
                       "locktime": locktime, "baltx_fees": fee,
                       "threshold": threshold}
+            if period_months is not None:
+                values.update(form=delivery.FORM_PERIOD,
+                              period_months=period_months,
+                              period_start=dates["period_start"])
         else:
             values = dict(legacy_wallet or {})
         for key, value in values.items():
@@ -991,13 +1005,13 @@ class Session:
 
     def second_wallet(self, locktime=D0, fee=13, threshold="-180d",
                       password=None, seed=True, plugin_data=True,
-                      legacy_wallet=None):
+                      legacy_wallet=None, period_months=None):
         """Another wallet in the same Electrum: same config (so the same
         global), plugin, clock and will-executors; its own key, coin, heirs,
         owner and window. Returns its :class:`Session`.
 
-        ``seed`` / ``legacy_wallet`` / ``plugin_data``: see
-        :meth:`_open_window`. ``seed=False, plugin_data=False`` is a wallet
+        ``seed`` / ``legacy_wallet`` / ``plugin_data`` / ``period_months``:
+        see :meth:`_open_window`. ``seed=False, plugin_data=False`` is a wallet
         created after the update: it gets the default date, never the old
         shared value. Call :meth:`activate` before acting on a wallet when
         both have a password.
@@ -1020,7 +1034,8 @@ class Session:
         other.user = User(password)
         other.activate()
         other._open_window(locktime, fee, threshold, seed=seed,
-                           legacy_wallet=legacy_wallet, plugin_data=plugin_data)
+                           legacy_wallet=legacy_wallet, plugin_data=plugin_data,
+                           period_months=period_months)
         other.recorder = Recorder(other)
         other.last = None
         return other
@@ -1343,6 +1358,9 @@ class Recorder:
         First rule I1 of CHANGELOG #123: Electrum's global
         ``bal_will_settings`` must be byte-identical to the reference
         (:meth:`Session.assert_global_unchanged`), else the step fails.
+        The delivery form (CHANGELOG #127) is recorded only for the period
+        form (``form``, ``period_months``), so the golden files of a fixed
+        date do not change.
         """
         s = self.session
         s.assert_global_unchanged()
@@ -1364,16 +1382,26 @@ class Recorder:
             # Electrum's History label of every stored will transaction.
             "labels": {self.name(wid): s.wallet.get_label_for_txid(wid) or ""
                        for wid in stored},
-            "settings": {
-                "locktime": fmt(ws.get("locktime")) if isinstance(ws.get("locktime"), int)
-                else ws.get("locktime"),
-                "threshold": ws.get("threshold"),
-                "baltx_fees": ws.get("baltx_fees"),
-            },
+            "settings": self.settings(ws),
             # The heirs as stored in the wallet (the command line may delete
             # some when it loads them).
             "heirs": {k: list(v[:2]) for k, v in s.wallet.db.get("heirs", {}).items()},
         }
+
+    @staticmethod
+    def settings(ws):
+        """The delivery settings of a record: date, Check Alive, fee, and
+        for the period form (#127) ``form`` and ``period_months``."""
+        out = {
+            "locktime": fmt(ws.get("locktime")) if isinstance(ws.get("locktime"), int)
+            else ws.get("locktime"),
+            "threshold": ws.get("threshold"),
+            "baltx_fees": ws.get("baltx_fees"),
+        }
+        if delivery.is_period(ws):
+            out["form"] = ws.get("form")
+            out["period_months"] = ws.get("period_months")
+        return out
 
     def record(self, dlg, pushed_before):
         """Add one Check to the scenario's steps."""

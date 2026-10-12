@@ -24,6 +24,7 @@ from ...core import delivery
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
+    check_alive_basic,
     resolve_date_to_check,
     resolve_guard_threshold,
 )
@@ -405,22 +406,41 @@ class BalWindow:
 
         GUI thread only: :meth:`update_setting_widgets` calls it there, and
         through ``_SettingsRelay`` after a write made on a worker thread.
-        Never raises.
+        Then each toolbar shows the delivery form (#127: the period text or
+        the date, ``WillSettingsWidget.apply_delivery_form``). Never raises.
         """
         settings = self.will_settings or {}
+        lists = (
+            getattr(self, "heir_list_widget", None),
+            getattr(self, "will_list_widget", None),
+        )
         for field in _SETTING_FIELDS:
             if field not in settings:
                 continue
-            for widget in (
-                getattr(self, "heir_list_widget", None),
-                getattr(self, "will_list_widget", None),
-            ):
+            for widget in lists:
                 if widget is not None:
                     self.update_widget_value(widget, field, settings[field])
+        self._show_delivery_form()
         try:
             self.update_will_summary()
         except Exception as e:
             _logger.debug(f"will summary refresh failed: {e!r}")
+
+    def _show_delivery_form(self):
+        """Both toolbars show the stored delivery form (#127): the period
+        text "N months (...) -> DD/MM/YYYY" or the date editor
+        (``WillSettingsWidget.apply_delivery_form``). GUI thread only;
+        never raises."""
+        for widget in (
+            getattr(self, "heir_list_widget", None),
+            getattr(self, "will_list_widget", None),
+        ):
+            toolbar = getattr(widget, "will_settings_widget", None)
+            if toolbar is not None:
+                try:
+                    toolbar.apply_delivery_form()
+                except Exception as e:
+                    _logger.debug(f"delivery form refresh failed: {e!r}")
 
     def _request_fields_refresh(self):
         """Refresh the setting fields now on the GUI thread, else later there.
@@ -1039,8 +1059,9 @@ class BalWindow:
         On a worker thread (the Check's phase 1, the automatic rebuild) only
         the setting is written; the fields are refreshed on the GUI thread
         through a queued signal (rule I5). On the GUI thread the fields are
-        updated first and the value stored after, as before #123. Returns the
-        value stored, or None when nothing was stored.
+        updated first and the value stored after, as before #123, then the
+        toolbars show the delivery form again (#127). Returns the value
+        stored, or None when nothing was stored.
         """
         if _on_gui_thread():
             if update_all or update_heirs_dialog:
@@ -1055,6 +1076,10 @@ class BalWindow:
             return None
         if not _on_gui_thread():
             self._request_fields_refresh()
+        else:
+            # #127: a new date (a renewal, the sync to the built will) also
+            # changes the period text of the toolbars.
+            self._show_delivery_form()
         return stored
 
     def init_heirs_to_locktime(self, multiverse=False):
@@ -1132,12 +1157,17 @@ class BalWindow:
     def check_alive_on_open(self):
         """When the wallet opens: offer the renewal if the Check Alive passed.
 
-        Only in ADVANCED mode and with a will in force (the help text of the
-        Check Alive always promised this question; nothing did it before
-        CHANGELOG #79). Never raises: opening the wallet must not fail.
+        Only in ADVANCED mode, or for a will in the period form also in BASIC
+        (#127, ``check_alive_basic``), and with a will in force (the help
+        text of the Check Alive always promised this question; nothing did
+        it before CHANGELOG #79). Never raises: opening the wallet must not
+        fail.
         """
         try:
-            if self.disable_plugin or self.bal_plugin.is_basic_mode():
+            if self.disable_plugin or check_alive_basic(
+                self.bal_plugin.is_basic_mode(),
+                getattr(self, "will_settings", None),
+            ):
                 return
             if not Will.get_min_locktime(self.willitems):
                 return
@@ -2984,6 +3014,8 @@ class BalWindow:
                         _logger.debug(
                             f"apply_user_type_visibility error: {_vis_err}"
                         )
+                    # #127: the period text or the date, as stored.
+                    _settings_widget.apply_delivery_form()
         except Exception as e:
             _logger.error(f"error while updating window: {e}")
 

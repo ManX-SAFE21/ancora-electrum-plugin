@@ -30,6 +30,7 @@ owner a renewal (CHANGELOG #79).
 from datetime import datetime, timezone
 from typing import Any
 
+from . import delivery as _delivery
 from .plugin_base import BalTimestamp
 
 
@@ -78,6 +79,20 @@ class CheckAliveAfterDeliveryError(Exception):
             "Check alive date must be after today and before the delivery "
             f"date: {check_date} >= {delivery_date}"
         )
+
+
+def check_alive_basic(is_basic_mode: bool, will_settings: Any) -> bool:
+    """True when the Check Alive is inert: BASIC mode with a fixed date.
+
+    CHANGELOG #127 (owner decision 5): the period form is chosen only in
+    ADVANCED mode, but a will already in the period form keeps working in
+    BASIC: its Check Alive still asks for the renewal when it is due (the
+    mode only hides the choice). So BASIC turns the Check Alive off only
+    for a fixed date (:func:`bal.core.delivery.form_of`; a dict without
+    ``form`` is a fixed date). Every rule below that takes
+    ``is_basic_mode`` reads it through this function.
+    """
+    return bool(is_basic_mode) and not _delivery.is_period(will_settings)
 
 
 def resolve_delivery_date(
@@ -160,7 +175,9 @@ def resolve_date_to_check(
     ``check_amounts`` and the locktime-vs-threshold guard.
 
     * BASIC mode: the Check Alive is hidden and NOT editable, so it must never
-      govern those checks. ``date_to_check`` is set to *now*.
+      govern those checks. ``date_to_check`` is set to *now*. Except a will
+      in the period form (#127, :func:`check_alive_basic`): its Check Alive
+      keeps renewing it, as in ADVANCED.
     * ADVANCED mode: an ABSOLUTE stored threshold is returned unchanged; a
       RELATIVE one is resolved by :func:`resolve_relative_check_alive_date`
       (negative -> anchored to the delivery, positive -> anchored to the
@@ -179,7 +196,7 @@ def resolve_date_to_check(
     Returns:
         The reference timestamp (float, UNIX seconds).
     """
-    if is_basic_mode:
+    if check_alive_basic(is_basic_mode, will_settings):
         return (now if now is not None else datetime.now(tz=timezone.utc).timestamp())
 
     threshold = BalTimestamp(will_settings["threshold"])
@@ -219,7 +236,8 @@ def resolve_guard_threshold(
 
     * BASIC mode: no threshold exists.  Returns ``None`` and the caller falls
       back to comparing the locktime against ``date_to_check`` (= now), so its
-      behaviour is unchanged.
+      behaviour is unchanged. A period-form will (#127) is read as in
+      ADVANCED (:func:`check_alive_basic`).
     * ADVANCED mode with an ABSOLUTE threshold: returns the stored threshold
       as-is.
     * ADVANCED mode with a RELATIVE threshold: resolved by
@@ -230,7 +248,7 @@ def resolve_guard_threshold(
     Returns ``None`` when there is no threshold to enforce (BASIC mode or a
     missing stored value).
     """
-    if is_basic_mode:
+    if check_alive_basic(is_basic_mode, will_settings):
         return None
     threshold_raw = will_settings.get("threshold")
     if threshold_raw is None:
@@ -359,32 +377,39 @@ def check_alive_renewal(
     and leaving no will in force.  This helper only decides; it never builds,
     signs or invalidates anything.
 
-    Renewing works because of an existing rule (see
-    :func:`resolve_delivery_date`): with no will in force a RELATIVE delivery
-    (``"4y"``) is counted from *now*.  So once the old will is invalidated,
-    the new one is delivered ``now + 4y``.  A FIXED delivery date cannot be
-    renewed this way: the owner must choose a later date.
+    Since CHANGELOG #127 only the PERIOD form renews (owner decisions 1 and
+    4): the renewed will is delivered N calendar months after today
+    (``new_delivery = add_months(utc_midnight(now), N)``, N =
+    ``period_months``), the date the engine's period policy stores once the
+    old will is invalidated. Its Check Alive is counted back from that new
+    date (``new_check = new_delivery - days``, ``days`` of the ``"-Nd"``
+    value), NOT through :func:`resolve_date_to_check`, which still reads the
+    OLD stored delivery date before the renewal and would always find the
+    new Check Alive in the past (plan section 7, critic 2). A fixed date
+    cannot be renewed this way: the owner must choose a later date.
 
     Args:
-        is_basic_mode: ``True`` in BASIC mode (no Check Alive: returns None).
+        is_basic_mode: ``True`` in BASIC mode (returns None for a fixed
+            date; a period-form will is renewed in BASIC too, see
+            :func:`check_alive_basic`).
         will_settings: the per-wallet settings (``"locktime"``,
-            ``"threshold"``).
+            ``"threshold"``, ``"form"``, ``"period_months"``).
         built_locktime: the earliest locktime of the VALID will items
             (``Will.get_min_locktime``), ``None`` when no will is in force.
         creation_date: ``Will.get_creation_time`` of the will in force.
         now: overridable clock for tests.
 
     Returns:
-        ``None`` when the Check Alive has not passed (or BASIC mode), else a
-        dict with ``check_date`` (the passed Check Alive), ``has_will``,
-        ``renewable``, ``reason`` (``None``, ``"expired"``: the will in force
-        is already past its delivery date, ``"fixed_date"`` or
-        ``"still_past"``: even a renewed will would have its Check Alive in
-        the past), ``delivery`` (= ``built_locktime``), and for a relative
-        delivery ``new_delivery``,
-        ``new_check``, ``period`` (``(value, unit)``, e.g. ``(4, "y")``).
+        ``None`` when the Check Alive has not passed (or BASIC mode with a
+        fixed date), else a dict with ``check_date`` (the passed Check
+        Alive), ``has_will``, ``renewable``, ``reason`` (``None``,
+        ``"expired"``: the will in force is already past its delivery date,
+        ``"fixed_date"`` or ``"still_past"``: even a renewed will would have
+        its Check Alive in the past), ``delivery`` (= ``built_locktime``),
+        and for the period form ``new_delivery``, ``new_check`` and
+        ``period`` (N, in calendar months).
     """
-    if is_basic_mode:
+    if check_alive_basic(is_basic_mode, will_settings):
         return None
     current = now if now is not None else datetime.now(tz=timezone.utc).timestamp()
     try:
@@ -412,20 +437,26 @@ def check_alive_renewal(
         # Check Alive one; the callers route it there (scenario C3adv).
         info["reason"] = "expired"
         return info
-    locktime = BalTimestamp(will_settings.get("locktime"))
-    if locktime.unit is None:
+    months = _delivery.period_months(will_settings)
+    if months is None:
         info["reason"] = "fixed_date"
         return info
-    # The renewed will: no will in force any more, delivery counted from now,
-    # and a positive ("after creation") Check Alive anchored to the new will.
-    new_delivery = locktime.to_timestamp(current)
-    new_check = resolve_date_to_check(
-        False, will_settings, now=current, built_locktime=None,
-        creation_date=current,
-    )
+    # The renewed will: delivered N calendar months after today, its Check
+    # Alive counted back from that NEW date.
+    new_delivery = _delivery.add_months(_delivery.utc_midnight(current), months)
+    threshold_raw = will_settings.get("threshold")
+    days = check_alive_days(threshold_raw)
+    if days is not None:
+        new_check = new_delivery - days * _DAY
+    else:
+        # Not a "-Nd" value (an old form not converted yet): the general
+        # rule, anchored to the new delivery and to today as the creation.
+        new_check = resolve_relative_check_alive_date(
+            threshold_raw, new_delivery, creation_date=current, now=current
+        )
     info["new_delivery"] = new_delivery
     info["new_check"] = new_check
-    info["period"] = (locktime.value, locktime.unit)
+    info["period"] = months
     if not is_check_alive_date_valid(new_check, new_delivery, now=current):
         info["reason"] = "still_past"
         return info

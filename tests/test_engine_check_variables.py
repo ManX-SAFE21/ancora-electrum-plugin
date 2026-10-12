@@ -94,14 +94,25 @@ def _utxo(value):
     return u
 
 
+def _settings_of(locktime):
+    """The stored settings of :func:`_renewal`: ``"period"`` is the period
+    form of 7 calendar months (CHANGELOG #127: only the period form renews;
+    before it was the relative "200d"), any other value a fixed date."""
+    if locktime == "period":
+        now = 1_800_000_000 - 1_800_000_000 % DAY
+        return {"locktime": now + 20 * DAY, "threshold": "-180d",
+                "form": "period", "period_months": 7}
+    return {"locktime": locktime, "threshold": "-180d"}
+
+
 def _renewal(locktime):
     """A passed Check Alive as ``check_alive_renewal`` describes it: a will
     in force delivered in 20 days, its Check Alive 180 days before.
-    ``locktime`` "200d" can be renewed; the fixed date of the will in force
-    cannot."""
+    ``locktime`` "period" (the period form, :func:`_settings_of`) can be
+    renewed; the fixed date of the will in force cannot."""
     now = 1_800_000_000 - 1_800_000_000 % DAY
     return check_alive_renewal(
-        False, {"locktime": locktime, "threshold": "-180d"},
+        False, _settings_of(locktime),
         built_locktime=now + 20 * DAY, creation_date=now - 300 * DAY, now=now,
     )
 
@@ -315,7 +326,7 @@ def test_renewal_builds_the_invalidation(plugin, core):
     """Renewable: the unsigned invalidation is built from the host's will,
     wallet, fee and History label and dated by the earliest date of the
     VALID will items (not by ``date_to_check``)."""
-    info = _renewal("200d")
+    info = _renewal("period")
     assert info["renewable"] and info["has_will"]
     core.invalidate.return_value = TX
     host = CheckHost(plugin, init_error=CheckAliveError(DATE), info=info)
@@ -338,7 +349,7 @@ def test_renewal_without_items_is_dated_by_date_to_check(plugin, core):
     """No VALID will item: the invalidation is dated by ``date_to_check``."""
     core.invalidate.return_value = TX
     host = CheckHost(plugin, init_error=CheckAliveError(DATE),
-                     info=_renewal("200d"))
+                     info=_renewal("period"))
     _run(host)
     assert core.invalidate.call_args.kwargs["will_locktime"] == DATE
 
@@ -346,7 +357,7 @@ def test_renewal_without_items_is_dated_by_date_to_check(plugin, core):
 def test_renewable_without_a_will_builds_nothing(plugin, core):
     """Renewable but no will in force (``has_will`` False): no invalidation
     is built; "stopped" and the reason."""
-    info = dict(_renewal("200d"), has_will=False)
+    info = dict(_renewal("period"), has_will=False)
     host = CheckHost(plugin, init_error=CheckAliveError(DATE), info=info)
     result, events = _run(host)
     assert result.legacy() == ("check_alive_stop", None)
@@ -358,7 +369,7 @@ def test_renewal_fee_defaults_to_one(plugin, core):
     """No transaction fee stored: the renewal invalidation pays 1 sat/vB."""
     core.invalidate.return_value = TX
     host = CheckHost(plugin, init_error=CheckAliveError(DATE),
-                     info=_renewal("200d"))
+                     info=_renewal("period"))
     del host.will_settings["baltx_fees"]
     _run(host)
     assert core.invalidate.call_args.args[2] == 1
@@ -366,7 +377,7 @@ def test_renewal_fee_defaults_to_one(plugin, core):
 
 def test_renewal_without_a_transaction_stops_with_the_reason(plugin, core):
     """Renewable but no transaction: "stopped" and the information."""
-    info = _renewal("200d")
+    info = _renewal("period")
     host = CheckHost(plugin, init_error=CheckAliveError(DATE), info=info)
     result, events = _run(host)
     assert result.legacy() == ("check_alive_stop", None)
@@ -400,7 +411,7 @@ def test_check_alive_without_info_shows_the_error(plugin, core):
 def test_invalidation_error_propagates_with_the_info_written(plugin, core):
     """An error while building the renewal propagates, with the information
     already in the run state (the dialog's error path sees it)."""
-    info = _renewal("200d")
+    info = _renewal("period")
     core.invalidate.side_effect = RuntimeError("no coins")
     host = CheckHost(plugin, init_error=CheckAliveError(DATE), info=info)
     run = CheckRun()
@@ -560,7 +571,7 @@ def test_real_core_fixed_exceeds_counts_every_selected_executor(plugin):
 
 @pytest.mark.parametrize("make", [
     lambda p: CheckHost(p, init_error=NoHeirsException("x")),
-    lambda p: CheckHost(p, init_error=CheckAliveError(DATE), info=_renewal("200d")),
+    lambda p: CheckHost(p, init_error=CheckAliveError(DATE), info=_renewal("period")),
 ], ids=["no_heirs", "renew"])
 def test_null_ui_gives_the_same_result(plugin, core, make):
     """The flow never depends on the UI: a UI that drops every event gives

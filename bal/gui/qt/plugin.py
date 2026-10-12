@@ -30,7 +30,6 @@ from .common import (
     QComboBox,
     QGridLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QPushButton,
     Qt,
@@ -46,6 +45,7 @@ from .common import (
     read_QIcon_from_bytes,
     read_QPixmap_from_bytes,
     show_modal,
+    switch_user_type,
     webopen,
 )
 from .dialogs import BalDialog
@@ -586,33 +586,25 @@ class Plugin(BalPlugin, EventListener):
         )
 
         def on_user_type_change(idx):
-            # Persist "basic"/"advanced" and refresh the open windows so the
-            # advanced controls appear/disappear right away.
-            #
-            # SAFETY GATE (owner request): enabling ADVANCED exposes powerful,
-            # easy-to-misuse controls. Before switching to ADVANCED the user must
-            # type a confirmation phrase ("at My Risk", case-insensitive). If the
-            # phrase is wrong or the dialog is cancelled, we revert the combo to
-            # BASIC and do NOT enable ADVANCED. Switching back to BASIC needs no
-            # confirmation.
-            if idx == 1:
-                text, ok = QInputDialog.getText(
-                    d,
-                    _("Enable ADVANCED mode"),
-                    _("Type 'at My Risk' to enable ADVANCED mode"),
-                )
-                # Accept any capitalisation (e.g. "at my risk", "AT MY RISK").
-                if not ok or text.strip().lower() != "at my risk":
-                    # Revert to BASIC. Block the signal while we reset the combo
-                    # index so this handler is not called again recursively.
-                    user_type_combo.blockSignals(True)
-                    user_type_combo.setCurrentIndex(0)
-                    user_type_combo.blockSignals(False)
-                    self.USER_TYPE.set("basic")
-                    self._apply_editor_default_on_toolbars()
-                    self.update_all()
-                    return
-            self.USER_TYPE.set("advanced" if idx == 1 else "basic")
+            """Persist "basic"/"advanced" and refresh the open windows so the
+            advanced controls appear/disappear right away.
+
+            SAFETY GATE (owner request): enabling ADVANCED exposes powerful,
+            easy-to-misuse controls. Before switching to ADVANCED the user
+            must type a confirmation phrase ("at My Risk", case-insensitive).
+            If the phrase is wrong or the dialog is cancelled, the combo goes
+            back to BASIC and ADVANCED is NOT enabled. Switching back to
+            BASIC needs no confirmation. Since #127 the gate, the mode write
+            and the refresh of the windows are ``common.switch_user_type``,
+            shared with the wizard's mode selector.
+            """
+            if not switch_user_type(self, idx == 1, parent=d):
+                # Revert to BASIC. Block the signal while we reset the combo
+                # index so this handler is not called again recursively.
+                user_type_combo.blockSignals(True)
+                user_type_combo.setCurrentIndex(0)
+                user_type_combo.blockSignals(False)
+                return
             # Show/hide the advanced-only rows.
             basic = idx != 1
             for w in (lbl_welist_server, edit_welist_server, help_welist_server,
@@ -629,12 +621,6 @@ class Plugin(BalPlugin, EventListener):
                       reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
                       reset_btn_11, reset_btn_12, reset_btn_auto_sign):
                 w.setVisible(not basic)
-            # Opzione 2: apply the per-mode Raw/Date editor default ONLY here, on
-            # a real USER TYPE change (not inside update_all/CHECK), so pressing
-            # CHECK never resets a manual Date/RAW choice. update_all() below
-            # still refreshes the transaction list and the combo visibility.
-            self._apply_editor_default_on_toolbars()
-            self.update_all()
 
         user_type_combo.currentIndexChanged.connect(on_user_type_change)
 

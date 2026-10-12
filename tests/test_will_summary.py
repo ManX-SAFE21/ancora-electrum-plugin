@@ -44,7 +44,12 @@ def _ts(y, m, d):
 
 NOW = _ts(2026, 10, 9)
 DELIVERY = _ts(2028, 10, 1)            # the owner's will, as in the mockup
-SETTINGS = {"locktime": "4y", "threshold": "-180d"}
+# CHANGELOG #127: only the period form renews (48 calendar months, the
+# former "4y").
+SETTINGS = {"locktime": "4y", "threshold": "-180d", "form": "period",
+            "period_months": 48}
+# A fixed date (no ``form``): BASIC ignores its Check Alive.
+FIXED_SETTINGS = {"locktime": "4y", "threshold": "-180d"}
 
 # WillItem parses a raw tx and calls add_info_from_wallet; no live wallet here.
 _patcher = patch.object(Transaction, "add_info_from_wallet")
@@ -111,10 +116,21 @@ def test_all_ok_as_in_the_mockup():
 
 
 def test_basic_mode_has_no_check_alive_line():
-    s = _summary({"a": _item(*VERIFIED)}, basic=True)
+    """BASIC with a fixed date: no Check Alive line."""
+    s = _summary({"a": _item(*VERIFIED)}, settings=FIXED_SETTINGS, basic=True)
     assert s["state"] == "ok"
     assert [r["label"] for r in s["rows"]] == [
         "Delivery to the heirs", "Will-Executor", "Heirs"]
+
+
+def test_basic_mode_keeps_the_check_alive_of_a_period_will():
+    """#127, owner decision 5: a will in the period form keeps its Check
+    Alive (and its renewal) in BASIC; the mode only hides the choice."""
+    s = _summary({"a": _item(*VERIFIED)}, basic=True)
+    assert [r["label"] for r in s["rows"]] == [
+        "Delivery to the heirs", "Check Alive", "Will-Executor", "Heirs"]
+    s = _summary({"a": _item(*VERIFIED, locktime=NOW + 175 * DAY)}, basic=True)
+    assert (s["state"], s["action"]) == ("check_alive", "renew")
 
 
 def test_two_executors_verified_and_one_to_verify():
@@ -218,7 +234,9 @@ def test_check_alive_passed_with_fixed_date_only_explains():
 
 
 def test_check_alive_ignored_in_basic_mode():
-    s = _summary({"a": _item(*VERIFIED, locktime=NOW + 175 * DAY)}, basic=True)
+    """BASIC with a fixed date: a passed Check Alive is ignored."""
+    s = _summary({"a": _item(*VERIFIED, locktime=NOW + 175 * DAY)},
+                 settings=FIXED_SETTINGS, basic=True)
     assert s["state"] == "ok"
 
 

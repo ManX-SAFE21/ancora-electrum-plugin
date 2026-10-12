@@ -205,6 +205,46 @@ def add_widget(grid, label, widget, row, help_):
 
 
 
+def confirm_advanced_mode(parent=None):
+    """Ask for the "at My Risk" phrase before ADVANCED mode; True when typed.
+
+    The safety gate of the plugin Settings dialog (owner request): ADVANCED
+    exposes powerful, easy-to-misuse controls, so the phrase must be typed
+    (any capitalisation). Cancel or a wrong phrase gives False. Shared by
+    the Settings dialog and the wizard's mode selector (#127).
+    """
+    text, ok = QInputDialog.getText(
+        parent,
+        _("Enable ADVANCED mode"),
+        _("Type 'at My Risk' to enable ADVANCED mode"),
+    )
+    return bool(ok) and text.strip().lower() == "at my risk"
+
+
+def switch_user_type(plugin, advanced, parent=None):
+    """Set the plugin mode (``USER_TYPE``, every wallet); True when set as asked.
+
+    ``advanced``: True for ADVANCED, which needs :func:`confirm_advanced_mode`
+    first; when it is not confirmed the mode is set to BASIC and False is
+    returned (the caller puts its selector back). Switching to BASIC needs no
+    confirmation. Then the open windows follow at once: the per-mode editor
+    default of the toolbars (``_apply_editor_default_on_toolbars``, only on
+    a real change) and ``update_all``, when the plugin has them (the Qt
+    ``Plugin``; a test plugin may not). One function for the Settings dialog
+    and the wizard (#127), so both behave the same.
+    """
+    confirmed = (not advanced) or confirm_advanced_mode(parent)
+    plugin.USER_TYPE.set("advanced" if (advanced and confirmed) else "basic")
+    for name in ("_apply_editor_default_on_toolbars", "update_all"):
+        refresh = getattr(plugin, name, None)
+        if callable(refresh):
+            try:
+                refresh()
+            except Exception as e:
+                _logger.debug(f"user type refresh ({name}) failed: {e!r}")
+    return confirmed
+
+
 def translated_headers(headers):
     """Return a translated copy of a list's ``headers`` class attribute.
 

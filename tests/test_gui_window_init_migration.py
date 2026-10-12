@@ -213,7 +213,7 @@ def test_real_window_migrates_before_the_toolbars(make, monkeypatch, caplog, mod
     assert (d["legacy_locktime"], d["note_kind"]) == ("1054d", "converted")
     assert len(seen) == 2, seen                   # Heirs and Will toolbars
     for settings in seen:
-        assert settings["settings_version"] == 1
+        assert settings["settings_version"] == 2     # #127: schema 2
         assert settings["locktime"] == OWNER_DATE
     for toolbar in toolbars(bw):
         field = toolbar.widgets["locktime"]
@@ -376,7 +376,7 @@ def test_busy_flow_lock_at_opening_then_init_will(make, monkeypatch):
     assert bw._settings_ready is True and bw.settings_unavailable is False
     assert bw.will_settings is d
     assert (d["settings_version"], d["locktime"], d["migrated_from"]) == (
-        1, OWNER_DATE, "will")
+        2, OWNER_DATE, "will")
     for toolbar in toolbars(bw):
         assert shown_day(toolbar) == "29/08/2029"
         assert toolbar.widgets["baltx_fees"].get_value() == 13

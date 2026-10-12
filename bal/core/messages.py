@@ -151,8 +151,39 @@ def _day(ts):
     return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
 
 
+def months_text(n):
+    """A period of ``n`` calendar months in words (#127, plan section 2).
+
+    "1 month", "6 months", "12 months (1 year)", "36 months (3 years)",
+    "35 months (2 years and 11 months)". Only the existing msgids "1 month",
+    "{} months", "1 year", "{} years" and "{years} and {months}" are used
+    (never a bare "months", which another catalog could translate), and the
+    bracket is joined outside ``_()``.
+    """
+    n = int(n)
+    head = _("1 month") if n == 1 else _("{} months").format(n)
+    years, rest = divmod(n, 12)
+    if years <= 0:
+        return head
+    years_text = _("1 year") if years == 1 else _("{} years").format(years)
+    if rest == 0:
+        inner = years_text
+    else:
+        rest_text = _("1 month") if rest == 1 else _("{} months").format(rest)
+        inner = _("{years} and {months}").format(years=years_text, months=rest_text)
+    return head + " (" + inner + ")"
+
+
 def _period(period):
-    """``(4, "y")`` -> "4 years", ``(30, "d")`` -> "30 days" (translated)."""
+    """The period of a renewal in words (translated).
+
+    Since #127 the renewal period is N calendar months (an int, see
+    ``check_alive_renewal``): :func:`months_text`. The old ``(value,
+    unit)`` pairs still read: ``(4, "y")`` -> "4 years", ``(30, "d")`` ->
+    "30 days".
+    """
+    if not isinstance(period, (list, tuple)):
+        return months_text(period)
     value, unit = period
     if unit in ("y", "Y"):
         return _("1 year") if value == 1 else _("{} years").format(value)

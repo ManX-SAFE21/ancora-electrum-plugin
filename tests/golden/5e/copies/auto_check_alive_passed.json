@@ -51,7 +51,7 @@
     "executor": "https://we0.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
     "statuses": [
      "CHECKED",
      "COMPLETE",
@@ -64,7 +64,7 @@
     "executor": "https://we1.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
     "statuses": [
      "CHECKED",
      "COMPLETE",
@@ -128,7 +128,7 @@
    ],
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2026-12-09</b> (in 59 days)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2026-12-10</b> (in 2 months)"
    ],
    "steps": [
     [
@@ -178,7 +178,9 @@
   ],
   "settings": {
    "baltx_fees": 13,
-   "locktime": "2026-12-09",
+   "form": "period",
+   "locktime": "2026-12-10",
+   "period_months": 2,
    "threshold": "-30d"
   },
   "stored": {
@@ -230,7 +232,7 @@
     "executor": "https://we0.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
     "statuses": [
      "CHECKED",
      "COMPLETE",
@@ -243,7 +245,7 @@
     "executor": "https://we1.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
     "statuses": [
      "CHECKED",
      "COMPLETE",
@@ -265,7 +267,9 @@
   },
   "settings": {
    "baltx_fees": 13,
-   "locktime": "2026-12-09",
+   "form": "period",
+   "locktime": "2026-12-10",
+   "period_months": 2,
    "threshold": "-30d"
   },
   "stored": {

@@ -25,6 +25,7 @@ from datetime import timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from ...core import delivery
 from ...core.checkalive import (
     CHECK_ALIVE_DEFAULT_DAYS,
     CHECK_ALIVE_MAX_DAYS,
@@ -39,7 +40,9 @@ from ...core.input_rules import (
     normalize_perc_amount_text,
     parse_perc_amount,
 )
+from ...core.messages import months_text
 from ...core.reminders import build_ics_reminders, write_temp_ics
+from ...engine import context as engine_context
 from .calendar import BalCalendar, BalCalendarButton
 from .common import (
     DECIMAL_POINT,
@@ -54,6 +57,7 @@ from .common import (
     HelpButton,
     Optional,
     QAbstractSpinBox,
+    QButtonGroup,
     QCheckBox,
     QColor,
     QComboBox,
@@ -67,6 +71,7 @@ from .common import (
     QPainter,
     QPalette,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QSpinBox,
     QStyle,
@@ -91,6 +96,7 @@ from .common import (
     read_QIcon_from_bytes,
     signature_suffix,
     status_color,
+    switch_user_type,
 )
 
 if TYPE_CHECKING:
@@ -340,6 +346,11 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         self.combo.setVisible(False)
         for w in self.editors:
             hbox.addWidget(w)
+        # #127: the period form shows "N months (...) -> DD/MM/YYYY" here
+        # instead of the date editor (see show_period).
+        self.period_label = QLabel("")
+        self.period_label.setVisible(False)
+        hbox.addWidget(self.period_label)
 
         hbox.addStretch(1)
         self.valueEdited.connect(lambda: self.update_will_settings(True))
@@ -534,6 +545,27 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         self.current_value = x
         if self._value_for_editor(self.current_index, x) != self.get_value():
             self._show(x)
+
+    def show_period(self, text):
+        """Show the period form instead of the date editor (#127).
+
+        ``text``: "36 months (3 years) -> 12/10/2029" (see
+        :func:`period_field_text`): the date editor is hidden and the text is
+        shown, read-only (N is edited in the wizard's form box). ``None`` or
+        an empty text: the date editor again (the fixed form). Display only:
+        nothing is saved.
+        """
+        label = getattr(self, "period_label", None)
+        if label is None:
+            return
+        if text:
+            label.setText(text)
+            label.setVisible(True)
+            self.editor.setVisible(False)
+        else:
+            label.setText("")
+            label.setVisible(False)
+            self.editor.setVisible(True)
 
     def set_read_only(self, read_only=True):
         """Show the value but make it non-editable.
@@ -939,6 +971,271 @@ class LockTimeWidget(BalTimeEditWidget):
 
 
 
+def _utc_dmy(ts):
+    """``DD/MM/YYYY`` of the UTC day of timestamp ``ts`` (the day the
+    transaction uses). Plain arithmetic from 1970, not
+    ``datetime.fromtimestamp``, which fails after 2038 where ``time_t`` is
+    32-bit."""
+    from datetime import timedelta
+
+    moment = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=int(ts))
+    return moment.strftime("%d/%m/%Y")
+
+
+def period_field_text(settings, months=None):
+    """The text of the period form: "36 months (3 years) -> 12/10/2029" (#127).
+
+    ``settings``: the wallet's delivery settings; ``months``: N to show
+    instead of the stored one (the wizard's box while it is edited). The
+    months are :func:`bal.core.messages.months_text`; the arrow and the
+    date (the stored delivery date, UTC day) are joined outside ``_()``
+    (owner decision 11). None for a fixed date or a broken N.
+    """
+    n = delivery.period_months(settings) if months is None else delivery.as_months(months)
+    if n is None or not delivery.is_period(settings):
+        return None
+    text = months_text(n)
+    locktime = delivery.as_delivery((settings or {}).get("locktime"))
+    if locktime is not None:
+        text += " -> " + _utc_dmy(locktime)
+    return text
+
+
+#: The sentence shown while the delivery form is locked (owner, #127).
+FORM_LOCKED_TEXT = N_(
+    "The delivery form cannot change while a will is in force. To change "
+    "it, invalidate the will (Invalidate, miner fee); when the invalidation "
+    "is confirmed, choose the new form here and prepare the new will."
+)
+
+
+class DeliveryFormWidget(QWidget):
+    """The delivery form at the top of the wizard's settings page (#127).
+
+    Owner decisions 5 and 7 (2026-10-12), from the top:
+
+    * "Plugin mode (applies to every wallet)": BASIC / ADVANCED, the SAME
+      ``USER_TYPE`` setting as the plugin Settings dialog, with the same
+      "at My Risk" gate (``common.switch_user_type``); a wrong phrase puts
+      BASIC back. Choosing BASIC sets the form back to fixed, only when it
+      is not locked;
+    * "Fixed date" / "Period (renewable)": the period is offered only in
+      ADVANCED and never with multiverse on. BASIC shows neither radio for
+      a fixed date (nothing to choose; owner, 2026-10-12), both when the
+      wallet already has the period form, so its state stays visible; both
+      are enabled
+      only while the form is not locked (``context.form_locked``: a will is
+      in force);
+    * the period: a month box 1..240 without keyboard tracking, stored when
+      editing finishes (``context.set_delivery``), and its text
+      "N months (...) -> DD/MM/YYYY";
+    * while locked, in ADVANCED only, the sentence :data:`FORM_LOCKED_TEXT`.
+
+    Every write goes through ``bal.engine.context.set_delivery``; the
+    toolbars then follow (``BalWindow.refresh_setting_fields``).
+    """
+
+    def __init__(self, bal_window, settings_widget=None, parent=None):
+        """Build the box for ``bal_window``; ``settings_widget`` (the
+        wizard's ``WillSettingsWidget``) shows the new date after a write."""
+        super().__init__(parent)
+        self.bal_window = bal_window
+        self.settings_widget = settings_widget
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 0, 0, 0)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel(_("Plugin mode (applies to every wallet)")))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems([_("BASIC"), _("ADVANCED")])
+        mode_row.addWidget(self.mode_combo)
+        mode_row.addStretch(1)
+        vbox.addLayout(mode_row)
+
+        form_row = QHBoxLayout()
+        self.fixed_radio = QRadioButton(_("Fixed date"))
+        self.period_radio = QRadioButton(_("Period (renewable)"))
+        self.radio_group = QButtonGroup(self)
+        self.radio_group.addButton(self.fixed_radio)
+        self.radio_group.addButton(self.period_radio)
+        self.months_box = QSpinBox()
+        self.months_box.setRange(delivery.PERIOD_MIN, delivery.PERIOD_MAX)
+        # Stored once, when editing finishes: typing "36" must not store 3.
+        self.months_box.setKeyboardTracking(False)
+        self.months_label = QLabel("")
+        form_row.addWidget(self.fixed_radio)
+        form_row.addWidget(self.period_radio)
+        form_row.addWidget(self.months_box)
+        form_row.addWidget(self.months_label)
+        form_row.addStretch(1)
+        vbox.addLayout(form_row)
+
+        self.lock_label = QLabel(_(FORM_LOCKED_TEXT))
+        self.lock_label.setWordWrap(True)
+        vbox.addWidget(self.lock_label)
+
+        self.refresh()
+        self.mode_combo.currentIndexChanged.connect(self._on_mode)
+        self.fixed_radio.clicked.connect(self._on_fixed)
+        self.period_radio.clicked.connect(self._on_period)
+        self.months_box.editingFinished.connect(self._on_months)
+
+    # ------------------------------------------------------------- state
+
+    def _settings(self):
+        """The wallet's delivery settings (an empty dict when missing)."""
+        return getattr(self.bal_window, "will_settings", None) or {}
+
+    def _basic(self):
+        """True in BASIC mode (the plugin-wide ``USER_TYPE``)."""
+        return bool(self.bal_window.bal_plugin.is_basic_mode())
+
+    def _multiverse(self):
+        """True when the hidden multiverse option is on (no period form)."""
+        try:
+            return bool(self.bal_window.bal_plugin.ENABLE_MULTIVERSE.get())
+        except Exception:
+            return False
+
+    def _initial_months(self):
+        """N for the box: the stored period, else the whole months from today
+        to the stored date (1..240), else the default (24)."""
+        settings = self._settings()
+        n = delivery.as_months(settings.get("period_months"))
+        if n is not None:
+            return n
+        locktime = delivery.as_delivery(settings.get("locktime"))
+        if locktime is not None:
+            n = delivery.months_between(time_now(), locktime)
+            if delivery.PERIOD_MIN <= n <= delivery.PERIOD_MAX:
+                return n
+        return delivery.DEFAULT_MONTHS
+
+    def refresh(self):
+        """Show the stored mode, form, period and lock (signals blocked)."""
+        settings = self._settings()
+        basic = self._basic()
+        period = delivery.is_period(settings)
+        self.locked = engine_context.form_locked(self.bal_window)
+        for w in (self.mode_combo, self.fixed_radio, self.period_radio, self.months_box):
+            w.blockSignals(True)
+        try:
+            self.mode_combo.setCurrentIndex(0 if basic else 1)
+            self.fixed_radio.setChecked(not period)
+            self.period_radio.setChecked(period)
+            # Owner (ZIP test, 2026-10-12): BASIC shows as little text as
+            # possible. A fixed date there has nothing to choose, so neither
+            # radio is shown (a lone, disabled "Fixed date" only confused);
+            # a period-form will still shows its state.
+            self.fixed_radio.setVisible(not basic or period)
+            self.period_radio.setVisible(not basic or period)
+            self.fixed_radio.setEnabled(not self.locked)
+            self.period_radio.setEnabled(
+                not self.locked and not basic and not self._multiverse()
+            )
+            self.months_box.setValue(self._initial_months())
+            self.months_box.setVisible(period)
+            self.months_box.setEnabled(period and not basic)
+            text = period_field_text(settings) if period else None
+            self.months_label.setText(text or "")
+            self.months_label.setVisible(bool(text))
+            # The lock sentence explains how to change the form, which only
+            # ADVANCED can do: not shown in BASIC (owner, 2026-10-12).
+            self.lock_label.setVisible(self.locked and not basic)
+        finally:
+            for w in (self.mode_combo, self.fixed_radio, self.period_radio,
+                      self.months_box):
+                w.blockSignals(False)
+
+    # ------------------------------------------------------------- writes
+
+    def _write(self, **kw):
+        """``context.set_delivery`` with ``kw``, then show the result.
+
+        A refusal (the form locked meanwhile, a bad value, the settings on
+        hold) is only logged: :meth:`refresh` shows the stored state again.
+        """
+        try:
+            engine_context.set_delivery(self.bal_window, **kw)
+        except Exception as e:
+            _logger.warning(f"delivery form not changed: {e}")
+        self._after_write()
+
+    def _after_write(self):
+        """Refresh this box, the wizard's date field and both toolbars."""
+        self.refresh()
+        settings = self._settings()
+        widget = self.settings_widget
+        if widget is not None:
+            try:
+                widget.widgets["locktime"].set_value(settings.get("locktime"))
+                widget.apply_delivery_form()
+            except Exception as e:
+                _logger.debug(f"wizard date field not refreshed: {e!r}")
+        refresh = getattr(self.bal_window, "refresh_setting_fields", None)
+        if callable(refresh):
+            try:
+                refresh()
+            except Exception as e:
+                _logger.debug(f"toolbars not refreshed: {e!r}")
+
+    def _on_mode(self, index):
+        """The mode selector: the shared switch with its "at My Risk" gate.
+
+        BASIC (chosen, or put back after a wrong phrase) also sets the form
+        back to fixed when it is not locked (owner decision 7); a locked
+        period form keeps working in BASIC.
+        """
+        if not switch_user_type(self.bal_window.bal_plugin, index == 1, parent=self):
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentIndex(0)
+            self.mode_combo.blockSignals(False)
+        if self._basic() and delivery.is_period(self._settings()) and not (
+            engine_context.form_locked(self.bal_window)
+        ):
+            self._write(form=delivery.FORM_FIXED)
+        else:
+            self._after_write()
+        widget = self.settings_widget
+        if widget is not None:
+            try:
+                widget.apply_user_type_visibility()
+            except Exception as e:
+                _logger.debug(f"wizard visibility not refreshed: {e!r}")
+
+    def _on_fixed(self):
+        """"Fixed date" clicked: the fixed form, the stored date kept."""
+        if delivery.is_period(self._settings()):
+            self._write(form=delivery.FORM_FIXED)
+
+    def _on_period(self):
+        """"Period (renewable)" clicked: the period form with the box's N
+        (with no will in force, today + N months becomes the date)."""
+        if not delivery.is_period(self._settings()):
+            self._write(form=delivery.FORM_PERIOD, months=self.months_box.value())
+
+    def _on_months(self):
+        """The month box finished editing: store N (period form only).
+
+        With no will in force the date becomes today + N months; with a
+        will in force N applies at the next renewal (no fee now).
+        """
+        settings = self._settings()
+        if not delivery.is_period(settings):
+            return
+        n = self.months_box.value()
+        if n != delivery.as_months(settings.get("period_months")):
+            self._write(months=n)
+
+
+def time_now():
+    """The current time (the wizard's "today"); a function so the tests can
+    replace the clock."""
+    import time
+
+    return time.time()
+
+
 class WillSettingsWidget(QWidget):
 
     # Toolbar rows (CHANGELOG #95), set in __init__ for layout_type "h";
@@ -1090,6 +1387,13 @@ class WillSettingsWidget(QWidget):
             hint_min_width = 44 * char_width_in_lineedit()
             self.setMinimumWidth(hint_min_width)
 
+            # #127: the delivery form box at the top of the wizard's page
+            # (plugin mode, fixed date or period, the lock sentence).
+            self.form_box = None
+            if not read_only:
+                self.form_box = DeliveryFormWidget(bal_window, self, self)
+                box.addWidget(self.form_box)
+
             # Explanatory hint ABOVE the date field (wizard only): tell the user
             # what the delivery date means. Wrapped so it fits the dialog width.
             # The explicit "\n" forces the line break exactly where the owner
@@ -1143,6 +1447,7 @@ class WillSettingsWidget(QWidget):
             box.addWidget(fee_note)
 
             self.apply_editable_dates()
+            self.apply_delivery_form()
             return
 
         # Group C / C2: apply the current "Editable dates" setting to the date
@@ -1189,6 +1494,23 @@ class WillSettingsWidget(QWidget):
         # The fee now follows the very same "Editable dates" rule as the dates:
         # editable outside the wizard only when the setting is ticked.
         self.widgets["baltx_fees"].set_read_only(not editable_dates)
+
+    def apply_delivery_form(self):
+        """Show the delivery field in the stored form (#127, owner decision 8).
+
+        Fixed date: the date editor, as before. Period: the read-only text
+        "36 months (3 years) -> 12/10/2029" (:func:`period_field_text`)
+        instead of the editor; N is edited only in the wizard. Called each
+        time the toolbar's list is redrawn (:meth:`on_locktime_change`),
+        after every settings write (``BalWindow.refresh_setting_fields``)
+        and by ``update_all``, so both tabs follow a change of the form, of
+        N or of the date, in both directions. Never raises.
+        """
+        try:
+            settings = getattr(self.bal_window, "will_settings", None) or {}
+            self.widgets["locktime"].show_period(period_field_text(settings))
+        except Exception as e:
+            _logger.debug(f"delivery form not shown: {e!r}")
 
     def apply_user_type_visibility(self):
         """Re-apply the BASIC/ADVANCED visibility of the Check-Alive field.
@@ -1527,6 +1849,8 @@ class WillSettingsWidget(QWidget):
             )
         except Exception as _e:
             pass
+        # CHANGELOG #127: the period form shows its text instead of the date.
+        self.apply_delivery_form()
         # CHANGELOG #84a: a new Check Alive value, or the heirs list redrawn
         # (it calls this too), changes the will summary of the Will tab.
         try:

@@ -157,13 +157,13 @@ DIVERGENCES = {
                     "copies/prepare_check_alive_expired_advanced", "copies/cli_expired"], ""),
     42: ("Renewal: Prepare opens the Check, the CLI gives wrong steps for a fixed date",
          "partly", ["copies/prepare_check_alive_renew", "copies/cli_check_alive_fixed_date"],
-         "since #123 the old shared '60d' of the Prepare scenario becomes a "
-         "fixed date, so Prepare warns 'fixed date' instead of opening the "
-         "Check (the one-click renewal comes back with #126); the CLI half "
-         "is no longer divergent: since #123 bal_will_check and "
-         "bal_will_prepare give the 'fixed date' text of "
-         "bal_will_autorebuild, not the renewal steps; the period renewal "
-         "itself is not reproduced here (no period is left after #123)"),
+         "since #127 the Prepare scenario uses the period form (2 months; "
+         "before #123 the shared '60d'), so Prepare opens the Check for the "
+         "renewal again, as before #123 (#123-#126: a fixed date, Prepare "
+         "only warned); the CLI half is no longer divergent: since #123 "
+         "bal_will_check and bal_will_prepare give the 'fixed date' text of "
+         "bal_will_autorebuild for a fixed date, not the renewal steps; the "
+         "period renewal on the command line is not photographed here"),
     43: ("Export marks the transactions EXPORTED",
          "partly", ["copies/export_gui_vs_cli"],
          "the export of the live will marks them in both copies; the filtered "
@@ -516,17 +516,22 @@ def test_d41():
 
 
 def test_d42():
-    """Renewal: the copies agree for a fixed date since #123.
+    """Renewal: Prepare opens the Check (period form); the CLI copies agree
+    for a fixed date.
 
     Before #123 Prepare opened the Check for the renewal of the "60d"
     scenario, and ``bal_will_check`` / ``bal_will_prepare`` gave renewal
-    steps (a paid invalidation) that cannot move a fixed date. Since #123
-    that old shared period becomes a fixed date, so Prepare opens nothing
-    and says the date is fixed (until #126), and the three commands give
-    the same "choose a later delivery date" text."""
+    steps (a paid invalidation) that cannot move a fixed date. From #123 to
+    #126 that old shared period became a fixed date and Prepare only
+    warned. Since #127 the scenario uses the period form (2 calendar
+    months): Prepare opens the Check again, which asks to renew to today +
+    2 months; for a fixed date the three commands give the same "choose a
+    later delivery date" text."""
     p = step("copies/prepare_check_alive_renew", "gui prepare")
-    assert p.get("dialogs_opened", []) == []
-    assert any("Your delivery is a fixed date" in t for t in popups(p, "warning"))
+    assert len(p["dialogs_opened"]) == 1
+    assert [kind for kind, _text in p["questions"]][:1] == ["renew"]
+    assert "today + 2 months" in p["questions"][0][1]
+    assert not any("fixed date" in t for t in popups(p, "warning"))
     auto = returned(step("copies/cli_check_alive_fixed_date", "cli auto_rebuild"))
     assert "fixed date" in auto["message"]
     for action in ("cli will_check", "cli prepare_will"):

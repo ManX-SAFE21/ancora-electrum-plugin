@@ -87,6 +87,10 @@ The plugin has two usage modes, chosen from the plugin settings
   behaviour described below. Switching to ADVANCED requires typing the
   confirmation phrase **"at My Risk"**.
 
+The same choice is also at the top of the wizard's settings page (*Plugin
+mode (applies to every wallet)*, see *1 — Delivery Time*). ADVANCED also
+offers the renewable **period** as delivery form.
+
 In both modes the **Delivery Time** is a precise **Date**: the relative
 **RAW** durations (such as `1y` or `30d`) and the Raw/Date selector are no
 longer offered.
@@ -100,8 +104,39 @@ will be transferred to the recipient. It is always a **Precise Date**.
 
 **Each wallet keeps its own Delivery Time and Fees**, saved in the wallet file
 (see *Wallet security — saving your will*). Changing them in one wallet does
-not change your other wallets. A new wallet starts with a Delivery Time 12
+not change your other wallets. A new wallet starts with a Delivery Time 24
 months from today.
+
+**Fixed date or renewable period.** On the settings page of the wizard
+(*Build / Edit Your Will*) you choose how the will is delivered:
+
+- **Fixed date** (default): the will is delivered on the date you choose.
+  When its Check Alive passes, the plugin cannot renew it: choose a later
+  date (a will already sent must then be invalidated, miner fee).
+- **Period (renewable)**, offered only in ADVANCED mode: the will is
+  delivered N calendar months (1 to 240) after the day it is prepared. When
+  its Check Alive passes, the plugin asks to **Renew**: the old will is
+  invalidated on the blockchain (miner fee) and a new will is prepared at
+  once, delivered N months after that day. The Heirs and Will tabs show the
+  period and the date it gives, for example
+  "36 months (3 years) -> 12/10/2029" (the day is the UTC day). A will
+  already in the period form keeps being renewed in BASIC mode too: the mode
+  only hides the choice.
+
+In BASIC mode with a fixed date the wizard shows no choice: only the mode
+and the date.
+
+The form cannot change while a will is in force (signed or sent): in
+ADVANCED mode the wizard says so and the two choices are disabled. To change it, invalidate
+the will (Invalidate, miner fee); when the invalidation is confirmed, choose
+the new form in the wizard and prepare the new will. The number of months
+can be changed at any time: with a will in force the new number is used at
+the next renewal (no fee now).
+
+At the top of the same page, **Plugin mode (applies to every wallet)**
+switches BASIC / ADVANCED for every wallet, exactly like the *User Type* of
+the plugin settings (ADVANCED asks for the phrase "at My Risk"). Choosing
+BASIC there sets the form back to a fixed date when no will is in force.
 
 **Colours of the Delivery Time.** The date of the line "Delivery to the heirs", in the will summary and
 in the Check window, is **green** when more than 12 months are
@@ -131,7 +166,9 @@ always uses 12 and 6.
 > **NB:** the **Check Alive** parameter is available only in **ADVANCED** mode.
 > In **BASIC** (default) it is hidden and the plugin re-evaluates the will
 > against "now" every time you open Electrum, so the postpone behaviour
-> described here does not apply.
+> described here does not apply. Exception: a will in the renewable
+> **period** form (see *1 — Delivery Time*) keeps its Check Alive in BASIC
+> too, and the renewal is offered when it passes.
 
 This parameter — settable as relative (`RAW`) or absolute (`DATE`) — indicates
 the time by which the inheritance will **not** be changed by postponing it.

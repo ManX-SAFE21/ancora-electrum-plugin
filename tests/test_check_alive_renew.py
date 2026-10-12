@@ -6,7 +6,10 @@ A passed Check Alive used to invalidate the will on its own and then stop on
 RENEW (invalidate the old will, then prepare the new one at once); when a
 one-click renewal is not possible only the reason is shown.
 
-* ``check_alive_renewal`` (core): passed or not, renewable or why not;
+* ``check_alive_renewal`` (core): passed or not, renewable or why not.
+  Since CHANGELOG #127 only the PERIOD form renews (N calendar months from
+  today); the old relative recipes ("200d") are gone, so the cases below
+  use the period form with the nearest number of months;
 * the texts (``bal.core.messages``);
 * ``Will.planned_delivery``: the REAL delivery date shown next to the field;
 * ``Will.refresh_invalidated``: never raises;
@@ -56,9 +59,17 @@ _TX_HEX = (
 )
 
 
-def _renewal(locktime, threshold="-180d", built=FROZEN, basic=False):
+def _renewal(delivery, threshold="-180d", built=FROZEN, basic=False):
+    """``check_alive_renewal`` at NOW for ``delivery``: a date (fixed form)
+    or a number of calendar months (the period form of #127; the stored
+    date is then the date of the will in force, FROZEN)."""
+    if delivery > 10**6:
+        settings = {"locktime": delivery, "threshold": threshold}
+    else:
+        settings = {"locktime": FROZEN, "threshold": threshold,
+                    "form": "period", "period_months": delivery}
     return check_alive_renewal(
-        basic, {"locktime": locktime, "threshold": threshold},
+        basic, settings,
         built_locktime=built, creation_date=NOW - 300 * DAY, now=NOW,
     )
 
@@ -66,17 +77,26 @@ def _renewal(locktime, threshold="-180d", built=FROZEN, basic=False):
 # --------------------------------------------------------- check_alive_renewal
 
 def test_not_passed_or_basic_mode_gives_none():
-    assert _renewal("200d", "-10d") is None          # Check Alive in 10 days
-    assert _renewal("200d", basic=True) is None
+    assert _renewal(7, "-10d") is None               # Check Alive in 10 days
+    assert _renewal(FROZEN, basic=True) is None      # BASIC, fixed date
 
 
-def test_relative_delivery_is_renewable_from_today():
-    info = _renewal("200d")
+def test_period_will_keeps_its_check_alive_in_basic_mode():
+    """#127, owner decision 5: BASIC hides the choice of the form, but a
+    will already in the period form is still renewed when due."""
+    assert _renewal(7, basic=True) == _renewal(7)
+    assert _renewal(7, basic=True)["renewable"]
+
+
+def test_period_delivery_is_renewable_from_today():
+    """7 months from 2027-01-15 is 2027-08-15; the new Check Alive is 180
+    days before THAT date, not before the old one."""
+    info = _renewal(7)
     assert info["renewable"] and info["has_will"] and info["reason"] is None
     assert info["check_date"] == FROZEN - 180 * DAY  # 160 days ago
-    assert info["new_delivery"] == NOW + 200 * DAY   # counted from today
-    assert info["new_check"] == NOW + 20 * DAY
-    assert info["period"] == (200, "d")
+    assert info["new_delivery"] == NOW + 212 * DAY   # 2027-08-15
+    assert info["new_check"] == NOW + 32 * DAY
+    assert info["period"] == 7
 
 
 def test_fixed_delivery_date_is_not_renewable():
@@ -85,53 +105,56 @@ def test_fixed_delivery_date_is_not_renewable():
 
 
 def test_renewal_whose_check_alive_is_still_past():
-    """Delivery 100 days, Check Alive 180 days before: renewing is useless."""
-    info = _renewal("100d")
+    """Delivery 5 months, Check Alive 180 days before: renewing is useless."""
+    info = _renewal(5)
     assert not info["renewable"] and info["reason"] == "still_past"
 
 
 def test_will_past_its_delivery_is_the_expired_case():
     """C1adv/C3adv: not a Check Alive matter, it must be invalidated."""
-    info = _renewal("200d", built=NOW - DAY)
+    info = _renewal(7, built=NOW - DAY)
     assert info["reason"] == "expired" and not info["renewable"]
     assert "can be executed now" in check_alive_message(info)
 
 
 def test_no_will_in_force():
     """S1: first will with a delivery closer than the Check Alive."""
-    info = _renewal("90d", built=None)
+    info = _renewal(3, built=None)
     assert info is not None and not info["has_will"]
 
 
 # ------------------------------------------------------------------ messages
 
 def test_question_names_both_dates_and_the_period():
-    text = check_alive_renew_question(_renewal("200d"))
+    text = check_alive_renew_question(_renewal(7))
     assert "Are you still here?" in text
     assert "2026-08-08" in text            # passed Check Alive (FROZEN - 180)
-    assert "2027-08-03" in text            # NOW + 200 days
-    assert "today + 200 days" in text and "miner fee" in text
-    assert check_alive_message(_renewal("200d")) == text
+    assert "2027-08-15" in text            # NOW + 7 calendar months
+    assert "today + 7 months" in text and "miner fee" in text
+    assert check_alive_message(_renewal(7)) == text
 
 
 def test_years_and_singular_periods():
-    assert "today + 4 years" in check_alive_renew_question(_renewal("4y"))
-    assert "today + 1 year)" in check_alive_renew_question(_renewal("1y"))
+    """The period in calendar months, with the years in brackets (#127)."""
+    assert "today + 48 months (4 years))" in check_alive_renew_question(_renewal(48))
+    assert "today + 12 months (1 year))" in check_alive_renew_question(_renewal(12))
+    assert "today + 13 months (1 year and 1 month))" in (
+        check_alive_renew_question(_renewal(13)))
 
 
 def test_reasons_when_not_renewable():
     assert "fixed date" in check_alive_cannot_renew(_renewal(FROZEN))
     assert "renewed will would have its Check Alive in the past" in (
-        check_alive_cannot_renew(_renewal("100d")))
+        check_alive_cannot_renew(_renewal(5)))
     assert "choose a later delivery date or a shorter Check Alive" in (
-        check_alive_cannot_renew(_renewal("90d", built=None)))
+        check_alive_cannot_renew(_renewal(3, built=None)))
     assert check_alive_message(_renewal(FROZEN)) == check_alive_cannot_renew(
         _renewal(FROZEN))
 
 
 def test_cli_sentence():
-    assert "has passed: a renewed will would be delivered on 2027-08-03" in (
-        check_alive_passed_sentence(_renewal("200d")))
+    assert "has passed: a renewed will would be delivered on 2027-08-15" in (
+        check_alive_passed_sentence(_renewal(7)))
 
 
 # ------------------------------------------------------------ planned_delivery
@@ -178,7 +201,7 @@ def _window(info):
 
 
 def test_offer_renew_runs_the_wizard_with_renewal_approved():
-    win = _window(_renewal("200d"))
+    win = _window(_renewal(7))
     with patch.object(win_mod, "BalBuildWillDialog") as dlg:
         assert BalWindow.offer_check_alive_renewal(win) is True
     dlg.assert_called_once_with(win, renew=True)
@@ -186,7 +209,7 @@ def test_offer_renew_runs_the_wizard_with_renewal_approved():
 
 
 def test_not_now_does_nothing():
-    win = _window(_renewal("200d"))
+    win = _window(_renewal(7))
     win.ask_renew_will.return_value = False
     with patch.object(win_mod, "BalBuildWillDialog") as dlg:
         BalWindow.offer_check_alive_renewal(win)
@@ -211,6 +234,7 @@ def test_wallet_open_skips_basic_mode():
     win.disable_plugin = False
     win.bal_plugin = MagicMock()
     win.bal_plugin.is_basic_mode.return_value = True
+    win.will_settings = {"locktime": FROZEN, "threshold": "-180d"}
     win.offer_check_alive_renewal = MagicMock()
     BalWindow.check_alive_on_open(win)
     win.offer_check_alive_renewal.assert_not_called()
@@ -223,7 +247,7 @@ def test_wallet_open_offers_when_passed():
     win.bal_plugin.is_basic_mode.return_value = False
     win.willitems = _will("200d", FROZEN)
     win._refresh_invalidated_items = MagicMock()
-    info = _renewal("200d")
+    info = _renewal(7)
     win.check_alive_info = MagicMock(return_value=info)
     win.offer_check_alive_renewal = MagicMock()
     BalWindow.check_alive_on_open(win)
@@ -243,7 +267,7 @@ def test_automatic_rebuild_never_invalidates_for_a_passed_check_alive():
 def test_automatic_rebuild_still_invalidates_an_expired_will():
     win = object.__new__(BalWindow)
     win.init_class_variables = MagicMock(side_effect=CheckAliveError(NOW - DAY))
-    win.check_alive_info = MagicMock(return_value=_renewal("200d", built=NOW - DAY))
+    win.check_alive_info = MagicMock(return_value=_renewal(7, built=NOW - DAY))
     win._auto_invalidate_will = MagicMock()
     assert BalWindow._auto_rebuild_flow(win) is True
     win._auto_invalidate_will.assert_called_once_with()

@@ -240,6 +240,45 @@ def _as_bool(value, name):
     raise UserFacingException(_("Expected true or false for {}: {}").format(name, value))
 
 
+def _months_words(n):
+    """N calendar months in English words, for the command line (#127):
+    "1 month", "6 months", "36 months (3 years)", "35 months (2 years and
+    11 months)". The GUI uses the translated ``messages.months_text``; the
+    command line stays English."""
+    n = int(n)
+    head = "1 month" if n == 1 else "{} months".format(n)
+    years, rest = divmod(n, 12)
+    if years <= 0:
+        return head
+    inner = "1 year" if years == 1 else "{} years".format(years)
+    if rest:
+        inner += " and " + ("1 month" if rest == 1 else "{} months".format(rest))
+    return "{} ({})".format(head, inner)
+
+
+def _form_locked_message(current, months=None):
+    """Why ``bal_delivery_form`` refused: a will is in force (#127).
+
+    ``current``: the form in force; ``months``: the period asked for, shown
+    in the example (36 when none). The steps of owner decision 2: invalidate
+    on-chain (miner fee), wait for the confirmation, then choose the form.
+    """
+    if current == delivery.FORM_PERIOD:
+        return _(
+            "This will uses a renewable period. The form cannot change while "
+            "a will is in force: run bal_will_invalidate (on-chain fee), sign "
+            "and broadcast it, wait until it is confirmed, then "
+            "bal_delivery_form form=fixed date=YYYY-MM-DD, then "
+            "bal_will_prepare."
+        )
+    return _(
+        "This will uses a fixed delivery date. The form cannot change while a "
+        "will is in force: run bal_will_invalidate (on-chain fee), sign and "
+        "broadcast it, wait until it is confirmed, then bal_delivery_form "
+        "form=period months={}, then bal_will_prepare."
+    ).format(months if months is not None else 36)
+
+
 # The highest fee rate bal_delivery_set accepts: the maximum of the GUI fee
 # box (``bal/gui/qt/widgets.py``, a QSpinBox from 1 to 10000). Above it the
 # GUI would show another rate than the one the will is built with, and a
@@ -491,7 +530,7 @@ class BalController(BalSettingsController):
         See :func:`bal.engine.context.load_will_settings`: ``will_settings``
         becomes the live dict of the wallet file, migrated once from the
         will in force (or, for a wallet with plugin data, the old shared
-        value read raw; else today + 12 months) and saved with the wallet.
+        value read raw; else today + 24 months, #127) and saved with the wallet.
         The date is stored once, so it no longer moves at a daemon restart
         (the #102 problem) and nothing is written to Electrum's global
         ``bal_will_settings`` any more. When the settings cannot be
@@ -1513,7 +1552,11 @@ class BalController(BalSettingsController):
         else the items still pending at the will-executors);
         ``settings_unavailable``:
         the settings could not be prepared (the values are for display
-        only).
+        only). Since #127 the delivery form: ``form`` ("fixed" or
+        "period"), ``period_months`` and ``period`` (N in words) and
+        ``period_start`` (the day the period started) for the period form,
+        and ``locked`` (a will is in force: the form cannot change, see
+        ``bal_delivery_form``).
         """
         ws = self.will_settings if isinstance(self.will_settings, Mapping) else {}
         locktime = delivery.as_delivery(ws.get("locktime"))
@@ -1530,7 +1573,17 @@ class BalController(BalSettingsController):
             "choice_pending": bool(ws.get(delivery.CHOICE_KEY)),
             "will_in_force": self._dated(self._will_in_force()),
             "settings_unavailable": bool(self.settings_unavailable),
+            "form": delivery.form_of(ws),
+            "period_months": None,
+            "period": None,
+            "period_start": None,
+            "locked": bool(context.form_locked(self)),
         }
+        months = delivery.period_months(ws)
+        if months is not None:
+            out["period_months"] = months
+            out["period"] = _months_words(months)
+            out["period_start"] = self._dated(ws.get("period_start"))
         note = delivery.pending_note(ws)
         if note is not None:
             kind, old, new = note
@@ -1545,7 +1598,8 @@ class BalController(BalSettingsController):
             )
         return out
 
-    def delivery_set(self, date=None, fee=None, keep=None, confirm_earlier=None):
+    def delivery_set(self, date=None, fee=None, keep=None, confirm_earlier=None,
+                     months=None):
         """``bal_delivery_set``: change this wallet's delivery date or fee rate.
 
         ``date``: ``YYYY-MM-DD`` (00:00 UTC) or a UNIX timestamp, read by
@@ -1559,6 +1613,11 @@ class BalController(BalSettingsController):
         ``fee``: a fee rate from 1 to 10000 (the GUI fee box). ``keep``:
         answer the "which date?" question by keeping the date of the
         prepared will; a new ``date`` answers it too. ``keep`` and ``date`` together are refused.
+        ``months`` (#127, the period form only): the new period N, 1..240
+        calendar months; with no will in force the delivery date becomes
+        today + N months, with a will in force N applies at the next
+        renewal (no fee now). The period form has no date: ``date`` is
+        refused there (see ``bal_delivery_form``).
 
         Everything is checked before anything is written (through
         :func:`bal.engine.context.set_will_setting`), then the wallet file
@@ -1571,12 +1630,37 @@ class BalController(BalSettingsController):
             raise UserFacingException(
                 _delivery_hold_message(delivery.DeliverySettingsUnavailable())
             )
-        if date is None and fee is None and not keep:
+        if date is None and fee is None and not keep and months is None:
             raise UserFacingException(
-                _("Nothing to change: give --date YYYY-MM-DD, --fee N or --keep true.")
+                _(
+                    "Nothing to change: give --date YYYY-MM-DD, --fee N, "
+                    "--months N or --keep true."
+                )
             )
         if keep and date is not None:
             raise UserFacingException(_("Give either --keep true or --date, not both."))
+        period_form = delivery.is_period(self.will_settings)
+        if months is not None and not period_form:
+            raise UserFacingException(
+                _(
+                    "This wallet uses a fixed delivery date: --months is only "
+                    "for the period form (see bal_delivery_form)."
+                )
+            )
+        if date is not None and period_form:
+            raise UserFacingException(
+                _(
+                    "This wallet uses a renewable period: change it with "
+                    "--months N, or choose a fixed date with bal_delivery_form "
+                    "form=fixed date=YYYY-MM-DD."
+                )
+            )
+        if months is not None and delivery.as_months(months) is None:
+            raise UserFacingException(
+                _("Not a period: {} (whole months from {} to {}).").format(
+                    months, delivery.PERIOD_MIN, delivery.PERIOD_MAX
+                )
+            )
         changes = {}
         in_force = self._will_in_force()
         # The reference of --confirm_earlier reads the VALID items only (with
@@ -1628,6 +1712,22 @@ class BalController(BalSettingsController):
                 )
         for field, value in changes.items():
             context.set_will_setting(self, field, value)
+        if months is not None:
+            result = context.set_delivery(self, months=months, now=time.time())
+            if result["applied"]:
+                messages.append(
+                    _("Period of {}: the delivery date is {}.").format(
+                        _months_words(result["period_months"]),
+                        context.utc_day_text(result["locktime"]),
+                    )
+                )
+            else:
+                messages.append(
+                    _(
+                        "Period of {} stored: a will is in force, so it "
+                        "applies at the next renewal (no fee now)."
+                    ).format(_months_words(result["period_months"]))
+                )
         if changes:
             messages.append(_("Stored."))
             new_date = changes.get("locktime")
@@ -1646,6 +1746,82 @@ class BalController(BalSettingsController):
         self.wallet.save_db()
         out = self.delivery_show()
         out["message"] = " ".join(messages)
+        return out
+
+    def delivery_form(self, form=None, date=None, months=None):
+        """``bal_delivery_form``: choose the delivery form of this wallet (#127).
+
+        ``form``: ``fixed`` (``date`` optional: YYYY-MM-DD at 00:00 UTC or a
+        UNIX timestamp; without it the stored date stays) or ``period``
+        (``months``: N calendar months, 1..240; with no will in force the
+        delivery date becomes today + N months, renewed by the Check Alive).
+        Refused while a will is in force (owner decision 2: invalidate it
+        first, on-chain, and wait for the confirmation) with the steps to
+        follow, and while the settings could not be prepared. Everything is
+        checked before anything is written (:func:`bal.engine.context.
+        set_delivery`), then the wallet file is saved. Returns
+        :meth:`delivery_show` with a ``message``.
+        """
+        if self.settings_unavailable:
+            raise UserFacingException(
+                _delivery_hold_message(delivery.DeliverySettingsUnavailable())
+            )
+        form = None if form is None else str(form).strip().lower()
+        if form not in delivery.FORMS:
+            raise UserFacingException(
+                _("Give form=fixed or form=period (now: {}).").format(form)
+            )
+        if form == delivery.FORM_FIXED and months is not None:
+            raise UserFacingException(_("months is only for form=period."))
+        if form == delivery.FORM_PERIOD:
+            if date is not None:
+                raise UserFacingException(
+                    _("The period form has no fixed date: give months=N.")
+                )
+            if months is None and delivery.period_months(self.will_settings) is None:
+                raise UserFacingException(_("Give months=N (1 to 240)."))
+            if months is not None and delivery.as_months(months) is None:
+                raise UserFacingException(
+                    _("Not a period: {} (whole months from {} to {}).").format(
+                        months, delivery.PERIOD_MIN, delivery.PERIOD_MAX
+                    )
+                )
+        new_date = None
+        if date is not None:
+            try:
+                new_date = delivery.parse_cli_date(date, time.time())
+            except ValueError as e:
+                raise UserFacingException(str(e)) from None
+        try:
+            result = context.set_delivery(
+                self, form=form, date=new_date, months=months, now=time.time()
+            )
+        except delivery.DeliveryFormLocked as e:
+            raise UserFacingException(
+                _form_locked_message(e.current_form, months)
+            ) from None
+        except ValueError as e:
+            raise UserFacingException(str(e)) from None
+        self.wallet.save_db()
+        out = self.delivery_show()
+        if result["form"] == delivery.FORM_PERIOD:
+            if result["applied"]:
+                text = _("Period of {}: the delivery date is {}.").format(
+                    _months_words(result["period_months"]),
+                    context.utc_day_text(result["locktime"]),
+                )
+            else:
+                text = _(
+                    "Period of {} stored: a will is in force, so it applies "
+                    "at the next renewal (no fee now)."
+                ).format(_months_words(result["period_months"]))
+        else:
+            text = _("Fixed delivery date: {}.").format(
+                context.utc_day_text(result["locktime"])
+            )
+        out["message"] = text + " " + _(
+            "Run bal_will_prepare to prepare the will with the new settings."
+        )
         return out
 
     # ------------------------------------------------------------------ #
