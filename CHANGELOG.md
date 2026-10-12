@@ -7170,3 +7170,41 @@ date one day earlier, then "Check your will": under "What changed" the
 window said "La data di consegna è cambiata: preparo un nuovo testamento."
 After this step the owner set a lighter rule for text-only steps (no
 scenario harness, no owner ZIP test; CLAUDE.md section 3).
+
+## 126. The calendar button of the toolbar works in BASIC mode
+
+**Date:** 2026-10-12
+
+**Problem (found while designing #123, plan section 6):** in BASIC mode the
+calendar button of the Will and Heirs toolbars saved no .ics file; the log
+said "failed to generate .ics". The toolbar passes the delivery date with
+its time zone (`BalTimestamp._safe_fromtimestamp`, UTC-aware) and no "now";
+`bal/core/reminders.py` `build_ics_reminders` took a naive
+`datetime.now()`, so `locktime - now` raised "can't subtract offset-naive
+and offset-aware datetimes". ADVANCED mode subtracts two aware dates and
+worked.
+
+**What changed:** `build_ics_reminders` takes "now" in the time zone of the
+delivery date (`datetime.now(tz=locktime.tzinfo)`; naive when the delivery
+date is naive). Nothing else: the reminder dates are those of #73 (BASIC:
+30, 10 and 1 day before the delivery; ADVANCED unchanged).
+`make-release.sh`: the new test file.
+
+**Tests:** `tests/test_core_reminders.py`: BASIC with an aware delivery
+date and no "now" (failed with the TypeError before the fix), and with a
+naive one. `tests/test_gui_toolbar_calendar.py` (new; three fake
+will-executors, test wallet with a password): the toolbars of the real
+window build the .ics content in BASIC (three reminders, the first 30 days
+before 27/02/2027; failed on `45101df`) and ADVANCED mode.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1695 passed, 0 failed, 0 errors; the golden files unchanged;
+`ruff check bal/ tests/`: all checks passed. No scenario harness (the
+harness never uses the calendar). `build_zip.py` + `external_zip_test.py`
++ `smoke_test.py` on Electrum 4.8.2: pass (ZIP sha256 `a849706c...`).
+
+**Outcome:** DONE. The owner tested the ZIP on his wallet (BASIC mode,
+2026-10-12): the calendar button saved the .ics file, and his calendar
+shows the three reminders on 28/01/2027, 17/02/2027 and 26/02/2027 for the
+delivery of 27/02/2027 (23:00 Rome, the hour of his will; the UTC date
+editor of a later step gives 00:00 UTC dates).

@@ -168,7 +168,8 @@ def build_ics_reminders(
         heirs_details: pre-formatted heir list injected into ``description``.
         version: plugin version, embedded in the PRODID line.
         num_reminders: requested reminder count (ADVANCED mode only).
-        now: "today" reference; defaults to ``datetime.now()``.
+        now: "today" reference; defaults to the current time in the time
+            zone of ``locktime`` (naive when ``locktime`` is naive).
         threshold: check-alive date (ADVANCED mode only; required there).
         reminder_suffix: text appended to each event summary, with the
             ``{idx}`` and ``{total}`` fields. This module stays free of
@@ -180,7 +181,10 @@ def build_ics_reminders(
         future (the delivery date is too close or already passed) so the caller
         can show a warning instead of producing an empty-looking file.
     """
-    now = now if now is not None else datetime.now()
+    # CHANGELOG #126: "now" in the same kind as ``locktime``. The BASIC
+    # toolbar passes a UTC-aware delivery date; a naive "now" made
+    # ``locktime - now`` raise TypeError and no .ics file was made.
+    now = now if now is not None else datetime.now(tz=locktime.tzinfo)
 
     if basic_mode:
         days_to_deadline = (locktime - now).days
