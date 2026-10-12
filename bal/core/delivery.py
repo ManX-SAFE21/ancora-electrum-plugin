@@ -238,6 +238,81 @@ def default_delivery(now):
     return add_months(utc_midnight(now), DEFAULT_MONTHS)
 
 
+def months_between(start, end):
+    """Whole calendar months from ``start`` to ``end`` (timestamps).
+
+    The largest ``k >= 0`` with ``add_months(start, k)`` on or before the
+    UTC day of ``end``: the same month arithmetic as the delivery date, so
+    "in 2 years and 10 months" and the warning colours (#124) never
+    disagree with the dates the plugin computes. 0 when ``end`` is before
+    ``start``.
+    """
+    a, b = _day_of(start), _day_of(end)
+    k = (b.year - a.year) * 12 + (b.month - a.month)
+    limit = utc_midnight(end)
+    while k > 0 and add_months(start, k) > limit:
+        k -= 1
+    return max(k, 0)
+
+
+# --------------------------------------------------------------------------- #
+# Remaining-time colours (#124)
+# --------------------------------------------------------------------------- #
+#: Defaults of the two thresholds, in calendar months (owner, 2026-10-11).
+WARN_YELLOW_MONTHS = 12
+WARN_RED_MONTHS = 6
+#: Highest threshold the settings accept (ten years).
+WARN_MONTHS_MAX = 120
+
+LEVEL_GREEN = "green"
+LEVEL_YELLOW = "yellow"
+LEVEL_RED = "red"
+LEVEL_PASSED = "passed"
+
+
+def warning_months(yellow, red):
+    """The two thresholds ``(yellow, red)`` to use, from stored values.
+
+    Each must be a whole number of months from 1 to :data:`WARN_MONTHS_MAX`
+    and red must be lower than yellow; otherwise both defaults are used, so
+    a broken setting can never hide the warning. Not tied to the Check
+    Alive (owner decision 5).
+    """
+    values = []
+    for x in (yellow, red):
+        if isinstance(x, bool):
+            return WARN_YELLOW_MONTHS, WARN_RED_MONTHS
+        try:
+            n = int(x)
+        except (TypeError, ValueError):
+            return WARN_YELLOW_MONTHS, WARN_RED_MONTHS
+        if n != x and not (isinstance(x, str) and x.strip() == str(n)):
+            return WARN_YELLOW_MONTHS, WARN_RED_MONTHS
+        values.append(n)
+    yellow, red = values
+    if not (1 <= red < yellow <= WARN_MONTHS_MAX):
+        return WARN_YELLOW_MONTHS, WARN_RED_MONTHS
+    return yellow, red
+
+
+def delivery_level(delivery, now, yellow=WARN_YELLOW_MONTHS, red=WARN_RED_MONTHS):
+    """How close the delivery date is: green, yellow, red or passed.
+
+    ``passed`` when ``delivery`` is not after ``now``; ``red`` when it is
+    before ``red`` calendar months after today (UTC day of ``now``);
+    ``yellow`` when before ``yellow`` months; otherwise ``green``. Only a
+    colour: it never changes the will.
+    """
+    if delivery <= now:
+        return LEVEL_PASSED
+    today = utc_midnight(now)
+    if delivery < add_months(today, red):
+        return LEVEL_RED
+    if delivery < add_months(today, yellow):
+        return LEVEL_YELLOW
+    return LEVEL_GREEN
+
+
 # --------------------------------------------------------------------------- #
 # Stored values
 # --------------------------------------------------------------------------- #

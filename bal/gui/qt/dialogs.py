@@ -141,6 +141,7 @@ from .widgets import (
     BuildReportView,
     WillSettingsWidget,
     WillWidget,
+    delivery_level_colour,
 )
 
 if TYPE_CHECKING:
@@ -3217,6 +3218,7 @@ class BalBuildWillDialog(BalDialog):
                 bw.will_settings,
                 bw.bal_plugin.is_basic_mode(),
                 still_active=bw._still_active_for_summary(),
+                warn_months=getattr(bw.bal_plugin, "warning_months", lambda: None)(),
             )
             failed_step = next(
                 (s for s in ("check", "prepare", "sign", "send")
@@ -3292,14 +3294,21 @@ class BalBuildWillDialog(BalDialog):
 
     @staticmethod
     def _summary_sentence(summary):
-        """The will summary as the result sentence: title, then delivery."""
+        """The will summary as the result sentence: title, then delivery.
+
+        The delivery date and its text take the remaining-time colour of
+        the will summary (#124).
+        """
         text = "<b>{}</b>".format(html.escape(summary["title"]))
         for row in summary.get("rows") or []:
             if row.get("strong"):
-                text += "<br>{}: <b>{}</b> {}".format(
-                    html.escape(row["label"]), html.escape(row["strong"]),
-                    html.escape(row.get("text") or ""),
+                value = "<b>{}</b> {}".format(
+                    html.escape(row["strong"]), html.escape(row.get("text") or ""),
                 )
+                colour = delivery_level_colour(row.get("level"))
+                if colour:
+                    value = '<span style="color:{};">{}</span>'.format(colour, value)
+                text += "<br>{}: {}".format(html.escape(row["label"]), value)
                 break
         return text
 

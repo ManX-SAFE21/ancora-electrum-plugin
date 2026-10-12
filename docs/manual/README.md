@@ -103,6 +103,17 @@ will be transferred to the recipient. It is always a **Precise Date**.
 not change your other wallets. A new wallet starts with a Delivery Time 12
 months from today.
 
+**Colours of the Delivery Time.** The date of the line "Delivery to the heirs", in the will summary and
+in the Check window, is **green** when more than 12 months are
+left, **yellow** below 12 months and **red** below 6 months or when the date
+has passed. Move the mouse over the date to read why. The date field
+itself keeps its normal colour. The colour never
+changes the will: it only reminds you to choose a later date in time. In
+ADVANCED mode the two limits can be changed in the plugin settings
+(*Yellow warning: inheritance date less than (months)*, *Red warning:
+inheritance date less than (months)*); BASIC mode
+always uses 12 and 6.
+
 > **NB:** older versions also accepted a **Relative** duration (`RAW`, e.g.
 > `1y` = one year from today). A duration is counted again from "today", so
 > the date it gives moves every day. Durations are no longer accepted. The

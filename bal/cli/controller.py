@@ -364,6 +364,7 @@ class BalSettingsController:
         """Set one setting; ``value`` is converted to the setting's type."""
         attr, cfg = self._config_key(key)
         coerced = self._coerce_config_value(cfg, value)
+        self._check_warning_months(attr, coerced)
         cfg.set(coerced)
         return {
             "key": attr,
@@ -371,6 +372,32 @@ class BalSettingsController:
             "default": cfg.default,
             "value": cfg.get(),
         }
+
+    def _check_warning_months(self, attr, value):
+        """Refuse a remaining-time threshold out of range (#124).
+
+        ``WARN_YELLOW_MONTHS`` / ``WARN_RED_MONTHS`` take 1 to 120 calendar
+        months, and red must stay below yellow (as the Settings boxes allow).
+        Other settings are not checked here.
+        """
+        pair = {"WARN_YELLOW_MONTHS": "WARN_RED_MONTHS",
+                "WARN_RED_MONTHS": "WARN_YELLOW_MONTHS"}
+        if attr not in pair:
+            return
+        if not 1 <= value <= 120:
+            raise UserFacingException(
+                _("{}: expected 1 to 120 months, not {}").format(attr, value)
+            )
+        other = getattr(self.plugin, pair[attr]).get()
+        yellow, red = (value, other) if attr == "WARN_YELLOW_MONTHS" else (other, value)
+        try:
+            ok = int(red) < int(yellow)
+        except (TypeError, ValueError):
+            ok = True
+        if not ok:
+            raise UserFacingException(
+                _("The red warning ({}) must be below the yellow warning ({}) months.").format(red, yellow)
+            )
 
     def _coerce_config_value(self, cfg, raw):
         """Convert the command-line text ``raw`` to the type of ``cfg``'s

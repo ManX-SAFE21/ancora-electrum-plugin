@@ -617,6 +617,9 @@ class Plugin(BalPlugin, EventListener):
             basic = idx != 1
             for w in (lbl_welist_server, edit_welist_server, help_welist_server,
                       lbl_num_reminders, heir_num_reminders, help_num_reminders,
+                      lbl_warn_yellow, heir_warn_yellow, help_warn_yellow,
+                      lbl_warn_red, heir_warn_red, help_warn_red,
+                      reset_btn_warn_yellow, reset_btn_warn_red,
                       lbl_event_summary, edit_event_summary, help_event_summary,
                       lbl_event_description, edit_event_description, help_event_description,
                       lbl_calendar_app, edit_calendar_app, help_calendar_app,
@@ -710,7 +713,8 @@ class Plugin(BalPlugin, EventListener):
         grid = QGridLayout()
         grid.setColumnStretch(1, 1)
         # NOTE: the "User Type" row is placed at row 5, right before the
-        # advanced-only settings, so the user picks basic/advanced first.
+        # advanced-only settings, so the user picks basic/advanced first; the
+        # two remaining-time colour rows (#124) follow at rows 6 and 7.
         add_widget(
             grid,
             _("Hide Replaced"),
@@ -787,6 +791,64 @@ class Plugin(BalPlugin, EventListener):
             ),
         )
         grid.addWidget(_make_reset_btn(self.USER_TYPE, user_type_combo, "user_type"), 5, 3)
+        # Remaining-time colours of the delivery date (CHANGELOG #124), right
+        # below "User Type": ADVANCED only (BASIC always uses 12 and 6). No
+        # keyboard tracking, so typing "12" stores 12, not first 1. Red stays
+        # below yellow (each box limits the other).
+        heir_warn_yellow = BalSpinBox(self.WARN_YELLOW_MONTHS, minimum=2, maximum=120)
+        heir_warn_red = BalSpinBox(self.WARN_RED_MONTHS, minimum=1, maximum=119)
+        for box in (heir_warn_yellow, heir_warn_red):
+            box.setKeyboardTracking(False)
+
+        def _limit_warn_boxes(*_args):
+            """Keep red below yellow: each box bounds the other."""
+            heir_warn_red.setMaximum(max(1, heir_warn_yellow.value() - 1))
+            heir_warn_yellow.setMinimum(min(120, heir_warn_red.value() + 1))
+            self.update_all()
+
+        heir_warn_yellow.valueChanged.connect(_limit_warn_boxes)
+        heir_warn_red.valueChanged.connect(_limit_warn_boxes)
+        heir_warn_red.setMaximum(max(1, heir_warn_yellow.value() - 1))
+        heir_warn_yellow.setMinimum(min(120, heir_warn_red.value() + 1))
+        lbl_warn_yellow = QLabel(_("Yellow warning: inheritance date less than (months)"))
+        help_warn_yellow = HelpButton(_(
+            "The delivery date turns yellow when fewer than this many months "
+            "are left (default 12). It is only a colour: the will does not "
+            "change. Only used in ADVANCED mode."
+        ))
+        grid.addWidget(_hide_if_basic(lbl_warn_yellow), 6, 0)
+        grid.addWidget(_hide_if_basic(heir_warn_yellow), 6, 1)
+        grid.addWidget(_hide_if_basic(help_warn_yellow), 6, 2)
+        def _reset_warn_boxes():
+            """Give both thresholds their defaults, red first: each box
+            bounds the other, so yellow alone could not go below red."""
+            for cfg, box in ((self.WARN_RED_MONTHS, heir_warn_red),
+                             (self.WARN_YELLOW_MONTHS, heir_warn_yellow)):
+                cfg.set(cfg.default)
+                box.setValue(int(cfg.default))
+
+        def _make_warn_reset_btn():
+            """A ``↺`` button that resets both thresholds (see above)."""
+            btn = QPushButton("↺")
+            btn.setFixedWidth(24)
+            btn.setToolTip(_("Reset to default"))
+            btn.clicked.connect(_reset_warn_boxes)
+            return btn
+
+        reset_btn_warn_yellow = _make_warn_reset_btn()
+        grid.addWidget(_hide_if_basic(reset_btn_warn_yellow), 6, 3)
+        lbl_warn_red = QLabel(_("Red warning: inheritance date less than (months)"))
+        help_warn_red = HelpButton(_(
+            "The delivery date turns red when fewer than this many months are "
+            "left (default 6): if you are still here, choose a later date. "
+            "Only used in ADVANCED mode."
+        ))
+        grid.addWidget(_hide_if_basic(lbl_warn_red), 7, 0)
+        grid.addWidget(_hide_if_basic(heir_warn_red), 7, 1)
+        grid.addWidget(_hide_if_basic(help_warn_red), 7, 2)
+        reset_btn_warn_red = _make_warn_reset_btn()
+        grid.addWidget(_hide_if_basic(reset_btn_warn_red), 7, 3)
+
         # Number of reminders, event summary and event description are visible
         # only in ADVANCED mode.  In BASIC mode the factory defaults are always
         # used and these settings are hidden.
@@ -795,11 +857,11 @@ class Plugin(BalPlugin, EventListener):
             "How many reminder alarms the exported calendar (.ics) event "
             "contains.  Range: 1 to 5 (default 3).  Only used in ADVANCED mode."
         ))
-        grid.addWidget(_hide_if_basic(lbl_num_reminders), 6, 0)
-        grid.addWidget(_hide_if_basic(heir_num_reminders), 6, 1)
-        grid.addWidget(_hide_if_basic(help_num_reminders), 6, 2)
+        grid.addWidget(_hide_if_basic(lbl_num_reminders), 8, 0)
+        grid.addWidget(_hide_if_basic(heir_num_reminders), 8, 1)
+        grid.addWidget(_hide_if_basic(help_num_reminders), 8, 2)
         reset_btn_6 = _make_reset_btn(self.NUM_REMINDERS, heir_num_reminders, "spin")
-        grid.addWidget(_hide_if_basic(reset_btn_6), 6, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_6), 8, 3)
 
         lbl_event_summary = QLabel(_("Event summary"))
         help_event_summary = HelpButton(_(
@@ -809,11 +871,11 @@ class Plugin(BalPlugin, EventListener):
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
         ))
-        grid.addWidget(_hide_if_basic(lbl_event_summary), 7, 0)
-        grid.addWidget(_hide_if_basic(edit_event_summary), 7, 1)
-        grid.addWidget(_hide_if_basic(help_event_summary), 7, 2)
+        grid.addWidget(_hide_if_basic(lbl_event_summary), 9, 0)
+        grid.addWidget(_hide_if_basic(edit_event_summary), 9, 1)
+        grid.addWidget(_hide_if_basic(help_event_summary), 9, 2)
         reset_btn_7 = _make_reset_btn(self.EVENT_SUMMARY, edit_event_summary, "line")
-        grid.addWidget(_hide_if_basic(reset_btn_7), 7, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_7), 9, 3)
 
         lbl_event_description = QLabel(_("Event description"))
         help_event_description = HelpButton(_(
@@ -823,11 +885,11 @@ class Plugin(BalPlugin, EventListener):
             "  $heirs_complete: list of heirs name,address,amount\n"
             "Only used in ADVANCED mode."
         ))
-        grid.addWidget(_hide_if_basic(lbl_event_description), 8, 0)
-        grid.addWidget(_hide_if_basic(edit_event_description), 8, 1)
-        grid.addWidget(_hide_if_basic(help_event_description), 8, 2)
+        grid.addWidget(_hide_if_basic(lbl_event_description), 10, 0)
+        grid.addWidget(_hide_if_basic(edit_event_description), 10, 1)
+        grid.addWidget(_hide_if_basic(help_event_description), 10, 2)
         reset_btn_8 = _make_reset_btn(self.EVENT_DESCRIPTION, edit_event_description, "text")
-        grid.addWidget(_hide_if_basic(reset_btn_8), 8, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_8), 10, 3)
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
         # factory default is always used and the setting is hidden.
         lbl_welist_server = QLabel(_("Welist Server URL"))
@@ -835,11 +897,11 @@ class Plugin(BalPlugin, EventListener):
             "URL of the server that provides the will-executor list.  "
             "Only available in ADVANCED mode."
         ))
-        grid.addWidget(_hide_if_basic(lbl_welist_server), 9, 0)
-        grid.addWidget(_hide_if_basic(edit_welist_server), 9, 1)
-        grid.addWidget(_hide_if_basic(help_welist_server), 9, 2)
+        grid.addWidget(_hide_if_basic(lbl_welist_server), 11, 0)
+        grid.addWidget(_hide_if_basic(edit_welist_server), 11, 1)
+        grid.addWidget(_hide_if_basic(help_welist_server), 11, 2)
         reset_btn_9 = _make_reset_btn(self.WELIST_SERVER, edit_welist_server, "line")
-        grid.addWidget(_hide_if_basic(reset_btn_9), 9, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_9), 11, 3)
 
         lbl_calendar_app = QLabel(_("Calendar app command"))
         help_calendar_app = HelpButton(_(
@@ -847,11 +909,11 @@ class Plugin(BalPlugin, EventListener):
             "Leave empty to use the system default (xdg-open/open/start).\n"
             "Only used in ADVANCED mode."
         ))
-        grid.addWidget(_hide_if_basic(lbl_calendar_app), 10, 0)
-        grid.addWidget(_hide_if_basic(edit_calendar_app), 10, 1)
-        grid.addWidget(_hide_if_basic(help_calendar_app), 10, 2)
+        grid.addWidget(_hide_if_basic(lbl_calendar_app), 12, 0)
+        grid.addWidget(_hide_if_basic(edit_calendar_app), 12, 1)
+        grid.addWidget(_hide_if_basic(help_calendar_app), 12, 2)
         reset_btn_10 = _make_reset_btn(self.CALENDAR_APP, edit_calendar_app, "line")
-        grid.addWidget(_hide_if_basic(reset_btn_10), 10, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_10), 12, 3)
 
         # Save-in-history toggle and history label: advanced-only rows. The
         # label field is disabled while the checkbox is off (see
@@ -864,11 +926,11 @@ class Plugin(BalPlugin, EventListener):
             "  {willexecutor}: replaced with the will-executor URL of the item\n"
             "Only used in ADVANCED mode."
         ))
-        grid.addWidget(_hide_if_basic(lbl_save_history), 11, 0)
-        grid.addWidget(_hide_if_basic(heir_save_history), 11, 1)
-        grid.addWidget(_hide_if_basic(help_save_history), 11, 2)
+        grid.addWidget(_hide_if_basic(lbl_save_history), 13, 0)
+        grid.addWidget(_hide_if_basic(heir_save_history), 13, 1)
+        grid.addWidget(_hide_if_basic(help_save_history), 13, 2)
         reset_btn_11 = _make_reset_btn(self.SAVE_HISTORY, heir_save_history, "check")
-        grid.addWidget(_hide_if_basic(reset_btn_11), 11, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_11), 13, 3)
 
         lbl_history_label = QLabel(_("History label"))
         help_history_label = HelpButton(_(
@@ -878,11 +940,11 @@ class Plugin(BalPlugin, EventListener):
             "  {willexecutor}: replaced with the will-executor URL of the item\n"
             "Only used in ADVANCED mode."
         ))
-        grid.addWidget(_hide_if_basic(lbl_history_label), 12, 0)
-        grid.addWidget(_hide_if_basic(edit_history_label), 12, 1)
-        grid.addWidget(_hide_if_basic(help_history_label), 12, 2)
+        grid.addWidget(_hide_if_basic(lbl_history_label), 14, 0)
+        grid.addWidget(_hide_if_basic(edit_history_label), 14, 1)
+        grid.addWidget(_hide_if_basic(help_history_label), 14, 2)
         reset_btn_12 = _make_reset_btn(self.HISTORY_LABEL, edit_history_label, "line")
-        grid.addWidget(_hide_if_basic(reset_btn_12), 12, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_12), 14, 3)
 
         # NOTE: the ADVANCED-only widgets above have ALREADY been given their
         # correct initial visibility inline (via _hide_if_basic) BEFORE being
@@ -891,12 +953,12 @@ class Plugin(BalPlugin, EventListener):
         # the Windows relayout flicker. Do NOT reintroduce a post-hoc
         # setVisible() loop here.
 
-        grid.addWidget(heir_repush, 13, 0)
+        grid.addWidget(heir_repush, 15, 0)
         grid.addWidget(
             HelpButton(
                 _("Broadcast all transactions to willexecutors including those already pushed")
             ),
-            13,
+            15,
             2,
         )
 
@@ -910,13 +972,13 @@ class Plugin(BalPlugin, EventListener):
             "When disabled, the will is only rebuilt when you press Check or "
             "Prepare. The last built state is still saved to the wallet."
         ))
-        grid.addWidget(lbl_rebuild_on_close, 14, 0)
-        grid.addWidget(heir_rebuild_on_close, 14, 1)
-        grid.addWidget(help_rebuild_on_close, 14, 2)
+        grid.addWidget(lbl_rebuild_on_close, 16, 0)
+        grid.addWidget(heir_rebuild_on_close, 16, 1)
+        grid.addWidget(help_rebuild_on_close, 16, 2)
         reset_btn_rebuild_on_close = _make_reset_btn(
             self.REBUILD_ON_CLOSE, heir_rebuild_on_close, "check"
         )
-        grid.addWidget(reset_btn_rebuild_on_close, 14, 3)
+        grid.addWidget(reset_btn_rebuild_on_close, 16, 3)
 
         # "Rebuild automatically on new transactions" row (always visible,
         # BASIC + ADVANCED), right below the "Rebuild will on wallet close"
@@ -934,13 +996,13 @@ class Plugin(BalPlugin, EventListener):
             "When disabled (default), the will is only rebuilt on Check / "
             "Prepare / wallet close."
         ))
-        grid.addWidget(lbl_auto_rebuild, 15, 0)
-        grid.addWidget(heir_auto_rebuild, 15, 1)
-        grid.addWidget(help_auto_rebuild, 15, 2)
+        grid.addWidget(lbl_auto_rebuild, 17, 0)
+        grid.addWidget(heir_auto_rebuild, 17, 1)
+        grid.addWidget(help_auto_rebuild, 17, 2)
         reset_btn_auto_rebuild = _make_reset_btn(
             self.AUTO_REBUILD, heir_auto_rebuild, "check"
         )
-        grid.addWidget(reset_btn_auto_rebuild, 15, 3)
+        grid.addWidget(reset_btn_auto_rebuild, 17, 3)
 
         # ----------------------------------------------------------------- #
         # Group C / C4b: "Reset" button that restores the dialog settings to  #
@@ -966,6 +1028,9 @@ class Plugin(BalPlugin, EventListener):
                 (self.AUTO_SIGN, heir_auto_sign, "check"),
                 (self.EDITABLE_DATES, heir_editable_dates, "check"),
                 (self.NUM_REMINDERS, heir_num_reminders, "spin"),
+                # Red before yellow: each box bounds the other (#124).
+                (self.WARN_RED_MONTHS, heir_warn_red, "spin"),
+                (self.WARN_YELLOW_MONTHS, heir_warn_yellow, "spin"),
                 (self.MAX_WILLEXECUTOR_FEE, heir_max_willexecutor_fee, "spin"),
                 (self.EVENT_SUMMARY, edit_event_summary, "line"),
                 (self.EVENT_DESCRIPTION, edit_event_description, "text"),

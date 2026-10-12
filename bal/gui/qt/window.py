@@ -628,6 +628,7 @@ class BalWindow:
                 self.will_settings,
                 self.bal_plugin.is_basic_mode(),
                 still_active=self._still_active_for_summary(),
+                warn_months=getattr(self.bal_plugin, "warning_months", lambda: None)(),
             )
         except Exception as e:
             _logger.debug(f"will summary failed: {e!r}")

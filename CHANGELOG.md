@@ -7050,3 +7050,76 @@ tab: the will in force, 2029-08-28, 4 of 4 received and verified. "Check
 your will" on 2026-10-11 and 2026-10-12 (after 02:00 UTC): Check "ok",
 preparation, signature and sending "not needed", verification 4/4, no
 password, no question; closing and reopening: no note again.
+
+## 124. The delivery date shows how much time is left (green, yellow, red)
+
+**Date:** 2026-10-12
+
+**Problem:** the owner had no quick way to see when the delivery date of
+his will was getting close. Owner decision 5 (2026-10-11, series #123-#129):
+green with more than 12 months left, yellow below 12, red below 6; the two
+thresholds editable in the ADVANCED settings and NOT tied to the Check
+Alive. Plan: `context/reports/design-123/plan.md` section 5.
+
+**What changed (visible: colours and two ADVANCED settings rows; nothing in
+the will, its transactions or the will-executors changes):**
+
+- `bal/core/delivery.py`: `months_between` (whole calendar months, the
+  same arithmetic as `add_months`), `warning_months` (the two thresholds:
+  whole months 1..120, red below yellow, else the defaults 12 and 6) and
+  `delivery_level` (`green` / `yellow` / `red` / `passed`, counted from
+  today's UTC day). Pure, no clock read.
+- `bal/core/plugin_base.py`: settings `bal_warn_yellow_months` (12) and
+  `bal_warn_red_months` (6); `BalPlugin.warning_months()` returns the
+  defaults in BASIC mode and the stored values in ADVANCED mode.
+- `bal/core/summary.py`: the "Delivery to the heirs" line carries its
+  colour and a tooltip (`delivery_warning`, texts approved by the owner on
+  2026-10-12); `_months_between` replaced by `delivery.months_between`, so
+  "(in 2 years and 10 months)" and the colour never disagree (the old one
+  counted one month less on clamped month ends, e.g. 31/01 -> 28/02).
+- Shown only on the line "Delivery to the heirs": in the will summary box
+  (`WillSummaryWidget`, date and text coloured, tooltip) and in the result
+  sentence of the Check window (`BalBuildWillDialog._summary_sentence`).
+  The date field of the toolbars and of the wizard keeps its normal look
+  (owner, after the first ZIP-2: a first version coloured it too).
+- Settings (`bal/gui/qt/plugin.py`): two ADVANCED rows right below "User
+  Type", "Yellow warning: inheritance date less than (months)" and "Red
+  warning: inheritance date less than (months)" (names chosen by the owner),
+  without keyboard tracking (typing "36" stores 36 once), each box bounding
+  the other (red always below yellow); each row's reset button and the
+  "Reset to Default Setting" button give back 12 and 6 (red first). The
+  rows below were renumbered by two.
+- Command line: `bal_settings_set` refuses a threshold outside 1..120
+  months or a red not below yellow.
+- Catalogs: 7 new msgids (3 tooltips, 2 labels, 2 help texts) with Italian
+  and Spanish; the committed order of the other entries kept.
+- `tests/flowkit.py`: the Recorder leaves the colour span out of the
+  recorded result sentence (a style, not a text), so the golden files are
+  unchanged.
+- Manual (`docs/manual/README.md`, `manual.html`): a paragraph on the
+  colours. `make-release.sh`: the new GUI test file.
+
+**Tests:** `tests/test_core_delivery_colours.py` (pure: months between
+dates, also against `add_months` on many dates; the thresholds; the
+boundaries, the clamped end of month, passed and today; the tooltips) and
+`tests/test_gui_delivery_colours.py` (three fake will-executors, test
+wallet with a password: summary box and Check sentence green / yellow /
+red; BASIC ignores the stored thresholds, ADVANCED follows them, a broken
+pair gives the defaults; the toolbar date of the real window keeps its
+normal look; the Settings rows hidden in BASIC and visible in ADVANCED
+right below User Type, no keyboard tracking, red kept below yellow, both
+reset buttons; `bal_settings_set` limits).
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1688 passed, 0 failed, 0 errors; the 93 golden files
+unchanged; `ruff check bal/ tests/`: all checks passed. Scenario harness: log identical to the #123 log after masking the random ids; warn_matrix 134 Checks, 0 mismatches (synced=1 and 0).
+`build_zip.py` + `external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass (ZIP sha256 `dfe53327...`).
+
+**Outcome:** DONE. The owner tested ZIP-2 on his wallet (2026-10-12). A
+first version also coloured the date field of the toolbar; the owner asked
+for the colour only on the "Delivery to the heirs" line and for the names
+of the two settings ("Avviso Giallo/Rosso data eredità inferiore a
+(mesi)"). With the second ZIP-2 (sha256 `dfe53327...`): the line red with
+the will 4 months away (the owner had moved his will to 2027-02-28 on
+purpose to see the colour), the date field in its normal colour, the two
+settings right below "User Type" with their new names and reset buttons.
