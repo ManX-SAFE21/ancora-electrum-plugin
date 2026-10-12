@@ -101,6 +101,25 @@ def test_replaced_invalidated_mempool_executed_not_valid():
     assert will_status_text(item) == "Not valid"
 
 
+def test_a_copy_in_force_reads_in_force_even_if_replaced():
+    """CHANGELOG #129 (owner): a later unsigned draft marks the sent will
+    REPLACED (VALID cleared) while #128 keeps it in force. With
+    ``in_force=True`` (the list passes it for items in force) the row reads
+    where its will-executor stands; without it, as before."""
+    item = _item("COMPLETE", "PUSHED", "CHECKED", "REPLACED")
+    item.set_status("VALID", False)
+    assert will_status_text(item) == "Replaced by a newer will"
+    assert status_color(item) == "#ff97e9"
+    assert will_status_text(item, in_force=True) == "In force, verified"
+    assert status_color(item, in_force=True) == "#8afa6c"
+    item = _item("COMPLETE", "PUSHED", "REPLACED")
+    assert will_status_text(item, in_force=True) == "In force, to be verified"
+    assert status_color(item, in_force=True) == "#73f3c8"
+    # Invalidated stays invalidated.
+    item = _item("COMPLETE", "PUSHED", "INVALIDATED")
+    assert will_status_text(item, in_force=True) == "Invalidated on-chain"
+
+
 def test_text_and_colour_agree():
     """Same priority: one text per colour."""
     pairs = {
@@ -123,8 +142,10 @@ def test_tooltip_shows_the_executor_and_the_history():
 
 
 def test_no_server_column_any_more():
+    """No "Server" column (#83). CHANGELOG #129 added the will-executor's
+    fee ("FEE") before the Status column."""
     names = [c.name for c in PreviewList.Columns]
-    assert names == ["LOCKTIME", "TXID", "WILLEXECUTOR", "STATUS"]
+    assert names == ["LOCKTIME", "TXID", "WILLEXECUTOR", "FEE", "STATUS"]
 
 
 def test_saved_history_is_unchanged():

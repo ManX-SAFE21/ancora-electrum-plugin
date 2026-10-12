@@ -13,6 +13,8 @@ The status flags themselves are computed by the core layer
 status into a colour for the transaction list / detail views.
 """
 
+from ...i18n import N_
+
 # Status -> hex colour.  The first matching status (checked in priority order)
 # wins.  These are exactly the colours the original ``WillItem.get_color`` used,
 # so the GUI looks identical after the refactor.
@@ -31,8 +33,13 @@ _STATUS_COLOR_PRIORITY = (
 _DEFAULT_COLOR = "#ffffff"
 
 
-def status_color(will_item) -> str:
+def status_color(will_item, in_force=False) -> str:
     """Return the display colour (``"#rrggbb"``) for a :class:`WillItem`.
+
+    ``in_force`` (CHANGELOG #129): the item belongs to the will in force
+    (``will_state.IN_FORCE``). A later unsigned draft marks the sent will
+    REPLACED (#128 keeps it in force): its row then takes the colour of
+    where its will-executor stands, not the pink of a replaced item.
 
     This is a faithful, behaviour-preserving port of the old
     ``WillItem.get_color()`` method.  The slightly irregular handling of the
@@ -41,6 +48,8 @@ def status_color(will_item) -> str:
     """
     # First, the simple priority-ordered statuses.
     for status, color in _STATUS_COLOR_PRIORITY:
+        if in_force and status in ("REPLACED", "UPDATED"):
+            continue
         if will_item.get_status(status):
             return color
 
@@ -79,8 +88,12 @@ def signature_suffix(will_item) -> str:
     return " ({}/{})".format(added, required)
 
 
-def will_status_text(will_item) -> str:
+def will_status_text(will_item, in_force=False) -> str:
     """What this row is for the will TODAY, in plain words (CHANGELOG #83).
+
+    ``in_force`` (CHANGELOG #129): see :func:`status_color`; the REPLACED /
+    UPDATED flags (and the VALID flag they clear) are not read, so a copy
+    of the will in force says "In force, verified" and so on.
 
     Each row of the transaction list is the copy of the will held by ONE
     will-executor, and its colour (:func:`status_color`) tells where that
@@ -97,13 +110,15 @@ def will_status_text(will_item) -> str:
 
     if will_item.get_status("INVALIDATED"):
         return _("Invalidated on-chain")
-    if will_item.get_status("REPLACED") or will_item.get_status("UPDATED"):
+    if not in_force and (
+        will_item.get_status("REPLACED") or will_item.get_status("UPDATED")
+    ):
         return _("Replaced by a newer will")
     if will_item.get_status("CONFIRMED"):
         return _("Executed")
     if will_item.get_status("MEMPOOL"):
         return _("Being executed (mempool)")
-    if not will_item.get_status("VALID"):
+    if not in_force and not will_item.get_status("VALID"):
         return _("Not valid")
     if will_item.get_status("CHECK_FAIL") and not will_item.get_status("CHECKED"):
         return _("Not received by the executor")
@@ -142,3 +157,36 @@ def will_status_tooltip(will_item) -> str:
     head = "{}: {}".format(_("Will-Executor"), url) if url else _("No will-executor")
     steps = [s for s in format_status_history(will_item.status).split(".") if s]
     return head + "\n" + _("History: {}").format(" → ".join(steps))
+
+
+# CHANGELOG #129: the state of a will VERSION (``bal.core.will_versions``)
+# in the Will tab. The colours are those of the will summary and of the
+# remaining-time colours (#124: ``WillSummaryWidget._STYLES``,
+# ``DELIVERY_LEVEL_COLOURS``): green in force, orange something to know or
+# to do, red invalidated, grey history. The texts are marked with N_ here
+# (import time) and translated when shown.
+_VERSION_STATES = {
+    "draft": (N_("Draft"), "#b26a00"),
+    "in_force": (N_("In force"), "#2e7d32"),
+    "replaced_held": (N_("Replaced (still held by the will-executors)"), "#b26a00"),
+    "replaced": (N_("Replaced"), "#555555"),
+    "invalidated": (N_("Invalidated"), "#c62828"),
+    "partially_signed": (N_("Partially Signed"), "#b26a00"),
+    "executed": (N_("Executed"), "#555555"),
+    "not_valid": (N_("Not valid"), "#555555"),
+    "discarded_draft": (N_("Discarded draft"), "#555555"),
+    "other": ("", "#555555"),
+}
+
+
+def version_state_text(state) -> str:
+    """The translated name of a version ``state`` (CHANGELOG #129)."""
+    from ...i18n import _
+
+    text = _VERSION_STATES.get(state, ("", ""))[0]
+    return _(text) if text else ""
+
+
+def version_state_colour(state) -> str:
+    """The text colour (``"#rrggbb"``) of a version ``state`` (CHANGELOG #129)."""
+    return _VERSION_STATES.get(state, ("", "#555555"))[1]

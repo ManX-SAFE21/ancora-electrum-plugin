@@ -335,6 +335,8 @@ class BalPlugin(BasePlugin):
         self.MAX_WILLEXECUTOR_FEE = BalConfig(
             config, "bal_max_willexecutor_fee", 500000
         )
+        # CHANGELOG #129: no longer used (the Will tab lists the will by
+        # versions); kept so the users' config keys stay readable.
         self.HIDE_REPLACED = BalConfig(config, "bal_hide_replaced", True)
         self.HIDE_INVALIDATED = BalConfig(config, "bal_hide_invalidated", True)
         self.ALLOW_REPUSH = BalConfig(config, "bal_allow_repush", True)
@@ -442,46 +444,9 @@ class BalPlugin(BasePlugin):
             config, "bal_open_app", self.default_app.get(self.system, "")
         )
 
-        # Cached toggles used by the GUI list filters.
-        self._hide_invalidated = self.HIDE_INVALIDATED.get()
-        self._hide_replaced = self.HIDE_REPLACED.get()
-
     def resource_path(self, *parts):
         """Absolute path to a file bundled inside the plugin directory."""
         return os.path.join(self.plugin_dir, *parts)
-
-    def sync_hide_filters(self):
-        """Re-read the "hide" filter flags from the persisted config.
-
-        The cached ``_hide_invalidated`` / ``_hide_replaced`` flags are used by
-        the GUI list to decide which rows to skip.  They can be changed from two
-        different places:
-
-        * the list toolbar buttons, which call :meth:`hide_invalidated` /
-          :meth:`hide_replaced` (a toggle that updates both the cache and the
-          config), and
-        * the Settings dialog checkboxes, which write the config directly
-          (``BalConfig.set``) without touching the cached flags.
-
-        In the second case the cache and the config would drift apart and the
-        transaction list would keep filtering with the *old* value, so the
-        toggled rows never appear/disappear until Electrum is restarted.
-        Re-syncing the cache from the config here (called by ``update_all``)
-        keeps every code path coherent regardless of where the change came
-        from.
-        """
-        self._hide_invalidated = self.HIDE_INVALIDATED.get()
-        self._hide_replaced = self.HIDE_REPLACED.get()
-
-    def hide_invalidated(self):
-        """Toggle (and persist) the "hide invalidated transactions" filter."""
-        self._hide_invalidated = not self._hide_invalidated
-        self.HIDE_INVALIDATED.set(self._hide_invalidated)
-
-    def hide_replaced(self):
-        """Toggle (and persist) the "hide replaced transactions" filter."""
-        self._hide_replaced = not self._hide_replaced
-        self.HIDE_REPLACED.set(self._hide_replaced)
 
     def validate_will_settings(self, will_settings):
         """Fill in any missing will-setting with its default value."""

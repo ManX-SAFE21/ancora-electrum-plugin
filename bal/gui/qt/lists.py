@@ -14,11 +14,20 @@ construction) for all business actions, so the heavy logic stays in ``window``
 and ``dialogs``.
 """
 
+import re
 from typing import TYPE_CHECKING
 
+from PyQt6.QtCore import QItemSelectionModel, QLocale, QRect
+from PyQt6.QtGui import QFont, QFontMetrics
+from PyQt6.QtWidgets import (
+    QHeaderView,
+    QMessageBox,
+    QStyledItemDelegate,
+    QStyleOptionHeader,
+)
 from PyQt6.QtWidgets import QLineEdit as _QLineEdit
-from PyQt6.QtWidgets import QMessageBox, QStyledItemDelegate
 
+from ...core import will_state, will_versions
 from ...core.messages import protected_executor_message
 from .common import (
     N_,
@@ -33,12 +42,15 @@ from .common import (
     QAbstractItemView,
     QApplication,
     QColor,
+    QDateTime,
+    QDateTimeEdit,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMenu,
     QModelIndex,
+    QPainter,
     QPersistentModelIndex,
     QPushButton,
     QSize,
@@ -46,6 +58,7 @@ from .common import (
     QSpinBox,
     QStandardItem,
     QStandardItemModel,
+    QStyle,
     Qt,
     QToolButton,
     QVBoxLayout,
@@ -75,6 +88,7 @@ from .common import (
 )
 from .dialogs import BalBuildWillDialog, BalDialog
 from .report_actions import report_menu
+from .theme import version_state_colour, version_state_text
 from .widgets import BalCheckBox, WillSettingsWidget
 
 if TYPE_CHECKING:
@@ -94,26 +108,29 @@ def _can_broadcast(will_item):
 def _can_delete(will_item):
     """True if a will transaction may be deleted.
 
-    Deletable:
-        * invalid or not fully signed transactions (unchanged rule);
-        * valid AND fully signed transactions that their will-executor NEVER
-          received: not PUSHED and not CHECKED (e.g. "Push failed" /
-          "Not on server", or never sent).
+    Not deletable (CHANGELOG #129):
+        * a transaction SENT to its will-executor (PUSHED or CHECKED),
+          whatever its other flags: replaced, invalidated or not. WHY:
+          deleting it only on this PC does not remove it from the executor's
+          server, so the owner would wrongly believe that inheritance was
+          cancelled; and a replaced one that is still executable is part of
+          the will in force (#128). Before #129 a REPLACED or INVALIDATED
+          sent item could be deleted;
+        * a transaction in force (``will_state``: signed) that no
+          will-executor can hold: the backup transaction (no executor), as
+          before.
 
-    Not deletable: a valid, signed transaction that the will-executor holds
-    (PUSHED or CHECKED). WHY: deleting it only on this PC would not remove it
-    from the executor's server, so the user would wrongly believe that
-    inheritance was cancelled; that case needs an on-chain invalidation.
-    Signed transactions without a will-executor (backup txs) also stay
-    protected, as before.
+    Deletable: the drafts, the partially signed ones, and the transactions
+    never sent (a signed copy whose push failed or was never made; an old
+    one never sent).
     """
     if not will_item:
         return False
-    if not will_item.get_status("VALID") or not will_item.get_status("COMPLETE"):
-        return True
-    return bool(getattr(will_item, "we", None)) and not (
-        will_item.get_status("PUSHED") or will_item.get_status("CHECKED")
-    )
+    if will_item.get_status("PUSHED") or will_item.get_status("CHECKED"):
+        return False
+    if will_state.classify(will_item) == will_state.IN_FORCE:
+        return bool(getattr(will_item, "we", None))
+    return True
 
 
 def _apply_select_all(willexecutors, select, valid=None):
@@ -344,24 +361,302 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
 
 
 
+def _fonts():
+    """The normal and bold fonts of the application."""
+    normal = QFont(QApplication.font())
+    bold = QFont(normal)
+    bold.setBold(True)
+    return normal, bold
+
+
+# Inner left padding of the texts of the version level (header and rows).
+_PAD = 6
+
+
+def _number_width():
+    """Width of the "N." column of the version level (#129, owner)."""
+    _normal, bold = _fonts()
+    return QFontMetrics(bold).horizontalAdvance("#9999") + 2 * _PAD
+
+
+def _status_width():
+    """Width of the "Status" column of the version level.
+
+    Wide enough for the longest state text in the current language (the
+    states, the invalidation's "On the blockchain" / "Mempool" and the
+    header label), so the header and every row put it at the same place.
+    """
+    _normal, bold = _fonts()
+    metrics = QFontMetrics(bold)
+    texts = [version_state_text(state) for state in (
+        "draft", "in_force", "replaced_held", "replaced", "invalidated",
+        "partially_signed", "executed", "not_valid", "discarded_draft")]
+    texts += [_("On the blockchain"), _("Mempool"), _("Status")]
+    return max(metrics.horizontalAdvance(t) for t in texts if t) + 3 * _PAD
+
+
+class _RowPaint:
+    """Draws a version-level row of the Will tab (CHANGELOG #129).
+
+    Electrum's item delegate (``ElectrumItemDelegate``) calls ``paint`` /
+    ``sizeHint`` / ``show_tooltip`` of the object stored in the item's
+    ``MyTreeView.ROLE_CUSTOM_PAINT`` role. The row spans every column
+    (``setFirstColumnSpanned``) and is drawn in the three columns of the
+    version level, the same as :class:`_VersionHeader` (owner, after the
+    ZIP test): "N." (the number), "Version" (the headline in bold and a
+    second line) and "Status" (in the colour of the state). The
+    transaction columns underneath keep their own widths.
+    """
+
+    def __init__(self, head, sub, state="", colour="#555555", number=""):
+        """``head`` (bold), ``sub`` (second line), ``state`` and its colour,
+        ``number`` ("#16", empty for drafts and the other rows)."""
+        self.head = head
+        self.sub = sub
+        self.state = state
+        self.colour = colour
+        self.number = number
+
+    def paint(self, painter, rect):
+        """Draw the three columns inside ``rect`` (the whole row)."""
+        normal, bold = _fonts()
+        painter.save()
+        try:
+            bold_metrics = QFontMetrics(bold)
+            line = bold_metrics.height()
+            top = rect.top() + max(0, (rect.height() - 2 * line) // 2)
+            number_w = _number_width()
+            status_x = rect.right() - _status_width() + _PAD
+            text_x = rect.left() + number_w + _PAD
+            width = max(0, status_x - text_x - 2 * _PAD)
+            # Dark text on the light background of the row (set on the
+            # item), readable with Electrum's dark theme too, like the
+            # summary box above the list.
+            painter.setFont(bold)
+            painter.setPen(QColor("#111111"))
+            if self.number:
+                painter.drawText(
+                    QRect(rect.left() + _PAD, top, number_w - _PAD, line),
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                    self.number,
+                )
+            painter.drawText(
+                QRect(text_x, top, width, line),
+                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                bold_metrics.elidedText(self.head, Qt.TextElideMode.ElideRight, width),
+            )
+            if self.state:
+                painter.setPen(QColor(self.colour))
+                painter.drawText(
+                    QRect(status_x, rect.top(), rect.right() - status_x, rect.height()),
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                    self.state,
+                )
+            if self.sub:
+                painter.setFont(normal)
+                painter.setPen(QColor("#333333"))
+                painter.drawText(
+                    QRect(text_x, top + line, width, line),
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                    QFontMetrics(normal).elidedText(
+                        self.sub, Qt.TextElideMode.ElideRight, width
+                    ),
+                )
+        finally:
+            painter.restore()
+
+    def sizeHint(self, default_size):  # noqa: N802 - Electrum's name
+        """Two lines high; the width stays the default (the row spans)."""
+        _normal, bold = _fonts()
+        return QSize(default_size.width(), 2 * QFontMetrics(bold).height() + 8)
+
+    def show_tooltip(self, evt):
+        """No own tooltip: the item's tooltip (the whole text) is shown."""
+        return False
+
+
+class _VersionHeader(QHeaderView):
+    """The header of the Will tab: the columns of the VERSION level.
+
+    Owner, after the ZIP test (#129): the tree's header showed the
+    transaction columns, squeezed to the left when every version was
+    closed. It now shows "N." / "Version" / "Status" across the whole
+    width, at the same places as :class:`_RowPaint`, whatever is open; the
+    transaction columns are named by a sub-header row under each open
+    version. The sections themselves still size the transaction columns.
+    """
+
+    def __init__(self, parent):
+        """A horizontal header whose sections are not clickable."""
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.setSectionsClickable(False)
+
+    def segments(self):
+        """``[(x, width, label)]`` of the three columns, in viewport pixels.
+
+        The left edge follows the tree's indentation (the rows start after
+        the expand arrow); the right edge is the end of the last section,
+        so the header scrolls with the rows.
+        """
+        tree = self.parent()
+        indent = tree.indentation() if tree.rootIsDecorated() else 0
+        right = self.length() - self.offset()
+        number_w = indent + _number_width()
+        status_w = _status_width()
+        return [
+            (0, number_w, _("N.")),
+            (number_w, max(0, right - status_w - number_w), _("Version")),
+            (right - status_w, status_w, _("Status")),
+        ]
+
+    def paintEvent(self, event):  # noqa: N802 - Qt's name
+        """Draw the three version columns (the sections are not drawn)."""
+        painter = QPainter(self.viewport())
+        try:
+            tree = self.parent()
+            indent = tree.indentation() if tree.rootIsDecorated() else 0
+            height = self.viewport().height()
+            for i, (x, width, label) in enumerate(self.segments()):
+                opt = QStyleOptionHeader()
+                self.initStyleOption(opt)
+                opt.rect = QRect(x, 0, width, height)
+                opt.section = i
+                self.style().drawControl(
+                    QStyle.ControlElement.CE_HeaderSection, opt, painter, self)
+                # The texts start where the rows' texts start.
+                text_x = x + _PAD + (indent if i == 0 else 0)
+                painter.drawText(
+                    QRect(text_x, 0, max(0, width - _PAD), height),
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                    label,
+                )
+        finally:
+            painter.end()
+
+
+# Background of the version and invalidation rows (light, like the summary
+# box above the list), so their dark text stays readable whatever Electrum's
+# theme is.
+_VERSION_ROW_BG = "#f2f2f2"
+
+# The display format of the toolbar's date field, read once (see
+# _delivery_text).
+_DATE_FORMAT = None
+
+
+def long_year_format(fmt):
+    """``fmt`` (a Qt date format) with a four-digit year (#129, owner).
+
+    The locale's short format often has a two-digit year ("dd/MM/yy HH:mm"
+    in Italian): the owner's mockup reads "27/02/2027 23:00". Only a lone
+    ``yy`` is widened; ``yyyy`` stays as it is.
+    """
+    return re.sub(r"(?<!y)yy(?!y)", "yyyy", fmt)
+
+
+def _delivery_text(locktime):
+    """The delivery date of a version row (#129).
+
+    The toolbar's date field (``LockTimeDateEdit``, a ``QDateTimeEdit``)
+    shows the local time in the locale's short format, with minutes; the
+    same format is used here (day/month order of the locale), with a
+    four-digit year (:func:`long_year_format`).
+    """
+    global _DATE_FORMAT
+    if _DATE_FORMAT is None:
+        _DATE_FORMAT = long_year_format(QDateTimeEdit().displayFormat())
+    try:
+        moment = QDateTime.fromSecsSinceEpoch(int(locktime))
+        return QLocale().toString(moment, _DATE_FORMAT)
+    except Exception:
+        return str(BalTimestamp(locktime))
+
+
+class _TallCell:
+    """Gives a two-line cell the height of its two lines (#129, owner).
+
+    The Will-Executor cell holds the URL and, below it, the fee address;
+    Qt's default row height left the two lines touching. Electrum's item
+    delegate asks the object in ``MyTreeView.ROLE_CUSTOM_PAINT`` for the
+    size; the text itself is still drawn by the delegate.
+    """
+
+    def paint(self, painter, rect):
+        """Nothing to add: the delegate draws the text."""
+
+    def sizeHint(self, default_size):  # noqa: N802 - Electrum's name
+        """At least two text lines plus a margin."""
+        line = QFontMetrics(QApplication.font()).height()
+        return QSize(default_size.width(), max(default_size.height(), 2 * line + 10))
+
+    def show_tooltip(self, evt):
+        """No own tooltip."""
+        return False
+
+
+def _executor_fee(item):
+    """The will-executor's own fee paid by ``item`` (sat), or ``None``.
+
+    The value of the output to the executor's fee address; when the
+    transaction has none (it cannot be read), the executor's base fee.
+    """
+    we = getattr(item, "we", None)
+    if not we:
+        return None
+    address = we.get("address")
+    try:
+        for out in item.tx.outputs():
+            if address and out.address == address:
+                return int(out.value)
+    except Exception:
+        pass
+    try:
+        return int(we.get("base_fee"))
+    except (TypeError, ValueError):
+        return None
+
+
 class PreviewList(MyTreeView, MessageBoxMixin):
+    """The Will tab list: the will by versions (CHANGELOG #129).
+
+    Two levels: one row per VERSION of the will (one build: the draft, the
+    will in force, the history; ``bal.core.will_versions``) and under it
+    one row per transaction (a will-executor's copy, or the backup), with
+    the multiverse instalments under their parent transaction. A paid
+    invalidation has its own row between the versions it ended and the
+    next one. Only the last versions are shown until "Show all history" is
+    pressed. The class name, the toolbar and the menu actions are the same
+    as before (other code and tests use them).
+    """
+
     class Columns(MyTreeView.BaseColumnsEnum):
         LOCKTIME = enum.auto()
         TXID = enum.auto()
         WILLEXECUTOR = enum.auto()
+        FEE = enum.auto()
         STATUS = enum.auto()
 
     # CHANGELOG #83: no separate "Server" column any more; the Status column
     # says where this row's will-executor stands (see will_status_text).
+    # CHANGELOG #129: the will-executor's own fee of each copy ("Compenso").
     headers = {
         Columns.LOCKTIME: N_("Locktime"),
         Columns.TXID: N_("Txid"),
         Columns.WILLEXECUTOR: N_("Will-Executor"),
+        Columns.FEE: N_("Executor fee"),
         Columns.STATUS: N_("Status"),
     }
 
     ROLE_HEIR_KEY = Qt.ItemDataRole.UserRole + 2000
     key_role = ROLE_HEIR_KEY
+    # What a row is ("version", "variant", "invalidation", "show_all",
+    # "hide_all") and
+    # its key (version id or txid), on the first cell of every row.
+    ROLE_KIND = Qt.ItemDataRole.UserRole + 2001
+    ROLE_KEY = Qt.ItemDataRole.UserRole + 2002
+    # The text the search box looks in (lower case), on the first cell.
+    ROLE_SEARCH = Qt.ItemDataRole.UserRole + 2003
+    filter_columns = [Columns.LOCKTIME]
 
     def createEditor(self, parent, option, index):
         return QLineEdit(parent)
@@ -373,10 +668,17 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         model.setData(index, editor.text())
 
     def __init__(self, bal_window: "BalWindow", parent, will):
+        """Build the list on ``will`` (the window's will items by default).
+
+        #129: a tree (expand arrows shown), rows of different heights
+        (two-line rows), no header sorting (the order is the versions'
+        own), and the full txid never cut: the Status column takes the
+        remaining width instead of the Txid column.
+        """
         super().__init__(
             parent=parent,
             main_window=bal_window.window,
-            stretch_column=self.Columns.TXID,
+            stretch_column=self.Columns.STATUS,
         )
         # self._bal_parent = parent
         self.bal_window = bal_window
@@ -387,89 +689,222 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         else:
             self.will = bal_window.willitems
 
-        try:
-            self.setModel(QStandardItemModel(self))
-            self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-            self.sortByColumn(self.Columns.NAME, Qt.SortOrder.AscendingOrder)
-        except Exception:
-            pass
+        # State kept while the window lives (#129): "Show all history"
+        # pressed, and the rows the owner opened or closed, by identity
+        # (version id / txid), never by row number: update() runs often.
+        self._show_all = False
+        self._expanded = {}
+        self._rebuilding = False
+        # The "Show all history" / "Hide history" push button, when shown.
+        self.history_button = None
+        self._versions = {}
+        self.history = None
+        self.hidden_versions = 0
 
-        self.setSortingEnabled(True)
+        self.setModel(QStandardItemModel(self))
+        # The header names the version level (owner, after the ZIP test).
+        self.setHeader(_VersionHeader(self))
+        self.header().setResizeContentsPrecision(0)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setRootIsDecorated(True)
+        self.setUniformRowHeights(False)
+        self.setSortingEnabled(False)
+        self.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.expanded.connect(lambda idx: self._remember_expanded(idx, True))
+        self.collapsed.connect(lambda idx: self._remember_expanded(idx, False))
+        self.clicked.connect(self._on_clicked)
         self.std_model = self.model()
 
+        self.update()
+
+    # -------------------------------------------------------- the rows
+
+    def _row_info(self, idx):
+        """``(kind, key)`` of the row of ``idx`` (``(None, None)`` if none).
+
+        Read from the row's first cell with ``idx.sibling``, so it works on
+        the transaction rows under a version too (``model().index(row,
+        col)`` only reaches the top-level rows).
+        """
+        if idx is None or not idx.isValid():
+            return None, None
+        item = self.model().itemFromIndex(idx.sibling(idx.row(), 0))
+        if item is None:
+            return None, None
+        return item.data(self.ROLE_KIND), item.data(self.ROLE_KEY)
+
+    def _row_key(self, idx):
+        """The identity of a row for its expanded state (``v:`` / ``t:``)."""
+        kind, key = self._row_info(idx)
+        if kind == "version":
+            return "v:" + str(key)
+        if kind == "variant":
+            return "t:" + str(key)
+        return None
+
+    def _remember_expanded(self, idx, expanded):
+        """Keep what the owner opened or closed (not the list's own changes)."""
+        if self._rebuilding:
+            return
+        key = self._row_key(idx)
+        if key:
+            self._expanded[key] = expanded
+
+    def _on_clicked(self, idx):
+        """One click on "Show all history" shows the whole history; one
+        click on "Hide history" goes back to the last versions."""
+        kind, _key = self._row_info(idx)
+        if kind == "show_all":
+            self.show_all_history()
+        elif kind == "hide_all":
+            self.hide_history()
+
+    def show_all_history(self):
+        """Show every version (kept while the window lives)."""
+        self._show_all = True
+        self.update()
+
+    def hide_history(self):
+        """Back to the last versions only (owner, ZIP test of #129: once
+        shown, the whole history could not be hidden again)."""
+        self._show_all = False
         self.update()
 
     def on_activated(self, idx):
         self.on_double_click(idx)
 
     def on_double_click(self, idx):
-        idx = self.model().index(idx.row(), self.Columns.TXID)
-        sel_key = self.model().itemFromIndex(idx).data(0)
-        self.show_transaction([sel_key])
+        """Open the transaction of a transaction row (also under a version).
+
+        A version row opens or closes; the paid invalidation opens its
+        transaction from the wallet; "Show all history" shows it all and
+        "Hide history" hides it again.
+        """
+        kind, key = self._row_info(idx)
+        if kind == "variant":
+            self.show_transaction([key])
+        elif kind == "version":
+            first = idx.sibling(idx.row(), 0)
+            self.setExpanded(first, not self.isExpanded(first))
+        elif kind == "invalidation":
+            self.show_invalidation(key)
+        elif kind == "show_all":
+            self.show_all_history()
+        elif kind == "hide_all":
+            self.hide_history()
+
+    def show_invalidation(self, txid):
+        """Open the paid invalidation ``txid`` in Electrum's transaction window."""
+        try:
+            tx = self.bal_window.wallet.adb.get_transaction(txid)
+        except Exception:
+            tx = None
+        if tx is not None:
+            self.bal_window.show_transaction(tx)
+
+    def _selected_variant_keys(self, idx):
+        """The txids of the selected transaction rows.
+
+        The row under the mouse decides when it is not among the selected
+        ones (a right click does not always select). Version rows are left
+        out.
+        """
+        keys = []
+        for s_idx in self.selectionModel().selectedIndexes():
+            if s_idx.column() != 0:
+                continue
+            kind, key = self._row_info(s_idx)
+            if kind == "variant" and key not in keys:
+                keys.append(key)
+        kind, key = self._row_info(idx)
+        if kind == "variant" and key not in keys:
+            keys = [key]
+        return keys
+
+    def build_menu(self, idx):
+        """The context menu of the row of ``idx`` (``None``: no menu).
+
+        A transaction row: the actions of before, on the selected
+        transaction rows. A version row (#129): sign and broadcast (every
+        transaction of the version, instalments included), through the
+        same functions; no "details" there (owner: it opened one window
+        per will-executor), "details" stays on each transaction row. The
+        paid invalidation: details and copy id.
+        """
+        kind, key = self._row_info(idx)
+        menu = QMenu()
+        if kind == "version":
+            version = self._versions.get(key)
+            if version is None:
+                return None
+            keys = list(version.items)
+            menu.addAction(
+                _("sign"), lambda: self.sign_transactions(keys)
+            ).setEnabled(any(_can_sign(self.will.get(k)) for k in keys))
+            menu.addAction(
+                _("broadcast"), lambda: self.broadcast_transactions(keys)
+            ).setEnabled(any(_can_broadcast(self.will.get(k)) for k in keys))
+            return menu
+        if kind == "invalidation":
+            menu.addAction(_("details"), lambda: self.show_invalidation(key))
+            menu.addAction(_("copy id"), lambda: self.copy_txids([key]))
+            return menu
+        if kind != "variant":
+            return None
+        selected_keys = self._selected_variant_keys(idx)
+        if not selected_keys:
+            return None
+        menu.addAction(
+            _("details"),
+            lambda: self.show_transaction(selected_keys),
+        ).setEnabled(len(selected_keys) == 1)
+        menu.addAction(
+            _("sign"),
+            lambda: self.sign_transactions(selected_keys),
+        ).setEnabled(
+            any(_can_sign(self.will.get(k)) for k in selected_keys)
+        )
+        menu.addAction(
+            _("broadcast"),
+            lambda: self.broadcast_transactions(selected_keys),
+        ).setEnabled(
+            any(_can_broadcast(self.will.get(k)) for k in selected_keys)
+        )
+        menu.addAction(
+            _("check "),
+            lambda: self.check_transactions(selected_keys),
+        )
+
+        menu.addSeparator()
+        menu.addAction(
+            _("copy id"),
+            lambda: self.copy_txids(selected_keys),
+        )
+        menu.addAction(
+            _("copy"),
+            lambda: self.copy_tx_hexes(selected_keys),
+        )
+        menu.addAction(
+            _("merge from txn"),
+            lambda: self.merge_from_txn(),
+        )
+
+        menu.addSeparator()
+        menu.addAction(
+            _("delete"), lambda: self.delete(selected_keys)
+        ).setEnabled(
+            any(_can_delete(self.will.get(k)) for k in selected_keys)
+        )
+        return menu
 
     def create_menu(self, position):
-        menu = QMenu()
-        idx = self.indexAt(position)
-        column = idx.column() or self.Columns.TXID
-        selected_keys = []
-        for s_idx in self.selected_in_column(self.Columns.TXID):
-            sel_key = self.model().itemFromIndex(s_idx).data(0)
-            selected_keys.append(sel_key)
-        if selected_keys and idx.isValid():
-            column_title = self.model().horizontalHeaderItem(column).text()
-
-            menu.addAction(
-                _("details").format(column_title),
-                lambda: self.show_transaction(selected_keys),
-            ).setEnabled(len(selected_keys) == 1)
-            menu.addAction(
-                _("sign").format(column_title),
-                lambda: self.sign_transactions(selected_keys),
-            ).setEnabled(
-                any(_can_sign(self.will.get(k)) for k in selected_keys)
-            )
-            menu.addAction(
-                _("broadcast").format(column_title),
-                lambda: self.broadcast_transactions(selected_keys),
-            ).setEnabled(
-                any(_can_broadcast(self.will.get(k)) for k in selected_keys)
-            )
-            menu.addAction(
-                _("check ").format(column_title),
-                lambda: self.check_transactions(selected_keys),
-            )
-
-            menu.addSeparator()
-            menu.addAction(
-                _("copy id").format(column_title),
-                lambda: self.copy_txids(selected_keys),
-            )
-            menu.addAction(
-                _("copy").format(column_title),
-                lambda: self.copy_tx_hexes(selected_keys),
-            )
-            menu.addAction(
-                _("merge from txn").format(column_title),
-                lambda: self.merge_from_txn(),
-            )
-
-            menu.addSeparator()
-            menu.addAction(
-                _("delete").format(column_title), lambda: self.delete(selected_keys)
-            ).setEnabled(
-                any(_can_delete(self.will.get(k)) for k in selected_keys)
-            )
-
-        menu.exec(self.viewport().mapToGlobal(position))
+        """Show the context menu of the row under ``position`` (see build_menu)."""
+        menu = self.build_menu(self.indexAt(position))
+        if menu is not None:
+            menu.exec(self.viewport().mapToGlobal(position))
 
     def is_deletable(self, key):
-        """True if the will transaction ``key`` may be deleted.
-
-        Deletion is only allowed for transactions that are NOT valid or NOT
-        fully signed (invalidated/replaced/mempool/confirmed items, or
-        unsigned/partially signed ones). Valid and complete transactions are
-        kept (deleting them would silently drop a committed inheritance).
-        """
+        """True if the will transaction ``key`` may be deleted (``_can_delete``)."""
         return _can_delete(self.will.get(key))
 
     def delete(self, selected_keys):
@@ -582,70 +1017,388 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         self.will.update(will)
         self.update()
 
-    def replace(self, set_current, current_key, txid, bal_tx):
-        if self.bal_window.bal_plugin._hide_replaced and bal_tx.get_status("REPLACED"):
-            return False
-        if self.bal_window.bal_plugin._hide_invalidated and bal_tx.get_status(
-            "INVALIDATED"
-        ):
-            return False
+    # ------------------------------------------------ building the tree
 
-        if not isinstance(bal_tx, WillItem):
-            bal_tx = WillItem(bal_tx)
+    def _format_sats(self, sats):
+        """``sats`` with the wallet's unit (``"1,000 sat"``), as Electrum shows it."""
+        try:
+            return self.bal_window.window.format_amount_and_units(sats)
+        except Exception:
+            return "{} sat".format(sats)
 
-        tx = bal_tx.tx
+    def _heirs_text(self, version):
+        """``"alice 60%, bob 40%"``: each heir with the amount as set."""
+        parts = []
+        for name, spec, _sats in version.heirs:
+            spec = str(spec).strip()
+            if not spec.endswith("%"):
+                try:
+                    spec = self._format_sats(int(spec))
+                except (TypeError, ValueError):
+                    pass
+            parts.append("{} {}".format(name, spec))
+        return ", ".join(parts)
 
+    def _version_texts(self, version):
+        """``(number, headline, second line)`` of a version row.
+
+        "#11" (empty for drafts, discarded drafts and the other group),
+        "Delivery 27/02/2027 23:00" and "alice 60%, bob 40% · Miner fee 21
+        sat/vB · sent and verified 3 of 3".
+        """
+        number = "#{}".format(version.number) if version.number else ""
+        if version.state == will_versions.VERSION_OTHER:
+            head = _("Other transactions")
+        elif version.locktime:
+            head = "{} {}".format(_("Delivery"), _delivery_text(version.locktime))
+        else:
+            head = version_state_text(version.state)
+        parts = []
+        heirs = self._heirs_text(version)
+        if heirs:
+            parts.append(heirs)
+        if version.fee_rate:
+            parts.append("{} {} sat/vB".format(_("Miner fee"), version.fee_rate))
+        if version.executors_total and not version.executors_sent:
+            # A draft, or a version no will-executor ever received (#129).
+            parts.append(_("not sent"))
+        elif version.executors_total:
+            parts.append(_("sent and verified {} of {}").format(
+                version.executors_verified, version.executors_total))
+        return number, head, " · ".join(parts)
+
+    def _spanned_row(self, kind, key, head, sub, state="", colour="#555555",
+                     background=_VERSION_ROW_BG, number=""):
+        """A row that spans every column, drawn by :class:`_RowPaint`.
+
+        The first cell carries the kind, the key, the search text and the
+        tooltip; its own text stays empty (the painter draws it), so the
+        Locktime column is not widened by it.
+        """
+        items = [QStandardItem("") for _c in self.Columns]
+        first = items[0]
+        first.setData(kind, self.ROLE_KIND)
+        first.setData(key, self.ROLE_KEY)
+        first.setData(_RowPaint(head, sub, state, colour, number),
+                      MyTreeView.ROLE_CUSTOM_PAINT)
+        whole = " · ".join(t for t in (number, head, sub, state) if t)
+        first.setData(whole.lower(), self.ROLE_SEARCH)
+        first.setToolTip(whole)
+        for item in items:
+            item.setEditable(False)
+            if background:
+                item.setBackground(QColor(background))
+        return items
+
+    def _variant_row(self, txid, item, in_force=False):
+        """The row of one transaction (a will-executor's copy or the backup).
+
+        In columns, as the owner asked: the locktime as before (bold), the
+        FULL txid, the will-executor URL with its fee address below it (or
+        "no will-executor" for the backup), its fee, and the status of
+        #83, the whole row in the colour of its status. ``in_force``: the
+        item is in force (``will_state``), so a REPLACED flag left by a
+        later draft does not make it read "Replaced" (owner, #129).
+        """
+        we = getattr(item, "we", None)
+        if we:
+            executor = we.get("url") or ""
+            address = we.get("address") or ""
+            if address:
+                executor = executor + "\n" + address
+        else:
+            # A backup transaction (the option "No will-executor"); it used
+            # to show the string "None".
+            text = _("no will-executor (backup transaction)")
+            executor = text[:1].upper() + text[1:]
+        fee = _executor_fee(item)
         labels = [""] * len(self.Columns)
-        labels[self.Columns.LOCKTIME] = str(BalTimestamp(tx.locktime))
+        labels[self.Columns.LOCKTIME] = str(BalTimestamp(item.tx.locktime))
         labels[self.Columns.TXID] = txid
-        we = "None"
-        if bal_tx.we:
-            we = bal_tx.we["url"]
-        labels[self.Columns.WILLEXECUTOR] = we
+        labels[self.Columns.WILLEXECUTOR] = executor
+        labels[self.Columns.FEE] = self._format_sats(fee) if fee is not None else ""
         # CHANGELOG #83: what this row is for the will today, coherent with
         # its colour (where its will-executor stands); the executor and the
-        # whole history (it used to fill this column, cut to its last 50
-        # characters) are in the tooltip set below.
-        labels[self.Columns.STATUS] = will_status_text(bal_tx)
-
-        items = []
-        for e in labels:
-            if isinstance(e, list):
-                try:
-                    items.append(QStandardItem(*e))
-                except Exception as e:
-                    pass
-            else:
-                items.append(QStandardItem(str(e)))
-
-            items[-1].setBackground(QColor(status_color(bal_tx)))
-
-        # Group C / C6: emphasise the Locktime column by rendering it in bold,
-        # so the delivery time stands out at a glance in the list.
+        # whole history are in the tooltip.
+        labels[self.Columns.STATUS] = will_status_text(item, in_force=in_force)
+        items = [QStandardItem(str(text)) for text in labels]
+        colour = QColor(status_color(item, in_force=in_force))
+        for cell in items:
+            cell.setEditable(False)
+            cell.setBackground(colour)
+        # Group C / C6: the Locktime column in bold, so the delivery time
+        # stands out at a glance.
+        bold_font = items[self.Columns.LOCKTIME].font()
+        bold_font.setBold(True)
+        items[self.Columns.LOCKTIME].setFont(bold_font)
         try:
-            locktime_item = items[self.Columns.LOCKTIME]
-            bold_font = locktime_item.font()
-            bold_font.setBold(True)
-            locktime_item.setFont(bold_font)
-        except Exception as bold_err:
-            _logger.debug(f"locktime bold error: {bold_err}")
-
-        # Tooltip on the Status column: the will-executor URL (if any) and the
-        # whole status history, so the user can always inspect the details.
-        try:
-            items[self.Columns.STATUS].setToolTip(will_status_tooltip(bal_tx))
+            items[self.Columns.STATUS].setToolTip(will_status_tooltip(item))
         except Exception as tip_err:
             _logger.debug(f"status tooltip error: {tip_err}")
+        if "\n" in executor:
+            items[self.Columns.WILLEXECUTOR].setData(
+                _TallCell(), MyTreeView.ROLE_CUSTOM_PAINT)
+        first = items[0]
+        first.setData("variant", self.ROLE_KIND)
+        first.setData(txid, self.ROLE_KEY)
+        first.setData(" ".join(labels).lower(), self.ROLE_SEARCH)
+        return items
 
-        row_count = self.model().rowCount()
-        self.model().insertRow(row_count, items)
-        if txid == current_key:
-            idx = self.model().index(row_count, self.Columns.TXID)
-            set_current = QPersistentModelIndex(idx)
-        self.set_current_idx(set_current)
-        return set_current
+    def _subheader_row(self):
+        """The grey row naming the transaction columns under a version.
+
+        Owner, after the ZIP test (#129): the tree's header names the
+        version level; under an open version this row names the columns of
+        its transactions (the same texts as before, ``headers``). It is
+        not selectable and has no menu.
+        """
+        labels = translated_headers(self.__class__.headers)
+        items = []
+        for column in self.Columns:
+            cell = QStandardItem(labels[column])
+            cell.setEditable(False)
+            cell.setSelectable(False)
+            cell.setBackground(QColor("#e4e4e4"))
+            cell.setForeground(QColor("#444444"))
+            font = cell.font()
+            font.setBold(True)
+            cell.setFont(font)
+            items.append(cell)
+        items[0].setData("subheader", self.ROLE_KIND)
+        return items
+
+    def _add_variants(self, parent_item, wid, version, will):
+        """Add the row of ``wid`` under ``parent_item``, then its instalments."""
+        states = self.history.states if self.history is not None else {}
+        row = self._variant_row(
+            wid, will[wid], in_force=states.get(wid) == will_state.IN_FORCE)
+        parent_item.appendRow(row)
+        for child in version.children.get(wid, []):
+            self._add_variants(row[0], child, version, will)
+
+    def _invalidation_items(self, inv):
+        """The row of a paid invalidation (between the versions it ended)."""
+        state = _("On the blockchain") if inv.confirmed else _("Mempool")
+        sub = []
+        if inv.fee is not None:
+            sub.append("{} {}".format(_("Miner fee"), self._format_sats(inv.fee)))
+        sub.append(inv.txid)
+        return self._spanned_row(
+            "invalidation", inv.txid, _("Paid invalidation"), " · ".join(sub),
+            state, version_state_colour("invalidated"),
+        )
+
+    def _will_items(self):
+        """``{txid: WillItem}`` of the list's will (dicts become items)."""
+        out = {}
+        for wid, item in self.will.items():
+            if not isinstance(item, WillItem):
+                item = WillItem(item)
+            out[wid] = item
+        return out
+
+    def _default_expanded(self, version):
+        """The draft and the version in force are open; the history closed."""
+        return version.state in (
+            will_versions.VERSION_DRAFT, will_versions.VERSION_IN_FORCE
+        )
+
+    def _restore_expanded(self):
+        """Open or close each row as the owner left it, else the default."""
+        model = self.model()
+        stack = [(model.index(r, 0), None) for r in range(model.rowCount())]
+        while stack:
+            idx, version = stack.pop()
+            kind, key = self._row_info(idx)
+            if kind == "version":
+                version = self._versions.get(key)
+                default = bool(version) and self._default_expanded(version)
+            elif kind == "variant":
+                default = False
+            else:
+                continue
+            row_key = self._row_key(idx)
+            self.setExpanded(idx, self._expanded.get(row_key, default))
+            for r in range(model.rowCount(idx)):
+                child = model.index(r, 0, idx)
+                if model.hasChildren(child):
+                    stack.append((child, version))
+
+    def _put_history_button(self, item, kind, text):
+        """Put the "Show all history" / "Hide history" button on ``item``'s row.
+
+        Owner, ZIP test of #129: as a plain text row it was confused with
+        the versions; it is now a real push button, centred under the list,
+        with an arrow. ``kind`` is "show_all" or "hide_all"; the button is
+        reachable as ``self.history_button`` (tests).
+        """
+        box = QWidget()
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(0, 4, 0, 4)
+        button = QPushButton(text)
+        button.setObjectName("history_button")
+        button.clicked.connect(
+            self.show_all_history if kind == "show_all" else self.hide_history
+        )
+        layout.addStretch(1)
+        layout.addWidget(button)
+        layout.addStretch(1)
+        self.setIndexWidget(self.model().indexFromItem(item), box)
+        self.history_button = button
+
+    def _hideable_versions(self):
+        """How many versions "Hide history" would hide (0: no such row).
+
+        The same count as "Show all history ({} older versions)" when the
+        list shows only the last versions; never raises.
+        """
+        if self.history is None:
+            return 0
+        try:
+            return will_versions.display_rows(self.history, show_all=False)[1]
+        except Exception:
+            return 0
+
+    def _find_row(self, kind, key):
+        """The first-cell index of the row ``(kind, key)``, or ``None``."""
+        model = self.model()
+        stack = [model.index(r, 0) for r in range(model.rowCount())]
+        while stack:
+            idx = stack.pop()
+            if self._row_info(idx) == (kind, key):
+                return idx
+            stack.extend(model.index(r, 0, idx) for r in range(model.rowCount(idx)))
+        return None
+
+    def rebuild(self):
+        """Redraw the tree from the will (see the class docstring).
+
+        Keeps, across the frequent refreshes: the rows opened or closed,
+        the current row and the scroll position. Display only: nothing is
+        written to the will.
+        """
+        current = self._row_info(self.selectionModel().currentIndex())
+        scroll = self.verticalScrollBar().value()
+        will = self._will_items()
+        wallet = getattr(self.bal_window, "wallet", None)
+        try:
+            self.history = will_versions.build_history(will, wallet)
+            rows, self.hidden_versions = will_versions.display_rows(
+                self.history, show_all=self._show_all)
+        except Exception as e:
+            # The list must always show the transactions: on an unexpected
+            # error, every item as one "other transactions" group.
+            _logger.error(f"will versions failed: {e}")
+            other = will_versions._make_version("other", sorted(will), will, {})
+            other.state = will_versions.VERSION_OTHER
+            self.history = None
+            rows, self.hidden_versions = [("version", other)], 0
+        self._rebuilding = True
+        try:
+            model = self.model()
+            model.clear()
+            self.update_headers(translated_headers(self.__class__.headers))
+            self._versions = {}
+            for kind, obj in rows:
+                if kind == "invalidation":
+                    model.appendRow(self._invalidation_items(obj))
+                    continue
+                self._versions[obj.vid] = obj
+                number, head, sub = self._version_texts(obj)
+                row = self._spanned_row(
+                    "version", obj.vid, head, sub,
+                    version_state_text(obj.state), version_state_colour(obj.state),
+                    number=number,
+                )
+                if obj.roots:
+                    row[0].appendRow(self._subheader_row())
+                for wid in obj.roots:
+                    self._add_variants(row[0], wid, obj, will)
+                model.appendRow(row)
+            history_button = None
+            self.history_button = None
+            if self.hidden_versions:
+                history_button = (
+                    "show_all",
+                    "▼  " + _("Show all history ({} older versions)").format(
+                        self.hidden_versions),
+                )
+            elif self._show_all and self._hideable_versions():
+                history_button = ("hide_all", "▲  " + _("Hide history"))
+            if history_button is not None:
+                kind, text = history_button
+                # The row only holds the place: a real button is put on it
+                # below (owner: the text row looked like the list's rows).
+                button_row = self._spanned_row(kind, kind, "", "", background=None)
+                model.appendRow(button_row)
+            for r in range(model.rowCount()):
+                self.setFirstColumnSpanned(r, QModelIndex(), True)
+            if history_button is not None:
+                self._put_history_button(button_row[0], kind, text)
+            self._restore_expanded()
+            if current != (None, None):
+                idx = self._find_row(*current)
+                if idx is not None:
+                    self.selectionModel().setCurrentIndex(
+                        idx,
+                        QItemSelectionModel.SelectionFlag.ClearAndSelect
+                        | QItemSelectionModel.SelectionFlag.Rows,
+                    )
+        finally:
+            self._rebuilding = False
+        self.hide_rows()
+        self.verticalScrollBar().setValue(scroll)
+
+    def hide_rows(self):
+        """Apply the search box to the versions AND to their transactions.
+
+        Electrum's ``MyTreeView.hide_rows`` only walks the top-level rows
+        (and needs ``filter_columns`` cells with text). Here a version stays
+        visible when its own text or one of its transactions matches; under
+        a version that does not match, only the matching transactions stay.
+        """
+        text = (self.current_filter or "").lower()
+        model = self.model()
+        root = QModelIndex()
+        for r in range(model.rowCount()):
+            idx = model.index(r, 0)
+            if not text:
+                self.setRowHidden(r, root, False)
+                for c in range(model.rowCount(idx)):
+                    self._show_subtree(model.index(c, 0, idx), idx, "")
+                continue
+            own = text in str(idx.data(self.ROLE_SEARCH) or "")
+            any_child = False
+            subheader = None
+            for c in range(model.rowCount(idx)):
+                child = model.index(c, 0, idx)
+                if child.data(self.ROLE_KIND) == "subheader":
+                    subheader = c
+                    continue
+                if self._show_subtree(child, idx, "" if own else text):
+                    any_child = True
+            if subheader is not None:
+                # The column names stay while a transaction is shown.
+                self.setRowHidden(subheader, idx, not (own or any_child))
+            self.setRowHidden(r, root, not (own or any_child))
+
+    def _show_subtree(self, idx, parent, text):
+        """Hide the transaction rows that do not match ``text`` (``""``: show all).
+
+        Returns True when ``idx`` or one of its instalments matches.
+        """
+        model = self.model()
+        own = not text or text in str(idx.data(self.ROLE_SEARCH) or "")
+        any_child = False
+        for c in range(model.rowCount(idx)):
+            if self._show_subtree(model.index(c, 0, idx), idx, "" if own else text):
+                any_child = True
+        visible = own or any_child
+        self.setRowHidden(idx.row(), parent, not visible)
+        return visible
 
     def update(self):
+        """Redraw the list, the toolbar fields and the will summary."""
         try:
             self.menu.removeAction(self.importaction)
         except Exception:
@@ -654,19 +1407,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         if self.will is None:
             return
 
-        current_key = self.get_role_data_for_current_item(
-            col=self.Columns.TXID, role=self.ROLE_HEIR_KEY
-        )
-        self.model().clear()
-        self.update_headers(translated_headers(self.__class__.headers))
-
-        set_current = None
-        for txid, bal_tx in self.will.items():
-            tmp = self.replace(set_current, current_key, txid, bal_tx)
-            if tmp:
-                set_current = tmp
-        self.sortByColumn(self.Columns.LOCKTIME, Qt.SortOrder.AscendingOrder)
-        self.setSortingEnabled(True)
+        self.rebuild()
         try:
             self.will_settings_widget.on_locktime_change()
         except Exception as _e:
@@ -762,14 +1503,6 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         button.setToolTip(tooltip)
         button.clicked.connect(slot)
         return button
-
-    def hide_replaced(self):
-        self.bal_window.bal_plugin.hide_replaced()
-        self.update()
-
-    def hide_invalidated(self):
-        self.bal_window.bal_plugin.hide_invalidated()
-        self.update()
 
     def build_transactions(self):
         will = self.bal_window.prepare_will()

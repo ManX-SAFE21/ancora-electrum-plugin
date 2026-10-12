@@ -7459,3 +7459,166 @@ owner approved the deviation (an identical signed transaction that cannot
 be brought back keeps its signatures and is sent again, no password).
 Still open: putting back only the fee, with the date left where a draft
 stored it, keeps that date (one day earlier at most).
+
+## 129. The Will tab lists the will by versions
+
+**Date:** 2026-10-12
+
+**Problem:** every build of the will (Check, wallet close, Prepare,
+automatic rebuild) makes one transaction per will-executor, and the older
+transactions stay in the wallet. The Will tab listed them all, one flat row
+each, sorted by locktime: after a few changes (a new coin, a new date, a
+fee, a will-executor added or excluded) the owner could no longer tell
+which rows were the will in force and which were history (his wallet holds
+58 items). The "Hide Replaced" / "Hide Invalidated" options (on by default)
+hid part of the history, but also the replaced transactions that #128
+counts as still in force. A backup transaction said "None", the Will
+tab's search box raised an error, and "delete" was offered on replaced or
+invalidated transactions that a will-executor still held.
+
+**What changed (plan approved by the owner, 2026-10-12):**
+
+- New `bal/core/will_versions.py` (pure, no Qt): the will items are grouped
+  into VERSIONS at every refresh; nothing new is stored in the wallet
+  (owner decision). A version = the root transactions (not spending another
+  will transaction) with the same content: date, coins, heirs as set (not
+  the will-executor fee outputs) and fee rate; the multiverse instalments
+  belong to their root. The build time is not part of the content, so a
+  will-executor added later (old transactions kept by #122) stays in one
+  version; the same will-executor twice in one content (only its own fee
+  changed) splits by build time. Transactions without heirs (a single
+  transaction merged from outside) go to "Other transactions".
+- Version states, derived with `will_state` (#128), each item classified
+  once per refresh: Draft (on top, no number), In force (the version the
+  will-executors would deliver first: the earliest date among the signed
+  and sent ones), Replaced (still held by the will-executors), Replaced,
+  Invalidated, Partially signed, Executed, Discarded draft. Numbers count
+  only the versions with a transaction signed (also partly) or sent, the
+  oldest is #1. A version never signed nor sent that is not the current
+  draft (a draft that a plugin before #128 marked REPLACED; the owner's
+  "#17", made after the will in force, read 16, 17, 15) is a discarded
+  draft: no number, shown in its place by creation (second ZIP test:
+  shown only with "Show all history" it appeared in the middle of the
+  rows already shown). Nothing is deleted.
+- The paid invalidation gets its own row, between the versions it ended
+  and the next one: found in the wallet history (the transaction spending
+  the coins of the invalidated versions, with the plugin's label or every
+  output back to the wallet), with its miner fee, txid and "On the
+  blockchain" / "Mempool". Not found (or any wallet error): no row.
+- The Will tab list (`PreviewList`, same name, toolbar and menus) is a
+  two-level tree. Its header names the version level over the whole
+  width, the same with every version closed or open: "N." (#4), "Version"
+  ("Delivery 30/03/2027 00:00" in bold, local time and the toolbar's
+  locale format with a four-digit year; below it "alice 60%, bob 40% ·
+  Miner fee 21 sat/vB · sent and verified 3 of 3", or "not sent" when no
+  will-executor received it) and "Status" (the state in the colours of the
+  will summary, #124). Under an open version a grey row names the
+  transaction columns, then one row per transaction: Locktime, Txid (in
+  full), Will-Executor (the URL and its fee address below it, the row two
+  lines high; "No will-executor (backup transaction)" instead of "None"),
+  Executor fee (new column), Status (as #83), row colour as before, except
+  that a transaction in force (`will_state`) reads where its will-executor
+  stands ("In force, verified", green) even when a later unsigned draft
+  marked it REPLACED. Order: draft, version in force, then the history
+  newest first by creation; the list stops after the last five numbered
+  versions (discarded drafts and invalidations among them stay); a push
+  button under the list, "▼ Show all history ({} older versions)", adds
+  the older rows at the bottom and "▲ Hide history" hides them again
+  (second ZIP test: a text row was confused with the versions, and the
+  history could not be hidden again). The draft and the version in
+  force are open, the others closed; what the owner opens or closes is
+  kept across the refreshes (by version, not by row number). Double click
+  and the menu work on the transaction rows under a version (details opens
+  that transaction); on a version row the double click opens or closes it
+  and the menu offers sign and broadcast for its transactions (the
+  existing functions), no "details" (it opened one window per
+  will-executor). Header sorting off; the search box looks in versions and
+  transactions (it raised AttributeError before).
+- Delete: never a transaction sent to its will-executor (also when replaced
+  or invalidated: deletable before), never a signed backup; only drafts,
+  partially signed ones and transactions never sent.
+- Settings: "Hide Replaced" and "Hide Invalidated" removed; the config keys
+  `bal_hide_replaced` / `bal_hide_invalidated` stay readable, unused. Dead
+  code removed: `PreviewList.hide_*`, `WillDetailDialog.toggle_*` (their
+  buttons were never created), `BalPlugin.hide_*` / `sync_hide_filters`.
+  The Will Details window (`WillWidget`) shows every transaction (it will
+  be replaced in a later step).
+- After the first preview the owner asked for four fixes (in-force rows
+  not "Replaced", "not sent", the four-digit year, taller two-line rows);
+  after his ZIP test on his wallet (17 versions) for three more (the
+  header of the version level with the sub-header row, the discarded
+  drafts, no "details" on a version row). All in.
+- Catalogs: 12 new msgids with IT/ES ("Executor fee", "Replaced (still
+  held by the will-executors)", "Paid invalidation", "On the blockchain",
+  "Delivery", "sent and verified {} of {}", "not sent", "Show all history
+  ({} older versions)", "Other transactions", "N.", "Version", "Discarded
+  draft"); 8 msgids of the removed options are obsolete. Docs:
+  `docs/manual/README.md` and `manual.html` (the Will tab by versions, the
+  header and the sub-header, the states, Show all history and the
+  discarded drafts, the options removed). The technical notes describe the
+  grouping rules and the edge cases. `make-release.sh`: the new GUI test
+  file.
+
+**Tests:** new `tests/test_core_will_versions.py` (flowkit, three fake
+will-executors with their own fee addresses: a realistic history - sign,
+new coin, fee change cancelled at the password, an earlier date, a later
+date with the paid invalidation and the rebuild -, two coins, Exclude, a
+will-executor added later, the backup transaction, the #128 draft dropped
+and the will in force brought back, the owner's discarded draft after the
+will in force (unnumbered, hidden until Show all, kept by the next build,
+the new will numbered next), multiverse, nothing written; synthetic wills:
+the same will-executor twice split by build time with stable ids, other
+coins or heirs, items without heirs, versions without time, the earliest
+date in force and drafts unnumbered, partially signed / executed /
+discarded / signed never sent, a wallet not synchronized, a spender that is
+not an invalidation and one without the label, wallet errors, the last
+five and Show all with the invalidation row, and 1110 items in about
+0.01 s) and `tests/test_gui_will_versions_list.py` (the real list on
+flowkit wills: version rows and the invalidation row, the header "N." /
+"Version" / "Status" over the whole width and stable when closed or open,
+the sub-header row seen only under an open version, the columns of a
+transaction row, the backup row, last five and Show all, a discarded
+draft only with Show all, open/closed rows kept across update() and a new
+build, the current row kept, double click and menu on a transaction row,
+the version row's menu without details and its double click opening no
+window, the draft deletable and a sent transaction not, the search,
+multiverse, the Settings dialog without the two options, the in-force rows
+after a later draft, "not sent", the four-digit year in Italian and
+English, the two-line row height). Updated: `test_status_column.py` (the
+new Executor fee column; a copy in force reads in force with
+`in_force=True`, unchanged without it) and `test_gui_will_menu.py` (the
+delete rule: a sent replaced or invalidated transaction is no longer
+deletable, a replaced backup neither, never-sent ones still are).
+Mutation checks: 21, each applied alone (the content key with the build
+time, without the coins, without the heirs; no split for the same
+will-executor twice; the in-force version by the latest date, and the
+oldest on a tie; never-signed versions numbered; no discarded-draft state;
+discarded drafts shown without Show all; "still held" for a copy never
+sent; the invalidation never / always recognised; the version in force not
+shown second; sent items and the in-force backup deletable again; the
+open/closed rows not restored or kept by row number; child rows read as
+top-level rows; "Show all" not kept; no sub-header row; "details" back on
+the version menu): each makes a test fail.
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1890 passed, 0 failed, 0 errors (both); `ruff check
+bal/ tests/`: all checks passed; no CRLF in the touched files. Golden
+files: none changed. Catalogs: `check_catalogs.py` RESULT: OK, 12 new
+msgids, 0 fuzzy, 0 empty ("N." is "N." in Italian on purpose), 8 removed
+msgids now obsolete (one, "Hide Invalidated", used by pybabel as a fuzzy
+base and dropped); `test_translations` and `test_i18n` pass. Time: 1110
+items (10 will-executors, 3 instalments) grouped in about 0.01 s; the list
+redrawn with them in about 0.05 s. Display-only step on the list (the
+delete rule aside): no scenario harness.
+
+**Outcome:** DONE. The owner tested three ZIPs on his wallet (Windows,
+17 versions, 2026-10-12). After the first: the header N. / Version /
+Status with a grey sub-header under an open version (the transaction
+columns were squeezed to the left when every version was closed); the
+never-signed "#17" became a discarded draft without a number; no
+"details" on a version row (it opened one window per will-executor). After
+the second: "Hide history", and the discarded drafts in their place (they
+appeared in the middle of the list with "Show all history"); the toggle
+became a real button. The third ZIP: "ok molto bene". Agreed with the
+owner for small follow-up fixes: only the affected tests per ZIP, the
+whole suite in both orders once before the commit.

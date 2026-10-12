@@ -400,11 +400,93 @@ from your BAL plugin you can check at any time whether the transaction is
 properly stored on the servers: right‑click the inheritance transaction in the
 <strong>WILL</strong> tab and choose <strong>Check</strong>. The transaction will be tagged in the
 <strong>Status</strong> column as <strong>Checked</strong> if it is indeed online on the server.</p>
-<h3 id="will-tab-columns">WILL tab columns</h3>
+<h3 id="will-tab-the-will-by-versions">WILL tab: the will by versions</h3>
+<p>Every time the will is prepared again (a new coin, a new date, a new fee,
+a will‑executor added or excluded) the plugin makes a new <strong>version</strong> of it:
+one transaction for each will‑executor (plus the backup transaction, when
+that option is on). The WILL tab lists the will by versions:</p>
+<ul>
+<li>one row per version, under the columns <strong>N.</strong> (its number), <strong>Version</strong>
+  (<em>Delivery 30/03/2027 00:00</em> in bold, local time; below it the heirs,
+  the miner fee and how many will‑executors received and verified it, or
+  <em>not sent</em>) and <strong>Status</strong> (its state, in colour);</li>
+<li>under it, when it is open (click the arrow), a grey row with the names of
+  the transaction columns, then one row per transaction.</li>
+</ul>
+<p>Order: the <strong>Draft</strong> (if any) on top, without a number; the version <strong>In
+force</strong>; then the older versions, newest first (in the order they were
+made). Only versions with a transaction signed or sent get a number.
+The list stops after the last five numbered versions: the <strong>Show all
+history</strong> button under the list adds the older ones at the bottom, and
+<strong>Hide history</strong> hides them again. <strong>Discarded drafts</strong> (versions never
+signed nor sent that are no longer the current draft, left by older
+versions of the plugin) are shown in their place, without a number;
+nothing is deleted.</p>
+<p>Version states:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Draft</strong></td>
+<td>prepared, never signed nor sent; the next build drops it</td>
+</tr>
+<tr>
+<td><strong>In force</strong></td>
+<td>the version the will‑executors would deliver first (the earliest delivery date among the signed and sent ones)</td>
+</tr>
+<tr>
+<td><strong>Replaced (still held by the will‑executors)</strong></td>
+<td>an older version, signed and sent, still valid on the blockchain; the version in force has an earlier date</td>
+</tr>
+<tr>
+<td><strong>Replaced</strong></td>
+<td>an older version nobody can deliver any more</td>
+</tr>
+<tr>
+<td><strong>Invalidated</strong></td>
+<td>its coins were spent by the paid invalidation</td>
+</tr>
+<tr>
+<td><strong>Partially signed</strong></td>
+<td>some signatures are still missing (multisig)</td>
+</tr>
+<tr>
+<td><strong>Executed</strong></td>
+<td>delivered to the heirs (or being delivered)</td>
+</tr>
+<tr>
+<td><strong>Discarded draft</strong></td>
+<td>never signed nor sent, replaced by a later build (no number)</td>
+</tr>
+</tbody>
+</table>
+<p>A <strong>Paid invalidation</strong> has its own row, between the versions it ended and
+the next one, with its miner fee and its txid; it says <strong>On the blockchain</strong>
+or <strong>Mempool</strong>.</p>
+<p>Transaction rows, in columns:</p>
 <p>a. <strong>Locktime</strong> — the date of inheritance.
-b. <strong>Txid</strong> — identification of the bitcoin transaction.
-c. <strong>Will‑Executor</strong> — address of the will‑executor.
-d. <strong>Status</strong> — see the table below.</p>
+b. <strong>Txid</strong> — identification of the bitcoin transaction (always in full).
+c. <strong>Will‑Executor</strong> — address of the will‑executor, with its fee address
+   below it (the backup transaction says <em>No will‑executor (backup
+   transaction)</em>).
+d. <strong>Executor fee</strong> — the will‑executor's own fee paid by this transaction.
+e. <strong>Status</strong> — see the table below.</p>
+<p>Right‑click a transaction row for its commands (details, sign, broadcast,
+check, copy, delete; a double click opens it); right‑click a version row
+to sign its transactions or send them again (a double click opens or
+closes it). <strong>Delete</strong> is offered only for
+transactions never sent to a will‑executor (drafts, or a signed copy whose
+sending failed): a transaction a will‑executor holds cannot be cancelled by
+deleting it here, that needs an invalidation. The search box looks in the
+versions and in the transactions.</p>
+<p>The plugin settings no longer have <strong>Hide Replaced</strong> and <strong>Hide
+Invalidated</strong>: the list shows the last versions, and <strong>Show all history</strong>
+the rest.</p>
 <hr />
 <h2 id="colour-progression-of-transaction-statuses">Colour progression of transaction statuses</h2>
 <p>Transactions on the <strong>WILL</strong> page are coloured to conveniently display their

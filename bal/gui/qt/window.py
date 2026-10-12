@@ -2978,14 +2978,12 @@ class BalWindow:
         show_on_top(self.dw)
 
     def update_all(self):
+        """Refresh the will statuses and every widget of the window.
+
+        CHANGELOG #129: the "hide" filter flags are no longer re-read here
+        (the options are gone; the Will tab lists the will by versions).
+        """
         try:
-            # Re-sync the cached "hide invalidated/replaced" flags from the
-            # persisted config before refreshing the list.  The Settings dialog
-            # checkboxes write the config directly (without touching the cached
-            # flags), so without this the list would keep filtering with the old
-            # value and the invalidated/replaced rows would not appear/disappear
-            # until Electrum was restarted.
-            self.bal_plugin.sync_hide_filters()
             _logger.debug(f"NoneType_debug willitems type: {type(self.willitems).__name__} len={len(self.willitems)}")
             for _wid, _w in list(self.willitems.items())[:3]:
                 _logger.debug(f"NoneType_debug willitems[{_wid}] type={type(_w).__name__}")
@@ -3008,9 +3006,8 @@ class BalWindow:
             # Group C / C2: re-apply the "Editable dates" setting to the date
             # fields of the toolbars / Heirs tab. The settings checkbox calls
             # update_all() when toggled, so this makes the change take effect
-            # immediately (same pattern as sync_hide_filters above for the
-            # "Hide Invalidated/Replaced" checkboxes). Guarded so a missing
-            # widget never breaks the rest of the refresh.
+            # immediately. Guarded so a missing widget never breaks the rest
+            # of the refresh.
             for _list in (self.heir_list_widget, self.will_list_widget):
                 _settings_widget = getattr(_list, "will_settings_widget", None)
                 if _settings_widget is not None:
