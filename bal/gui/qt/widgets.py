@@ -1567,17 +1567,24 @@ class WillSettingsWidget(QWidget):
         Owner (CHANGELOG #95), after the Check button became as big as the
         Wizard:
 
-        * BASIC keeps the one row it always had, with its spacing:
-          delivery time | calendar | fee (the Check Alive is hidden);
+        * BASIC keeps one row (since #130 with every field hidden, see
+          below);
         * ADVANCED, which also shows the Raw/Date selector and the Check Alive
           with its sentence, uses two rows next to the two big buttons:
-          delivery time | calendar, then Check Alive | fee. On one row the
-          Will tab needed a window about 1500 px wide.
+          delivery time, then Check Alive | fee. On one row the Will tab
+          needed a window about 1500 px wide.
+
+        CHANGELOG #130 (owner): in BASIC the toolbars of the Will and Heirs
+        tabs show neither the delivery date nor the fee (they are changed
+        only in the wizard; the Will tab's summary shows the date); ADVANCED
+        keeps them. The calendar button is never in these toolbars any more:
+        the Will tab has its own big calendar button and a Tools entry
+        (``PreviewList.create_toolbar``), the Heirs tab none.
 
         Only for a toolbar (``layout_type="h"``: Will and Heirs tabs); the
         wizard is vertical. It runs on every refresh (through
-        apply_user_type_visibility), so the fields move only when the mode
-        really changed. Never raises.
+        apply_user_type_visibility): the visibility follows the mode at once,
+        the fields move only when the mode really changed. Never raises.
         """
         if self.layout_type != "h" or not self._rows:
             return
@@ -1585,6 +1592,12 @@ class WillSettingsWidget(QWidget):
             basic = self.bal_window.bal_plugin.is_basic_mode()
         except Exception:
             basic = False
+        try:
+            self.calendar_button.setVisible(False)
+            self.widgets["locktime"].setVisible(not basic)
+            self.widgets["baltx_fees"].setVisible(not basic)
+        except Exception as e:
+            _logger.debug(f"toolbar visibility: {e!r}")
         two_rows = not basic
         if two_rows == self._two_rows:
             return
@@ -1597,17 +1610,19 @@ class WillSettingsWidget(QWidget):
             locktime = self.widgets["locktime"]
             if two_rows:
                 # Packed to the left: the 40-character minimum of the
-                # delivery field (kept in BASIC) would push the calendar
-                # ~140 px away from the date.
+                # delivery field (kept in BASIC) would leave a gap after
+                # the date.
                 locktime.setMinimumWidth(0)
                 lines = (
-                    (locktime, self.calendar_button),
+                    (locktime,),
                     (self.widgets["threshold"], self.widgets["baltx_fees"]),
                 )
             else:
+                # BASIC: every field is hidden (#130); they stay in the
+                # first row so switching back to ADVANCED finds them.
                 locktime.setMinimumWidth(self._locktime_min_width)
                 lines = (
-                    (locktime, self.widgets["threshold"], self.calendar_button,
+                    (locktime, self.widgets["threshold"],
                      self.widgets["baltx_fees"]),
                     (),
                 )

@@ -7622,3 +7622,67 @@ appeared in the middle of the list with "Show all history"); the toggle
 became a real button. The third ZIP: "ok molto bene". Agreed with the
 owner for small follow-up fixes: only the affected tests per ZIP, the
 whole suite in both orders once before the commit.
+
+## 130. A simpler toolbar in BASIC mode and a big calendar button
+
+**Date:** 2026-10-12
+
+**Problem (the owner, after the ZIP test of #129):** in BASIC mode the
+toolbars of the Will and Heirs tabs still showed the delivery date field
+and the fee field, although BASIC changes them only in the wizard; and the
+calendar button (the .ics reminders of #73 and #126) was a small icon
+between those fields, hard to see next to the two big commands, and also
+on the Heirs tab, where it does not belong.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py` `WillSettingsWidget._arrange_toolbar_rows`
+  (toolbars only, `layout_type="h"`): in BASIC the delivery date and the
+  fee are hidden (the Check Alive already was); ADVANCED keeps them, on two
+  rows (delivery date, then Check Alive | fee). The visibility follows a
+  mode change at once, on every refresh. The calendar button is never in
+  these toolbars any more, so the Heirs tab has none.
+- `bal/gui/qt/lists.py` `PreviewList.create_toolbar`: the Will tab has its
+  own calendar button (`_big_calendar_button`), right after "Check your
+  will", as tall as the two main commands, with a doubled icon (28 px),
+  in BASIC and ADVANCED; the same menu (Open / Open with... / Save) and the
+  same reminder dates (`WillSettingsWidget._ics_provider`). The Tools menu
+  of the Will tab gets the same menu as "Calendar reminders" (IT
+  "Promemoria nel calendario", ES "Recordatorios en el calendario").
+- After the owner's ZIP test: the two big buttons stay on the LEFT of
+  the toolbar in BASIC too (with every field hidden the row shrank and
+  the toolbar's stretch pushed them right; the row now takes the free
+  width and has its own stretch), the calendar on the right, next to
+  Tools.
+- Fix of #129 (owner's ZIP test): the rows of an older version still held
+  by the will-executors (#15, "Replaced (still held by the
+  will-executors)") read green "In force, verified"; only the rows of THE
+  version in force do now (`PreviewList._add_variants`), the others keep
+  their own status ("Replaced", in its colour).
+- Catalogs: 1 new msgid; the stale `python-brace-format` flag of "Hide
+  history" (#129, inherited from a fuzzy match) is gone.
+
+**Tests:** `tests/test_check_button.py`: BASIC hides the date, the fee and
+the calendar of the toolbar; ADVANCED keeps date and fee without the
+calendar; a mode switch shows and hides them at once; the Will tab's
+toolbar is Wizard | Check | Calendar | fields, the calendar button as tall
+as the Wizard with the same icon size, and Tools has "Calendar reminders"
+with Open / Open with... / Save (the button's own menu); the buttons on
+the left and the calendar on the right. The rows of the toolbar fields
+updated (no calendar). `tests/test_gui_will_versions_list.py`: only the
+version in force has "In force" rows.
+
+**Verification:** while fixing, only the affected tests (toolbar,
+calendar, Will tab list, wizard form, window init: 51 passed); before the
+commit the whole `tests/` directory once in the normal order (owner rule
+for a step that changes only the look, 2026-10-12): 1895 passed, 0
+failed, 0 errors; `ruff check bal/ tests/`: all checks passed; golden
+files unchanged; `test_translations` / `test_i18n` pass; no scenario
+harness (no logic changed). `build_zip.py` + `external_zip_test.py` +
+`smoke_test.py` on Electrum 4.8.2: pass.
+
+**Outcome:** DONE. The owner tested two ZIPs on his wallet (2026-10-12):
+BASIC toolbar without date and fee, the big calendar button and the Tools
+entry; after the first ZIP he asked to keep the two big buttons on the
+left and the calendar on the right, and noticed the green "In force" rows
+of the older version #15 (fixed here); the second ZIP: ok.

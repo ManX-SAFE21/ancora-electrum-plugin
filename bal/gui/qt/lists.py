@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 
 from ...core import will_state, will_versions
 from ...core.messages import protected_executor_message
+from .calendar import BalCalendarButton
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -1168,10 +1169,22 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         return items
 
     def _add_variants(self, parent_item, wid, version, will):
-        """Add the row of ``wid`` under ``parent_item``, then its instalments."""
+        """Add the row of ``wid`` under ``parent_item``, then its instalments.
+
+        Only the rows of THE version in force read "In force" (green), even
+        when a later draft flagged them REPLACED (#129). The rows of an
+        older version still held by the will-executors keep their own
+        status ("Replaced", in its colour), like the version's state:
+        CHANGELOG #130, owner's ZIP test (#15 showed green "In force" rows
+        under "Replaced (still held by the will-executors)").
+        """
         states = self.history.states if self.history is not None else {}
+        current = self.history.current if self.history is not None else None
         row = self._variant_row(
-            wid, will[wid], in_force=states.get(wid) == will_state.IN_FORCE)
+            wid, will[wid],
+            in_force=(version.vid == current
+                      and states.get(wid) == will_state.IN_FORCE),
+        )
         parent_item.appendRow(row)
         for child in version.children.get(wid, []):
             self._add_variants(row[0], child, version, will)
@@ -1473,15 +1486,26 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         hlayout = QHBoxLayout(widget)
         hlayout.setContentsMargins(0, 0, 0, 0)
         self.will_settings_widget = WillSettingsWidget(self.bal_window, self)
+        # CHANGELOG #130 (owner): the calendar reminders are a command of
+        # the Will tab only, in BASIC and ADVANCED alike: a big button next
+        # to the two main commands, and an entry in Tools.
+        self.calendar_button = self._big_calendar_button()
+        calendar_menu = self.calendar_button.menu()
+        calendar_menu.setTitle(_("Calendar reminders"))
+        menu.addMenu(calendar_menu)
         # Toolbar order (left -> right):
-        #   Wizard | Check | Delivery time | Check Alive | Calendar
-        # The two main commands go first (#95: Check used to be last); the
-        # settings widget already lays out delivery/check-alive/calendar in
-        # that order internally.
+        #   Wizard | Check | Delivery time | Check Alive | fee ... Calendar
+        # The two main commands go first, on the LEFT (#95: Check used to
+        # be last); the settings widget shows its fields in ADVANCED only
+        # (#130). The row takes the toolbar's free width (stretch 1), so
+        # the buttons stay on the left even when BASIC hides every field,
+        # and the calendar sits on the right, next to Tools (owner).
         hlayout.addWidget(wizard)
         hlayout.addWidget(refresh)
         hlayout.addWidget(self.will_settings_widget)
-        toolbar.insertWidget(2, widget)
+        hlayout.addStretch(1)
+        hlayout.addWidget(self.calendar_button)
+        toolbar.insertWidget(2, widget, 1)
 
         self.menu = menu
         self.toolbar = toolbar
@@ -1502,6 +1526,28 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         button.setStyleSheet("QPushButton{font-weight:bold;}")
         button.setToolTip(tooltip)
         button.clicked.connect(slot)
+        return button
+
+    def _big_calendar_button(self):
+        """The Will tab's calendar reminders button (CHANGELOG #130).
+
+        Owner: the small calendar icon of the toolbar was hard to see next
+        to the two big commands; the button is now as tall as they are,
+        with a doubled icon. Same menu (Open / Open with... / Save) and the
+        same reminder dates as before: the .ics comes from the Will tab's
+        settings widget (``WillSettingsWidget._ics_provider``).
+        """
+        button = BalCalendarButton(
+            self.bal_window, self.will_settings_widget._ics_provider, self
+        )
+        button.setIcon(
+            read_QIcon_from_bytes(
+                self.bal_window.bal_plugin.read_file("icons/calendar.png")
+            )
+        )
+        button.setIconSize(QSize(28, 28))
+        button.setMinimumSize(QSize(48, 40))
+        button.setToolTip(_("Export reminder dates to your calendar (.ics)"))
         return button
 
     def build_transactions(self):
