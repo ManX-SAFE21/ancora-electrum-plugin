@@ -352,6 +352,11 @@ class BalPlugin(BasePlugin):
         # simply opens with whatever global value is set, and its owner can
         # switch to "advanced" from the plugin settings whenever they want.
         self.USER_TYPE = BalConfig(config, "bal_user_type", "basic")
+        # Remaining-time colours of the delivery date (CHANGELOG #124): yellow
+        # below this many calendar months, red below the second. Plugin-wide,
+        # editable in ADVANCED mode only; read through warning_months().
+        self.WARN_YELLOW_MONTHS = BalConfig(config, "bal_warn_yellow_months", 12)
+        self.WARN_RED_MONTHS = BalConfig(config, "bal_warn_red_months", 6)
         self.WELIST_SERVER = BalConfig(
             config, "bal_welist_server", "https://welist.bitcoin-after.life/"
         )
@@ -500,6 +505,21 @@ class BalPlugin(BasePlugin):
         even if the stored value is missing or unexpected.
         """
         return str(self.USER_TYPE.get()).lower() != "advanced"
+
+    def warning_months(self):
+        """The remaining-time thresholds ``(yellow, red)`` in months (#124).
+
+        BASIC mode always uses the defaults (12 and 6); ADVANCED mode the
+        stored values, or the defaults when they are not valid (see
+        :func:`bal.core.delivery.warning_months`).
+        """
+        from . import delivery
+
+        if self.is_basic_mode():
+            return delivery.WARN_YELLOW_MONTHS, delivery.WARN_RED_MONTHS
+        return delivery.warning_months(
+            self.WARN_YELLOW_MONTHS.get(), self.WARN_RED_MONTHS.get()
+        )
 
     @staticmethod
     def default_will_settings():

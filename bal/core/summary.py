@@ -18,6 +18,7 @@ Must never import Qt (``bal/core`` rule).
 from datetime import datetime, timezone
 
 from ..i18n import _
+from . import delivery as _delivery
 from .checkalive import check_alive_renewal, resolve_date_to_check
 from .messages import _day, check_alive_cannot_renew
 from .will import Will
@@ -35,16 +36,6 @@ def _now(now):
     return now if now is not None else datetime.now(tz=timezone.utc).timestamp()
 
 
-def _months_between(start, end):
-    """Whole calendar months from ``start`` to ``end`` (timestamps, end >= start)."""
-    a = datetime.fromtimestamp(int(start), tz=timezone.utc)
-    b = datetime.fromtimestamp(int(end), tz=timezone.utc)
-    months = (b.year - a.year) * 12 + (b.month - a.month)
-    if b.day < a.day:
-        months -= 1
-    return max(months, 0)
-
-
 def _span(start, end):
     """The time from ``start`` to ``end`` in words: "12 days", "1 year and 11 months".
 
@@ -54,7 +45,7 @@ def _span(start, end):
     days = int((end - start) // _DAY)
     if days < 60:
         return _("1 day") if days == 1 else _("{} days").format(days)
-    months = _months_between(start, end)
+    months = _delivery.months_between(start, end)
     years, rest = divmod(months, 12)
     months_text = _("1 month") if rest == 1 else _("{} months").format(rest)
     if years == 0:
@@ -80,13 +71,61 @@ def relative_date(ts, now=None):
     return _("(passed {} ago)").format(_span(ts, current))
 
 
-def _row(label, strong="", text="", alarm="", red=False):
+def _thresholds(warn_months):
+    """``(yellow, red)`` from ``warn_months``, the defaults when it is
+    missing or not a valid pair (the colour must never break the summary)."""
+    try:
+        yellow, red = warn_months
+    except (TypeError, ValueError):
+        return _delivery.WARN_YELLOW_MONTHS, _delivery.WARN_RED_MONTHS
+    return _delivery.warning_months(yellow, red)
+
+
+def delivery_warning(delivery, now=None, warn_months=None):
+    """The remaining-time colour of a delivery date and its tooltip (#124).
+
+    ``warn_months`` is ``(yellow, red)`` in calendar months (default 12 and
+    6, see ``BalPlugin.warning_months``). Returns ``(level, tooltip)``:
+    ``level`` is ``"green"``, ``"yellow"``, ``"red"`` or ``"passed"``
+    (:func:`bal.core.delivery.delivery_level`); the tooltip is empty for
+    green. Texts approved by the owner on 2026-10-12.
+    """
+    yellow, red = _thresholds(warn_months)
+    level = _delivery.delivery_level(int(delivery), _now(now), yellow, red)
+    if level == _delivery.LEVEL_PASSED:
+        tip = _("The delivery date has passed: the heirs can already receive the bitcoin.")
+    elif level == _delivery.LEVEL_RED:
+        tip = _(
+            "Less than {} months to the delivery: if you are still here, "
+            "choose a later date."
+        ).format(red)
+    elif level == _delivery.LEVEL_YELLOW:
+        tip = _("Less than {} months to the delivery.").format(yellow)
+    else:
+        tip = ""
+    return level, tip
+
+
+def _row(label, strong="", text="", alarm="", red=False, level=None, tip=""):
     """One label/value line of the summary.
 
     ``strong`` is shown in bold (a date), ``text`` normally, ``alarm`` in
-    red after a separator, and ``red`` turns the whole value red.
+    red after a separator, and ``red`` turns the whole value red. ``level``
+    (the delivery row only, #124) colours the date and its text green,
+    yellow or red, and ``tip`` is shown when the mouse is over it.
     """
-    return {"label": label, "strong": strong, "text": text, "alarm": alarm, "red": red}
+    return {"label": label, "strong": strong, "text": text, "alarm": alarm,
+            "red": red, "level": level, "tip": tip}
+
+
+def _delivery_row(delivery, now, warn_months):
+    """The "Delivery to the heirs" line, with its remaining-time colour."""
+    level, tip = delivery_warning(delivery, now, warn_months)
+    return _row(
+        _("Delivery to the heirs"), strong=_day(delivery),
+        text=relative_date(delivery, now), red=delivery <= now,
+        level=level, tip=tip,
+    )
 
 
 def _executor_state(w):
@@ -199,7 +238,7 @@ def _heirs_row(heirs_count, prepared=True):
 
 
 def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
-                 still_active=None):
+                 still_active=None, warn_months=None):
     """Describe the will in force for the summary box of the Will tab.
 
     Args:
@@ -212,6 +251,8 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
             ``Will.find_still_active_older_txs`` (``(item, locktime, url)``).
             Only used when no item is VALID: the plugin's records can be
             wrong, the blockchain is not (owner's wallet, #84a).
+        warn_months: ``(yellow, red)`` thresholds of the delivery colour in
+            months (#124); ``None`` uses the defaults 12 and 6.
 
     Returns:
         A dict: ``state`` (``"ok"``, ``"to_sign"``, ``"to_send"``,
@@ -226,13 +267,14 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
     """
     try:
         return _will_summary(willitems or {}, heirs_count, will_settings or {},
-                             is_basic_mode, _now(now), still_active or [])
+                             is_basic_mode, _now(now), still_active or [],
+                             warn_months)
     except Exception:
         return None
 
 
 def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
-                  still_active):
+                  still_active, warn_months=None):
     """:func:`will_summary` without the safety net (see there)."""
     valid = Will.only_valid_list(willitems)
     if not valid:
@@ -243,7 +285,7 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         if any(w.get_status("MEMPOOL") for w in willitems.values()):
             return _summary("mempool", "info", _("Your will is being executed (mempool)"))
         if still_active:
-            return _still_active_summary(still_active, heirs_count, now)
+            return _still_active_summary(still_active, heirs_count, now, warn_months)
         invalidated = any(w.get_status("INVALIDATED") for w in willitems.values())
         if invalidated:
             note = _(
@@ -263,10 +305,7 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
     creation = Will.get_creation_time(valid)
     rows = []
     expired = delivery <= now
-    rows.append(_row(
-        _("Delivery to the heirs"), strong=_day(delivery),
-        text=relative_date(delivery, now), red=expired,
-    ))
+    rows.append(_delivery_row(delivery, now, warn_months))
     if expired:
         # The executors can broadcast it now: the Check invalidates it and
         # prepares a new one (same text as the Check Alive message, #79).
@@ -379,7 +418,7 @@ def _previous_will_note(still_active):
     ).format(_day(delivery))
 
 
-def _still_active_summary(still_active, heirs_count, now):
+def _still_active_summary(still_active, heirs_count, now, warn_months=None):
     """No VALID item, but a will sent before can still be executed (#84a).
 
     Owner's wallet: after "later delivery date -> Cancel" the records marked
@@ -391,10 +430,7 @@ def _still_active_summary(still_active, heirs_count, now):
     """
     delivery = min(int(locktime) for _item, locktime, _url in still_active)
     urls = {url for _item, _locktime, url in still_active if url}
-    rows = [_row(
-        _("Delivery to the heirs"), strong=_day(delivery),
-        text=relative_date(delivery, now), red=delivery <= now,
-    )]
+    rows = [_delivery_row(delivery, now, warn_months)]
     rows.append(_row(
         _("Will-Executor"),
         text=(

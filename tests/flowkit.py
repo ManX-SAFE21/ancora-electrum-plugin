@@ -1228,6 +1228,11 @@ _HEX64 = re.compile(r"\b[0-9a-f]{64}\b")
 _RAW_TX = re.compile(r"^(?:[0-9a-f]+|cHNidP[A-Za-z0-9+/=]+)$")
 
 
+# The remaining-time colour of the delivery date (#124), dropped from the
+# recorded result sentence (see ``Recorder.dialog``).
+_COLOUR_SPAN = re.compile(r'<span style="color:#[0-9a-fA-F]{6};">(.*?)</span>', re.S)
+
+
 def strip(text):
     """Text without HTML tags, for popups and questions."""
     return re.sub(r"<[^>]+>", "", str(text)).replace("\t", " ").strip()
@@ -1294,8 +1299,16 @@ class Recorder:
         return out
 
     def dialog(self, dlg):
-        """What a "Check your will" dialog showed."""
+        """What a "Check your will" dialog showed.
+
+        The remaining-time colour of the delivery date in the result
+        sentence (CHANGELOG #124) is a style, not a text: it is left out, so
+        the golden files keep recording what the dialog says.
+        """
         report = dlg._report().snapshot()
+        if report.get("result"):
+            kind, text = report["result"]
+            report["result"] = (kind, _COLOUR_SPAN.sub(r"\1", text or ""))
         return {
             "rows": self.text(dlg.labels),
             "history": self.text(list(dlg.history)),

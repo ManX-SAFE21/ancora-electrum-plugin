@@ -1777,6 +1777,21 @@ class WillWidget(QWidget):
                 hlayout.addWidget(WillWidget(w, parent=parent, will=self.will))
 
 
+# Remaining-time colours of the delivery date (CHANGELOG #124): dark enough to
+# read on the light backgrounds of the summary, the dialog and the toolbar.
+DELIVERY_LEVEL_COLOURS = {
+    "green": "#2e7d32",
+    "yellow": "#a67c00",
+    "red": "#c62828",
+    "passed": "#c62828",
+}
+
+
+def delivery_level_colour(level):
+    """The text colour of a delivery ``level`` (#124), or ``None``."""
+    return DELIVERY_LEVEL_COLOURS.get(level)
+
+
 class WillSummaryWidget(QFrame):
     """The will summary box at the top of the Will tab (CHANGELOG #84a).
 
@@ -1859,7 +1874,8 @@ class WillSummaryWidget(QFrame):
                 widget.deleteLater()
 
     def _value_html(self, row):
-        """The value of one line as rich text (bold date, red alarm).
+        """The value of one line as rich text (bold date, red alarm, and the
+        remaining-time colour of the delivery line, #124).
 
         Every piece is escaped: the texts come from the catalogs and the
         dates from the will, never from the user, but escaping keeps a
@@ -1876,7 +1892,12 @@ class WillSummaryWidget(QFrame):
                 self._RED, html.escape(row["alarm"])
             )
             value = value + " &middot; " + alarm if value else alarm
-        if row.get("red"):
+        colour = delivery_level_colour(row.get("level"))
+        if colour:
+            # The delivery line (#124): the date and its text in the colour of
+            # the time left; the tooltip explains it (show_summary).
+            value = '<span style="color:{};">{}</span>'.format(colour, value)
+        elif row.get("red"):
             value = '<span style="color:{};">{}</span>'.format(self._RED, value)
         return value
 
@@ -1907,6 +1928,8 @@ class WillSummaryWidget(QFrame):
             value = QLabel(self._value_html(row))
             value.setTextFormat(Qt.TextFormat.RichText)
             value.setWordWrap(True)
+            if row.get("tip"):
+                value.setToolTip(row["tip"])
             self.grid.addWidget(label, i, 0, Qt.AlignmentFlag.AlignTop)
             self.grid.addWidget(value, i, 1)
         note = summary.get("note")
