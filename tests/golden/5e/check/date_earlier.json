@@ -232,7 +232,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>The delivery date of heir \"alice\" changed: preparing a new will.</b>",
+   "Checking your will:\t<b>The delivery date changed: preparing a new will.</b>",
    "Building your will:\t<b>Wait</b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
@@ -334,7 +334,7 @@
   "report": {
    "boxes": {
     "changes": [
-     "The delivery date of heir \"alice\" changed: preparing a new will."
+     "The delivery date changed: preparing a new will."
     ],
     "problems": [],
     "warnings": []
@@ -402,7 +402,7 @@
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>The delivery date of heir \"alice\" changed: preparing a new will.</b>",
+   "Checking your will:\t<b>The delivery date changed: preparing a new will.</b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
    "Heir:\t<font color=#05ad05><b>bob</b></font>",
