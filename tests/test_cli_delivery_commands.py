@@ -197,7 +197,7 @@ def test_show_migrates_and_reports_the_owner_wallet(make):
         "locktime": OWNER_DATE,
         "baltx_fees": 13,
         "threshold": "-180d",
-        "settings_version": 1,
+        "settings_version": 2,
         "migrated_from": "will",
         "migrated_at": fk.FIXED_NOW + 2 * fk.DAY,
         "legacy_locktime": "1054d",
@@ -205,6 +205,12 @@ def test_show_migrates_and_reports_the_owner_wallet(make):
         "choice_pending": False,
         "will_in_force": dated(OWNER_DATE),
         "settings_unavailable": False,
+        # #127: the delivery form; the will is signed and sent, so locked.
+        "form": "fixed",
+        "period_months": None,
+        "period": None,
+        "period_start": None,
+        "locked": True,
     }
     assert wallet_dict(s)["note_kind"] == "converted"
     # The same through Electrum's own command wrappers (``-w wallet``).
@@ -476,7 +482,8 @@ def test_delivery_commands_are_registered_and_parsed():
             if arg not in ("wallet", "wallet_path", "plugin", "password"):
                 assert arg in cmd.arg_descriptions, (name, arg)
     assert known_commands["bal_delivery_set"].arg_types == {
-        "date": "str", "fee": "int", "keep": "bool", "confirm_earlier": "bool"}
+        "date": "str", "fee": "int", "keep": "bool", "confirm_earlier": "bool",
+        "months": "int"}
     args = get_parser().parse_args(
         ["bal_delivery_set", "--date", "2040-01-01", "--fee", "17", "--keep",
          "true", "--confirm_earlier", "false"])

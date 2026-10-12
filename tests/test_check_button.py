@@ -81,7 +81,7 @@ def _row():
 def test_check_comes_right_after_the_wizard():
     host, settings, widgets = _row()
     wizard, check = widgets[0], widgets[1]
-    assert wizard.text().strip() == _("Build Your Will")
+    assert wizard.text().strip() == _("Build / Edit Your Will")      # #127
     assert check.text().strip() == _("Check your will")
     assert widgets[2] is settings and len(widgets) == 3
 

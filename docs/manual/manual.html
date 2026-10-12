@@ -104,8 +104,26 @@ inheritance cases.</p>
 will be transferred to the recipient. It is always a <strong>Precise Date</strong>.</p>
 <p><strong>Each wallet keeps its own Delivery Time and Fees</strong>, saved in the wallet file
 (see <em>Wallet security — saving your will</em>). Changing them in one wallet does
-not change your other wallets. A new wallet starts with a Delivery Time 12
+not change your other wallets. A new wallet starts with a Delivery Time 24
 months from today.</p>
+<p><strong>Fixed date or renewable period.</strong> On the settings page of the wizard
+(<em>Build / Edit Your Will</em>) you choose how the will is delivered:</p>
+<ul>
+<li><strong>Fixed date</strong> (default): the will is delivered on the date you choose. When its Check Alive passes, the plugin cannot renew it: choose a later date (a will already sent must then be invalidated, miner fee).</li>
+<li><strong>Period (renewable)</strong>, offered only in ADVANCED mode: the will is delivered N calendar months (1 to 240) after the day it is prepared. When its Check Alive passes, the plugin asks to <strong>Renew</strong>: the old will is invalidated on the blockchain (miner fee) and a new will is prepared at once, delivered N months after that day. The Heirs and Will tabs show the period and the date it gives, for example "36 months (3 years) -&gt; 12/10/2029" (the day is the UTC day). A will already in the period form keeps being renewed in BASIC mode too: the mode only hides the choice.</li>
+</ul>
+<p>In BASIC mode with a fixed date the wizard shows no choice: only the mode
+and the date.</p>
+<p>The form cannot change while a will is in force (signed or sent): in
+ADVANCED mode the wizard says so and the two choices are disabled. To change it, invalidate
+the will (Invalidate, miner fee); when the invalidation is confirmed, choose
+the new form in the wizard and prepare the new will. The number of months
+can be changed at any time: with a will in force the new number is used at
+the next renewal (no fee now).</p>
+<p>At the top of the same page, <strong>Plugin mode (applies to every wallet)</strong>
+switches BASIC / ADVANCED for every wallet, exactly like the <em>User Type</em> of
+the plugin settings (ADVANCED asks for the phrase "at My Risk"). Choosing
+BASIC there sets the form back to a fixed date when no will is in force.</p>
 <p><strong>Colours of the Delivery Time.</strong> The date of the line "Delivery to the heirs", in the will summary and
 in the Check window, is <strong>green</strong> when more than 12 months are
 left, <strong>yellow</strong> below 12 months and <strong>red</strong> below 6 months or when the date

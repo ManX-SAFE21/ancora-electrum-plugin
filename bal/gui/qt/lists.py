@@ -702,8 +702,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # The Wizard is the main entry point to create an inheritance, so make
         # it stand out: show a bold label next to a slightly larger icon (the
         # plain icon-only button was too easy to overlook).
+        # #127 (owner): the same wizard also changes a will already made, so
+        # the button says both. The will summary, shown only when there is
+        # no will yet, keeps "Build Your Will".
         wizard = self._big_button(
-            _("Build Your Will"), "icons/wizard.png",
+            _("Build / Edit Your Will"), "icons/wizard.png",
             _("Wizard - Build your will"), self.bal_window.init_wizard,
         )
         # display = QPushButton(_("Display"))

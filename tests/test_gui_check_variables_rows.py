@@ -128,13 +128,24 @@ RENEW_NOW = 1_800_000_000 - 1_800_000_000 % DAY   # 2027-01-15
 BUILT = RENEW_NOW + 20 * DAY                       # delivery of the will in force
 
 
+def _settings_of(locktime):
+    """The stored settings of :func:`_renewal`: ``"period"`` is the period
+    form of 7 calendar months (CHANGELOG #127: only the period form renews;
+    before it was the relative "200d"), any other value a fixed date."""
+    if locktime == "period":
+        return {"locktime": BUILT, "threshold": "-180d",
+                "form": "period", "period_months": 7}
+    return {"locktime": locktime, "threshold": "-180d"}
+
+
 def _renewal(locktime):
     """A passed Check Alive as ``check_alive_renewal`` describes it: a will
     in force delivered in 20 days (``BUILT``), its Check Alive 180 days
-    before. ``locktime`` is the stored delivery: relative ("200d", which
+    before. ``locktime`` is the stored delivery: "period" (the period form
+    of :func:`_settings_of`, which
     can be renewed) or the fixed date ``BUILT`` (which cannot)."""
     return check_alive_renewal(
-        False, {"locktime": locktime, "threshold": "-180d"},
+        False, _settings_of(locktime),
         built_locktime=BUILT, creation_date=RENEW_NOW - 300 * DAY,
         now=RENEW_NOW,
     )
@@ -368,7 +379,7 @@ def test_expired_row(core):
 def test_renewal_returns_the_tx_and_keeps_the_info(core):
     """Renewable: the unsigned invalidation is built and returned, the
     information kept for the Renew question."""
-    info = _renewal("200d")
+    info = _renewal("period")
     assert info["renewable"] and info["has_will"]
     core.invalidate.return_value = TX
     d = _dialog(info=info, init_error=CheckAliveError(DATE))
@@ -389,7 +400,7 @@ def test_renewal_returns_the_tx_and_keeps_the_info(core):
 def test_renewal_fee_defaults_to_one(core):
     """No transaction fee stored: the renewal invalidation pays 1 sat/vB."""
     core.invalidate.return_value = TX
-    d = _dialog(info=_renewal("200d"), init_error=CheckAliveError(DATE))
+    d = _dialog(info=_renewal("period"), init_error=CheckAliveError(DATE))
     del d.bal_window.will_settings["baltx_fees"]
     _run(d)
     assert core.invalidate.call_args.args[2] == 1
@@ -398,7 +409,7 @@ def test_renewal_fee_defaults_to_one(core):
 def test_renewal_without_tx_shows_the_question_in_red(core):
     """Renewable but no transaction could be built: the check stops and the
     renewal question is shown as an error (today's text, unchanged)."""
-    info = _renewal("200d")
+    info = _renewal("period")
     d = _dialog(info=info, init_error=CheckAliveError(DATE))
     assert _run(d) == ("check_alive_stop", None)
     row = _error(check_alive_message(info))
@@ -433,7 +444,7 @@ def test_check_alive_without_info_row(core):
 def test_invalidation_error_keeps_the_info(core):
     """An error while building the renewal invalidation propagates, with
     the information already kept and the row on "Wait"."""
-    info = _renewal("200d")
+    info = _renewal("period")
     core.invalidate.side_effect = RuntimeError("no coins")
     d = _dialog(info=info, init_error=CheckAliveError(DATE))
     with pytest.raises(RuntimeError, match="no coins"):
@@ -598,6 +609,58 @@ def test_passed_check_alive_after_the_update_invalidates_nothing(flow_session):
         assert step["popups"] == [], label
         assert step["dialog_events"] == ["close-button"], label
     assert settings["locktime"] == fk.ts(2026, 12, 9)
+
+
+def test_renewal_sent_but_not_seen_yet(flow_session):
+    """Real flow, back with the period form (CHANGELOG #127): the Check
+    Alive passes, Renew; the renewal invalidation is broadcast but the
+    wallet does not see it yet. The second pass of phase 1 stops at once
+    ("invalidation_pending"): its "Checking variables" row stays on "Wait"
+    and nothing is invalidated twice.
+
+    The test of the same name before #123 (seed: the shared period "60d");
+    from #123 to #126 no period was left and the renewal could not be
+    reached. Now 2 calendar months, three will-executors (one invalidation
+    covers the one coin of all three copies).
+    """
+    s = flow_session(mode="advanced", period_months=2, threshold="-30d")
+    s.world.add_executor()
+    assert s.bw.will_settings["form"] == "period"
+    s.check()
+    s.clock.travel(40)
+    s.world.wallet_lags = True
+    s.check()
+    step = s.recorder.steps[-1]
+    assert step["rows"] == [
+        PASSED,
+        "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+        WAIT,
+    ]
+    assert step["history"] == [WAIT, PASSED,
+                               "Invalidating old will:\t<b>Wait</b>",
+                               "Invalidating old will:\t<b>Broadcasting</b>",
+                               "Invalidating old will:\t<b><font color='#05ad05'>"
+                               "<b>Ok</b></font></b>"] + [
+        "Please wait {}secs".format(n) for n in range(10, 0, -1)] + [
+        WAIT,
+        "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+    ]
+    report = step["report"]
+    assert report["steps"][0] == ["check", "run", ""]
+    assert report["boxes"] == {"changes": [], "warnings": ["Check Alive passed"],
+                               "problems": []}
+    assert step["broadcasts"] == [["invalidation(dialog)", "T4"]]
+    assert [kind for kind, _text in step["questions"]] == ["renew"]
+    assert "today + 2 months" in step["questions"][0][1]
+    assert step["popups"] == [["message", (
+        "Your old will has been invalidated and the transaction was "
+        "broadcast.\nElectrum may need a little time to register it.\n"
+        "Please wait until the invalidation transaction is confirmed, then "
+        "press the Check button again to finish updating your will.")]]
+    assert step["dialog_events"] == ["close-button"]
+    # The wallet has not seen the invalidation: the old will is still in
+    # force for the period policy, so the date is not moved yet.
+    assert step["settings"]["locktime"] == "2026-12-10"
 
 
 if __name__ == "__main__":

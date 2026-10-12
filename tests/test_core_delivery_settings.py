@@ -121,9 +121,10 @@ def test_constants():
     assert dv.LOCKTIME_MIN == 500_000_000
     assert dv.LOCKTIME_MAX == 2**32 - 1
     assert dv.WALLET_KEY == "will_settings"
-    assert dv.SCHEMA_VERSION == 1
+    assert dv.SCHEMA_VERSION == 2                       # #127: the form
+    assert dv.FIRST_SCHEMA_VERSION == 1
     assert dv.DEFAULT_FEE == 20
-    assert dv.DEFAULT_MONTHS == 12
+    assert dv.DEFAULT_MONTHS == 24                      # #127 (was 12)
     assert dv.DEFAULT_THRESHOLD == "-180d"
     assert dv.LEGACY_DROP == ("tx_fees", "real_threshold", "real_locktime")
 
@@ -171,9 +172,10 @@ def test_utc_midnight():
     assert dv.utc_midnight(ts(2029, 8, 29, 23, 59)) == OWNER
 
 
-def test_default_delivery_is_twelve_months_from_today():
-    """A wallet with nothing to migrate from: today + 12 months, 00:00 UTC."""
-    assert dv.default_delivery(NOW) == ts(2027, 10, 11)
+def test_default_delivery_is_twenty_four_months_from_today():
+    """A wallet with nothing to migrate from: today + 24 months, 00:00 UTC
+    (owner decision 6 of #127; it was 12 months)."""
+    assert dv.default_delivery(NOW) == ts(2028, 10, 11)
 
 
 # ------------------------------------------------------------------ values
@@ -385,10 +387,11 @@ def test_default_values():
     """Default settings are current and use the default date and fee."""
     values = dv.default_values(NOW)
     assert values == {
-        "settings_version": 1,
-        "locktime": ts(2027, 10, 11),
+        "settings_version": 2,
+        "locktime": ts(2028, 10, 11),
         "baltx_fees": 20,
         "threshold": "-180d",
+        "form": "fixed",
     }
     assert dv.is_current(values)
 
@@ -472,7 +475,8 @@ def test_owner_wallet_migrates_to_the_date_of_his_will():
     glob = copy.deepcopy(OWNER_GLOBAL)
     out = dv.migration_values(owner_items(), glob, {}, True, NOW)
     assert out == {
-        "settings_version": 1,
+        "settings_version": 2,
+        "form": "fixed",
         "locktime": 1882656000,
         "baltx_fees": 13,
         "threshold": "-180d",
@@ -578,7 +582,8 @@ def test_global_period_without_a_will():
     glob = {"locktime": "1054d", "baltx_fees": 13, "threshold": "-90d"}
     out = dv.migration_values([], glob, None, True, NOW)
     assert out == {
-        "settings_version": 1,
+        "settings_version": 2,
+        "form": "fixed",
         "locktime": ts(2029, 8, 30),
         "baltx_fees": 13,
         "threshold": "-90d",
@@ -632,10 +637,10 @@ def test_legacy_wallet_value_only():
 
 
 def test_no_usable_source_gives_the_default():
-    """Plugin data but nothing usable: today + 12 months, fee 20."""
+    """Plugin data but nothing usable: today + 24 months, fee 20."""
     out = dv.migration_values([], {"locktime": "0d"}, {"locktime": "abc"}, True, NOW)
     assert (out["locktime"], out["migrated_from"], out["baltx_fees"]) == (
-        ts(2027, 10, 11),
+        ts(2028, 10, 11),
         "default",
         20,
     )
@@ -647,8 +652,9 @@ def test_new_wallet_never_inherits_the_shared_value():
     glob = {"locktime": "1054d", "baltx_fees": 13, "threshold": "-90d"}
     out = dv.migration_values([], glob, {"locktime": "5y"}, False, NOW)
     assert out == {
-        "settings_version": 1,
-        "locktime": ts(2027, 10, 11),
+        "settings_version": 2,
+        "form": "fixed",
+        "locktime": ts(2028, 10, 11),
         "baltx_fees": 20,
         "threshold": "-90d",
         "migrated_from": "default",
@@ -938,9 +944,9 @@ def test_display_only_values():
     assert out == {"locktime": OWNER, "baltx_fees": 13, "threshold": "-180d"}
     assert not dv.is_current(out)
     out = dv.display_only_values([], NOW)
-    assert out == {"locktime": ts(2027, 10, 11), "baltx_fees": 20, "threshold": "-180d"}
+    assert out == {"locktime": ts(2028, 10, 11), "baltx_fees": 20, "threshold": "-180d"}
     out = dv.display_only_values(will(800_000, VALID=True, fee=0), NOW)
-    assert out["locktime"] == ts(2027, 10, 11) and out["baltx_fees"] == 20
+    assert out["locktime"] == ts(2028, 10, 11) and out["baltx_fees"] == 20
 
 
 # ------------------------------------------------------------------ anchor

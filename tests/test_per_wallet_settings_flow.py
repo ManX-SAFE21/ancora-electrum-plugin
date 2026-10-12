@@ -289,7 +289,8 @@ def test_owner_wallet_migrates_to_its_will_and_stays_quiet(make, monkeypatch, mo
     assert s.bw.will_settings is d                                       # I3
     assert s.bw.settings_unavailable is False
     assert dict(d, migrated_at=None, anchor_valid=None) == {
-        "settings_version": 1,
+        "settings_version": 2,
+        "form": "fixed",
         "locktime": OWNER_DATE,
         "baltx_fees": 13,
         "threshold": "-180d",
@@ -735,7 +736,7 @@ def test_fail_closed_then_init_will_recovers(make, monkeypatch):
     bw.init_will()
     assert bw.settings_unavailable is False and bw.will_settings is d
     assert (d["settings_version"], d["locktime"], d["migrated_from"]) == (
-        1, fk.D0, "will")
+        2, fk.D0, "will")
     s.check()
     assert_check_ok(last(s))
     s.assert_global_unchanged()
@@ -770,8 +771,8 @@ def test_two_wallets_keep_their_own_dates_and_a_new_wallet_gets_the_default(make
     """Two wallets of one Electrum (one config, so one global "1054d"):
     each is migrated on the day it opens and keeps its own date; a Check in
     one never moves the other. A wallet created after the update (no heirs,
-    no will) gets the default, today + 12 months and fee 20, never the
-    frozen shared value."""
+    no will) gets the default, today + 24 months (#127; it was 12) and fee
+    20, never the frozen shared value."""
     a = make(legacy_global=dict(OLD_GLOBAL))
     da = wallet_dict(a)
     assert (da["locktime"], da["migrated_from"], da["baltx_fees"]) == (
@@ -782,7 +783,7 @@ def test_two_wallets_keep_their_own_dates_and_a_new_wallet_gets_the_default(make
     c = a.second_wallet(seed=False, plugin_data=False, password=TEST_PASSWORD)
     db, dc = wallet_dict(b), wallet_dict(c)
     assert (db["locktime"], db["migrated_from"]) == (fk.ts(2029, 9, 3), "global")
-    assert dc["locktime"] == fk.ts(2027, 10, 15)
+    assert dc["locktime"] == fk.ts(2028, 10, 15)
     assert (dc["migrated_from"], dc["baltx_fees"], dc["threshold"]) == (
         "default", 20, "-180d")
     assert "legacy_locktime" not in dc and "note_kind" not in dc
@@ -797,7 +798,7 @@ def test_two_wallets_keep_their_own_dates_and_a_new_wallet_gets_the_default(make
             assert_check_ok(last(s))
     assert da["locktime"] == OWNER_DATE
     assert db["locktime"] == fk.ts(2029, 9, 3)
-    assert dc["locktime"] == fk.ts(2027, 10, 15)
+    assert dc["locktime"] == fk.ts(2028, 10, 15)
     for s in (a, b, c):
         assert s.bw.will_settings is wallet_dict(s)
     a.assert_global_unchanged()
@@ -863,7 +864,8 @@ def test_bal_02x_wallet_dict_without_a_marker(make):
     d = wallet_dict(s)
     assert s.config.get("bal_will_settings") is None
     assert dict(d, migrated_at=None, anchor_valid=None) == {
-        "settings_version": 1,
+        "settings_version": 2,
+        "form": "fixed",
         "locktime": fk.ts(2027, 10, 10),
         "baltx_fees": 15,
         "threshold": "-90d",
@@ -998,7 +1000,7 @@ def test_migration_runs_under_the_flow_lock(make, monkeypatch):
     write_items(d, {})
     cli_commands._call_locked(s.plugin, s.wallet, "delivery_show")
     assert held == [True, True]
-    assert d["settings_version"] == 1
+    assert d["settings_version"] == 2
 
     def command(started, finish):
         """Another command working on this wallet (holds the lock)."""
@@ -1025,7 +1027,7 @@ def test_migration_runs_under_the_flow_lock(make, monkeypatch):
     assert dict(d) == {} and len(held) == 2          # nothing migrated
     s.bw.init_will()
     assert s.bw.settings_unavailable is False and s.bw.will_settings is d
-    assert d["settings_version"] == 1 and held[-1] is True
+    assert d["settings_version"] == 2 and held[-1] is True
     while_busy(s.reload_window)
     assert s.bw._settings_ready is False
     assert s.bw.settings_unavailable is False and s.bw.will_settings is d

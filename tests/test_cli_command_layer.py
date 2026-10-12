@@ -195,7 +195,7 @@ def test_default_delivery_date_is_kept_by_the_wallet(plugin, monkeypatch):
 
     Since #123 the date is stored in the WALLET (its ``will_settings``,
     migrated once; a wallet without heirs or a will gets the default, today
-    + 12 months) and Electrum's global ``bal_will_settings`` is never
+    + 24 months since #127) and Electrum's global ``bal_will_settings`` is never
     written (rule I1). The restart is three days later (on the engine's
     clock, which the migration reads): two days in a row can give the same
     default at the end of February.
@@ -204,7 +204,8 @@ def test_default_delivery_date_is_kept_by_the_wallet(plugin, monkeypatch):
     assert plugin.config.get("bal_will_settings") is None
     run(plugin, "heirs_list", wallet=wallet)
     saved = dict(wallet.db.get_dict("will_settings"))
-    assert saved["settings_version"] == 1
+    assert saved["settings_version"] == 2            # #127: schema 2
+    assert saved["form"] == "fixed"
     assert saved["migrated_from"] == "default"
     assert delivery.as_delivery(saved["locktime"]) == saved["locktime"]
     assert plugin.config.get("bal_will_settings") is None

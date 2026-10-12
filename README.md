@@ -132,7 +132,7 @@ exposes `bal_*` commands that replicate the full inheritance cycle.
 | Category | Commands |
 |----------|----------|
 | Settings | `bal_settings_list`, `bal_settings_get`, `bal_settings_set`, `bal_settings_reset` |
-| Delivery (per wallet) | `bal_delivery_show`, `bal_delivery_set` |
+| Delivery (per wallet) | `bal_delivery_show`, `bal_delivery_set`, `bal_delivery_form` |
 | Heirs | `bal_heirs_list`, `bal_heirs_show`, `bal_heirs_add`, `bal_heirs_update`, `bal_heirs_delete`, `bal_heirs_import`, `bal_heirs_export` |
 | Will-Executors | `bal_willexecutors_list`, `bal_willexecutors_show`, `bal_willexecutors_add`, `bal_willexecutors_update`, `bal_willexecutors_select`, `bal_willexecutors_delete`, `bal_willexecutors_ping`, `bal_willexecutors_download`, `bal_willexecutors_import`, `bal_willexecutors_export` |
 | Will | `bal_will_status`, `bal_will_check`, `bal_will_prepare`, `bal_will_autorebuild`, `bal_will_sign`, `bal_will_broadcast`, `bal_will_export`, `bal_will_import_merge`, `bal_will_invalidate`, `bal_will_check_executor` |
@@ -177,6 +177,9 @@ electrum bal_willexecutors_ping --urls '["https://we.example.com"]'
 electrum bal_delivery_show
 electrum bal_delivery_set --date 2029-08-29     # YYYY-MM-DD means 00:00 UTC
 electrum bal_delivery_set --fee 20              # sat/vByte, 1 or more
+electrum bal_delivery_form period --months 36   # renewable period, N months
+electrum bal_delivery_set --months 24           # a new N (period form only)
+electrum bal_delivery_form fixed --date 2029-08-29
 
 # Plugin settings: key, then value (JSON for object-typed keys)
 electrum bal_settings_get bal_user_type
@@ -191,6 +194,22 @@ will must be invalidated first (on-chain, miner fee). Every heir gets the
 delivery date of the will, so `--locktime` for a single heir is refused
 unless `bal_enable_multiverse` is on.
 
+The delivery form: a **fixed date** (the default) or a **period** of N
+calendar months (1 to 240) that the Check Alive renews.
+`bal_delivery_form period --months N` chooses the period: with no will in
+force the delivery date becomes today + N months. `bal_delivery_form fixed`
+goes back to a fixed date (`--date`, else the stored date stays). The form
+cannot change while a will is in force (signed or sent): the command is
+refused with the steps to follow (run `bal_will_invalidate`, sign and
+broadcast it, wait until it is confirmed, choose the form, then
+`bal_will_prepare`). `bal_delivery_set --months N` changes N of a period:
+with a will in force the new N is used at the next renewal (no fee now);
+`--date` is refused for the period form and `--months` for a fixed date.
+`bal_delivery_show` adds `form`, `period_months`, `period` (N in words),
+`period_start` (the day the period started) and `locked` (a will in force:
+the form cannot change). The period form is not available with
+`bal_enable_multiverse`.
+
 Where the delivery settings are kept: in the wallet file, under the wallet
 key `will_settings`. Electrum's global `bal_will_settings` (the key of the
 original BAL plugin) is never changed. It is read only once per wallet, the
@@ -202,7 +221,7 @@ That first time, the delivery date becomes the date of the wallet's will in
 force. Without one, it is the earliest will already sent to the
 will-executors and still waiting for its date; else, only when the wallet
 already had heirs or a will, the old global setting (when it gives a future
-date); else today + 12 months. The fee rate comes from the same will, else
+date); else today + 24 months. The fee rate comes from the same will, else
 from the old setting, else 20. A period saved by an older version (such as
 `1054d`) becomes that fixed date once. `bal_delivery_show` shows where the
 date came from (`migrated_from`) and the old value (`legacy_locktime`).

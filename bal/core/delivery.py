@@ -24,7 +24,13 @@ result. The rules here:
 * the later date the old settings asked for, kept until the wallet shows
   whether the will found at the migration is still in force
   (:func:`later_wish_action`, :func:`drop_later_wish`);
-* the date the command line accepts (:func:`parse_cli_date`).
+* the date the command line accepts (:func:`parse_cli_date`);
+* the delivery form of #127: a fixed date or a period of N calendar
+  months renewed by the Check Alive (:func:`form_of`, :func:`period_months`,
+  :func:`period_values`), the v2 upgrade (:func:`upgrade_values`), and the
+  two predicates on the will items: the form is locked while a will is in
+  force (:func:`form_locked`), the period date is re-anchored only when no
+  will is in force (:func:`will_in_force`).
 
 Pure: standard library only, no Qt, no Electrum objects, no I/O, and the
 clock is NEVER read here. Every "now" comes from the caller, so the test
@@ -66,9 +72,27 @@ LOCKTIME_MAX = 2**32 - 1
 #: The wallet key of the settings. Phase 6 must carry it to the new identity:
 #: the name lives only here and in ``plugin_base._register_will_dict``.
 WALLET_KEY = "will_settings"
-SCHEMA_VERSION = 1
+#: The schema written now: 2 since #127 (``form``, ``period_months``,
+#: ``period_start``). A version-1 dict is still current for the rules of
+#: the #123 migration (:func:`is_current`); :func:`upgrade_values` brings it
+#: to version 2 (form "fixed") without migrating it again.
+SCHEMA_VERSION = 2
+#: The lowest ``settings_version`` that :func:`is_current` accepts (#123).
+FIRST_SCHEMA_VERSION = 1
 DEFAULT_FEE = 20
-DEFAULT_MONTHS = 12
+#: The delivery date of a wallet with nothing to migrate from, in calendar
+#: months after today (owner decision 6 of #127, 2026-10-12: 24; it was 12).
+DEFAULT_MONTHS = 24
+
+# The delivery form (#127, owner decision 1): a fixed date, or a period of
+# N calendar months that the Check Alive renews. Stored codes, never
+# translated. A dict without ``form`` is a fixed date.
+FORM_FIXED = "fixed"
+FORM_PERIOD = "period"
+FORMS = (FORM_FIXED, FORM_PERIOD)
+#: The limits of the period, in calendar months (plan, decision 11).
+PERIOD_MIN = 1
+PERIOD_MAX = 240
 #: The Check Alive bridge kept until #128: "180 days before the delivery",
 #: the default of ``BalPlugin.default_will_settings_relative`` (#80).
 DEFAULT_THRESHOLD = "-180d"
@@ -361,10 +385,12 @@ def is_fee(x):
 def is_current(d):
     """True when ``d`` already holds migrated settings (rule I2).
 
-    ``settings_version`` an int >= :data:`SCHEMA_VERSION` (a newer schema
-    written by a later step counts too), ``locktime`` an int date (a float,
-    a period, a block height or a 1970 value is not) and ``baltx_fees`` a fee
-    rate. Anything else is migrated again.
+    ``settings_version`` an int >= :data:`FIRST_SCHEMA_VERSION` (1: a
+    version-1 dict of #123 is current too, :func:`upgrade_values` only adds
+    the form; a newer schema written by a later step counts too),
+    ``locktime`` an int date (a float, a period, a block height or a 1970
+    value is not) and ``baltx_fees`` a fee rate. Anything else is migrated
+    again.
     """
     if not isinstance(d, Mapping):
         return False
@@ -372,7 +398,7 @@ def is_current(d):
     locktime = d.get("locktime")
     return (
         _is_int(version)
-        and version >= SCHEMA_VERSION
+        and version >= FIRST_SCHEMA_VERSION
         and _is_int(locktime)
         and LOCKTIME_MIN <= locktime <= LOCKTIME_MAX
         and is_fee(d.get("baltx_fees"))
@@ -455,7 +481,12 @@ def validate_values(values):
       ``"-Nd"`` (what ``normalize_check_alive`` would store);
     * ``settings_version``: an int >= 1;
     * ``later_wish`` (:data:`LATER_WISH_KEY`): a date, as ``locktime``,
-      stored as an int.
+      stored as an int;
+    * ``form`` (#127): one of :data:`FORMS`;
+    * ``period_months`` (#127): whole calendar months from
+      :data:`PERIOD_MIN` to :data:`PERIOD_MAX` (:func:`as_months`), stored
+      as an int;
+    * ``period_start`` (#127): a date, as ``locktime``, stored as an int.
 
     Returns a new dict; raises ``ValueError`` (English, for the log and the
     command line) on the first bad value.
@@ -465,7 +496,7 @@ def validate_values(values):
         if not _is_scalar(value):
             raise ValueError("{}: not a plain value: {!r}".format(key, value))
         out[key] = value
-    for key in ("locktime", LATER_WISH_KEY):
+    for key in ("locktime", LATER_WISH_KEY, "period_start"):
         if key not in out:
             continue
         raw = out[key]
@@ -486,6 +517,17 @@ def validate_values(values):
         version = out["settings_version"]
         if not _is_int(version) or version < 1:
             raise ValueError("not a settings version: {!r}".format(version))
+    if "form" in out and out["form"] not in FORMS:
+        raise ValueError("not a delivery form: {!r}".format(out["form"]))
+    if "period_months" in out:
+        months = as_months(out["period_months"])
+        if months is None:
+            raise ValueError(
+                "not a period: {!r} (whole months from {} to {})".format(
+                    out["period_months"], PERIOD_MIN, PERIOD_MAX
+                )
+            )
+        out["period_months"] = months
     return out
 
 
@@ -520,13 +562,15 @@ def default_values(now):
     """The settings of a wallet with nothing to migrate from.
 
     Delivery :func:`default_delivery`, fee :data:`DEFAULT_FEE`, Check Alive
-    bridge :data:`DEFAULT_THRESHOLD`, schema :data:`SCHEMA_VERSION`.
+    bridge :data:`DEFAULT_THRESHOLD`, schema :data:`SCHEMA_VERSION`, form
+    :data:`FORM_FIXED` (#127).
     """
     return {
         "settings_version": SCHEMA_VERSION,
         "locktime": default_delivery(now),
         "baltx_fees": DEFAULT_FEE,
         "threshold": DEFAULT_THRESHOLD,
+        "form": FORM_FIXED,
     }
 
 
@@ -805,8 +849,9 @@ def migration_values(
     (#80), else :data:`DEFAULT_THRESHOLD`.
 
     Also ``migrated_from``, ``migrated_at``, ``legacy_locktime`` (the old
-    value as found, only with plugin data) and the note of :func:`note_for`
-    (with the question and the later wish it may add).
+    value as found, only with plugin data), ``form`` :data:`FORM_FIXED`
+    (#127; the schema is :data:`SCHEMA_VERSION`) and the note of
+    :func:`note_for` (with the question and the later wish it may add).
     Everything passes :func:`validate_values` (``ValueError`` otherwise:
     the caller fails closed). Returns a new dict; nothing is written here.
     """
@@ -853,6 +898,9 @@ def migration_values(
         ),
         "migrated_from": source,
         "migrated_at": int(now),
+        # #127: every migrated wallet starts with a fixed date (owner
+        # decision 1); the period form is chosen later in the wizard.
+        "form": FORM_FIXED,
     }
     old_raw = _old_raw_locktime(old_raws)
     if old_raw is not None:
@@ -1218,6 +1266,172 @@ def display_only_values(items, now):
     fees = {i.fee for i in valid if is_fee(i.fee)}
     fee = fees.pop() if len(fees) == 1 else DEFAULT_FEE
     return {"locktime": locktime, "baltx_fees": fee, "threshold": DEFAULT_THRESHOLD}
+
+
+# --------------------------------------------------------------------------- #
+# The delivery form: a fixed date or a renewable period (#127)
+# --------------------------------------------------------------------------- #
+class DeliveryFormLocked(Exception):  # noqa: N818 - named after the state, not an error
+    """The delivery form cannot change while a will is in force (#127).
+
+    Owner decision 2: a will signed or sent keeps its form; to change it
+    the will must be invalidated on-chain (miner fee) and the invalidation
+    confirmed. ``current_form`` is the form in force (:data:`FORMS`);
+    ``code`` is the machine-readable code the command line returns.
+    """
+
+    code = "delivery_form_locked"
+
+    def __init__(self, current_form):
+        """Keep the form in force and an English message for the log."""
+        self.current_form = current_form
+        super().__init__(
+            "The delivery form ({}) cannot change while a will is in "
+            "force.".format(current_form)
+        )
+
+
+def as_months(x):
+    """A period in calendar months as an int, or None.
+
+    A whole number (an int, a float without a fraction, or a text holding
+    one) from :data:`PERIOD_MIN` to :data:`PERIOD_MAX`. A bool, a fraction,
+    a recipe such as ``"36m"`` or anything else gives None.
+    """
+    if isinstance(x, bool):
+        return None
+    if isinstance(x, str):
+        text = x.strip()
+        if not _DIGITS.fullmatch(text):
+            return None
+        x = int(text)
+    if not _is_number(x) or x != int(x):
+        return None
+    n = int(x)
+    return n if PERIOD_MIN <= n <= PERIOD_MAX else None
+
+
+def form_of(settings):
+    """The delivery form of ``settings``: :data:`FORM_PERIOD` or
+    :data:`FORM_FIXED`.
+
+    Missing or unknown means fixed (plan 1.1): a version-1 dict, the plain
+    dict of a test host or anything that is not a mapping is a fixed date,
+    with nothing changed.
+    """
+    if isinstance(settings, Mapping) and settings.get("form") == FORM_PERIOD:
+        return FORM_PERIOD
+    return FORM_FIXED
+
+
+def is_period(settings):
+    """True when ``settings`` hold the period form (:func:`form_of`)."""
+    return form_of(settings) == FORM_PERIOD
+
+
+def period_months(settings):
+    """The stored period N of the period form (:func:`as_months`), or None.
+
+    None for a fixed date and for a period form whose N is missing or
+    broken: the callers then do not move any date.
+    """
+    if not is_period(settings):
+        return None
+    return as_months(settings.get("period_months"))
+
+
+def period_values(now, months):
+    """The dates of a period will prepared today: ``{"locktime", "period_start"}``.
+
+    ``period_start`` is 00:00 UTC of today (the UTC day of ``now``) and
+    ``locktime`` :func:`add_months` of it by ``months``. Computed once and
+    stored, at the first build with no will in force and at a renewal; never
+    recomputed backwards (the month arithmetic is not invertible, plan
+    section 2). ``ValueError`` when ``months`` is not a period.
+    """
+    n = as_months(months)
+    if n is None:
+        raise ValueError("not a period: {!r}".format(months))
+    today = utc_midnight(now)
+    return {"locktime": add_months(today, n), "period_start": today}
+
+
+def upgrade_values(d):
+    """The values that bring a current settings dict to schema 2 (#127).
+
+    A dict of version 1 (#123) gets ``form`` :data:`FORM_FIXED` (owner
+    decision: every existing wallet starts fixed, whatever ``form`` it may
+    hold) and ``settings_version`` 2. A dict already at version 2 or later,
+    or one that is not current (:func:`is_current`: the full migration runs
+    first), needs nothing: ``{}``. Pure: the caller writes the result item
+    by item (:func:`write_values`), so a second load writes nothing.
+    """
+    if not is_current(d) or d.get("settings_version") >= SCHEMA_VERSION:
+        return {}
+    return {"form": FORM_FIXED, "settings_version": SCHEMA_VERSION}
+
+
+def form_locked(items, synced, executable):
+    """True when the delivery form cannot change: a will is in force (#127).
+
+    ``items``: :class:`ItemView` of the will (after the items already
+    invalidated on-chain were marked); ``synced``: the wallet is
+    synchronized (``wallet.is_up_to_date()``); ``executable(wid)``: True
+    when no input of that item is spent by a CONFIRMED transaction (an
+    invalidation only in the mempool can still be dropped or replaced, so
+    the old will may still be executed). Locked when:
+
+    * a VALID item is signed (COMPLETE) or sent (PUSHED); or
+    * the wallet is synchronized and an item sent to a will-executor, not
+      VALID, CONFIRMED or MEMPOOL (INVALIDATED included: an invalidation
+      is marked as soon as it is in the mempool), is still ``executable``;
+    * the wallet is not synchronized and any sent item is not CONFIRMED
+      (its flags may be stale: conservative).
+
+    A VALID item never signed nor sent does not lock: it was never in
+    force. Owner decision 2 (2026-10-12).
+    """
+    items = list(items)
+    if any(i.VALID and (i.COMPLETE or i.PUSHED) for i in items):
+        return True
+    for i in items:
+        if not i.PUSHED or i.CONFIRMED:
+            continue
+        if not synced:
+            return True
+        if i.VALID or i.MEMPOOL:
+            continue
+        if executable(i.wid):
+            return True
+    return False
+
+
+def will_in_force(items, synced, executable):
+    """True when a will is in force, for the period re-anchor (#127, policy b).
+
+    The meaning of #79: a VALID item exists (signed or not), or an item
+    sent to a will-executor, not VALID / INVALIDATED / CONFIRMED / MEMPOOL,
+    is still ``executable(wid)`` (no input spent by a broadcast
+    transaction: ``Will.sent_still_executable``). On a wallet that is not
+    synchronized (``synced`` False) any such sent item counts, so the
+    re-anchor waits. While a will is in force the period date is never
+    moved: only a renewal or the first build sets it.
+    """
+    items = list(items)
+    if any(i.VALID for i in items):
+        return True
+    for i in items:
+        if (
+            not i.PUSHED
+            or i.VALID
+            or i.INVALIDATED
+            or i.CONFIRMED
+            or i.MEMPOOL
+        ):
+            continue
+        if not synced or executable(i.wid):
+            return True
+    return False
 
 
 # --------------------------------------------------------------------------- #

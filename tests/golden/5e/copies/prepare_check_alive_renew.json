@@ -51,7 +51,7 @@
     "executor": "https://we0.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
     "statuses": [
      "CHECKED",
      "COMPLETE",
@@ -64,7 +64,7 @@
     "executor": "https://we1.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
     "statuses": [
      "CHECKED",
      "COMPLETE",
@@ -128,7 +128,7 @@
    ],
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2026-12-09</b> (in 59 days)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2026-12-10</b> (in 2 months)"
    ],
    "steps": [
     [
@@ -178,7 +178,9 @@
   ],
   "settings": {
    "baltx_fees": 13,
-   "locktime": "2026-12-09",
+   "form": "period",
+   "locktime": "2026-12-10",
+   "period_months": 2,
    "threshold": "-30d"
   },
   "stored": {
@@ -214,7 +216,155 @@
  },
  {
   "action": "gui prepare",
-  "broadcasts": [],
+  "broadcasts": [
+   [
+    "invalidation(dialog)",
+    "T5"
+   ]
+  ],
+  "dialogs_opened": [
+   {
+    "dialog_events": [
+     "close-button"
+    ],
+    "history": [
+     "Checking variables:\t<b>Wait</b>",
+     "Checking variables:\t<font color=#cfa808><b>Check Alive passed</b></font>",
+     "Invalidating old will:\t<b>Wait</b>",
+     "Invalidating old will:\t<b>Broadcasting</b>",
+     "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "Please wait 10secs",
+     "Please wait 9secs",
+     "Please wait 8secs",
+     "Please wait 7secs",
+     "Please wait 6secs",
+     "Please wait 5secs",
+     "Please wait 4secs",
+     "Please wait 3secs",
+     "Please wait 2secs",
+     "Please wait 1secs",
+     "Checking variables:\t<b>Wait</b>",
+     "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+     "Checking your will:\t<b>Waiting</b>",
+     "Checking your will:\t<b>Old will invalidated: preparing the new will with the time period you set.</b>",
+     "Building your will:\t<b>Wait</b>",
+     "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "Heir:\t<font color=#05ad05><b>alice</b></font>",
+     "Heir:\t<font color=#05ad05><b>bob</b></font>",
+     "Signing your will:\t<b>Wait</b>",
+     "Signing your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "Broadcasting your will to executors:\t<b>Wait</b>",
+     "Broadcasting your will to executors:\t<b>Broadcasting</b>",
+     "Broadcasting your will to executors:\t<b>Broadcasting 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
+     "https://we0.test : <font color='#05ad05'><b>Ok</b></font>",
+     "Broadcasting your will to executors:\t<b>Broadcasting 1/2 (0s / 20s) — waiting for: we1.test</b>",
+     "https://we1.test : <font color='#05ad05'><b>Ok</b></font>",
+     "Broadcasting your will to executors:\t<b>Broadcasting 2/2 (0s / 20s)</b>",
+     "Broadcasting your will to executors:\t<b>2/2 (0s)</b>",
+     "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "Verifying your will with the executors:\t<b>Wait</b>",
+     "Verifying your will with the executors:\t<b>Verifying 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
+     "checked https://we0.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
+     "Verifying your will with the executors:\t<b>Verifying 1/2 (0s / 20s) — waiting for: we1.test</b>",
+     "checked https://we1.test - T4 : <font color='#05ad05'><b>Ok</b></font>",
+     "Verifying your will with the executors:\t<b>Verifying 2/2 (0s / 20s)</b>",
+     "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "",
+     "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+     "Finished"
+    ],
+    "report": {
+     "boxes": {
+      "changes": [
+       "Old will invalidated: preparing the new will with the time period you set."
+      ],
+      "problems": [],
+      "warnings": [
+       "Check Alive passed"
+      ]
+     },
+     "executors": [
+      [
+       "https://we0.test",
+       [
+        "verified",
+        null
+       ]
+      ],
+      [
+       "https://we1.test",
+       [
+        "verified",
+        null
+       ]
+      ]
+     ],
+     "heirs": [
+      [
+       "alice",
+       597200,
+       60.00002009377766
+      ],
+      [
+       "bob",
+       398133,
+       39.99997990622234
+      ]
+     ],
+     "result": [
+      "ok",
+      "<b>Your will is in force</b><br>Delivery to the heirs: <b>2027-01-19</b> (in 2 months)"
+     ],
+     "steps": [
+      [
+       "check",
+       "ok",
+       "ok"
+      ],
+      [
+       "prepare",
+       "ok",
+       "updated"
+      ],
+      [
+       "sign",
+       "ok",
+       "signed"
+      ],
+      [
+       "send",
+       "ok",
+       "2/2"
+      ],
+      [
+       "verify",
+       "ok",
+       "2/2"
+      ]
+     ],
+     "will_now": null
+    },
+    "rows": [
+     "Checking variables:\t<font color=#cfa808><b>Check Alive passed</b></font>",
+     "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+     "Checking your will:\t<b>Old will invalidated: preparing the new will with the time period you set.</b>",
+     "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "Heir:\t<font color=#05ad05><b>alice</b></font>",
+     "Heir:\t<font color=#05ad05><b>bob</b></font>",
+     "Signing your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "https://we0.test : <font color='#05ad05'><b>Ok</b></font>",
+     "https://we1.test : <font color='#05ad05'><b>Ok</b></font>",
+     "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+     "checked https://we0.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
+     "checked https://we1.test - T4 : <font color='#05ad05'><b>Ok</b></font>",
+     "",
+     "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+     "Finished"
+    ]
+   }
+  ],
   "heirs": {
    "alice": [
     "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
@@ -230,12 +380,12 @@
     "executor": "https://we0.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
     "statuses": [
      "CHECKED",
      "COMPLETE",
-     "PUSHED",
-     "VALID"
+     "INVALIDATED",
+     "PUSHED"
     ],
     "tx": "T1"
    },
@@ -243,51 +393,113 @@
     "executor": "https://we1.test",
     "fee": 13,
     "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2026-12-09",
+    "locktime": "2026-12-10",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "INVALIDATED",
+     "PUSHED"
+    ],
+    "tx": "T2"
+   },
+   {
+    "executor": "https://we0.test",
+    "fee": 13,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2027-01-19",
     "statuses": [
      "CHECKED",
      "COMPLETE",
      "PUSHED",
      "VALID"
     ],
-    "tx": "T2"
+    "tx": "T3"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 13,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2027-01-19",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T4"
    }
   ],
   "labels": {
    "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction"
+   "T2": "Safe21 Heartbeat backup transaction",
+   "T3": "Safe21 Heartbeat backup transaction",
+   "T4": "Safe21 Heartbeat backup transaction"
   },
-  "popups": [
+  "popups": [],
+  "pushed": [
    [
-    "warning",
-    "The Check Alive date (2026-11-09) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid."
+    "https://we0.test",
+    "T3"
+   ],
+   [
+    "https://we1.test",
+    "T4"
    ]
   ],
-  "pushed": [],
-  "questions": [],
+  "questions": [
+   [
+    "renew",
+    "Are you still here? The Check Alive date (2026-11-10) has passed.\n\nRenew your will: the new delivery date will be 2027-01-19 (today + 2 months). The old will is invalidated on the blockchain (this costs a miner fee) and the new one is prepared right away.\n\nNot now: nothing changes, your current will stays valid."
+   ]
+  ],
   "result": {
    "returned": null
   },
   "settings": {
    "baltx_fees": 13,
-   "locktime": "2026-12-09",
+   "form": "period",
+   "locktime": "2027-01-19",
+   "period_months": 2,
    "threshold": "-30d"
   },
   "stored": {
    "T1": [
     "CHECKED",
     "COMPLETE",
+    "INVALIDATED",
+    "PUSHED"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "INVALIDATED",
+    "PUSHED"
+   ],
+   "T3": [
+    "CHECKED",
+    "COMPLETE",
     "PUSHED",
     "VALID"
    ],
-   "T2": [
+   "T4": [
     "CHECKED",
     "COMPLETE",
     "PUSHED",
     "VALID"
    ]
   },
-  "verified": [],
-  "window_events": []
+  "verified": [
+   [
+    "https://we0.test",
+    "T3"
+   ],
+   [
+    "https://we1.test",
+    "T4"
+   ]
+  ],
+  "window_events": [
+   "history-refresh"
+  ]
  }
 ]

@@ -187,8 +187,10 @@ async def delivery_show(self, wallet=None, plugin=None):
     (``baltx_fees``), ``settings_version``, where a migrated date came from
     (``migrated_from``), the old value found then (``legacy_locktime``),
     the note not yet shown (``note``), whether a "which date?" question is
-    pending (``choice_pending``, with both dates in ``choice``) and the
-    date of the will in force (``will_in_force``).
+    pending (``choice_pending``, with both dates in ``choice``), the
+    date of the will in force (``will_in_force``), and the delivery form
+    (``form`` fixed or period, ``period_months``, ``period``,
+    ``period_start``; ``locked`` while a will is in force).
     """
     return await _call_off_loop(plugin, wallet, "delivery_show")
 
@@ -200,6 +202,7 @@ async def delivery_set(
     fee=None,
     keep=None,
     confirm_earlier=None,
+    months=None,
     wallet=None,
     plugin=None,
 ):
@@ -210,17 +213,39 @@ async def delivery_set(
     later date is stored; if the will was already sent, the next
     ``bal_will_prepare`` asks to invalidate it first (on-chain, miner fee).
     ``--keep true`` answers the "which date?" question by keeping the date
-    of the prepared will. Returns the settings as ``bal_delivery_show``,
-    with a ``message``.
+    of the prepared will. ``--months N`` changes the period of a wallet in
+    the period form (see ``bal_delivery_form``): with no will in force the
+    delivery date becomes today + N months, otherwise N applies at the next
+    renewal. Returns the settings as ``bal_delivery_show``, with a
+    ``message``.
 
     arg:str:date:The new delivery date, YYYY-MM-DD (00:00 UTC) or a UNIX timestamp.
     arg:int:fee:The new fee rate in sat/vByte (1 to 10000).
     arg:bool:keep:true keeps the date of the prepared will (answers the "which date?" question).
     arg:bool:confirm_earlier:true confirms a date earlier than the will in force.
+    arg:int:months:The new period in calendar months, 1 to 240 (period form only).
     """
     return await _call_off_loop(
-        plugin, wallet, "delivery_set", date, fee, keep, confirm_earlier
+        plugin, wallet, "delivery_set", date, fee, keep, confirm_earlier, months
     )
+
+
+@plugin_command("nw", plugin_name)
+async def delivery_form(self, form, date=None, months=None, wallet=None, plugin=None):
+    """Choose the delivery form of the current wallet: fixed or period.
+
+    ``fixed``: a fixed delivery date (``--date``, or the stored date). ``period``:
+    N calendar months (``--months``), renewed by the Check Alive: with no
+    will in force the delivery date becomes today + N months. Refused while
+    a will is in force: invalidate it first (bal_will_invalidate, on-chain
+    fee) and wait until the invalidation is confirmed. Returns the settings
+    as ``bal_delivery_show``, with a ``message``.
+
+    arg:str:form:fixed or period.
+    arg:str:date:The fixed delivery date, YYYY-MM-DD (00:00 UTC) or a UNIX timestamp (form fixed).
+    arg:int:months:The period in calendar months, 1 to 240 (form period).
+    """
+    return await _call_off_loop(plugin, wallet, "delivery_form", form, date, months)
 
 
 # --------------------------------------------------------------------------- #

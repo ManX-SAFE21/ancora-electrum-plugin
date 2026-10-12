@@ -81,6 +81,8 @@ EXPECTED_COMMANDS = {
     # Delivery settings of the wallet (CHANGELOG #123)
     "bal_delivery_show": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     "bal_delivery_set": {"requires_network": True, "requires_wallet": True, "requires_password": False},
+    # The delivery form, fixed date or period (CHANGELOG #127)
+    "bal_delivery_form": {"requires_network": True, "requires_wallet": True, "requires_password": False},
 }
 
 

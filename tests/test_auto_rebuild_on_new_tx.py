@@ -219,7 +219,7 @@ def make_controller(utxos=None):
     The delivery settings are the wallet's own (CHANGELOG #123), loaded as
     ``BalWindow.__init__`` loads them: the heirs first, then
     ``context.load_will_settings``. A new wallet gets the default (today +
-    12 months, fee 20). Before #123 they were ``WILL_SETTINGS.get()``, the
+    24 months since #127, fee 20). Before #123 they were ``WILL_SETTINGS.get()``, the
     plugin's mutable default object, so an assertion that read it back
     could not fail.
     """

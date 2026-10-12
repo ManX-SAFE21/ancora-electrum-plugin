@@ -23,6 +23,12 @@ cannot be prepared the host "fails closed" (``settings_unavailable``) and
 settings may have asked for is settled by :func:`apply_later_wish` at the
 start of the flows, once the wallet shows which will is in force.
 
+The delivery form of #127 (a fixed date, or a period of N calendar months
+that the Check Alive renews) is changed only through :func:`set_delivery`,
+and only while no will is in force (:func:`form_locked`); the period date is
+moved by :func:`apply_delivery_policy` at the start of the flows, only when
+no will is in force (:func:`will_in_force`).
+
 No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 """
 
@@ -176,10 +182,12 @@ def init_class_variables(host):
     anything is read or changed. Every flow passes through here: Check,
     Prepare, wallet close, the automatic rebuild and the command line.
 
-    Then refreshes the invalidated items, settles the later wish of the
-    migration (:func:`apply_later_wish`, #123: it reads the refreshed
-    items, and the dates below read the delivery date it may store),
-    refreshes the Check Alive value, sets ``date_to_check``,
+    Then refreshes the invalidated items, applies the period form
+    (:func:`apply_delivery_policy`, #127: with no will in force the period
+    date becomes today + N months; it reads the refreshed items), settles
+    the later wish of the migration (:func:`apply_later_wish`, #123: it
+    reads the refreshed items, and the dates below read the delivery date
+    it may store), refreshes the Check Alive value, sets ``date_to_check``,
     ``no_willexecutor`` and ``willexecutors``, checks the Check Alive
     against the delivery date and gives every heir the delivery date
     (unless each heir has its own). Raises ``NoHeirsException`` without
@@ -190,6 +198,10 @@ def init_class_variables(host):
         raise NoHeirsException(_("Heirs are not defined"))
     # Items already invalidated on-chain must not anchor the dates (#79).
     refresh_invalidated_items(host)
+    # #127: the period form. Right after the refresh (an invalidation the
+    # wallet has just registered ends the will in force) and before every
+    # date below is read.
+    apply_delivery_policy(host)
     # #123 (FS-2): the will found at the migration may be one whose paid
     # postpone the wallet has only now registered.
     apply_later_wish(host)
@@ -210,7 +222,10 @@ def init_class_variables(host):
         built_locktime=Will.get_min_locktime(host.willitems),
     )
     checkalive.ensure_check_alive_valid(
-        host.bal_plugin.is_basic_mode(),
+        # #127: a period-form will keeps its Check Alive in BASIC too.
+        checkalive.check_alive_basic(
+            host.bal_plugin.is_basic_mode(), host.will_settings
+        ),
         host.date_to_check,
         delivery_date=delivery_date,
     )
@@ -424,10 +439,13 @@ def ensure_will_settings(host, willitems=None, now=None):
        periods become the date (:func:`heirs_periods_to_date`) and the
        values are written item by item, the legacy keys dropped (rule I3).
        One log line says where the date came from.
-    3. The anchor check (:func:`bal.core.delivery.check_anchor`): a will
+    3. The v2 upgrade (#127, :func:`bal.core.delivery.upgrade_values`): a
+       dict of schema 1 gets the form "fixed" and ``settings_version`` 2,
+       item by item; nothing else changes. One log line.
+    4. The anchor check (:func:`bal.core.delivery.check_anchor`): a will
        signed by another program is followed, never reverted; an unsigned
        draft of another program is not followed (one log line).
-    4. ``host.will_settings`` becomes the live wallet dict and
+    5. ``host.will_settings`` becomes the live wallet dict and
        ``host.settings_unavailable`` False; ``host.flush_wallet_db()`` when
        something was written (the command line saves the file, the GUI
        leaves it to Electrum).
@@ -475,6 +493,14 @@ def ensure_will_settings(host, willitems=None, now=None):
                     "will settings: items without a date locktime ignored: "
                     "{}".format(skipped)
                 )
+        upgrade = delivery.upgrade_values(d)
+        if upgrade:
+            delivery.write_values(d, delivery.validate_values(upgrade))
+            _logger.info(
+                "will settings: schema {} (delivery form {})".format(
+                    upgrade["settings_version"], upgrade["form"]
+                )
+            )
         anchor = delivery.check_anchor(d, items)
         if anchor == delivery.NOTE_OUTSIDE_CHANGE:
             _logger.info(
@@ -719,3 +745,228 @@ def apply_later_wish(host):
         )
         delivery.drop_later_wish(d)
     return action
+
+
+# --------------------------------------------------------------------------- #
+# The delivery form: a fixed date or a renewable period (CHANGELOG #127)
+# --------------------------------------------------------------------------- #
+def _executable_until_confirmed(willitems, wallet, wid, _seen=None):
+    """True when no input of will item ``wid`` is spent by a CONFIRMED tx.
+
+    The lock of the delivery form (:func:`form_locked`) must hold until an
+    invalidation is confirmed: one only in the mempool can still be dropped
+    or replaced, and the old will executed. So a spender counts only when
+    mined (``Will._funding_spender_height`` > 0; a wallet-local copy of a
+    will tx is never a spender). When an input spends the output of another
+    will item that is not on-chain, that item decides (recursively, as
+    ``Will._tx_still_executable``; ``_seen`` guards against loops).
+    """
+    seen = set() if _seen is None else _seen
+    if wid in seen:
+        return False
+    seen.add(wid)
+    for inp in willitems[wid].tx.inputs():
+        height = Will._funding_spender_height(wallet, Util.utxo_to_str(inp))
+        if height is not None and height > 0:
+            return False
+        parent_id = inp.prevout.txid.hex()
+        parent = willitems.get(parent_id)
+        if (
+            parent is not None
+            and not parent.get_status("CONFIRMED")
+            and not parent.get_status("MEMPOOL")
+            and not _executable_until_confirmed(willitems, wallet, parent_id, seen)
+        ):
+            return False
+    return True
+
+
+def form_locked(host, refresh=True):
+    """True when the delivery form cannot change: a will is in force (#127).
+
+    :func:`bal.core.delivery.form_locked` on ``host.willitems``, the wallet's
+    synchronization (:func:`_wallet_synced`) and
+    :func:`_executable_until_confirmed`. ``refresh``: first mark the items
+    already invalidated on-chain (:func:`refresh_invalidated_items`, never
+    raises). When the will cannot be read the form is locked (the safe
+    answer: a change could need a paid invalidation).
+    """
+    try:
+        if refresh:
+            refresh_invalidated_items(host)
+        willitems = host.willitems or {}
+        return delivery.form_locked(
+            delivery.views_from(willitems),
+            _wallet_synced(host),
+            lambda wid: _executable_until_confirmed(willitems, host.wallet, wid),
+        )
+    except Exception as e:
+        _logger.warning(f"delivery form lock not read, kept locked: {e!r}")
+        return True
+
+
+def will_in_force(host):
+    """True when a will is in force, for the period re-anchor (#127).
+
+    :func:`bal.core.delivery.will_in_force` on ``host.willitems`` (refreshed
+    by the caller), the wallet's synchronization and
+    ``Will._tx_still_executable`` (no input spent by a broadcast tx). When
+    the will cannot be read it counts as in force (the date is not moved).
+    """
+    try:
+        willitems = host.willitems or {}
+        return delivery.will_in_force(
+            delivery.views_from(willitems),
+            _wallet_synced(host),
+            lambda wid: Will._tx_still_executable(wid, willitems, host.wallet),
+        )
+    except Exception as e:
+        _logger.warning(f"will in force not read, date kept: {e!r}")
+        return True
+
+
+def _multiverse(host):
+    """The hidden multiverse option: each heir keeps its own date, and the
+    period form is not available (#127, owner decision 10)."""
+    try:
+        return bool(host.bal_plugin.ENABLE_MULTIVERSE.get())
+    except Exception:
+        return False
+
+
+def set_delivery(host, form=None, date=None, months=None, now=None):
+    """The one validated write of the delivery form (#127).
+
+    ``form``: :data:`bal.core.delivery.FORM_FIXED` or ``FORM_PERIOD``
+    (None: keep the stored one). ``date``: the fixed delivery date (fixed
+    form only). ``months``: N calendar months, 1..240 (period form only).
+    ``now``: the caller's clock (default ``time.time()``).
+
+    * A form different from the stored one while a will is in force
+      (:func:`form_locked`) raises
+      :class:`bal.core.delivery.DeliveryFormLocked`: changing it needs the
+      paid invalidation of that will first (owner decision 2).
+    * Fixed: ``form`` "fixed" (``period_months`` and ``period_start``
+      removed); with ``date``, the date through :func:`set_will_setting`.
+    * Period (refused with multiverse on): ``period_months`` = N. With no
+      will in force (the form not locked) also ``period_start`` = today and
+      ``locktime`` = today + N months (:func:`bal.core.delivery.period_values`).
+      With a will in force only N is stored: it applies at the next renewal
+      (owner decision 2, no fee now).
+
+    ``ValueError`` (English) for a bad or missing value, nothing written;
+    ``DeliverySettingsUnavailable`` while the settings are display-only.
+    Everything is checked before anything is written. The caller makes it
+    durable (the command line saves the wallet) and refreshes the fields.
+    Returns ``{"form", "period_months", "locktime", "applied"}``
+    (``applied``: the delivery date was set now).
+    """
+    if getattr(host, "settings_unavailable", False):
+        raise delivery.DeliverySettingsUnavailable()
+    if now is None:
+        now = time.time()
+    d = host.will_settings
+    current = delivery.form_of(d)
+    new_form = current if form is None else form
+    if new_form not in delivery.FORMS:
+        raise ValueError(
+            "not a delivery form: {!r} (use fixed or period)".format(form)
+        )
+    locked = form_locked(host)
+    if new_form != current and locked:
+        raise delivery.DeliveryFormLocked(current)
+    applied = False
+    if new_form == delivery.FORM_FIXED:
+        if months is not None:
+            raise ValueError("months is used only by the period form")
+        if date is not None:
+            delivery.validate_values({"locktime": date})
+        delivery.write_values(d, {"form": delivery.FORM_FIXED})
+        for key in ("period_months", "period_start"):
+            if key in d:
+                del d[key]
+        if date is not None:
+            set_will_setting(host, "locktime", date)
+            applied = True
+    else:
+        if date is not None:
+            raise ValueError(
+                "the period form has no fixed date: give months instead"
+            )
+        if _multiverse(host):
+            raise ValueError("the period form is not available with multiverse")
+        n = delivery.period_months(d) if months is None else delivery.as_months(months)
+        if n is None:
+            raise ValueError(
+                "not a period: {!r} (whole months from {} to {})".format(
+                    months, delivery.PERIOD_MIN, delivery.PERIOD_MAX
+                )
+            )
+        values = {"form": delivery.FORM_PERIOD, "period_months": n}
+        dates = None
+        if not locked:
+            dates = delivery.period_values(now, n)
+            values["period_start"] = dates["period_start"]
+        delivery.write_values(d, delivery.validate_values(values))
+        if dates is not None:
+            set_will_setting(host, "locktime", dates["locktime"])
+            applied = True
+    return {
+        "form": delivery.form_of(d),
+        "period_months": d.get("period_months"),
+        "locktime": d.get("locktime"),
+        "applied": applied,
+    }
+
+
+def apply_delivery_policy(host, now=None):
+    """The period form at the start of every flow (#127, plan policy b).
+
+    Runs in :func:`init_class_variables`, after the holds and right after
+    :func:`refresh_invalidated_items` (the order is needed: a renewal
+    invalidation the wallet has just registered must already have ended the
+    will in force). With the period form and NO will in force
+    (:func:`will_in_force`): the first will, or the new will of a renewal
+    after the old one was invalidated, is delivered N calendar months after
+    today: ``period_start`` = today, ``locktime`` = today + N months, the
+    date through the host's validated write (``host.store_will_setting``:
+    thread-safe, it refreshes the GUI fields on the GUI thread, rule I5).
+    With a will in force, a fixed date, a broken N, multiverse on, or a
+    host whose settings are not the wallet's own live dict (a test host's
+    plain dict): nothing. Unchanged values are not written again.
+
+    One log line for each change. When the date cannot be stored,
+    ``DeliverySettingsUnavailable`` stops the flow (building at the old date
+    is what this prevents). Returns the date stored, else None.
+    """
+    d = _loaded_settings(host)
+    if d is None:
+        return None
+    months = delivery.period_months(d)
+    if months is None or _multiverse(host):
+        return None
+    if will_in_force(host):
+        return None
+    if now is None:
+        now = time.time()
+    dates = delivery.period_values(now, months)
+    if (
+        d.get("locktime") == dates["locktime"]
+        and d.get("period_start") == dates["period_start"]
+    ):
+        return None
+    _logger.info(
+        "will settings: no will in force; period of {} months from {}: "
+        "delivery {}".format(
+            months, utc_day_text(dates["period_start"]),
+            utc_day_text(dates["locktime"]),
+        )
+    )
+    delivery.write_values(
+        d, delivery.validate_values({"period_start": dates["period_start"]})
+    )
+    host.store_will_setting("locktime", dates["locktime"])
+    if delivery.as_delivery(d.get("locktime")) != dates["locktime"]:
+        _logger.error("will settings: the period delivery date was not stored")
+        raise delivery.DeliverySettingsUnavailable()
+    return dates["locktime"]

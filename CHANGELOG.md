@@ -7208,3 +7208,143 @@ harness never uses the calendar). `build_zip.py` + `external_zip_test.py`
 shows the three reminders on 28/01/2027, 17/02/2027 and 26/02/2027 for the
 delivery of 27/02/2027 (23:00 Rome, the hour of his will; the UTC date
 editor of a later step gives 00:00 UTC dates).
+
+## 127. A will can be delivered after a renewable period of months
+
+**Date:** 2026-10-12
+
+**Problem (design `context/reports/design-123/plan.md`, section 7, there
+numbered #126):** since #123 every delivery date is a fixed date, so the
+Check Alive renewal of #79 ("Renew": invalidate the old will, prepare a new
+one at today + the period) could no longer be reached: the five renewal
+golden files of Phase 5e showed only "Your delivery is a fixed date". BASIC
+mode ignored the Check Alive entirely, and a new wallet started with a
+delivery date 12 months away.
+
+**What changed (owner decisions of 2026-10-12):**
+
+- Delivery form per wallet, schema 2 of `will_settings`
+  (`bal/core/delivery.py`): `form` "fixed" (default; missing means fixed)
+  or "period", `period_months` (1..240 calendar months), `period_start`.
+  `locktime` stays the absolute date in both forms. A version-1 dict is
+  upgraded once to `form` "fixed" and `settings_version` 2
+  (`delivery.upgrade_values`, written item by item in
+  `context.ensure_will_settings`); the #123 migration writes version 2.
+  New wallet / nothing to migrate: today + 24 months (was 12; the #124
+  warning thresholds stay 12/6).
+- The form is locked while a will is in force (`context.form_locked`): a
+  VALID item signed or sent, or a sent item (INVALIDATED included) whose
+  coins are not spent by a CONFIRMED transaction; on a wallet that is not
+  synchronized any sent item not confirmed. An unsigned will does not lock.
+  `context.set_delivery` is the one validated write of the form
+  (`DeliveryFormLocked` while locked); changing N with a will in force only
+  stores N for the next renewal.
+- `context.apply_delivery_policy`, in `init_class_variables` right after
+  `refresh_invalidated_items` (before `apply_later_wish`): with the period
+  form and no will in force, `period_start` = today and the delivery date =
+  today + N months, through `host.store_will_setting`.
+- Renewal (`checkalive.check_alive_renewal`): only the period form renews;
+  the new delivery is today + N months and the new Check Alive is counted
+  back from that NEW date (counted from the old stored date it was always
+  "still past"). The texts show the period with `messages.months_text`
+  ("36 months (3 years)", existing msgids only).
+- BASIC mode (`checkalive.check_alive_basic`): the Check Alive is inert
+  only for a fixed date; a period-form will keeps renewing in BASIC (Check,
+  summary, question at wallet open).
+- Wizard settings page (`widgets.DeliveryFormWidget`): "Plugin mode
+  (applies to every wallet)" (the same `USER_TYPE` and the same "at My
+  Risk" gate as the plugin Settings dialog, one shared function
+  `common.switch_user_type`), "Fixed date" / "Period (renewable)" (period
+  only in ADVANCED, both enabled only when not locked), a month box 1..240
+  without keyboard tracking, the lock sentence. BASIC in the wizard sets an
+  unlocked period back to fixed. After the owner's first ZIP test
+  (2026-10-12): BASIC shows as little text as possible, so with a fixed
+  date it shows neither radio nor the lock sentence (only the mode
+  selector and the date); the lock sentence is shown only in ADVANCED.
+- Wizard layout (`dialogs.BalWizardDialog`): after "Next", and again after
+  choosing ADVANCED in the page's mode selector, the dialog kept its size,
+  so the taller page was squeezed (the "BASIC" box 7 to 14 pixels high,
+  rows overlapping) until the window was moved. `next_widget` now shows the
+  new page at once, and after every new layout of its page
+  (`LayoutRequest`) the dialog grows to its size hint (never shrinks).
+- The toolbar button of the wizard reads "Build / Edit Your Will" (IT
+  "Crea / Modifica il tuo testamento", ES "Crear / Modificar tu testamento";
+  owner, 2026-10-12): the same wizard changes a will already made. The will
+  summary, shown when there is no will yet, keeps "Build Your Will".
+- Will and Heirs toolbars: the period form shows "36 months (3 years) ->
+  12/10/2029" instead of the date editor, following every change of form,
+  period or date in both directions.
+- Command line (English): `bal_delivery_show` adds `form`,
+  `period_months`, `period`, `period_start`, `locked`; `bal_delivery_set
+  --months N` (period form only; `--date` refused there); new
+  `bal_delivery_form fixed|period --date/--months`, refused while locked
+  with the steps to follow.
+- Multiverse (hidden option): no period form; otherwise unchanged.
+- Catalogs: 5 new msgids with IT/ES ("Fixed date", "Period (renewable)",
+  "Plugin mode (applies to every wallet)", the lock sentence,
+  "Build / Edit Your Will"). Docs: `docs/manual/README.md` and `manual.html`
+  (delivery form, 24 months, wizard mode selector, BASIC shows no choice,
+  the button name), `README.md` (CLI). `make-release.sh`: the new
+  GUI/flow test files.
+
+**Tests:** new `tests/test_core_delivery_months.py` (month cases of the
+design, `months_text`, form helpers, v2 upgrade, the two predicates, the
+renewal rule, purity), `tests/test_delivery_form_lock.py` (lock on a real
+wallet: unsigned will, signed will, mempool invalidation still locks,
+SPV-confirmed one unlocks, unsynchronized wallet; `set_delivery` refusals;
+v2 upgrade idempotent; plain-dict hosts untouched),
+`tests/test_delivery_period_flow.py` (first period will; renewal really
+offered: phase 1 ends "check_alive_renew" with form period, new will at
+today + 2 months, Ok the next day; Not now; BASIC keeps renewing; fixed
+date not renewed; new N used at the next renewal; manual Invalidate then
+the policy; new coin anticipates one day and the stored date follows;
+default today + 24 months), `tests/test_gui_delivery_form.py` (period
+hidden in BASIC, mode selector and Settings dialog through the same gate,
+lock sentence, BASIC resets an unlocked period, BASIC with a will in force
+shows only the mode, the wizard grows to fit the settings page and again
+when ADVANCED is chosen there, multiverse,
+toolbars both ways), `tests/test_cli_delivery_form.py`. Updated: the renewal tests of
+#79/#120 now use the period form (`test_check_alive_renew.py`,
+`test_engine_check_variables.py`, `test_gui_check_variables_rows.py`, which
+also gets back the pre-#123 "renewal sent but not seen yet" test,
+`test_will_summary.py`), D42 of `test_5e_divergences.py` back to "Prepare
+opens the Check", schema 2 / 24 months in the #123 tests,
+`test_cli_commands_registered.py`. Mutation checks (each applied alone):
+the old-date renewal rule, BASIC ignoring the period, the lock released by
+a mempool invalidation, 12 months, toolbars without the period, no v2
+upgrade, no lock in `set_delivery`, the gate bypassed, the period radio
+in BASIC, the radios or the lock sentence shown in BASIC, and the wizard
+not resized (the new page not shown first, or no growth after a new
+layout) each make tests fail. `test_check_button.py`: the new button name.
+
+**Golden files:** only the five renewal files, seeded now with the period
+form of 2 months instead of the shared "60d":
+`check/check_alive_renew`, `check/check_alive_not_now`,
+`check/check_alive_renew_approved`, `copies/prepare_check_alive_renew`,
+`copies/auto_check_alive_passed`. They show the renewal again: compared
+with their version before #123 the only differences are the dates one day
+later (2026-12-10 / 2027-01-19 instead of 12-09 / 01-18), "(in 2 months)"
+instead of "(in 59 days)", "(today + 2 months)" instead of "(today + 60
+days)" and the settings block (`form`, `period_months`, an absolute date
+instead of "60d").
+
+**Verification:** whole `tests/` directory, normal order and files in
+reverse order: 1798 passed, 0 failed, 0 errors (both); `ruff check bal/
+tests/`: all checks passed; no CRLF in the touched files. Scenario harness
+(full matrix, 2-coin scenarios 6 times, BUG-3 probes, warn_matrix synced 1
+and 0) on Electrum 4.8.2: identical to the #125 log (ids masked), same
+verdicts. Real regtest renewal (`run_real.sh renew`, period of 7 months,
+two runs): the question is shown, the old txs are dead per the node (2/2),
+the new will is dated today + 7 months (2027-06-21, stored date and
+`period_start` 2026-11-21 agree), non-final before, accepted after and
+executed (alice 597200, bob 398133), the old txs then `missing-inputs`.
+Catalogs: `check_catalogs.py` RESULT: OK, 5 new msgids, 0 fuzzy, 0 empty.
+
+**Outcome:** DONE. The owner tested the ZIP on his wallet (2026-10-12):
+BASIC shows only the mode, the date and the fee; ADVANCED (after "at My
+Risk") shows the two forms, disabled, and the lock sentence, and the
+wizard grows without squeezed rows; the button reads "Crea / Modifica il
+tuo testamento". Still open, for later steps: the fee field in BASIC (to
+hide in the new BASIC wizard, owner choice A), and P2 seen again on his
+wallet: a later date asked on an unsigned draft goes back to the draft's
+date at the Check (his signed will of 27/02/2027 stays in force).
