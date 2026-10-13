@@ -7997,3 +7997,32 @@ clearer time line ("stupiscimi": year bands, cards, time-left pill,
 legend); "Consegna" / "Delivery" instead of "Rata" / "Instalment" (and,
 for the future multiverse form, "Eredità scaglionata" / "Staged
 inheritance"). He tested the last ZIP on his wallet: ok.
+
+## 133. The main button of the Will tab has a light blue background
+
+**Date:** 2026-10-13
+
+**Problem (the owner, after the ZIP of #132):** the 2 px blue frame that
+#131 put on "Build / Edit Your Will" made the button look always selected.
+
+**What changed:** `bal/gui/qt/lists.py` `FRAMED_BUTTON_STYLE` (the "Build
+/ Edit Your Will" button only): no thick frame; a very light blue background
+`#EAF3FD` (owner, after the first ZIP: a little lighter than `#DCEBFB`)
+with a thin light blue border `#9EC3EE`, the rounded corners and the
+padding as before, and slightly darker shades on hover (`#DCEBFB`) and
+when pressed (`#CDE2F8`) (owner: option A of three mockups, blue, Safe21
+teal and green).
+"Check your will" keeps its plain look.
+
+**Tests:** `tests/test_check_button.py`: the Wizard button has the light
+blue background and the thin border, no 2 px frame; the Check button has
+neither border nor background.
+
+**Verification:** the affected tests (`tests/test_check_button.py`,
+`tests/test_gui_will_versions_list.py`: 28 passed) and `ruff check bal/
+tests/` (all checks passed); no whole-suite run (owner, for a button
+colour). `build_zip.py` + `external_zip_test.py` + `smoke_test.py` on
+Electrum 4.8.2: pass.
+
+**Outcome:** DONE. The owner tested two ZIPs (2026-10-13): the first
+background was a little too dark, the second ok.
