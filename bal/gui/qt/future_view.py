@@ -46,7 +46,6 @@ from PyQt6.QtWidgets import (
 )
 
 from ...core import future as core_future
-from ...core.messages import months_text
 from ...core.report import _EXECUTOR_TEXTS
 from ...core.summary import busy_summary
 from ...i18n import _, number_separators
@@ -67,6 +66,9 @@ _AXIS = "#9e9e9e"
 _TODAY = "#1565c0"
 _DRAFT = "#8a8a8a"
 _TITLE = {"ok": "#2e7d32", "bad": "#c62828", "info": "#555555"}
+# The Check Alive flag, its pole and its date (owner, #132): orange-red, so
+# it stands out from the black texts; red once the date has passed.
+CHECK_ALIVE_COLOUR = "#D85A30"
 # Will-executor squares (owner's plan: green = received and verified, grey
 # = not there yet; red when the summary says it did not receive it).
 _EXECUTOR_COLOURS = {"verified": "#2e7d32", "failed": "#c62828"}
@@ -135,33 +137,6 @@ def year_ticks(start, end, x0, x1, label_width):
         x = x0 + (x1 - x0) * (t - start) / float(end - start)
         ticks.append((year, x, year % step == 0))
     return step, ticks
-
-
-def place_labels(labels, left, right, gap=10.0):
-    """Put labels on rows so that none overlaps another (#131).
-
-    ``labels``: ``[(x, width, align)]`` with ``align`` ``"center"`` (on
-    ``x``) or ``"left"`` (starting at ``x``). Each is kept inside
-    ``[left, right]`` and goes on the first row (0 = nearest the axis)
-    where it does not touch a label already placed. Returns
-    ``[(row, left_x)]`` in the same order.
-    """
-    rows = []
-    out = []
-    for x, width, align in labels:
-        lx = x if align == "left" else x - width / 2.0
-        lx = max(left, min(lx, right - width))
-        rx = lx + width
-        row = 0
-        while row < len(rows) and any(
-            not (rx + gap <= a or lx >= b + gap) for a, b in rows[row]
-        ):
-            row += 1
-        if row == len(rows):
-            rows.append([])
-        rows[row].append((lx, rx))
-        out.append((row, lx))
-    return out
 
 
 def _percent_text(pct):
@@ -248,11 +223,19 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
     ``"executors"``), ``executor_legend`` (``(colour, text)``),
     ``executor_explain``, ``sentence`` / ``sentence_tip``, ``more`` (later
     instalments), ``note``.
+
+    For the time line of #132 (owner's mockup): ``deliveries`` (one card
+    per delivery: ``at``, ``number`` (None for a single delivery),
+    ``title``, ``time``, ``heirs``, ``next``), ``pill`` (the time left
+    without brackets), ``level`` / ``level_colour`` (#124), ``legend``
+    (``(kind, text)`` of the small legend), the Check Alive's ``title``,
+    ``hint`` and ``passed``, and today's ``name`` ("Today").
     """
     scene = {
         "title": model.title,
         "title_kind": "info",
-        "today": {"date": format_date(model.now), "label": _("(today)")},
+        "today": {"date": format_date(model.now), "label": _("(today)"),
+                  "name": _capital(_bare(_("(today)")))},
         "marker": None,
         "check_alive": None,
         "executors": [],
@@ -266,6 +249,11 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
         "instalments": [],
         "start": model.now,
         "end": model.now,
+        "deliveries": [],
+        "pill": "",
+        "level": None,
+        "level_colour": _TEXT,
+        "legend": [],
     }
     if model.state == core_future.STATE_IN_FORCE:
         colour = DELIVERY_LEVEL_COLOURS.get(model.level, _TEXT)
@@ -281,21 +269,25 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
                 _("Delivery to the heirs"), format_date(first), model.time_left),
             model.level_tip, "",
         ))
+        # The delivery form under the delivery (owner, #132): "Fixed date"
+        # or "Period (renewable) — 24 months (2 years)".
+        scene["lines"].append((None, "{}: {}".format(
+            _("Delivery form"),
+            core_future.delivery_form_text(model.form, model.period_months)), "", ""))
         if model.check_alive is not None:
-            check_colour = "#c62828" if model.check_alive_passed else _TEXT
+            check_colour = "#c62828" if model.check_alive_passed else CHECK_ALIVE_COLOUR
             scene["check_alive"] = {
                 "at": model.check_alive, "date": format_date(model.check_alive),
-                "colour": check_colour,
+                "colour": check_colour, "title": _("Check Alive"),
+                "passed": model.check_alive_passed,
+                "hint": "" if model.check_alive_passed else _(
+                    "from that day the wallet asks you to renew it"),
             }
             text = "{}: {}".format(_("Check Alive"), format_date(model.check_alive))
             if not model.check_alive_passed:
                 text += " — " + _("from that day the wallet asks you to renew it")
             scene["lines"].append((check_colour, text, "", ""))
             scene["end"] = max(scene["end"], model.check_alive)
-        if model.period_months:
-            scene["lines"].append((
-                None, "{}: {}".format(
-                    _("Period (renewable)"), months_text(model.period_months)), "", ""))
         for mark in model.executors:
             state_text = executor_state_text(mark.state)
             scene["executors"].append({
@@ -329,6 +321,7 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
             text = _heirs_text(inst.heirs)
             if text:
                 scene["more"].append("{}: {}".format(format_date(inst.locktime), text))
+        _delivery_cards(scene, model, colour, format_date)
     elif model.state == core_future.STATE_DRAFT_ONLY:
         scene["title_kind"] = "bad"
         if model.draft_locktime:
@@ -340,6 +333,56 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
     elif model.state == core_future.STATE_NONE:
         scene["title_kind"] = "bad"
     return scene
+
+
+def _bare(text):
+    """``"(in 4 months)"`` -> ``"in 4 months"``: the time-left texts without
+    their brackets (the pill of the time line, the legend's "today")."""
+    return text.strip().strip("()").strip()
+
+
+def _capital(text):
+    """``text`` with its first letter in upper case ("today" -> "Today")."""
+    return text[:1].upper() + text[1:]
+
+
+def _split_date(text):
+    """``"01/03/2028 22:00 UTC"`` -> ``("01/03/2028", "22:00 UTC")``."""
+    day, _sep, rest = text.partition(" ")
+    return day, rest
+
+
+def _delivery_cards(scene, model, colour, format_date):
+    """Fill the #132 time line data of a will in force (see :func:`future_scene`).
+
+    The user reads "Delivery 1, 2, ..." where the code says "instalment"
+    (owner, #132: an inheritance in stages delivers several times; "rata"
+    sounded like a loan).
+    """
+    scene["level"] = model.level
+    scene["level_colour"] = colour
+    scene["pill"] = _bare(model.time_left)
+    many = len(model.deliveries) > 1
+    for number, inst in enumerate(model.deliveries, 1):
+        day, time = _split_date(format_date(inst.locktime))
+        head = _("Delivery {}").format(number) if many else _("Delivery to the heirs")
+        scene["deliveries"].append({
+            "at": inst.locktime, "number": number if many else None,
+            "title": "{} · {}".format(head, day), "time": time,
+            "heirs": " · ".join(
+                "{} {}".format(h.name, _percent_text(h.percent))
+                for h in inst.heirs if h.percent is not None),
+            "next": number == 1,
+        })
+    legend = [("today", _bare(_("(today)")))]
+    if scene["check_alive"]:
+        legend.append(("check", _("Check Alive")))
+    legend.append(("next", _("next delivery")))
+    if many:
+        legend.append(("later", _("later deliveries")))
+    if scene["pill"]:
+        legend.append(("pill", _("time left")))
+    scene["legend"] = legend
 
 
 def neutral_scene(now, format_date=utc_date_text, busy=False):
@@ -357,12 +400,16 @@ def neutral_scene(now, format_date=utc_date_text, busy=False):
 
 def scene_texts(scene):
     """Every text the scene draws, in drawing order (for tests and #132)."""
-    out = [scene["title"], scene["today"]["date"], scene["today"]["label"]]
-    if scene["check_alive"]:
-        out.append(scene["check_alive"]["date"])
-    if scene["marker"]:
+    out = [scene["title"], scene["today"]["name"], scene["today"]["date"]]
+    check = scene["check_alive"]
+    if check:
+        out += [check["title"], check["date"], check["hint"]]
+    out.append(scene["pill"])
+    for card in scene["deliveries"]:
+        out += [card["title"], card["time"], card["heirs"]]
+    if scene["marker"] and scene["marker"]["draft"]:
         out += [scene["marker"]["date"], scene["marker"]["left"]]
-    out += [inst["date"] for inst in scene["instalments"]]
+    out += [text for _kind, text in scene["legend"]]
     for _colour, text, _tip, kind in scene["lines"]:
         out.append(text)
         if kind == "executors":
@@ -375,7 +422,13 @@ def scene_texts(scene):
 # ---------------------------------------------------------------- drawing
 
 def _font(base, bold=False, delta=0.0, italic=False):
-    """A copy of ``base`` with weight, size and style changed."""
+    """A copy of ``base`` with weight, size and style changed.
+
+    ``delta`` is added to the point size, or to the pixel size when
+    ``base`` is sized in pixels: the PDF report (#132) draws in a page
+    space of 1 unit = 1 point with pixel-sized fonts, so the drawing is the
+    same size on every printer.
+    """
     font = QFont(base)
     font.setBold(bold)
     font.setItalic(italic)
@@ -383,6 +436,8 @@ def _font(base, bold=False, delta=0.0, italic=False):
         size = font.pointSizeF()
         if size > 0:
             font.setPointSizeF(size + delta)
+        elif font.pixelSize() > 0:
+            font.setPixelSize(max(1, int(round(font.pixelSize() + delta))))
     return font
 
 
@@ -454,6 +509,522 @@ def _paint_executors(painter, x, y, w, scene, font, hits):
     return y + 2
 
 
+# --------------------------------------------------------------- time line
+# The time line of #132 (owner's mockup, "make it clearer, more space"):
+# year bands, a thick axis with the stretch to the next delivery in the
+# #124 colour and a "pill" with the time left, today, the Check Alive flag
+# with its card above the axis, numbered delivery circles with their cards
+# below it, and a small legend. Shared by the Future view and the PDF
+# report. :func:`timeline_layout` computes every place (tests check that
+# nothing overlaps), :func:`_paint_timeline` draws them.
+
+_BAND = "#f1f3f5"
+_AXIS_LINE = "#d6d6d6"
+_CARD_BORDER = "#d0d0d0"
+_CHECK_FILL = {False: "#fdf0ea", True: "#fdecec"}
+_LATER_FILL = "#c8e6c9"
+_LATER_LINE = "#81c784"
+_LATER_TEXT = "#1b5e20"
+#: The light background of the next delivery's card, per #124 level.
+_LEVEL_FILL = {"green": "#eef7ee", "yellow": "#fff5e5", "red": "#fdecec",
+               "passed": "#fdecec"}
+_CARD_PAD = 6.0
+_CARD_MAX = 210.0
+_CARD_GAP = 8.0
+_ABOVE_MIN = 16.0       # clearance between the axis and the boxes above
+_BELOW_MIN = 18.0       # ... and the cards below
+_R_NEXT = 10.0
+_R_LATER = 8.0
+_R_TODAY = 6.0
+_FLAG_H = 10.0
+
+
+def _wrap_height(text, font, width):
+    """The height of ``text`` wrapped at ``width``."""
+    flags = int(Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap)
+    return QFontMetricsF(font).boundingRect(QRectF(0, 0, width, 10000), flags, text).height()
+
+
+def _card(lines, max_width=_CARD_MAX):
+    """Size a card of ``lines`` = ``[(text, font, colour, wrap)]``.
+
+    ``wrap`` lines are wrapped at the card width; the others are elided
+    with "…" when too long (the full text is in the report's table and
+    in the view's lines). Returns ``(width, height, [(text, font, colour,
+    height)])``.
+    """
+    inner_max = max_width - 2 * _CARD_PAD
+    natural = max([QFontMetricsF(f).horizontalAdvance(t) + 2
+                   for t, f, _c, wrap in lines if t and not wrap] or [60.0])
+    inner = min(inner_max, natural)
+    out, height = [], 2 * _CARD_PAD
+    for text, font, colour, wrap in lines:
+        if not text:
+            continue
+        if wrap:
+            h = _wrap_height(text, font, inner)
+        else:
+            text = QFontMetricsF(font).elidedText(text, Qt.TextElideMode.ElideRight, inner)
+            h = QFontMetricsF(font).height()
+        out.append((text, font, colour, h))
+        height += h
+    return inner + 2 * _CARD_PAD, height, out
+
+
+def _place_above(placed, left, right, height):
+    """The lowest offset (from the axis, upwards) where a box of ``height``
+    over ``[left, right]`` touches no box already placed above the axis."""
+    bottom = _ABOVE_MIN
+    for lo, hi, b, h in placed:
+        if not (right + 4 <= lo or left >= hi + 4):
+            bottom = max(bottom, b + h + 6)
+    placed.append((left, right, bottom, height))
+    return bottom
+
+
+def _pack_cards(widths, centres, left, right):
+    """Left edges of cards in date order on one row inside ``[left, right]``,
+    each as near its centre as the others allow (``None`` if they do not fit).
+
+    Order is kept, so the straight leader lines from the circles to the
+    cards never cross each other.
+    """
+    if sum(widths) + _CARD_GAP * (len(widths) - 1) > right - left:
+        return None
+    lefts = []
+    edge = left
+    for w, c in zip(widths, centres, strict=True):
+        lx = max(min(max(c - w / 2.0, left), right - w), edge)
+        lefts.append(lx)
+        edge = lx + w + _CARD_GAP
+    edge = right
+    for i in range(len(lefts) - 1, -1, -1):
+        lefts[i] = min(lefts[i], edge - widths[i])
+        edge = lefts[i] - _CARD_GAP
+    return lefts
+
+
+def _leader(cx, r, axis_y, rect):
+    """The leader line from a delivery circle to the top of its card."""
+    end_x = max(rect.left() + 8, min(cx, rect.right() - 8))
+    return (QPointF(cx, axis_y + r), QPointF(end_x, rect.top()))
+
+
+def _arrange_cards(widths, heights, centres, radii, x, w, axis_y):
+    """Place the delivery cards below the axis: ``[(QRectF, leader or None)]``.
+
+    1. One row, in date order (:func:`_pack_cards`).
+    2. Two staggered rows: the even cards (1st, 3rd, ...) near the axis,
+       the odd ones on a second row; each near card stays between the
+       leader lines of its neighbours, so no line crosses a card.
+    3. A column, without leader lines: the numbers on the circles and in
+       the titles tell which card is which.
+    Order is always kept, so leader lines never cross each other.
+    """
+    if not widths:
+        return []
+    top = axis_y + _BELOW_MIN
+    lefts = _pack_cards(widths, centres, x, x + w)
+    if lefts is not None:
+        out = []
+        for lx, cw, ch, cx, r in zip(lefts, widths, heights, centres, radii, strict=True):
+            rect = QRectF(lx, top, cw, ch)
+            out.append((rect, _leader(cx, r, axis_y, rect)))
+        return out
+    near = list(range(0, len(widths), 2))
+    far = list(range(1, len(widths), 2))
+    near_h = max(heights[i] for i in near)
+    far_top = top + near_h + _CARD_GAP + 4
+    far_lefts = _pack_cards([widths[i] for i in far], [centres[i] for i in far], x, x + w)
+    if far_lefts is not None:
+        rects = {}
+        for i, lx in zip(far, far_lefts, strict=True):
+            rects[i] = QRectF(lx, far_top, widths[i], heights[i])
+        # The x span each far leader takes while crossing the near row.
+        spans = {}
+        for i in far:
+            a, b = _leader(centres[i], radii[i], axis_y, rects[i])
+            spans[i] = (min(a.x(), b.x()) - 4, max(a.x(), b.x()) + 4)
+        fits = True
+        for i in near:
+            lo = spans[i - 1][1] if i - 1 in spans else x
+            hi = spans[i + 1][0] if i + 1 in spans else x + w
+            if hi - lo < widths[i]:
+                fits = False
+                break
+            lx = max(lo, min(centres[i] - widths[i] / 2.0, hi - widths[i]))
+            rects[i] = QRectF(lx, top, widths[i], heights[i])
+        if fits:
+            return [(rects[i], _leader(centres[i], radii[i], axis_y, rects[i]))
+                    for i in range(len(widths))]
+    width = min(w, max(widths))
+    out = []
+    for ch in heights:
+        out.append((QRectF(x, top, width, ch), None))
+        top += ch + 6
+    return out
+
+
+def timeline_layout(scene, x, y, w, base):
+    """Where every part of the time line goes, from ``y`` down, in width ``w``.
+
+    Returns a dict: ``axis_y``, ``x0`` / ``x1`` (today / the last date),
+    ``bands`` (``(QRectF, shaded, label)``), ``above`` (boxes above the
+    axis: ``{kind, rect, ...}`` for the Check Alive card, today and a pill
+    moved off the axis), ``pole`` (``(x, top_y)`` or None), ``pill``
+    (``{rect, text}`` or None), ``circles``, ``cards`` (below the axis),
+    ``leaders`` (``(QPointF, QPointF)``), ``legend`` and ``bottom``.
+
+    WHY the Check Alive is placed first above the axis: its pole runs from
+    the axis up to its card, so nothing may be placed under it; its room
+    covers the pole and the flag, so later boxes go above it or beside it.
+    """
+    small = _font(base, delta=-1)
+    small_bold = _font(base, bold=True, delta=-1)
+    bold = _font(base, bold=True)
+    sm, sbm = QFontMetricsF(small), QFontMetricsF(small_bold)
+    x0, x1 = x + 10.0, x + w - 10.0
+    out = {"x0": x0, "x1": x1, "bands": [], "above": [], "pole": None, "pill": None,
+           "circles": [], "cards": [], "leaders": [], "legend": []}
+    placed = []
+    check = scene["check_alive"]
+    level_colour = scene.get("level_colour") or _TEXT
+    cards = scene.get("deliveries") or []
+    next_x = _x_of(cards[0]["at"], scene, x0, x1) if cards else None
+
+    # 1. The Check Alive: flag, pole and card (relative offsets for now).
+    check_item = None
+    if check:
+        cx = _x_of(check["at"], scene, x0, x1)
+        colour = check["colour"]
+        cw, ch, lines = _card([
+            (check["title"], small_bold, colour, False),
+            (check["date"], small, _TEXT, False),
+            (check["hint"], small, _GREY, True),
+        ])
+        if cx + _FLAG + 4 + cw <= x + w:
+            mode, left = "right", cx + _FLAG + 4
+            span = (cx - 1, left + cw)
+            height = ch
+        elif cx - 4 - cw >= x:
+            mode, left = "left", cx - 4 - cw
+            span = (left, cx + _FLAG + 1)
+            height = ch
+        else:
+            mode = "top"
+            left = max(x, min(cx - cw / 2.0, x + w - cw))
+            span = (min(left, cx - 1), max(left + cw, cx + _FLAG + 1))
+            height = ch + _FLAG_H + 4
+        bottom = _place_above(placed, span[0], span[1], height)
+        check_item = {"kind": "check", "cx": cx, "mode": mode, "left": left, "w": cw,
+                      "h": ch, "lines": lines, "bottom": bottom, "height": height,
+                      "span": span, "colour": colour, "passed": check.get("passed")}
+
+    # 2. The pill with the time left: on the green stretch, away from the
+    # circles and the pole; above the axis when it does not fit there.
+    pill_item = None
+    if scene.get("pill") and next_x is not None:
+        text = scene["pill"]
+        pw, ph = sbm.horizontalAdvance(text) + 16, sbm.height() + 4
+        a, b = x0 + _R_TODAY + 6, next_x - _R_NEXT - 6
+        pieces = [(a, b)]
+        if check_item and a < check_item["cx"] < b:
+            pieces = [(a, check_item["cx"] - 6), (check_item["cx"] + 6, b)]
+        best = max(pieces, key=lambda p: p[1] - p[0])
+        if best[1] - best[0] >= pw:
+            mid = (best[0] + best[1]) / 2.0
+            pill_item = {"on_axis": True, "left": mid - pw / 2.0, "w": pw, "h": ph,
+                         "text": text}
+        else:
+            pw = min(pw, w)
+            mid = (x0 + max(next_x, x0)) / 2.0
+            left = max(x, min(mid - pw / 2.0, x + w - pw))
+            pill_item = {"on_axis": False, "left": left, "w": pw, "h": ph, "text": text,
+                         "bottom": _place_above(placed, left, left + pw, ph)}
+
+    # 3. Today (and a draft's date), above the axis.
+    name, date = scene["today"]["name"], scene["today"]["date"]
+    tw = max(QFontMetricsF(bold).horizontalAdvance(name), sm.horizontalAdvance(date)) + 2
+    th = QFontMetricsF(bold).height() + sm.height()
+    t_left = max(x, min(x0 - _R_TODAY, x + w - tw))
+    today_item = {"left": t_left, "w": tw, "h": th,
+                  "bottom": _place_above(placed, t_left, t_left + tw, th)}
+    draft_item = None
+    marker = scene["marker"]
+    if marker and marker["draft"]:
+        text = "{} · {}".format(marker["date"], marker["left"])
+        dw, dh = sm.horizontalAdvance(text) + 2, sm.height()
+        mx = _x_of(marker["at"], scene, x0, x1)
+        d_left = max(x, min(mx - dw / 2.0, x + w - dw))
+        draft_item = {"x": mx, "left": d_left, "w": dw, "h": dh, "text": text,
+                      "bottom": _place_above(placed, d_left, d_left + dw, dh)}
+
+    # 4. The cards of the deliveries, below the axis.
+    sized = []
+    for card in cards:
+        colour = level_colour if card["next"] else _TEXT
+        sized.append(_card([
+            (card["title"], small_bold, colour, False),
+            (card["time"], small, _GREY, False),
+            (card["heirs"], small, _TEXT, False),
+        ]))
+    centres = [_x_of(c["at"], scene, x0, x1) for c in cards]
+
+    # Vertical positions: year labels, the boxes above, the axis.
+    label_h = sm.height() + 4
+    above_h = max([b + h for _l, _r, b, h in placed], default=_ABOVE_MIN) + 4
+    axis_y = y + label_h + above_h
+    out["axis_y"] = axis_y
+
+    def box(left, bottom, width, height):
+        """An above-axis box from its offset above the axis."""
+        return QRectF(left, axis_y - bottom - height, width, height)
+
+    if check_item:
+        ci = check_item
+        if ci["mode"] == "top":
+            pole_top = axis_y - ci["bottom"] - _FLAG_H
+            card = QRectF(ci["left"], pole_top - 4 - ci["h"], ci["w"], ci["h"])
+        else:
+            card = box(ci["left"], ci["bottom"], ci["w"], ci["h"])
+            pole_top = card.top()
+        out["pole"] = (ci["cx"], pole_top)
+        out["above"].append({"kind": "check", "rect": card, "lines": ci["lines"],
+                             "colour": ci["colour"], "passed": ci["passed"],
+                             "span": QRectF(ci["span"][0], min(card.top(), pole_top),
+                                            ci["span"][1] - ci["span"][0],
+                                            axis_y - min(card.top(), pole_top))})
+    out["above"].append({"kind": "today", "rect": box(today_item["left"], today_item["bottom"],
+                                                      today_item["w"], today_item["h"]),
+                         "name": name, "date": date, "bold": bold, "small": small})
+    if draft_item:
+        out["above"].append({"kind": "draft", "rect": box(
+            draft_item["left"], draft_item["bottom"], draft_item["w"], draft_item["h"]),
+            "text": draft_item["text"], "x": draft_item["x"], "font": small})
+    if pill_item:
+        if pill_item["on_axis"]:
+            rect = QRectF(pill_item["left"], axis_y - pill_item["h"] / 2.0,
+                          pill_item["w"], pill_item["h"])
+        else:
+            rect = box(pill_item["left"], pill_item["bottom"], pill_item["w"], pill_item["h"])
+        out["pill"] = {"rect": rect, "text": pill_item["text"], "on_axis": pill_item["on_axis"],
+                       "font": small_bold}
+
+    # Circles on the axis.
+    out["circles"].append({"kind": "today", "x": x0, "r": _R_TODAY})
+    if marker and marker["draft"]:
+        out["circles"].append({"kind": "draft", "x": _x_of(marker["at"], scene, x0, x1),
+                               "r": _R_LATER})
+    for card, cx in zip(cards, centres, strict=True):
+        out["circles"].append({"kind": "next" if card["next"] else "later", "x": cx,
+                               "r": _R_NEXT if card["next"] else _R_LATER,
+                               "number": card["number"]})
+
+    # Cards below the axis: one row, two staggered rows, or a column.
+    bottom = axis_y + _R_NEXT + 6
+    radii = [_R_NEXT if c["next"] else _R_LATER for c in cards]
+    placed_cards = _arrange_cards([sz[0] for sz in sized], [sz[1] for sz in sized],
+                                  centres, radii, x, w, axis_y)
+    for card, (_cw, _ch, lines), (rect, leader) in zip(cards, sized, placed_cards, strict=True):
+        if leader is not None:
+            out["leaders"].append(leader)
+        out["cards"].append({"rect": rect, "lines": lines, "next": card["next"]})
+        bottom = max(bottom, rect.bottom())
+
+    # Year bands, behind everything, from the labels to the cards.
+    band_bottom = bottom + 6
+    label_w = sm.horizontalAdvance("2088") + 10
+    step, ticks = year_ticks(scene["start"], scene["end"], x0, x1, label_w)
+    edges = [(x0, _year_of(scene["start"]), False)]
+    edges += [(tx, year, True) for year, tx, labelled in ticks if labelled and tx > x0 + 0.5]
+    edges.append((x1, None, False))
+    for (lx, year, labelled), (rx, _yr, _lb) in zip(edges, edges[1:], strict=False):
+        if rx - lx < 0.5 or year is None:
+            continue
+        group = year // step
+        # A label only where its band is wide enough to hold it.
+        label = str(year) if (labelled or step == 1) and rx - lx >= label_w else ""
+        out["bands"].append((QRectF(lx, y, rx - lx, band_bottom - y), group % 2 == 1, label))
+    out["label_font"] = small
+
+    # The legend under the bands.
+    ly = band_bottom + 8
+    lx = x
+    lh = sm.height()
+    for kind, text in scene.get("legend") or []:
+        width = 18 + sm.horizontalAdvance(text) + 16
+        if lx > x and lx + width > x + w:
+            lx, ly = x, ly + lh + 4
+        out["legend"].append({"kind": kind, "text": text,
+                              "rect": QRectF(lx, ly, width - 16, lh)})
+        lx += width
+    out["legend_font"] = small
+    out["bottom"] = (ly + lh + 4) if out["legend"] else band_bottom + 4
+    out["level_colour"] = level_colour
+    out["level"] = scene.get("level")
+    out["bold"] = bold
+    return out
+
+
+def timeline_boxes(layout):
+    """Every box of the time line that must not overlap another (tests):
+    ``[(kind, QRectF)]`` (Check Alive card, today, draft, pill, cards,
+    legend entries)."""
+    boxes = [(item["kind"], item["rect"]) for item in layout["above"]]
+    if layout["pill"]:
+        boxes.append(("pill", layout["pill"]["rect"]))
+    boxes += [("card", c["rect"]) for c in layout["cards"]]
+    boxes += [("legend", e["rect"]) for e in layout["legend"]]
+    return boxes
+
+
+def _flag(painter, px, top, colour, size=_FLAG, height=_FLAG_H):
+    """A small flag pointing right, its mast at ``px`` from ``top``."""
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(QColor(colour)))
+    painter.drawPolygon(QPolygonF([
+        QPointF(px, top), QPointF(px + size, top + height / 2.0), QPointF(px, top + height)]))
+
+
+def _card_paint(painter, rect, lines, fill, border, width=1.0):
+    """A rounded card with its lines of text."""
+    painter.setPen(QPen(QColor(border), width))
+    painter.setBrush(QBrush(QColor(fill)))
+    painter.drawRoundedRect(rect, 5, 5)
+    ty = rect.top() + _CARD_PAD
+    for text, font, colour, h in lines:
+        _text(painter, rect.left() + _CARD_PAD, ty, rect.width() - 2 * _CARD_PAD + 1,
+              text, colour, font)
+        ty += h
+
+
+def _paint_timeline(painter, lay, scene, hits):
+    """Draw a :func:`timeline_layout` (see there)."""
+    axis_y, x0, x1 = lay["axis_y"], lay["x0"], lay["x1"]
+    level_colour = lay["level_colour"]
+    # Year bands and their labels.
+    font = lay["label_font"]
+    for rect, shaded, label in lay["bands"]:
+        if shaded:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(_BAND)))
+            painter.drawRect(rect)
+        if label:
+            _text(painter, rect.left(), rect.top() + 1, rect.width(), label, _GREY, font,
+                  Qt.AlignmentFlag.AlignHCenter)
+    # The axis, and the stretch from today to the next delivery.
+    pen = QPen(QColor(_AXIS_LINE), 6)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.drawLine(QPointF(x0, axis_y), QPointF(x1, axis_y))
+    nxt = next((c for c in lay["circles"] if c["kind"] == "next"), None)
+    if nxt is not None and nxt["x"] > x0:
+        pen = QPen(QColor(level_colour), 6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawLine(QPointF(x0, axis_y), QPointF(nxt["x"], axis_y))
+    # Leader lines (under the circles and the cards).
+    for a, b in lay["leaders"]:
+        painter.setPen(QPen(QColor("#9e9e9e"), 1))
+        painter.drawLine(a, b)
+    # The Check Alive: pole, flag, card.
+    for item in lay["above"]:
+        if item["kind"] != "check":
+            continue
+        px, top = lay["pole"]
+        painter.setPen(QPen(QColor(item["colour"]), 2))
+        painter.drawLine(QPointF(px, axis_y), QPointF(px, top))
+        _flag(painter, px, top, item["colour"])
+        _card_paint(painter, item["rect"], item["lines"],
+                    _CHECK_FILL[bool(item["passed"])], item["colour"])
+    # Circles.
+    small_bold = _font(lay["bold"], delta=-2)
+    for c in lay["circles"]:
+        cx, r = c["x"], c["r"]
+        if c["kind"] == "today":
+            painter.setPen(QPen(QColor("#ffffff"), 2))
+            painter.setBrush(QBrush(QColor(_TODAY)))
+        elif c["kind"] == "draft":
+            pen = QPen(QColor(_DRAFT), 2)
+            pen.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(QColor(_BG)))
+        elif c["kind"] == "next":
+            painter.setPen(QPen(QColor("#ffffff"), 2))
+            painter.setBrush(QBrush(QColor(level_colour)))
+        else:
+            painter.setPen(QPen(QColor(_LATER_LINE), 1.5))
+            painter.setBrush(QBrush(QColor(_LATER_FILL)))
+        painter.drawEllipse(QPointF(cx, axis_y), r, r)
+        if c.get("number"):
+            colour = "#ffffff" if c["kind"] == "next" else _LATER_TEXT
+            painter.setFont(small_bold)
+            painter.setPen(QColor(colour))
+            painter.drawText(QRectF(cx - r, axis_y - r, 2 * r, 2 * r),
+                             int(Qt.AlignmentFlag.AlignCenter), str(c["number"]))
+    # The pill with the time left.
+    if lay["pill"]:
+        pill = lay["pill"]
+        painter.setPen(QPen(QColor("#ffffff"), 1.5))
+        painter.setBrush(QBrush(QColor(level_colour)))
+        rect = pill["rect"]
+        painter.drawRoundedRect(rect, rect.height() / 2.0, rect.height() / 2.0)
+        painter.setFont(pill["font"])
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), pill["text"])
+        if scene["marker"] and scene["marker"].get("tip"):
+            hits.append((QRectF(rect), scene["marker"]["tip"]))
+    # Today and a draft's date.
+    for item in lay["above"]:
+        rect = item["rect"]
+        if item["kind"] == "today":
+            h = _text(painter, rect.left(), rect.top(), rect.width() + 2, item["name"],
+                      _TODAY, item["bold"])
+            _text(painter, rect.left(), rect.top() + h, rect.width() + 2, item["date"],
+                  _TODAY, item["small"])
+        elif item["kind"] == "draft":
+            _text(painter, rect.left(), rect.top(), rect.width() + 2, item["text"], _DRAFT,
+                  item["font"])
+    # The delivery cards.
+    for card in lay["cards"]:
+        if card["next"]:
+            fill = _LEVEL_FILL.get(lay["level"], "#ffffff")
+            _card_paint(painter, card["rect"], card["lines"], fill, level_colour, 1.5)
+            if scene["marker"] and scene["marker"].get("tip"):
+                hits.append((QRectF(card["rect"]), scene["marker"]["tip"]))
+        else:
+            _card_paint(painter, card["rect"], card["lines"], "#ffffff", _CARD_BORDER)
+    # The legend.
+    font = lay["legend_font"]
+    for entry in lay["legend"]:
+        rect, kind = entry["rect"], entry["kind"]
+        mid = rect.center().y()
+        sx = rect.left() + 6
+        if kind == "today":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(_TODAY)))
+            painter.drawEllipse(QPointF(sx, mid), 4, 4)
+        elif kind == "check":
+            painter.setPen(QPen(QColor(CHECK_ALIVE_COLOUR), 1.5))
+            painter.drawLine(QPointF(sx - 3, mid + 5), QPointF(sx - 3, mid - 5))
+            _flag(painter, sx - 3, mid - 5, CHECK_ALIVE_COLOUR, 9, 7)
+        elif kind == "next":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(level_colour)))
+            painter.drawEllipse(QPointF(sx, mid), 5, 5)
+        elif kind == "later":
+            painter.setPen(QPen(QColor(_LATER_LINE), 1))
+            painter.setBrush(QBrush(QColor(_LATER_FILL)))
+            painter.drawEllipse(QPointF(sx, mid), 4, 4)
+        elif kind == "pill":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(level_colour)))
+            painter.drawRoundedRect(QRectF(sx - 6, mid - 4, 13, 8), 4, 4)
+        _text(painter, rect.left() + 18, rect.top(), rect.width() - 18 + 2, entry["text"],
+              _GREY, font)
+    return lay["bottom"]
+
+
 def paint_future(painter, rect, scene, base_font=None):
     """Draw ``scene`` (:func:`future_scene`) in ``rect`` with ``painter``.
 
@@ -477,114 +1048,11 @@ def paint_future(painter, rect, scene, base_font=None):
         y += _text(painter, x, y, w, scene["title"], title_colour,
                    _font(base, bold=True, delta=2)) + line * 0.6
 
-    # The time line (#131, owner's second preview): a ruler of the YEARS on
-    # top, then the dates above the axis, the axis with its markers, and
-    # today / the time left under it. Every x comes from the same scale
-    # (_x_of): today on the left, the last date on the right.
-    x0, x1 = x + 8.0, x + w - 8.0
-    small_m, bold_m = QFontMetricsF(small), QFontMetricsF(bold)
-    small_line = small_m.height()
-    marker = scene["marker"]
-    check = scene["check_alive"]
-
-    # The labels above the axis (dates), placed on rows so none overlaps.
-    above = []          # (x, width, align, text, colour, font, kind)
-    if marker:
-        mx = _x_of(marker["at"], scene, x0, x1)
-        above.append((mx, bold_m.horizontalAdvance(marker["date"]) + 2, "center",
-                      marker["date"], marker["colour"], bold, "marker"))
-    for inst in scene["instalments"]:
-        ix = _x_of(inst["at"], scene, x0, x1)
-        above.append((ix, small_m.horizontalAdvance(inst["date"]) + 2, "center",
-                      inst["date"], _GREY, small, "instalment"))
-    if check:
-        cx = _x_of(check["at"], scene, x0, x1)
-        # The flag points right: its date starts after the flag.
-        above.append((cx + _FLAG + 3, small_m.horizontalAdvance(check["date"]) + 2, "left",
-                      check["date"], check["colour"], small, "check"))
-    placed = place_labels([(lx, lw, al) for lx, lw, al, *_r in above], x, x + w)
-    rows_above = max([row for row, _lx in placed], default=-1) + 1
-    row_h = bold_m.height() + 4
-
-    # The year ruler.
-    label_w = small_m.horizontalAdvance("2088") + 14
-    ruler_y = y + small_line + 2
-    _step, ticks = year_ticks(scene["start"], scene["end"], x0, x1, label_w)
-    axis_y = ruler_y + 10 + rows_above * row_h + 18
-    if ticks:
-        painter.setPen(QPen(QColor(_AXIS), 1))
-        painter.drawLine(QPointF(x0, ruler_y), QPointF(x1, ruler_y))
-        for year, tx, labelled in ticks:
-            painter.setPen(QPen(QColor(_AXIS), 1))
-            painter.drawLine(QPointF(tx, ruler_y), QPointF(tx, ruler_y + (6 if labelled else 3)))
-            if labelled:
-                # A faint line down to the time line: the year where it is.
-                grid = QPen(QColor("#e0e0e0"), 1)
-                grid.setStyle(Qt.PenStyle.DotLine)
-                painter.setPen(grid)
-                painter.drawLine(QPointF(tx, ruler_y + 6), QPointF(tx, axis_y))
-                text = str(year)
-                tw = small_m.horizontalAdvance(text)
-                lx = max(x, min(tx - tw / 2.0, x + w - tw))
-                _text(painter, lx, y, tw + 2, text, _GREY, small)
-
-    painter.setPen(QPen(QColor(_AXIS), 2))
-    painter.drawLine(QPointF(x0, axis_y), QPointF(x1, axis_y))
-
-    # The dates above the axis, each on its row (row 0 nearest the axis).
-    for (lx0, lw, _al, text, colour, font, kind), (row, lx) in zip(above, placed, strict=True):
-        ty = axis_y - 14 - (row + 1) * row_h + 4
-        if kind == "check":
-            # The flag pole reaches up to its date.
-            pole = lx0 - _FLAG - 3
-            painter.setPen(QPen(QColor(colour), 2))
-            painter.drawLine(QPointF(pole, axis_y), QPointF(pole, ty + 2))
-            painter.setBrush(QBrush(QColor(colour)))
-            painter.drawPolygon(QPolygonF([
-                QPointF(pole, ty + 2), QPointF(pole + _FLAG, ty + 7),
-                QPointF(pole, ty + 12)]))
-        _text(painter, lx, ty, lw, text, colour, font)
-        if kind == "marker" and marker["tip"]:
-            hits.append((QRectF(lx, ty, lw, axis_y - ty), marker["tip"]))
-
-    # Later instalments: smaller dots.
-    for inst in scene["instalments"]:
-        ix = _x_of(inst["at"], scene, x0, x1)
-        painter.setPen(QPen(QColor(_GREY), 2))
-        painter.setBrush(QBrush(QColor("#ffffff")))
-        painter.drawEllipse(QPointF(ix, axis_y), 5, 5)
-
-    # Today.
-    painter.setPen(QPen(QColor(_TODAY), 2))
-    painter.setBrush(QBrush(QColor(_TODAY)))
-    painter.drawEllipse(QPointF(x0, axis_y), 5, 5)
-
-    # The delivery (or the draft).
-    below_labels = [(x0 - 6, small_m.horizontalAdvance(scene["today"]["date"]) + 2, "left"),
-                    (x0 - 6, small_m.horizontalAdvance(scene["today"]["label"]) + 2, "left")]
-    if marker:
-        mx = _x_of(marker["at"], scene, x0, x1)
-        colour = QColor(marker["colour"])
-        pen = QPen(colour, 2)
-        if marker["draft"]:
-            pen.setStyle(Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(QBrush(QColor(_BG) if marker["draft"] else colour))
-        painter.drawEllipse(QPointF(mx, axis_y), 8, 8)
-        below_labels.append((mx, small_m.horizontalAdvance(marker["left"]) + 2, "center"))
-    under = place_labels(below_labels, x, x + w)
-    texts_below = [(scene["today"]["date"], _TODAY), (scene["today"]["label"], _TODAY)]
-    if marker:
-        texts_below.append((marker["left"], marker["colour"]))
-    below = axis_y + 9
-    for (text, colour), (row, lx), (_bx, bw, _al) in zip(texts_below, under, below_labels,
-                                                          strict=True):
-        ty = axis_y + 9 + row * (small_line + 1)
-        _text(painter, lx, ty, bw, text, colour, small)
-        below = max(below, ty + small_line)
+    # The time line (#132, owner's mockup): see timeline_layout.
+    lay = timeline_layout(scene, x, y, w, base)
+    y = _paint_timeline(painter, lay, scene, hits) + line * 0.4
 
     # The legend under the axis.
-    y = below + line * 0.8
     for colour, text, tip, kind in scene["lines"]:
         tx = x
         if colour:

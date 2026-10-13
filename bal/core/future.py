@@ -46,7 +46,7 @@ from . import delivery as _delivery
 from . import will_versions
 from .checkalive import check_alive_basic, check_alive_renewal, resolve_date_to_check
 from .heirs import HEIR_ADDRESS, HEIR_REAL_AMOUNT, is_op_return_address
-from .messages import _day
+from .messages import _day, months_text
 from .summary import _executors_row, delivery_warning, executor_counts, executor_states
 
 _DAY = 86400
@@ -107,6 +107,8 @@ class Future:
     the will-executors of the will in force. ``executors_text``: the
     summary's "3 of 3 received and verified it". ``draft_locktime``: the
     delivery of a draft not signed or sent yet, ``None`` without one.
+    ``form``: the delivery form of the settings (#127, ``delivery.form_of``:
+    ``"fixed"`` or ``"period"``; #132 shows it in the report and the view).
     """
 
     state: str
@@ -123,11 +125,24 @@ class Future:
     executors: List[ExecutorMark] = field(default_factory=list)
     executors_text: str = ""
     draft_locktime: Optional[int] = None
+    form: str = _delivery.FORM_FIXED
 
     @property
     def delivery(self):
         """The first delivery date (UNIX time), or ``None``."""
         return self.deliveries[0].locktime if self.deliveries else None
+
+
+def delivery_form_text(form, months=None):
+    """``"Fixed date"`` or ``"Period (renewable) — 24 months (2 years)"`` (#132).
+
+    The #127 msgids of the delivery form and ``messages.months_text``; a
+    period form whose N cannot be read says only "Period (renewable)".
+    """
+    if form != _delivery.FORM_PERIOD:
+        return _("Fixed date")
+    text = _("Period (renewable)")
+    return text + " — " + months_text(months) if months else text
 
 
 def _now(now):
@@ -394,6 +409,7 @@ def build_future(willitems, will_settings, is_basic_mode, now=None,
         future.title = _("Your will is in force")
     _check_alive(future, current, settings, is_basic_mode, now)
     future.period_months = _delivery.period_months(settings)
+    future.form = _delivery.form_of(settings)
 
     items = {wid: will[wid] for wid in current.items if wid in will}
     states = executor_states(items)

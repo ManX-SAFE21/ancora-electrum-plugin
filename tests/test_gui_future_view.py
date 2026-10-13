@@ -14,6 +14,10 @@ clock 2026-10-10 12:00 UTC):
 * an error in the data never reaches the GUI (logged, today only);
 * 30 will-executors (synthetic data): the squares wrap into rows inside the
   width, the texts below start under the last row, the count is right;
+* the time line of #132 (owner's mockup): nothing overlaps (cards, labels,
+  pill, legend, the Check Alive pole and flag, the leader lines) for dense
+  and sparse dates at 300-1600 px; numbered circles, the next delivery
+  highlighted, one card per delivery, the legend; no "instalment" word;
 * Tools -> Display: the note about the Future view for the live will, not
   for an imported one (and shown after a Merge).
 
@@ -23,6 +27,7 @@ Run (standalone or with pytest):
 """
 
 import os
+import re
 import sys
 from types import SimpleNamespace
 
@@ -33,7 +38,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import flowkit as fk
 from PyQt6.QtCore import QPointF, QRectF
-from PyQt6.QtGui import QPainter, QPixmap
+from PyQt6.QtGui import QColor, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 import bal.core.future as core_future
@@ -97,6 +102,13 @@ def _grab(view):
     return pixmap
 
 
+def _colour_pixels(image, colour):
+    """How many pixels of ``image`` have exactly ``colour``."""
+    target = QColor(colour).rgb()
+    return sum(1 for y in range(image.height()) for x in range(image.width())
+               if image.pixel(x, y) == target)
+
+
 def _date(ts):
     """A date as the view writes it (UTC day and time, #131)."""
     return fv.utc_date_text(ts)
@@ -156,12 +168,16 @@ def test_will_in_force_basic_fixed_date(make):
     _grab(view)
     texts = view.texts()
     assert texts[0] == "Your will is in force"
-    assert _date(fk.FIXED_NOW) in texts and "(today)" in texts
+    assert _date(fk.FIXED_NOW) in texts and "Today" in texts
     assert "Delivery to the heirs: {} (in 4 months and 17 days)".format(_date(D)) in texts
     assert SENTENCE + "{} the bitcoin will go to: alice 60%, bob 40%".format(_date(D)) in texts
     assert "Will-Executor: 3 of 3 received and verified it" in texts
     assert "received and verified" in texts and EXPLAIN in texts
     assert not any(t.startswith("Check Alive") for t in texts)
+    # #132: the delivery form under the delivery; no flag at all.
+    assert "Delivery form: Fixed date" in texts
+    assert view.scene["check_alive"] is None
+    assert _colour_pixels(_grab(view).toImage(), fv.CHECK_ALIVE_COLOUR) == 0
     assert view.scene["marker"]["colour"] == "#c62828"      # red: < 6 months
     assert [sq["colour"] for sq in view.scene["executors"]] == ["#2e7d32"] * 3
 
@@ -178,6 +194,10 @@ def test_advanced_shows_the_check_alive_and_tooltips(make):
     assert ("Check Alive: {} — from that day the wallet asks you to renew it"
             .format(_date(check))) in texts
     assert view.scene["check_alive"]["date"] == _date(check)
+    # #132 (owner): the flag, its pole and its date in orange-red.
+    assert view.scene["check_alive"]["colour"] == fv.CHECK_ALIVE_COLOUR == "#D85A30"
+    assert _colour_pixels(_grab(view).toImage(), fv.CHECK_ALIVE_COLOUR) > 40
+    assert "Delivery form: Fixed date" in texts
     squares = [(box, tip) for box, tip in view._hits if tip.startswith("https://")]
     assert [tip for _b, tip in squares] == [
         "https://we{}.test\nreceived and verified".format(i) for i in range(3)]
@@ -189,7 +209,12 @@ def test_period_form_and_draft_and_no_will(make):
     """The period text (#127); only a draft; nothing at all."""
     s = make(mode="advanced", period_months=24)
     s.check()
-    assert "Period (renewable): 24 months (2 years)" in _view(s).texts()
+    texts = _view(s).texts()
+    # #132: the delivery form right under the delivery line.
+    form = "Delivery form: Period (renewable) — 24 months (2 years)"
+    assert form in texts
+    assert texts.index(form) == 1 + next(
+        i for i, t in enumerate(texts) if t.startswith("Delivery to the heirs:"))
 
     d = make()
     d.check(cancel_on=SIGN)
@@ -219,7 +244,7 @@ def test_errors_never_reach_the_gui(make, monkeypatch):
     monkeypatch.setattr(core_future, "build_future", boom)
     view = _view(s)
     _grab(view)
-    assert view.texts() == [_date(fk.FIXED_NOW), "(today)"]
+    assert view.texts() == ["Today", _date(fk.FIXED_NOW)]
 
 
 def test_busy_shows_the_operation_in_progress(make):
@@ -305,7 +330,8 @@ def test_dates_are_the_utc_day(make):
     s = make()
     s.check()
     texts = _view(s).texts()
-    assert "27/02/2027 22:00 UTC" in texts
+    # The card of the single delivery: the UTC day in its title, the time under it.
+    assert "Delivery to the heirs · 27/02/2027" in texts and "22:00 UTC" in texts
     assert "Delivery to the heirs: 27/02/2027 22:00 UTC (in 4 months and 17 days)" in texts
     assert any(t.startswith(SENTENCE + "27/02/2027 22:00 UTC ") for t in texts)
     assert "10/10/2026 12:00 UTC" in texts
@@ -344,19 +370,6 @@ def test_year_ticks_long_span_never_overlap(width):
         assert step >= 2
 
 
-def test_place_labels_never_overlap():
-    """Dates close together go on different rows; all stay inside."""
-    labels = [(100.0, 140.0, "center"), (130.0, 140.0, "center"),
-              (500.0, 140.0, "center"), (790.0, 140.0, "left")]
-    placed = fv.place_labels(labels, 0.0, 800.0)
-    boxes = [(row, lx, lx + w) for (row, lx), (_x, w, _a) in zip(placed, labels, strict=True)]
-    assert all(0.0 <= a and b <= 800.0 for _r, a, b in boxes)
-    for i, (r1, a1, b1) in enumerate(boxes):
-        for r2, a2, b2 in boxes[i + 1:]:
-            assert r1 != r2 or b1 <= a2 or b2 <= a1
-    assert boxes[0][0] != boxes[1][0]
-
-
 def test_nine_executors_four_instalments_paint():
     """Multiverse case of the owner: 9 will-executors, 4 instalments. The
     later instalments are on the axis (their dates drawn), the axis spans
@@ -390,7 +403,146 @@ def test_nine_executors_four_instalments_paint():
         assert len(squares) == 9 and all(b.right() <= width for b in squares)
         assert bottom < 1200
     texts = fv.scene_texts(scene)
-    assert "01/03/2028 22:00 UTC" in texts and "01/09/2027 22:00 UTC" in texts
+    assert "Delivery 1 · 01/03/2028" in texts and "01/09/2027 22:00 UTC" in texts
+
+
+def _stage_model(dates, check=None, level="green", passed=False,
+                 heirs=(("Luca", 10.0), ("John", 10.0))):
+    """A will in force with ``dates`` deliveries (synthetic: multiverse is
+    off in the plugin)."""
+    now = fk.FIXED_NOW
+    return core_future.Future(
+        state=core_future.STATE_IN_FORCE, now=now, title="Your will is in force",
+        deliveries=[core_future.Instalment(locktime=d, heirs=[
+            core_future.HeirShare(name, 1000, pct) for name, pct in heirs]) for d in dates],
+        level=level, time_left=core_future.time_left_text(dates[0], now),
+        check_alive=check, check_alive_passed=passed,
+    )
+
+
+#: Timelines of the owner's cases (#132 mockup) and harder ones.
+TIMELINES = {
+    "sparse": ([fk.ts(2028, 3, 1, 22), fk.ts(2030, 3, 1, 22), fk.ts(2032, 3, 1, 22),
+                fk.ts(2035, 3, 1, 22)], fk.ts(2027, 12, 1, 22)),
+    "dense": ([fk.ts(2027, 3, 1, 22), fk.ts(2027, 5, 1, 22), fk.ts(2027, 7, 1, 22),
+               fk.ts(2027, 9, 1, 22)], fk.ts(2027, 1, 15)),
+    "single": ([fk.ts(2031, 2, 26, 22)], fk.ts(2030, 11, 28)),
+    "near": ([fk.ts(2026, 11, 20, 22)], fk.ts(2026, 11, 1)),
+    "no_check": ([fk.ts(2027, 2, 27, 22)], None),
+    "long": ([fk.ts(2030, 1, 1), fk.ts(2045, 1, 1), fk.ts(2060, 1, 1), fk.ts(2075, 1, 1)],
+             fk.ts(2029, 12, 1)),
+}
+
+
+def _layout(case, width):
+    """The time line layout of ``case`` at ``width`` px."""
+    dates, check = TIMELINES[case]
+    scene = fv.future_scene(_stage_model(dates, check))
+    return scene, fv.timeline_layout(scene, 16.0, 0.0, width - 32.0, QApplication.font())
+
+
+@pytest.mark.parametrize("width", [300, 420, 520, 900, 1600])
+@pytest.mark.parametrize("case", sorted(TIMELINES))
+def test_timeline_nothing_overlaps(case, width):
+    """#132 (owner's mockup): no card, label, pill or legend entry overlaps
+    another; the Check Alive pole and flag cross none of them; the leader
+    lines cross no other card; everything stays inside the width."""
+    _scene, lay = _layout(case, width)
+    boxes = fv.timeline_boxes(lay)
+    for kind, rect in boxes:
+        assert rect.left() >= 16.0 - 0.5 and rect.right() <= width - 16.0 + 0.5, (kind, rect)
+    for i, (k1, r1) in enumerate(boxes):
+        for k2, r2 in boxes[i + 1:]:
+            assert not r1.adjusted(0.5, 0.5, -0.5, -0.5).intersects(r2), (k1, k2)
+    axis = lay["axis_y"]
+    if lay["pole"]:
+        px, top = lay["pole"]
+        flag = QRectF(px, top, fv._FLAG, fv._FLAG_H)
+        for kind, rect in boxes:
+            if kind == "check":
+                continue
+            crosses = rect.left() < px < rect.right() and rect.top() < axis and rect.bottom() > top
+            assert not crosses, kind
+            assert not rect.intersects(flag), kind
+    for a, b in lay["leaders"]:
+        for step in range(19):
+            t = step / 20.0
+            point = QPointF(a.x() + (b.x() - a.x()) * t, a.y() + (b.y() - a.y()) * t)
+            assert not any(rect.contains(point) for _k, rect in boxes), (case, width)
+    if lay["pill"] and lay["pill"]["on_axis"]:
+        pill = lay["pill"]["rect"]
+        for c in lay["circles"]:
+            circle = QRectF(c["x"] - c["r"], axis - c["r"], 2 * c["r"], 2 * c["r"])
+            assert not pill.intersects(circle), c["kind"]
+
+
+def test_timeline_cards_highlight_and_legend():
+    """Numbered circles, the next delivery bigger and highlighted, one card
+    per delivery linked by a leader, the legend; a single delivery has one
+    card titled "Delivery to the heirs · <day>" and no number."""
+    scene, lay = _layout("sparse", 1000)
+    circles = [c for c in lay["circles"] if c["kind"] in ("next", "later")]
+    assert [c["number"] for c in circles] == [1, 2, 3, 4]
+    assert [c["kind"] for c in circles] == ["next", "later", "later", "later"]
+    assert circles[0]["r"] > circles[1]["r"]
+    assert [c["next"] for c in lay["cards"]] == [True, False, False, False]
+    assert len(lay["leaders"]) == 4
+    assert [c["title"] for c in scene["deliveries"]] == [
+        "Delivery 1 · 01/03/2028", "Delivery 2 · 01/03/2030",
+        "Delivery 3 · 01/03/2032", "Delivery 4 · 01/03/2035"]
+    assert scene["deliveries"][0]["heirs"] == "Luca 10% · John 10%"
+    assert scene["deliveries"][0]["time"] == "22:00 UTC"
+    assert [kind for kind, _t in scene["legend"]] == ["today", "check", "next", "later", "pill"]
+    assert [e["text"] for e in lay["legend"]] == [
+        "today", "Check Alive", "next delivery", "later deliveries", "time left"]
+    assert lay["pill"]["text"] == "in 1 year and 4 months"
+    check = next(i for i in lay["above"] if i["kind"] == "check")
+    assert check["colour"] == fv.CHECK_ALIVE_COLOUR
+    # Painted: the next card's light fill and the Check Alive colour are there.
+    pixmap = QPixmap(1000, 700)
+    pixmap.fill(QColor("#ffffff"))
+    painter = QPainter(pixmap)
+    try:
+        fv.paint_future(painter, QRectF(0, 0, 1000, 700), scene)
+    finally:
+        painter.end()
+    image = pixmap.toImage()
+    assert _colour_pixels(image, "#eef7ee") > 200
+    assert _colour_pixels(image, fv.CHECK_ALIVE_COLOUR) > 20
+
+    scene, lay = _layout("single", 900)
+    assert len(lay["cards"]) == 1 and lay["cards"][0]["next"]
+    assert scene["deliveries"][0]["title"] == "Delivery to the heirs · 26/02/2031"
+    assert [c.get("number") for c in lay["circles"] if c["kind"] == "next"] == [None]
+    assert "later" not in [k for k, _t in scene["legend"]]
+
+
+def test_timeline_grows_with_dense_cards():
+    """Four deliveries within one year at 300 px do not fit on one row: the
+    cards go in a column and the drawing gets taller (scene_height)."""
+    _scene, wide = _layout("dense", 1600)
+    _scene, narrow = _layout("dense", 300)
+    assert len(wide["leaders"]) == 4 and not narrow["leaders"]
+    tops = [c["rect"].top() for c in narrow["cards"]]
+    assert tops == sorted(tops) and len(set(tops)) == 4
+    scene = fv.future_scene(_stage_model(*TIMELINES["dense"]))
+    assert fv.scene_height(scene, 300) > fv.scene_height(scene, 1600)
+
+
+def test_no_instalment_word_for_the_user():
+    """Owner (#132): "delivery", never "instalment" / "rata", in what the
+    user reads (the catalogs' active entries)."""
+    from babel.messages.pofile import read_po
+
+    root = os.path.join(os.path.dirname(__file__), os.pardir, "bal", "locale")
+    with open(os.path.join(root, "bal.pot"), "rb") as f:
+        pot = read_po(f)
+    assert not [m.id for m in pot if m.id and "nstalment" in str(m.id)]
+    with open(os.path.join(root, "it_IT", "LC_MESSAGES", "bal.po"), "rb") as f:
+        italian = read_po(f)
+    assert not [m.string for m in italian
+                if m.id and isinstance(m.string, str)
+                and re.search(r"\brat[ae]\b", m.string, re.IGNORECASE)]
 
 
 # ------------------------------------------------- Tools -> Display (#131)

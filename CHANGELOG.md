@@ -7808,3 +7808,192 @@ summary box); then the blue frame on "Build / Edit Your Will" only, and
 every version of the list closed at first. Last ZIP: ok. The full
 multiverse timeline (every instalment with its shares and will-executors)
 is left for when the multiverse is enabled again.
+
+## 132. The will report is a clear PDF
+
+**Date:** 2026-10-13
+
+**Problem (the owner, after #131):** the will report of #92 is a page of
+78-column monospaced text ("old style" ASCII). It says everything, but it
+is not easy to read for an heir or a notary: no logo, no colours, no time
+line, the addresses squeezed under the names, the technical ids mixed with
+the parts everyone must understand. Saved as `.txt` and printed from
+another program, it also breaks its pages where that program wants.
+
+**What changed:**
+
+- `bal/core/report.py` (no Qt): `will_report` builds the data of the
+  report from the same sources as the Will tab, so the report, the will
+  summary and the Future view always agree: the summary (title and
+  colour), THE will in force of #129/#131 (`build_history` once, then
+  `build_future`), the heirs with their REAL amounts and shares (what the
+  will's transactions pay) and their full addresses, the total, one
+  transaction per will-executor with its own fee and full id, the
+  instalments (the levels of the version's tree: with multiverse each
+  instalment spends the change of the one before at every will-executor),
+  and the wills sent before that the will-executors still hold and that
+  can still be executed (the summary's `still_active`). Read only. The
+  will-executor's fee (`executor_fee`) moved here from the Will tab list,
+  which now uses it from here. The old text report (`inheritance_report`,
+  `paginate`, `report_text`, ...) was used only by the menu (not by the
+  command line): removed.
+- `bal/gui/qt/report_pages.py` (new): the A4 pages, drawn with QPainter in
+  a page space of points (A4 less 15 mm margins, fonts sized in points),
+  scaled to the device: the same result in the PDF and on every printer.
+  Page 1, for everyone: the SAFE21 logo (the logo only, without
+  "Heartbeat", owner), "Will plan" (IT "Piano ereditario", ES "Plan
+  sucesorio"), created on, wallet, plugin and Electrum versions; the
+  #92 privacy line; the state box in the colours of the will summary
+  (delivery to the heirs as UTC day and time with the time left, right
+  under it the delivery form "Fixed date" or "Period (renewable) — 24
+  months (2 years)", Check Alive, will-executors "3 of 3 received and
+  verified it", miner fee); the
+  #131 time line with its ruler of the years, scaled to the page width;
+  the heirs (name, real share, amount, the FULL address under each name)
+  and the total; the will-executors (one row each with a small square in
+  the colour of its state, two per row above four, and the #131
+  explanation line; 30 or 40 will-executors flow to the next page, a row
+  never split); how it works (the #131 sentence and the #92 paragraph; on
+  page 1 when it fits, otherwise at the top of the next page, never alone
+  on a page). Then the
+  technical details on a new page: locktime, miner fee, for each
+  will-executor its fee and the full txid, then "Wills sent before and
+  still held by the will-executors" or "None: the will-executors hold no
+  other will that can still be executed.". Every page: "PRIVATE — keep it
+  in a safe place" (IT "PRIVATO — conservalo in un luogo sicuro", ES
+  "PRIVADO — guárdalo en un lugar seguro") and "Page x/y"; after the first,
+  a small header (logo + subject). A row (an heir with its address, a
+  transaction with its id) is never split across pages; a section title
+  always stays with its first row.
+- Multiverse ready (the option is off today; built and tested with
+  synthetic data, owner's plan): page 1 also has the deliveries (number,
+  UTC date, share of each heir, "sent and verified x of N"), the time line
+  every delivery; "Will-executors per delivery" (a grid of squares,
+  will-executor x delivery, at most 40 rows then "(+N more)", with a
+  legend and the sentence on how the transactions multiply, with the real
+  counts: 9, 81, 729, 6561; it continues the page when it fits whole); the
+  technical details list the full ids of delivery 1 only, the later
+  deliveries as counts and states, with "The full list is in the will
+  file (Tools → Export)". The user reads "delivery" (IT "consegna", ES
+  "entrega") where the code says "instalment" (owner: "rata" sounded like
+  a loan).
+- The logo: `bal/icons/safe21-logo.png` (1200 x 204 px, 22 KB), made once
+  from `brand/safe21-logo-light.png` (the brand's own rendering of the
+  SVG); read with the plugin's `read_file` (the plugin is loaded from a
+  zip; `build_zip.py` ships it, checked). No QtSvg (not verified in
+  Electrum's Windows build). If the image cannot be read, the tile with
+  the keyhole and "SAFE"/"21" are drawn with lines from the SVG geometry.
+- `bal/gui/qt/report_actions.py`: the "Will report" menu has only "Save as
+  PDF…" and "Print…"; "Save as file…" (.txt) and its code are removed
+  (owner). Both commands draw the same pages, one per A4 sheet. Same rule
+  as before: only for a will in force and verified by every will-executor.
+- `bal/gui/qt/future_view.py`: `_font` also enlarges or reduces a font sized
+  in pixels (the report's fonts), so the time line keeps its bold and small
+  texts in the PDF. The time line is redrawn (owner's mockup, shared by
+  the Future view and the report, `timeline_layout` / `_paint_timeline`):
+  alternating light bands per year (grouped by 2/5/10 years on long
+  spans) with the year on top; a thick light axis with the stretch from
+  today to the next delivery in its #124 colour and a rounded "pill" with
+  the time left ("in 1 year and 4 months"; above the axis when it does
+  not fit on the stretch); today as a blue dot with "Today" and the UTC
+  date; the Check Alive as an orange-red flag (#D85A30, red once passed)
+  with a card ("Check Alive", the date, the hint), placed first so its
+  pole crosses nothing; numbered delivery circles (the next one bigger, in
+  its colour; later ones light green) with one card each below the axis
+  ("Delivery 1 · 01/03/2028", "22:00 UTC", "Luca 10% · John 10%"; a
+  single delivery: "Delivery to the heirs · <day>"), linked by leader
+  lines: one row when they fit, two staggered rows, otherwise a column;
+  the next delivery's card highlighted; a small legend (today, Check
+  Alive, next delivery, later deliveries, time left). Nothing overlaps
+  (tested for dense and sparse dates at 300-1600 px); the drawing grows
+  when needed. Still no flag in BASIC with a fixed date. Under the
+  delivery line the view also says the delivery form (it replaces the
+  "Period (renewable)" line).
+- `bal/core/future.py`: `Future.form` (`delivery.form_of` of the
+  settings) and `delivery_form_text` ("Fixed date" / "Period (renewable)
+  — 24 months (2 years)", the #127 msgids and `months_text`).
+- Catalogs: 14 new msgids (EN/IT/ES; "Delivery form" = IT "Forma di
+  consegna", ES "Forma de entrega"; "Delivery {}", "DELIVERIES", "next
+  delivery", "later deliveries", "time left" = IT "Consegna {}",
+  "CONSEGNE", "prossima consegna", "consegne successive", "tempo che
+  manca"; "Tools → Export" reads "Tools →
+  Esporta" / "Tools → Exportar": Electrum's menu shows "Tools" in every
+  language, and "Esporta" / "Exportar" are the plugin's own Export entry);
+  12 msgids of the text report and
+  "Save as file…" are now unused (obsolete). Every other text reuses
+  existing msgids (summary, report, #129, #131).
+- Manual (`docs/manual/README.md`, `manual.html`): "WILL tab: the will
+  report (PDF)"; `make-release.sh`: `tests/test_inheritance_report.py`.
+
+**Tests:** `tests/test_inheritance_report.py` rewritten (the tests of the
+78-column text, the CRLF file and the .txt name went with the .txt):
+flowkit wills with three fake will-executors, each with its own fee
+address, test password, fixed clock: the report data (real amounts equal
+to the transaction outputs, full addresses, total, one transaction per
+will-executor with its fee and full id, one instalment of three
+transactions), multiverse on (two instalments: 3 then 9 transactions, ids
+of delivery 1 only), a will sent before listed in the technical
+details, the fee; the pages: 2 pages, page 1 texts (title, state, UTC
+delivery with the time left, heirs, full addresses, total, will-executors
+line and explanation, how it works), page 2 every txid in full, footer and
+"Page x/y" on every page, everything inside the page and above the
+footer, no "Heartbeat" in the header, the logo drawn from the image and
+as the vector logo (teal pixel in the tile); synthetic: 30 will-executors
+and 40 will-executors (no row of big squares, each listed once with its
+small square, two per row on the same line, the title with the first row),
+9 will-executors x 4 deliveries (3 pages, "How it works" never alone,
+table, grid page with 36 squares and the counts, 9 txids only, counts of
+instalments 2-4, the Export sentence), a backup-only will; the menu has only "Save as
+PDF…" and "Print…"; saving writes one PDF page per report page; printing
+(printer dialog mocked) draws the same pages; the owner's rule; the
+"Will report" button of the Building Will dialog.
+`tests/test_gui_future_view.py`: the Check Alive pole crosses no date
+(five dates and widths, the flag on the left and on the right); the
+flag in orange-red (scene colour and painted pixels), no flag in BASIC with
+a fixed date, the delivery form line (fixed and period); the new time
+line: nothing overlaps (cards, today, pill, legend, the Check Alive pole
+and flag, the leader lines) for six cases (four deliveries in two years
+or in one year, one delivery far or near, no Check Alive, a 45-year span)
+at 300, 420, 520, 900 and 1600 px; numbered circles, the next delivery
+bigger and highlighted (painted), one card per delivery, the single
+delivery card, the legend; dense cards at 300 px go in a column and the
+drawing grows; no "instalment" / "rata" word in the catalogs.
+`tests/test_inheritance_report.py` also: the delivery form row right
+under the delivery (fixed, period 24 months), the orange-red flag on the
+page, no flag nor Check Alive row in BASIC with a fixed date.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed; the whole
+`tests/` directory once in the normal order (owner rule for a step that
+changes only the look): 1929 passed, 0 failed, 0 errors; golden files
+unchanged; no CRLF in the touched text files; catalogs checked against
+HEAD and a fresh extraction (only the 10 new entries, translated, no
+fuzzy; the 12 expected removals obsolete), `test_translations` /
+`test_i18n` pass; `build_zip.py` ships `bal/icons/safe21-logo.png` (zip
+listing). Offscreen previews in Italian: the real PDFs and a PNG of every
+page of a flowkit will (ADVANCED, three will-executors, two heirs) and of
+a synthetic multiverse will (9 will-executors x 4 instalments, Luca and
+John 10/10/15/15 %).
+After the owner's preview (big squares removed, the flag pole, "How it
+works" never alone, "Tools → Esporta"; owner rule for small fixes): the
+affected tests only (`test_inheritance_report`, `test_gui_future_view`,
+`test_core_future`: 52 passed), ruff clean, the catalogs checked again
+(RESULT OK); the previews made again, plus 30 will-executors (3 pages)
+and the Future view. Second follow-up (flag colour, delivery form): the
+affected tests (55 passed), ruff clean, catalogs RESULT OK; previews made
+again, plus a period-form report and the Future view in BASIC (no flag).
+Third follow-up ("delivery" instead of "instalment", the new time line):
+the affected tests (82 passed), ruff clean, catalogs RESULT OK (14 new
+msgids); all previews made again. Before the commit the whole `tests/`
+directory once in the normal order: 1965 passed, 0 failed, 0 errors;
+ruff clean; golden files unchanged; `test_translations` / `test_i18n`
+pass; the ZIP equals the one the owner tested.
+
+**Outcome:** DONE. The owner reviewed every page (2026-10-13) and asked:
+the SAFE21 logo without "Heartbeat"; the heirs' addresses on page 1; the
+small square next to each will-executor only (30 or more must fit); the
+"RISERVATO" line kept under the logo; the Check Alive flag in orange-red,
+none in BASIC with a fixed date; the delivery form in the status; a
+clearer time line ("stupiscimi": year bands, cards, time-left pill,
+legend); "Consegna" / "Delivery" instead of "Rata" / "Instalment" (and,
+for the future multiverse form, "Eredità scaglionata" / "Staged
+inheritance"). He tested the last ZIP on his wallet: ok.

@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 
 from ...core import will_state, will_versions
 from ...core.messages import protected_executor_message
+from ...core.report import executor_fee
 from .calendar import BalCalendarButton
 from .common import (
     N_,
@@ -598,23 +599,10 @@ class _TallCell:
 def _executor_fee(item):
     """The will-executor's own fee paid by ``item`` (sat), or ``None``.
 
-    The value of the output to the executor's fee address; when the
-    transaction has none (it cannot be read), the executor's base fee.
+    Moved to :func:`bal.core.report.executor_fee` (#132) so the PDF report
+    shows the same fee as this list.
     """
-    we = getattr(item, "we", None)
-    if not we:
-        return None
-    address = we.get("address")
-    try:
-        for out in item.tx.outputs():
-            if address and out.address == address:
-                return int(out.value)
-    except Exception:
-        pass
-    try:
-        return int(we.get("base_fee"))
-    except (TypeError, ValueError):
-        return None
+    return executor_fee(item)
 
 
 #: The look of the two main commands of the Will tab: bold text.
