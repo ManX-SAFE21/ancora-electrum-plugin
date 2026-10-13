@@ -549,18 +549,26 @@ Above the list, two buttons **List | Future** choose what the WILL tab
 shows. **List** is the will by versions described above. **Future** draws
 the will on a timeline: what happens if you do nothing more.
 
-- On top, a ruler of the **years** (1 January of each year; every 2, 5 or
-  10 years when the time is long), on the same scale as the dates below.
+- Light and white **bands**, one per year (or per 2, 5 or 10 years when
+  the time is long), with the year on top, on the same scale as the dates.
   Every date of the view is the **UTC** day and time ("27/08/2027 22:00
   UTC"), the same day as the summary box above.
-- **Today** on the left (blue dot), the **delivery to the heirs** on the
-  right, with its date and time and the time left ("in 4
-  months and 17 days"), in the colour of the time left: green, yellow (less
-  than 12 months), red (less than 6 months or passed). In ADVANCED mode the
-  two thresholds are those of the plugin settings.
-- The **Check Alive** as a flag at its date, when the will has one (not in
-  BASIC mode with a fixed date). For a renewable period, the period is
-  written under it.
+- **Today** on the left (blue dot, "Today" and the date). The stretch from
+  today to the next delivery is drawn thick in the colour of the time
+  left (green, yellow less than 12 months, red less than 6 months or
+  passed; in ADVANCED mode the thresholds are those of the plugin
+  settings), with a rounded label saying the time left ("in 4 months and
+  17 days").
+- The **Check Alive** as an orange-red flag with a small card (its date and
+  what happens that day), when the will has one (not in BASIC mode with a
+  fixed date).
+- Each **delivery** as a circle on the line (numbered when there are
+  several; the next one bigger and in its colour) with a card under it:
+  "Delivery 1 · 01/03/2028", the time ("22:00 UTC") and the shares of the
+  heirs. A will with one delivery shows one card, "Delivery to the heirs".
+  A small legend explains the symbols. Under the time line, the
+  **delivery form**: *Fixed date* or *Period (renewable) — 24 months (2
+  years)*.
 - The **will‑executors** as small squares: green = received and verified,
   grey = not yet (to sign, to send, to be verified), red = did not receive
   it. Many will‑executors wrap on several rows. Hover a square to see its
@@ -580,6 +588,38 @@ signed and sent. The last choice (List or Future) is remembered.
 
 **Tools → Display** (the Will‑Details window) stays, with the technical
 details; a note at its top points to the Future view.
+
+### WILL tab: the will report (PDF)
+
+**Will report** (in the WILL tab's tools menu and at the bottom of the
+"Check your will" window) offers two commands: **Save as PDF…** and
+**Print…**. Both make the same A4 pages, one report page per sheet. The
+report is available only when the will is in force and every
+will‑executor has received and verified it (otherwise the menu says why).
+The report contains no seed, no private keys and no passwords, but it says
+who receives your bitcoin, how much and when: keep it in a safe place.
+
+- **Page 1**, for everyone: the SAFE21 logo, *Will plan*, when it was made,
+  the wallet, the plugin and Electrum versions; the state of the will in
+  the colours of the summary box (delivery to the heirs as UTC day and time
+  with the time left, the delivery form, the Check Alive, the will‑executors, the miner fee);
+  the timeline of the Future view with its ruler of the years; the
+  **heirs** with their real share, the amount and the **full address**
+  under each name, then the total; the **will‑executors** (the list, a small
+  square in the colour of each one's state); **how it works**.
+- **Next page — technical details**: the locktime and the miner fee; for
+  each will‑executor its fee and the full id (txid) of its transaction;
+  then the wills sent before that the will‑executors still hold and that
+  can still be executed (or a line saying there are none).
+- Every page ends with *PRIVATE — keep it in a safe place* and *Page x/y*.
+- With **several deliveries** (multiverse, an option not active today)
+  page 1 also lists the deliveries (date, share of each heir, how many
+  will‑executors verified it), a grid shows each will‑executor for each
+  delivery, and the technical details list the ids of delivery 1 only
+  (the full list is in the will file, Tools → Export).
+
+The plain‑text report ("Save as file…") of earlier versions is gone: the
+PDF keeps its pages wherever it is opened or printed.
 
 ---
 
