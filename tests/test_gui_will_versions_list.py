@@ -30,7 +30,6 @@ Run (standalone or with pytest):
 """
 
 import os
-import re
 import sys
 import tempfile
 from unittest.mock import patch
@@ -42,13 +41,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import flowkit as fk
 from electrum.simple_config import SimpleConfig
-from PyQt6.QtCore import QLocale, QModelIndex
+from PyQt6.QtCore import QModelIndex
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
 import bal.gui.qt.lists as lists_mod
 import bal.gui.qt.plugin as plugin_mod
-from bal.gui.qt.lists import PreviewList, long_year_format
+from bal.gui.qt.lists import PreviewList
 from bal.gui.qt.plugin import Plugin
 from bal.gui.qt.theme import will_status_text
 
@@ -298,23 +297,28 @@ def test_two_line_executor_cell_is_tall_enough(make):
     s.host.close()
 
 
-def test_delivery_date_has_four_digit_year():
-    """Fix 3 (owner's mockup "27/02/2027 23:00"): the toolbar's locale
-    format with a four-digit year, local time, minutes."""
-    assert long_year_format("dd/MM/yy HH:mm") == "dd/MM/yyyy HH:mm"
-    assert long_year_format("M/d/yy h:mm Ap") == "M/d/yyyy h:mm Ap"
-    assert long_year_format("d MM yyyy HH:mm") == "d MM yyyy HH:mm"
-    before = QLocale()
+def test_delivery_date_is_the_short_utc_form():
+    """#134 (owner): the version header shows the short form of the one
+    date style, in UTC and saying so ("27 Feb 2027, 22:00 UTC"); before it
+    was the LOCAL time in the locale's format, without saying it. The
+    month follows the plugin's language (Italian "feb", "ore")."""
+    from bal import i18n
+
+    assert lists_mod._delivery_text(D) == "27 Feb 2027, 22:00 UTC"
+
+    class _Catalogs:
+        """The repo's catalogs, compiled as the ZIP has them."""
+
+        def read_file(self, path):
+            from build_zip import compile_catalog
+            root = os.path.join(os.path.dirname(__file__), os.pardir, "bal")
+            return compile_catalog(os.path.join(root, path).replace(".mo", ".po"))
+
     try:
-        for lang, pattern in (("it_IT", r"^\d\d/\d\d/2027 \d\d:\d\d$"),
-                              ("en_US", r"^\d{1,2}/\d{1,2}/2027 \d{1,2}:\d\d\W*[AP]M$")):
-            QLocale.setDefault(QLocale(lang))
-            lists_mod._DATE_FORMAT = None
-            text = lists_mod._delivery_text(D)
-            assert re.match(pattern, text), (lang, text)
+        i18n.set_language(_Catalogs(), "it_IT")
+        assert lists_mod._delivery_text(D) == "27 feb 2027, ore 22:00 UTC"
     finally:
-        QLocale.setDefault(before)
-        lists_mod._DATE_FORMAT = None
+        i18n.set_language(None, None)
 
 
 def test_the_backup_transaction_says_so(make):

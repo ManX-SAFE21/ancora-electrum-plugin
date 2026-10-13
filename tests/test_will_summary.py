@@ -507,3 +507,53 @@ if __name__ == "__main__":
         t()
         print("ok", t.__name__)
     print("{} tests passed".format(len(tests)))
+
+
+# ------------------------------------------- #134: complete the sending
+
+
+def test_in_force_at_three_of_five_complete_the_sending():
+    """#134, the owner's real test: version #20 at 5 will-executors, 3
+    signed, sent and verified, 2 signed (right-click Sign) but not sent; an
+    older will of the same date is still at the executors. The will IS in
+    force: "Will in force: complete the sending", the count, Send; no "the
+    will sent before stays in force" (false here) and no comparison rows."""
+    old = _item(*VERIFIED, "REPLACED", we=_we(0))
+    items = {"v{}".format(i): _item(*VERIFIED, we=_we(i)) for i in range(3)}
+    items.update({"s{}".format(i): _item("COMPLETE", we=_we(i)) for i in (3, 4)})
+    items["old"] = old
+    s = will_summary(items, 2, FIXED_SETTINGS, True, now=NOW,
+                     still_active=[(old, DELIVERY, "https://we0.test")],
+                     long_dates=True)
+    assert (s["state"], s["kind"]) == ("complete_send", "warn")
+    assert s["title"] == "Will in force: complete the sending"
+    assert s["note"] == ("3 of 5 will-executors received and verified it. "
+                         "Send it to the other 2 too, for more safety.")
+    assert (s["action"], s["action_text"]) == ("send", "Send")
+    assert [r["label"] for r in s["rows"]] == [
+        "Delivery to the heirs", "Will-Executor", "Heirs"]
+    assert _row(s, "Will-Executor")["text"] == "3 of 5 verified it · 2 to be sent"
+
+
+def test_complete_the_sending_singular_and_failed():
+    """One verified, one to send, one failed: the others are 2; one other
+    alone reads "the other one"."""
+    s = _summary({"a": _item(*VERIFIED, we=_we(0)), "b": _item("COMPLETE", we=_we(1)),
+                  "c": _item("COMPLETE", "PUSH_FAIL", we=_we(2))})
+    assert s["state"] == "complete_send"
+    assert s["note"] == ("1 of 3 will-executors received and verified it. "
+                         "Send it to the other 2 too, for more safety.")
+    s = _summary({"a": _item(*VERIFIED, we=_we(0)), "b": _item("COMPLETE", we=_we(1))})
+    assert s["note"].endswith("Send it to the other one too, for more safety.")
+
+
+def test_previous_will_note_only_for_another_date():
+    """#134: "the will sent before stays in force" only when that will has
+    another date than the one prepared or signed now."""
+    same = _item(*VERIFIED, "REPLACED", locktime=DELIVERY)
+    s = _summary({"new": _item("COMPLETE"), "old": same},
+                 still_active=[(same, DELIVERY, "https://we0.test")])
+    assert s["state"] == "to_send" and s["note"] is None
+    s = _summary({"new": _item(), "old": same},
+                 still_active=[(same, DELIVERY, "https://we0.test")])
+    assert s["state"] == "to_sign" and s["note"] is None

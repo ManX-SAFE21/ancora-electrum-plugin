@@ -47,6 +47,8 @@ _EXECUTOR_TEXTS = {
     "to_send": N_("to send"),
     "to_sign": N_("to sign"),
     "failed": N_("not received"),
+    # #134: a deselected will-executor that never received the will.
+    "deselected": N_("deselected: not sent"),
 }
 
 # The reserved name prefix of the will-executor pseudo-heirs (their fee
@@ -257,23 +259,27 @@ def _tx_order(tx):
 
 def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
                 wallet_name="", plugin_version="", electrum_version="",
-                still_active=None, now=None, created=None, warn_months=None):
+                still_active=None, now=None, created=None, warn_months=None,
+                selected=None):
     """The :class:`WillReport` of the wallet's will (see the module docstring).
 
     ``heirs``: the Heirs tab (only its size, for the summary); ``now``: the
     clock of the summary and the time line (tests); ``created``: the time
-    printed as "Created on" (default: now, local). Raises what the data
-    raises: the GUI catches it and says the report could not be prepared.
+    printed as "Created on" (default: now, local); ``selected``: the URLs of
+    the will-executors selected now (#134, ``summary.selected_urls``): a
+    deselected one that never received the will is "deselected: not sent".
+    Raises what the data raises: the GUI catches it and says the report
+    could not be prepared.
     """
     summary = will_summary(
         willitems, len(heirs or {}), will_settings, is_basic_mode, now=now,
-        still_active=still_active, warn_months=warn_months,
+        still_active=still_active, warn_months=warn_months, selected=selected,
     ) or {}
     will = dict(willitems or {})
     history = will_versions.build_history(will, wallet)
     future = core_future.build_future(
         will, will_settings, is_basic_mode, now=now, warn_months=warn_months,
-        wallet=wallet, history=history,
+        wallet=wallet, history=history, selected=selected,
     )
     fee = (will_settings or {}).get("baltx_fees")
     report = WillReport(
@@ -294,7 +300,7 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
             report.instalments.append(ReportInstalment(
                 number=number, locktime=locktime,
                 heirs=list(inst.heirs) if inst else [],
-                tx_count=len(items), states=executor_states(items),
+                tx_count=len(items), states=executor_states(items, selected),
             ))
         if levels:
             report.first_txs = sorted(
@@ -312,7 +318,7 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
 
 # ---------------------------------------------------------------- gating
 
-def report_block_reason(summary, willitems=None):
+def report_block_reason(summary, willitems=None, selected=None):
     """Why the report cannot be made now, or ``None`` when it can.
 
     Owner's rule (#92): only for a will in force and verified: the green
@@ -321,10 +327,11 @@ def report_block_reason(summary, willitems=None):
     ``willitems`` has verified it (the green state also covers "received,
     to be verified"). A will with only a backup transaction (no
     will-executor) is allowed once signed, and the report says that nobody
-    else holds it.
+    else holds it. ``selected`` (#134): a deselected will-executor that never
+    received the will is not required.
     """
-    states = executor_states(Will.only_valid_list(willitems or {}))
-    verified = all(state == "verified" for state in states.values())
+    states = executor_states(Will.only_valid_list(willitems or {}), selected)
+    verified = all(state in ("verified", "deselected") for state in states.values())
     if summary and summary.get("state") == "ok" and verified:
         return None
     return _(

@@ -14,10 +14,9 @@ construction) for all business actions, so the heavy logic stays in ``window``
 and ``dialogs``.
 """
 
-import re
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QItemSelectionModel, QLocale, QRect
+from PyQt6.QtCore import QItemSelectionModel, QRect
 from PyQt6.QtGui import QFont, QFontMetrics
 from PyQt6.QtWidgets import (
     QHeaderView,
@@ -27,9 +26,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 
-from ...core import will_state, will_versions
+from ...core import datetext, will_state, will_versions
 from ...core.messages import protected_executor_message
 from ...core.report import executor_fee
+from ...core.summary import executor_states
 from .calendar import BalCalendarButton
 from .common import (
     N_,
@@ -44,8 +44,6 @@ from .common import (
     QAbstractItemView,
     QApplication,
     QColor,
-    QDateTime,
-    QDateTimeEdit,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -541,35 +539,17 @@ class _VersionHeader(QHeaderView):
 # theme is.
 _VERSION_ROW_BG = "#f2f2f2"
 
-# The display format of the toolbar's date field, read once (see
-# _delivery_text).
-_DATE_FORMAT = None
-
-
-def long_year_format(fmt):
-    """``fmt`` (a Qt date format) with a four-digit year (#129, owner).
-
-    The locale's short format often has a two-digit year ("dd/MM/yy HH:mm"
-    in Italian): the owner's mockup reads "27/02/2027 23:00". Only a lone
-    ``yy`` is widened; ``yyyy`` stays as it is.
-    """
-    return re.sub(r"(?<!y)yy(?!y)", "yyyy", fmt)
-
 
 def _delivery_text(locktime):
-    """The delivery date of a version row (#129).
+    """The delivery date of a version row: "13 Oct 2028, 00:00 UTC".
 
-    The toolbar's date field (``LockTimeDateEdit``, a ``QDateTimeEdit``)
-    shows the local time in the locale's short format, with minutes; the
-    same format is used here (day/month order of the locale), with a
-    four-digit year (:func:`long_year_format`).
+    CHANGELOG #134 (owner): the short form of the one date style
+    (``bal.core.datetext``). Before, the toolbar's LOCAL time in the
+    locale's format ("13/10/2028 02:00"), without saying it was local,
+    while the will summary above showed the UTC day.
     """
-    global _DATE_FORMAT
-    if _DATE_FORMAT is None:
-        _DATE_FORMAT = long_year_format(QDateTimeEdit().displayFormat())
     try:
-        moment = QDateTime.fromSecsSinceEpoch(int(locktime))
-        return QLocale().toString(moment, _DATE_FORMAT)
+        return datetext.utc_text(int(locktime), short=True)
     except Exception:
         return str(BalTimestamp(locktime))
 
@@ -619,6 +599,20 @@ FRAMED_BUTTON_STYLE = (
     " border:1px solid #9EC3EE; border-radius:6px; padding:4px 12px;}"
     "QPushButton:hover{background-color:#DCEBFB;}"
     "QPushButton:pressed{background-color:#CDE2F8;}"
+)
+
+#: "Build / Edit Your Will" since the owner's ZIP test of #134: it looks
+#: like the UNCHECKED quick-choice buttons of the BASIC wizard's first page
+#: (white, thin light blue border, rounded corners, bold), replacing the
+#: #133 light blue background, which now marks the wizard's primary button
+#: (:data:`FRAMED_BUTTON_STYLE`, its Next). Same padding as before, so the
+#: button keeps its size (icon 28 px, height 40); hover and pressed keep a
+#: light feedback.
+MAIN_BUTTON_STYLE = (
+    "QPushButton{font-weight:bold; color:#1F2328; background-color:#FFFFFF;"
+    " border:1px solid #9EC3EE; border-radius:6px; padding:4px 12px;}"
+    "QPushButton:hover{background-color:#EAF3FD;}"
+    "QPushButton:pressed{background-color:#DCEBFB;}"
 )
 
 
@@ -1069,9 +1063,40 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             # A draft, or a version no will-executor ever received (#129).
             parts.append(_("not sent"))
         elif version.executors_total:
-            parts.append(_("sent and verified {} of {}").format(
-                version.executors_verified, version.executors_total))
+            parts.append(self._sent_text(version))
         return number, head, " · ".join(parts)
+
+    def _sent_text(self, version):
+        """"sent and verified 3 of 3 · 2 deselected" (#134).
+
+        The will in force follows the rule of the will summary
+        (``summary.executor_states`` with the will-executors selected now):
+        a deselected will-executor that never received the will is not
+        counted, and is named after the count. The other versions are
+        history: their own counts, as built (#129).
+        """
+        plain = _("sent and verified {} of {}").format(
+            version.executors_verified, version.executors_total)
+        if version.state != will_versions.VERSION_IN_FORCE:
+            return plain
+        try:
+            selected = self.bal_window.selected_willexecutors()
+        except Exception:
+            selected = None
+        if not isinstance(selected, (set, frozenset)):
+            return plain
+        will = getattr(self.bal_window, "willitems", None) or {}
+        items = {wid: will[wid] for wid in version.items if wid in will}
+        states = executor_states(items, selected)
+        deselected = sum(1 for st in states.values() if st == "deselected")
+        counted = [st for st in states.values() if st != "deselected"]
+        if not deselected or not counted:
+            return plain
+        text = _("sent and verified {} of {}").format(
+            sum(1 for st in counted if st == "verified"), len(counted))
+        more = (_("1 deselected") if deselected == 1
+                else _("{} deselected").format(deselected))
+        return text + " · " + more
 
     def _spanned_row(self, kind, key, head, sub, state="", colour="#555555",
                      background=_VERSION_ROW_BG, number=""):
@@ -1526,8 +1551,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         """A main toolbar command: bold name next to a larger icon.
 
         Used for the Wizard and the Check (CHANGELOG #95), so the two main
-        commands look the same; ``framed`` adds the light blue background of
-        :data:`FRAMED_BUTTON_STYLE` (#131: the Wizard only).
+        commands look the same; ``framed`` (the Wizard only, #131) gives it
+        the look of the wizard's quick-choice buttons,
+        :data:`MAIN_BUTTON_STYLE` (#134).
         """
         button = QPushButton("  {}".format(text))
         button.setIcon(
@@ -1535,7 +1561,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         )
         button.setIconSize(QSize(28, 28))
         button.setMinimumHeight(40)
-        button.setStyleSheet(FRAMED_BUTTON_STYLE if framed else BIG_BUTTON_STYLE)
+        button.setStyleSheet(MAIN_BUTTON_STYLE if framed else BIG_BUTTON_STYLE)
         button.setToolTip(tooltip)
         button.clicked.connect(slot)
         return button
@@ -2035,8 +2061,26 @@ class WillExecutorListWidget(MyTreeView):
 
 
 
+#: The "Add transactions without willexecutor" row under the buttons (#134):
+#: small grey text, a secondary option.
+NO_EXECUTOR_ROW_STYLE = "QLabel{color:#6A737D;}"
+
+
 class WillExecutorWidget(QWidget, MessageBoxMixin):
     def __init__(self, parent, bal_window, willexecutors=None):
+        """The will-executor list with its buttons and the "without
+        will-executor" option.
+
+        Shared by the Tools menu window (``WillExecutorDialog``) and the
+        wizards, so they look the same. CHANGELOG #134 changed only the
+        look (owner, option A): the size line is hidden while it is empty
+        (it is never filled today; kept for compatibility), the rows have
+        alternating colours, and the "Add transactions without willexecutor"
+        row moved below the buttons in small grey text, hidden in BASIC mode
+        (its value is kept). Every column, button and setting is unchanged. (The columns already fit their content:
+        Electrum's ``MyTreeView`` sizes them so, only the address column
+        stretches.)
+        """
         self.bal_window = bal_window
         self.bal_plugin = bal_window.bal_plugin
         self._bal_parent = parent
@@ -2049,13 +2093,19 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
 
         self.size_label = QLabel()
         self.will_executor_list_widget = WillExecutorListWidget(self)
+        self.will_executor_list_widget.setAlternatingRowColors(True)
 
         vbox = QVBoxLayout(self)
         vbox.addWidget(self.size_label)
+        # An empty line only takes room: shown again when it has a text.
+        self.size_label.setVisible(bool(self.size_label.text()))
 
         widget = QWidget()
         hbox = QHBoxLayout(widget)
-        hbox.addWidget(QLabel(_("Add transactions without willexecutor")))
+        hbox.setContentsMargins(0, 0, 0, 0)
+        no_executor_label = QLabel(_("Add transactions without willexecutor"))
+        no_executor_label.setStyleSheet(NO_EXECUTOR_ROW_STYLE)
+        hbox.addWidget(no_executor_label)
         heir_no_willexecutor = BalCheckBox(self.bal_plugin.NO_WILLEXECUTOR)
         hbox.addWidget(heir_no_willexecutor)
         spacer_widget = QWidget()
@@ -2063,7 +2113,16 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         hbox.addWidget(spacer_widget)
-        vbox.addWidget(widget)
+        # Its own height only: under the buttons it must not take the room
+        # the list leaves (its spacer expands in both directions).
+        widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.no_executor_row = widget
+        # #134 (owner): BASIC hides the option, ADVANCED shows it. Only
+        # hidden: the stored NO_WILLEXECUTOR is never changed, so a wallet
+        # that already uses it keeps working (the rule of the period form).
+        # Read when the widget is built: a window opened after a mode switch
+        # follows it.
+        widget.setVisible(not self.bal_plugin.is_basic_mode())
 
         vbox.addWidget(self.will_executor_list_widget)
         buttonbox = QHBoxLayout()
@@ -2121,6 +2180,8 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         select_btn.setMenu(select_menu)
 
         vbox.addLayout(buttonbox)
+        # #134: the option comes after the buttons (a secondary setting).
+        vbox.addWidget(self.no_executor_row)
         # self.will_executor_list_widget.update()
 
     def add(self, edit_key=None):

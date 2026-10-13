@@ -133,7 +133,7 @@
    ],
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2032-09-23</b> (in 5 years and 11 months)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
    ],
    "steps": [
     [
@@ -308,7 +308,7 @@
    "heirs": null,
    "result": [
     "warn",
-    "<b>Interrupted: the old will was not invalidated, nothing was changed.</b>"
+    "<b>Interrupted: the old will was not invalidated. Your later date (23 September 2033, 00:00 UTC) was not applied: the will in force needs the paid invalidation first. When you are ready, choose it again.</b>"
    ],
    "steps": [
     [
@@ -337,7 +337,7 @@
      "2/2"
     ]
    ],
-   "will_now": "Your will is in force — Delivery to the heirs: 2032-09-23"
+   "will_now": "Your will is in force — Delivery to the heirs: 23 September 2032, 00:00 UTC"
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
@@ -346,7 +346,7 @@
   ],
   "settings": {
    "baltx_fees": 13,
-   "locktime": "2033-09-23",
+   "locktime": "2032-09-23",
    "threshold": "-180d"
   },
   "stored": {
@@ -368,12 +368,7 @@
  },
  {
   "action": "check",
-  "broadcasts": [
-   [
-    "invalidation(dialog)",
-    "T5"
-   ]
-  ],
+  "broadcasts": [],
   "dialog_events": [
    "close-button"
   ],
@@ -391,46 +386,10 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>Postponed: invalidating old will</b>",
-   "Invalidating old will:\t<b>Wait</b>",
-   "Invalidating old will:\t<b>Broadcasting</b>",
-   "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Please wait 10secs",
-   "Please wait 9secs",
-   "Please wait 8secs",
-   "Please wait 7secs",
-   "Please wait 6secs",
-   "Please wait 5secs",
-   "Please wait 4secs",
-   "Please wait 3secs",
-   "Please wait 2secs",
-   "Please wait 1secs",
-   "Checking variables:\t<b>Wait</b>",
-   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>Old will invalidated: preparing the new will with the new date.</b>",
-   "Building your will:\t<b>Wait</b>",
-   "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Heir:\t<font color=#05ad05><b>alice</b></font>",
-   "Heir:\t<font color=#05ad05><b>bob</b></font>",
-   "Signing your will:\t<b>Wait</b>",
-   "Signing your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Wait</b>",
-   "Broadcasting your will to executors:\t<b>Broadcasting</b>",
-   "Broadcasting your will to executors:\t<b>Broadcasting 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
-   "https://we0.test : <font color='#05ad05'><b>Ok</b></font>",
-   "Broadcasting your will to executors:\t<b>Broadcasting 1/2 (0s / 20s) — waiting for: we1.test</b>",
-   "https://we1.test : <font color='#05ad05'><b>Ok</b></font>",
-   "Broadcasting your will to executors:\t<b>Broadcasting 2/2 (0s / 20s)</b>",
-   "Broadcasting your will to executors:\t<b>2/2 (0s)</b>",
-   "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Verifying your will with the executors:\t<b>Wait</b>",
-   "Verifying your will with the executors:\t<b>Verifying 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
-   "checked https://we0.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
-   "Verifying your will with the executors:\t<b>Verifying 1/2 (0s / 20s) — waiting for: we1.test</b>",
-   "checked https://we1.test - T4 : <font color='#05ad05'><b>Ok</b></font>",
-   "Verifying your will with the executors:\t<b>Verifying 2/2 (0s / 20s)</b>",
-   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -444,8 +403,8 @@
     "statuses": [
      "CHECKED",
      "COMPLETE",
-     "INVALIDATED",
-     "PUSHED"
+     "PUSHED",
+     "VALID"
     ],
     "tx": "T1"
    },
@@ -457,70 +416,22 @@
     "statuses": [
      "CHECKED",
      "COMPLETE",
-     "INVALIDATED",
-     "PUSHED"
+     "PUSHED",
+     "VALID"
     ],
     "tx": "T2"
-   },
-   {
-    "executor": "https://we0.test",
-    "fee": 13,
-    "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2033-09-23",
-    "statuses": [
-     "CHECKED",
-     "COMPLETE",
-     "PUSHED",
-     "VALID"
-    ],
-    "tx": "T3"
-   },
-   {
-    "executor": "https://we1.test",
-    "fee": 13,
-    "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2033-09-23",
-    "statuses": [
-     "CHECKED",
-     "COMPLETE",
-     "PUSHED",
-     "VALID"
-    ],
-    "tx": "T4"
    }
   ],
   "labels": {
    "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction",
-   "T4": "Safe21 Heartbeat backup transaction"
+   "T2": "Safe21 Heartbeat backup transaction"
   },
   "popups": [],
-  "pushed": [
-   [
-    "https://we0.test",
-    "T3"
-   ],
-   [
-    "https://we1.test",
-    "T4"
-   ]
-  ],
-  "questions": [
-   [
-    "password",
-    "Invalidate your old will"
-   ],
-   [
-    "password",
-    "Sign your will"
-   ]
-  ],
+  "pushed": [],
+  "questions": [],
   "report": {
    "boxes": {
-    "changes": [
-     "Old will invalidated: preparing the new will with the new date."
-    ],
+    "changes": [],
     "problems": [],
     "warnings": []
    },
@@ -540,21 +451,10 @@
      ]
     ]
    ],
-   "heirs": [
-    [
-     "alice",
-     597200,
-     60.00002009377766
-    ],
-    [
-     "bob",
-     398133,
-     39.99997990622234
-    ]
-   ],
+   "heirs": null,
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2033-09-23</b> (in 6 years and 11 months)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
    ],
    "steps": [
     [
@@ -564,18 +464,18 @@
     ],
     [
      "prepare",
-     "ok",
-     "updated"
+     "skip",
+     "not needed"
     ],
     [
      "sign",
-     "ok",
-     "signed"
+     "skip",
+     "not needed"
     ],
     [
      "send",
-     "ok",
-     "2/2"
+     "skip",
+     "not needed"
     ],
     [
      "verify",
@@ -587,64 +487,33 @@
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>Old will invalidated: preparing the new will with the new date.</b>",
-   "Invalidating old will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Heir:\t<font color=#05ad05><b>alice</b></font>",
-   "Heir:\t<font color=#05ad05><b>bob</b></font>",
-   "Signing your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "https://we0.test : <font color='#05ad05'><b>Ok</b></font>",
-   "https://we1.test : <font color='#05ad05'><b>Ok</b></font>",
-   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "checked https://we0.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
-   "checked https://we1.test - T4 : <font color='#05ad05'><b>Ok</b></font>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Signing your will:\t<b>Nothing to do</b>",
+   "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
   ],
   "settings": {
    "baltx_fees": 13,
-   "locktime": "2033-09-23",
+   "locktime": "2032-09-23",
    "threshold": "-180d"
   },
   "stored": {
    "T1": [
     "CHECKED",
     "COMPLETE",
-    "INVALIDATED",
-    "PUSHED"
-   ],
-   "T2": [
-    "CHECKED",
-    "COMPLETE",
-    "INVALIDATED",
-    "PUSHED"
-   ],
-   "T3": [
-    "CHECKED",
-    "COMPLETE",
     "PUSHED",
     "VALID"
    ],
-   "T4": [
+   "T2": [
     "CHECKED",
     "COMPLETE",
     "PUSHED",
     "VALID"
    ]
   },
-  "verified": [
-   [
-    "https://we0.test",
-    "T3"
-   ],
-   [
-    "https://we1.test",
-    "T4"
-   ]
-  ],
+  "verified": [],
   "window_events": [
    "history-refresh"
   ]

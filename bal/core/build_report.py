@@ -47,7 +47,7 @@ BOXES = ("changes", "warnings", "problems")
 #: for the will by the Verification step, no answer yet, #84b-2).
 EXECUTOR_STATES = (
     "waiting", "received", "verifying", "verified", "failed", "timeout",
-    "to_sign", "to_send", "to_verify",
+    "to_sign", "to_send", "to_verify", "deselected",
 )
 
 

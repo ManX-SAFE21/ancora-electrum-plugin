@@ -110,8 +110,19 @@ def _colour_pixels(image, colour):
 
 
 def _date(ts):
-    """A date as the view writes it (UTC day and time, #131)."""
-    return fv.utc_date_text(ts)
+    """A date in the view's texts: the long form of the one date style
+    (#134, "27 February 2027, 22:00 UTC")."""
+    from bal.core import datetext
+
+    return datetext.utc_text(ts)
+
+
+def _short(ts):
+    """A date on the view's time line: the short form (#134, "10 Oct
+    2026, 12:00 UTC")."""
+    from bal.core import datetext
+
+    return datetext.utc_short(ts)
 
 
 def test_selector_switches_and_is_remembered(make):
@@ -168,7 +179,7 @@ def test_will_in_force_basic_fixed_date(make):
     _grab(view)
     texts = view.texts()
     assert texts[0] == "Your will is in force"
-    assert _date(fk.FIXED_NOW) in texts and "Today" in texts
+    assert _short(fk.FIXED_NOW) in texts and "Today" in texts
     assert "Delivery to the heirs: {} (in 4 months and 17 days)".format(_date(D)) in texts
     assert SENTENCE + "{} the bitcoin will go to: alice 60%, bob 40%".format(_date(D)) in texts
     assert "Will-Executor: 3 of 3 received and verified it" in texts
@@ -193,7 +204,7 @@ def test_advanced_shows_the_check_alive_and_tooltips(make):
     check = fk.ts(2027, 1, 28)
     assert ("Check Alive: {} — from that day the wallet asks you to renew it"
             .format(_date(check))) in texts
-    assert view.scene["check_alive"]["date"] == _date(check)
+    assert view.scene["check_alive"]["date"] == _short(check)
     # #132 (owner): the flag, its pole and its date in orange-red.
     assert view.scene["check_alive"]["colour"] == fv.CHECK_ALIVE_COLOUR == "#D85A30"
     assert _colour_pixels(_grab(view).toImage(), fv.CHECK_ALIVE_COLOUR) > 40
@@ -244,7 +255,7 @@ def test_errors_never_reach_the_gui(make, monkeypatch):
     monkeypatch.setattr(core_future, "build_future", boom)
     view = _view(s)
     _grab(view)
-    assert view.texts() == ["Today", _date(fk.FIXED_NOW)]
+    assert view.texts() == ["Today", _short(fk.FIXED_NOW)]
 
 
 def test_busy_shows_the_operation_in_progress(make):
@@ -330,11 +341,16 @@ def test_dates_are_the_utc_day(make):
     s = make()
     s.check()
     texts = _view(s).texts()
-    # The card of the single delivery: the UTC day in its title, the time under it.
-    assert "Delivery to the heirs · 27/02/2027" in texts and "22:00 UTC" in texts
-    assert "Delivery to the heirs: 27/02/2027 22:00 UTC (in 4 months and 17 days)" in texts
-    assert any(t.startswith(SENTENCE + "27/02/2027 22:00 UTC ") for t in texts)
-    assert "10/10/2026 12:00 UTC" in texts
+    # #134 (owner): the Will tab's Future view uses the one date style; the
+    # card of the single delivery: its name as the title, the whole short
+    # date under it (a day in the title was cut on narrow cards). (The
+    # fv.utc_date_text above stays for the PDF report, #137.)
+    assert "Delivery to the heirs" in texts and "27 Feb 2027, 22:00 UTC" in texts
+    assert not any(t.startswith("Delivery to the heirs · ") for t in texts)
+    assert ("Delivery to the heirs: 27 February 2027, 22:00 UTC (in 4 months "
+            "and 17 days)") in texts
+    assert any(t.startswith(SENTENCE + "27 February 2027, 22:00 UTC ") for t in texts)
+    assert "10 Oct 2026, 12:00 UTC" in texts
 
 
 def _labels_apart(ticks, label_w):
@@ -434,20 +450,38 @@ TIMELINES = {
 }
 
 
-def _layout(case, width):
-    """The time line layout of ``case`` at ``width`` px."""
+def _layout(case, width, view=False):
+    """The time line layout of ``case`` at ``width`` px.
+
+    ``view``: False the report's dates; True the Will tab's date style
+    (#134, ``fv.view_scene``); "earlier" / "later": the Will tab with a
+    prepared will not sent yet, one year before or after the delivery (the
+    grey view with the ghost marker, #134); "faded": a will signed but not
+    sent (#134: grey and faded; its overlay is not part of the layout and
+    is checked by its own test).
+    """
     dates, check = TIMELINES[case]
-    scene = fv.future_scene(_stage_model(dates, check))
+    model = _stage_model(dates, check)
+    if view in ("earlier", "later"):
+        shift = -365 * fk.DAY if view == "earlier" else 365 * fk.DAY
+        model.pending_locktime = max(int(dates[0]) + shift, int(fk.FIXED_NOW) + fk.DAY)
+    if view == "faded":
+        # Signed but not sent: no will-executor received it (#134).
+        model.executors = [core_future.ExecutorMark("https://we{}.test".format(i), "to_send")
+                           for i in range(3)]
+    scene = fv.view_scene(model) if view else fv.future_scene(model)
     return scene, fv.timeline_layout(scene, 16.0, 0.0, width - 32.0, QApplication.font())
 
 
+@pytest.mark.parametrize("view", [False, True, "earlier", "later", "faded"])
 @pytest.mark.parametrize("width", [300, 420, 520, 900, 1600])
 @pytest.mark.parametrize("case", sorted(TIMELINES))
-def test_timeline_nothing_overlaps(case, width):
+def test_timeline_nothing_overlaps(case, width, view):
     """#132 (owner's mockup): no card, label, pill or legend entry overlaps
     another; the Check Alive pole and flag cross none of them; the leader
-    lines cross no other card; everything stays inside the width."""
-    _scene, lay = _layout(case, width)
+    lines cross no other card; everything stays inside the width. #134:
+    in the report's dates and in the Will tab's one date style."""
+    _scene, lay = _layout(case, width, view)
     boxes = fv.timeline_boxes(lay)
     for kind, rect in boxes:
         assert rect.left() >= 16.0 - 0.5 and rect.right() <= width - 16.0 + 0.5, (kind, rect)
@@ -596,3 +630,134 @@ def test_tooltip_point_outside_everything(make):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def _pending_model(pending):
+    """A will in force on 26/02/2031 with a prepared will for ``pending``."""
+    model = _stage_model([fk.ts(2031, 2, 26)], None)
+    model.pending_locktime = pending
+    model.note = "Until you sign and send it, the will sent before stays in force: x."
+    return model
+
+
+def test_prepared_will_greys_the_view():
+    """#134 (owner): a prepared will not sent yet: grey title "Current
+    situation at the will-executors", the info box with both dates, every
+    colour of the will in force grey, the prepared date as a dashed ghost
+    "prepared, not sent"; the italic note left out (the box says it)."""
+    model = _pending_model(fk.ts(2028, 10, 13))
+    scene = fv.view_scene(model)
+    assert scene["title"] == "Current situation at the will-executors"
+    assert scene["title_kind"] == "info"
+    assert scene["info"] == (
+        "This is what the will-executors hold today (delivery 26 February "
+        "2031, 00:00 UTC). The prepared will (delivery 13 October 2028, 00:00 "
+        "UTC) is not signed and sent yet: when you sign and send it, this view "
+        "is in colour again with the new date.")
+    assert scene["level_colour"] == fv._GHOST_GREY
+    assert scene["marker"]["colour"] == fv._GHOST_GREY
+    assert all(c in (None, fv._GHOST_GREY) for c, _t, _tip, _k in scene["lines"])
+    assert scene["ghost"] == {"at": fk.ts(2028, 10, 13),
+                              "date": "13 Oct 2028, 00:00 UTC",
+                              "left": "prepared, not sent"}
+    assert scene["note"] == ""
+    texts = fv.scene_texts(scene)
+    assert "13 Oct 2028, 00:00 UTC" in texts and "prepared, not sent" in texts
+    lay = fv.timeline_layout(scene, 16.0, 0.0, 868.0, QApplication.font())
+    assert [c["kind"] for c in lay["circles"]].count("draft") == 1
+    assert any(a["kind"] == "draft" for a in lay["above"])
+    pixmap = QPixmap(900, 700)
+    pixmap.fill(QColor("#ffffff"))
+    painter = QPainter(pixmap)
+    try:
+        bottom, _hits = fv.paint_future(painter, QRectF(0, 0, 900, 700), scene)
+    finally:
+        painter.end()
+    assert 0 < bottom < 700
+
+
+def test_colours_come_back_without_a_different_prepared_will():
+    """No prepared will, or one with the same date as the will in force:
+    the normal colours and title; the PDF report's scene is never grey."""
+    normal = fv.view_scene(_stage_model([fk.ts(2031, 2, 26)], None))
+    assert normal["title"] == "Your will is in force" and "info" not in normal
+    same = fv.view_scene(_pending_model(fk.ts(2031, 2, 26)))
+    assert same["title"] == "Your will is in force" and not same.get("ghost")
+    report = fv.future_scene(_pending_model(fk.ts(2028, 10, 13)))
+    assert report["title"] == "Your will is in force" and not report.get("ghost")
+    assert report["note"]
+
+
+def _marks(*states):
+    """Executor marks of three fake will-executors."""
+    return [core_future.ExecutorMark("https://we{}.test".format(i), st)
+            for i, st in enumerate(states)]
+
+
+@pytest.mark.parametrize("states, faded", [
+    (("verified", "verified", "verified"), False),
+    (("verified", "failed", "to_verify"), False),
+    (("to_send", "to_send", "to_send"), True),
+    (("to_sign", "to_sign", "to_sign"), True),
+    (("to_verify", "failed", "to_send"), True),
+])
+def test_colour_only_when_one_executor_verified_it(states, faded):
+    """#134 (owner): colours only when at least one will-executor received
+    and verified the will shown; else grey, faded, with the overlay. The
+    title keeps its text (grey). The report's scene never changes."""
+    model = _stage_model([fk.ts(2031, 2, 26)], None)
+    model.executors = _marks(*states)
+    scene = fv.view_scene(model)
+    assert fv.nothing_received(model) is faded
+    assert bool(scene.get("faded")) is faded
+    if faded:
+        assert scene["overlay"] == ("NOT SENT TO THE WILL-EXECUTORS YET",
+                                    "Until you send it, nothing happens on the date.")
+        # Signed, never sent (every executor "to send" or failed): its own
+        # title (owner, #134); otherwise the title keeps its text, grey.
+        signed_only = set(states) <= {"to_send", "failed"}
+        title = "Will signed, not sent yet" if signed_only else "Your will is in force"
+        assert scene["title"] == title and scene["title_kind"] == "info"
+        assert scene["level_colour"] == fv._GHOST_GREY
+        assert "NOT SENT TO THE WILL-EXECUTORS YET" in fv.scene_texts(scene)
+    else:
+        assert "overlay" not in scene and scene["title_kind"] == "ok"
+    assert "overlay" not in fv.future_scene(model)
+
+
+def test_draft_only_and_backup_only():
+    """A draft only: faded with the overlay, its own title and note kept. A
+    will with no will-executor at all (the backup transaction): colours."""
+    draft = core_future.Future(state=core_future.STATE_DRAFT_ONLY, now=fk.FIXED_NOW,
+                               title="No will in force",
+                               note="Will prepared: it must be signed and sent",
+                               draft_locktime=fk.ts(2031, 2, 26))
+    scene = fv.view_scene(draft)
+    assert scene["faded"] and scene["title"] == "No will in force"
+    assert scene["note"] == "Will prepared: it must be signed and sent"
+    backup = _stage_model([fk.ts(2031, 2, 26)], None)
+    assert backup.executors == [] and not fv.view_scene(backup).get("faded")
+
+
+@pytest.mark.parametrize("width", [300, 420, 520, 900, 1600])
+def test_overlay_fits_inside_the_view(width):
+    """The overlay is centred on the axis, inside the width (it wraps) and
+    under the title, at 300 to 1600 px; the faded scene paints."""
+    model = _stage_model([fk.ts(2031, 2, 26)], fk.ts(2030, 11, 28))
+    model.executors = _marks("to_send", "to_send", "to_send")
+    scene = fv.view_scene(model)
+    base = QApplication.font()
+    lay = fv.timeline_layout(scene, 16.0, 40.0, width - 32.0, base)
+    ov = fv.overlay_layout(scene, 16.0, width - 32.0, 40.0, lay["axis_y"], base)
+    rect = ov["rect"]
+    assert rect.left() >= 16.0 - 0.5 and rect.right() <= width - 16.0 + 0.5
+    assert rect.top() >= 40.0
+    assert rect.top() <= lay["axis_y"] <= rect.bottom() or rect.top() == 40.0
+    pixmap = QPixmap(width, 1200)
+    pixmap.fill(QColor("#ffffff"))
+    painter = QPainter(pixmap)
+    try:
+        bottom, _hits = fv.paint_future(painter, QRectF(0, 0, width, 1200), scene)
+    finally:
+        painter.end()
+    assert 0 < bottom < 1200

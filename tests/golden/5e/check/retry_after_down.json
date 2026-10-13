@@ -128,7 +128,7 @@
    ],
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2032-09-23</b> (in 5 years and 11 months)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
    ],
    "steps": [
     [
@@ -363,7 +363,7 @@
    ],
    "result": [
     "warn",
-    "<b>In force, but 1 will-executor did not receive it</b><br>Delivery to the heirs: <b>2032-09-22</b> (in 5 years and 11 months)"
+    "<b>In force, but 1 will-executor did not receive it</b><br>Delivery to the heirs: <b>22 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
    ],
    "steps": [
     [
@@ -584,7 +584,7 @@
    "heirs": null,
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2032-09-22</b> (in 5 years and 11 months)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>22 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
    ],
    "steps": [
     [

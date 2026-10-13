@@ -23,7 +23,8 @@ from PyQt6.QtWidgets import QDialog, QMenu
 
 from ...core.plugin_base import get_version
 from ...core.report import report_block_reason, will_report
-from ...core.summary import will_summary
+from ...core.summary import selected_urls, will_summary
+from ...core.willexecutors import Willexecutors
 from ...i18n import _
 from . import report_pages
 from .calendar import BalCalendar
@@ -62,11 +63,20 @@ def block_reason(bal_window):
             bal_window.will_settings,
             bal_window.bal_plugin.is_basic_mode(),
             still_active=_still_active(bal_window),
+            selected=_selected(bal_window),
         )
     except Exception as e:
         _logger.debug(f"report: summary not read: {e!r}")
         summary = None
-    return report_block_reason(summary, bal_window.willitems)
+    return report_block_reason(summary, bal_window.willitems, _selected(bal_window))
+
+
+def _selected(bal_window):
+    """The URLs of the will-executors selected now (#134), or None."""
+    try:
+        return selected_urls(Willexecutors.get_willexecutors(bal_window.bal_plugin))
+    except Exception:
+        return None
 
 
 def _format_amount(bal_window):
@@ -90,6 +100,7 @@ def build_report(bal_window):
         electrum_version=ELECTRUM_VERSION,
         still_active=_still_active(bal_window),
         warn_months=_warn_months(bal_window),
+        selected=_selected(bal_window),
     )
 
 

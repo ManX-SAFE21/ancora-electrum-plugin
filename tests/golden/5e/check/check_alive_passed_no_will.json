@@ -18,7 +18,7 @@
   "history": [
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
-   "<font color='#ff0000'><b>The Check Alive date (2026-09-10) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive.</b></font>"
+   "<font color='#ff0000'><b>The Check Alive date (10 September 2026, 00:00 UTC) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive.</b></font>"
   ],
   "items": [],
   "labels": {},
@@ -29,7 +29,7 @@
    "boxes": {
     "changes": [],
     "problems": [
-     "The Check Alive date (2026-09-10) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive."
+     "The Check Alive date (10 September 2026, 00:00 UTC) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive."
     ],
     "warnings": []
    },
@@ -70,7 +70,7 @@
   },
   "rows": [
    "Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
-   "<font color='#ff0000'><b>The Check Alive date (2026-09-10) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive.</b></font>"
+   "<font color='#ff0000'><b>The Check Alive date (10 September 2026, 00:00 UTC) is already in the past with this delivery date: choose a later delivery date or a shorter Check Alive.</b></font>"
   ],
   "settings": {
    "baltx_fees": 13,

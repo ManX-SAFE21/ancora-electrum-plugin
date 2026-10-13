@@ -12,6 +12,9 @@ BASIC <-> ADVANCED switch rearranges the existing toolbars without a
 restart. CHANGELOG #130 (owner): in BASIC the toolbars hide the delivery
 date and the fee; the calendar is a big button of the Will tab (and a
 Tools entry), never in the toolbar fields, so the Heirs tab has none.
+The Wizard's own look: a light blue background (#133), then, after the
+owner's ZIP test of #134, the look of the BASIC wizard's unchecked
+quick-choice buttons (white, thin light blue border).
 
 Run (standalone or with pytest):
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \
@@ -115,11 +118,14 @@ def test_check_looks_like_the_wizard():
     assert check.iconSize() == wizard.iconSize()
     assert check.minimumHeight() == wizard.minimumHeight() == 40
     assert "bold" in check.styleSheet() and "bold" in wizard.styleSheet()
-    # #133 (owner, option A): the Wizard only gets a light blue background
-    # and a thin border (the #131 2 px blue frame looked always selected);
-    # the Check keeps the plain look.
-    assert "background-color:#EAF3FD" in wizard.styleSheet()
-    assert "border:1px solid #9EC3EE" in wizard.styleSheet()
+    # #133 gave the Wizard a light blue background; since the owner's ZIP
+    # test of #134 it looks like the unchecked quick-choice buttons of the
+    # BASIC wizard: white, a thin light blue border, light blue only on
+    # hover. The Check keeps the plain look; both keep their size.
+    sheet = wizard.styleSheet()
+    assert "QPushButton{font-weight:bold; color:#1F2328; background-color:#FFFFFF;" in sheet
+    assert "border:1px solid #9EC3EE" in sheet
+    assert "QPushButton:hover{background-color:#EAF3FD;}" in sheet
     assert "2px solid" not in wizard.styleSheet()
     assert "border" not in check.styleSheet()
     assert "background" not in check.styleSheet()

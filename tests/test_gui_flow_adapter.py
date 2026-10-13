@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 from PyQt6.QtWidgets import QApplication
 
 import bal.i18n
+from bal.core import datetext
 from bal.core.checkalive import check_alive_renewal
 from bal.core.messages import check_alive_message
 from bal.engine import check
@@ -142,7 +143,10 @@ def _notes():
     info = _renewal("200d")
     return {
         "check_alive_reason": ({"info": info},
-                               ("error", check_alive_message(info)), "problems"),
+                               # #134: the GUI writes the dates in the one
+                               # long style (bal.core.datetext).
+                               ("error", check_alive_message(info, datetext.utc_text)),
+                               "problems"),
         "check_alive_error": ({"error": "Check alive expired"},
                               ("error", "Check alive expired"), "problems"),
         "fixed_amounts_exceed": ({"text": "too much", "info": {}},

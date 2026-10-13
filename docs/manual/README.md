@@ -95,6 +95,58 @@ In both modes the **Delivery Time** is a precise **Date**: the relative
 **RAW** durations (such as `1y` or `30d`) and the Raw/Date selector are no
 longer offered.
 
+### The wizard in BASIC mode
+
+In BASIC mode **Build / Edit Your Will** has four short steps, each with a
+question; a bar on top shows where you are (*1 When, 2 Heirs,
+3 Will-executors, 4 Summary*).
+
+1. **When do the heirs receive the bitcoin?** Choose *In 1 year*,
+   *In 2 years* (the default) or *In 5 years*, or *Choose the date…*: Year,
+   Month, Day and Hour (whole hours) in your **computer's time**. A wallet
+   that already has a will also offers *Leave as it is* (chosen at first).
+   Under the choice the page shows the same moment twice: *In your time
+   zone* and *In the will*, which is in **UTC** (Bitcoin counts time in
+   UTC); when the UTC day is another day, it says so. While a will is in
+   force, a line compares it with your choice: *Will in force: … · Your
+   choice: … (earlier — free)* or *(later — requires the paid
+   invalidation)*. *Leave as it is* says whether its date is the will in
+   force or the date you chose last time (a will prepared but not sent
+   yet). A date or hour that
+   has already passed cannot be chosen. A date later than the will in force
+   shows a note: moving it later needs the paid invalidation of that will,
+   moving it earlier is free. A will in the renewable period form only
+   shows its renewal here. At the bottom left, *Mode: Basic · Advanced*
+   switches to ADVANCED (with the phrase "at My Risk") and the wizard goes
+   on with the ADVANCED pages.
+2. **Who receives the bitcoin?** The heirs list with *+ Add heir*, *Import*
+   and *Export*, the total of the shares and the reminder that 100% of the
+   wallet balance is spent. At least one heir is needed.
+3. **Who keeps the will?** The will-executors list is downloaded and pinged
+   at once, and only the will-executors that answer are selected. If nobody
+   answers, check the internet connection and press *Retry*. At least two
+   will-executors are recommended. The full will-executor list (all
+   columns and buttons, and the option *Add transactions without
+   will-executor*) is shown below.
+4. **Check and create.** The delivery (UTC and your time zone, and, while
+   a will is in force, *In force now → After signing* with how much
+   earlier or later), the heirs, the will-executors and their fee. *Create the will* prepares the
+   will, asks for the password to sign it and sends it to the
+   will-executors.
+
+**Dates.** The plugin writes a delivery date in one style: "13 October
+2028, 00:00 UTC" (the time saved in the will), with "In your time zone:
+…" where there is room; the version rows of the Will tab use the short
+form "13 Oct 2028, 00:00 UTC". When a will is prepared but not sent and
+its date differs from the will in force, the will summary of the Will tab
+shows both: *In force now* and *After signing* (moved earlier or later
+by …). The Future view and the PDF report keep their dates for now.
+
+**Cancel** (or closing the window) puts everything back as it was when the
+wizard opened: the heirs, the delivery date and the will-executors'
+selection. Only *Create the will* keeps the changes. BASIC hides the miner
+fee and the Check Alive: the stored fee is used.
+
 The rest of this section describes the full (ADVANCED) parameter set.
 
 ### 1 — Delivery Time (Locktime)
@@ -123,8 +175,8 @@ months from today.
   already in the period form keeps being renewed in BASIC mode too: the mode
   only hides the choice.
 
-In BASIC mode with a fixed date the wizard shows no choice: only the mode
-and the date.
+In BASIC mode the wizard has no settings page: it asks only the date (see
+*The wizard in BASIC mode*).
 
 The form cannot change while a will is in force (signed or sent): in
 ADVANCED mode the wizard says so and the two choices are disabled. To change it, invalidate
