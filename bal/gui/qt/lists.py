@@ -608,18 +608,17 @@ def _executor_fee(item):
 #: The look of the two main commands of the Will tab: bold text.
 BIG_BUTTON_STYLE = "QPushButton{font-weight:bold;}"
 
-#: "Build / Edit Your Will" only (CHANGELOG #131, owner: option C of the
-#: mockup, then "only on the first button"): bold text and a 2 px blue
-#: frame so the main entry point stands out. Setting a border drops Qt's
-#: native button look, so the padding, the rounded corners and the hover /
-#: pressed backgrounds are given here too (palette colours: they follow
-#: the theme).
+#: "Build / Edit Your Will" only, so the main entry point stands out.
+#: CHANGELOG #131 gave it a 2 px blue frame; the owner then found it looked
+#: always selected, so #133 (option A of the mockup) uses a light blue
+#: background with a thin light blue border instead. Setting a border drops
+#: Qt's native button look, so the padding, the rounded corners and the
+#: hover / pressed shades are given here too.
 FRAMED_BUTTON_STYLE = (
-    "QPushButton{font-weight:bold; border:2px solid #2F6FD6;"
-    " border-radius:6px; padding:4px 12px;"
-    " background-color:palette(button);}"
-    "QPushButton:hover{background-color:palette(light);}"
-    "QPushButton:pressed{background-color:palette(midlight);}"
+    "QPushButton{font-weight:bold; background-color:#EAF3FD;"
+    " border:1px solid #9EC3EE; border-radius:6px; padding:4px 12px;}"
+    "QPushButton:hover{background-color:#DCEBFB;}"
+    "QPushButton:pressed{background-color:#CDE2F8;}"
 )
 
 
@@ -1527,7 +1526,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         """A main toolbar command: bold name next to a larger icon.
 
         Used for the Wizard and the Check (CHANGELOG #95), so the two main
-        commands look the same; ``framed`` adds the blue frame of
+        commands look the same; ``framed`` adds the light blue background of
         :data:`FRAMED_BUTTON_STYLE` (#131: the Wizard only).
         """
         button = QPushButton("  {}".format(text))

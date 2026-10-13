@@ -115,10 +115,14 @@ def test_check_looks_like_the_wizard():
     assert check.iconSize() == wizard.iconSize()
     assert check.minimumHeight() == wizard.minimumHeight() == 40
     assert "bold" in check.styleSheet() and "bold" in wizard.styleSheet()
-    # #131 (owner, option C, then "only on the first button"): the 2 px
-    # blue frame is on the Wizard only, not on the Check.
-    assert "border:2px solid #2F6FD6" in wizard.styleSheet()
+    # #133 (owner, option A): the Wizard only gets a light blue background
+    # and a thin border (the #131 2 px blue frame looked always selected);
+    # the Check keeps the plain look.
+    assert "background-color:#EAF3FD" in wizard.styleSheet()
+    assert "border:1px solid #9EC3EE" in wizard.styleSheet()
+    assert "2px solid" not in wizard.styleSheet()
     assert "border" not in check.styleSheet()
+    assert "background" not in check.styleSheet()
 
 
 def test_check_runs_the_check_and_explains_itself():
