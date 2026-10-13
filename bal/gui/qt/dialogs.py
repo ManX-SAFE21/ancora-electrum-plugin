@@ -38,6 +38,7 @@ from urllib.parse import urlparse
 from electrum.util import MyEncoder
 from PyQt6.QtCore import QEvent
 
+from ...core import datetext
 from ...core.animated_qr import (
     AnimatedQrError,
     AnimatedQrSession,
@@ -71,6 +72,7 @@ from ...core.qrtransfer import (
 from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
 from ...engine import build, check
+from ...engine import context as engine_context
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -223,7 +225,20 @@ class BalDialog(QDialog,MessageBoxMixin):
 
 
 class BalWizardDialog(BalDialog):
+    # CHANGELOG #134: the BASIC flow (``basic_wizard.BasicWizardFlow``) of
+    # this dialog, None in ADVANCED; True once "Create the will" was pressed
+    # (the changes are kept, nothing is restored at close).
+    basic_flow = None
+    _keep_changes = False
+
     def __init__(self, bal_window: "BalWindow"):
+        """The wizard "Build / Edit Your Will".
+
+        CHANGELOG #134: in BASIC mode the four pages of
+        ``bal.gui.qt.basic_wizard`` (When, Heirs, Will-executors, Summary)
+        with a snapshot that Cancel and the close button restore; in
+        ADVANCED the old pages, unchanged (Heirs first).
+        """
         assert bal_window
         BalDialog.__init__(
             self, bal_window.window, bal_window.bal_plugin,
@@ -233,10 +248,48 @@ class BalWizardDialog(BalDialog):
         self.bal_window = bal_window
         self._bal_parent = bal_window.window
         self.layout = QVBoxLayout(self)
-        self.widget = BalWizardHeirsWidget(
-            bal_window, self, self.on_next_heir, None, self.on_cancel_heir
-        )
+        self._keep_changes = False
+        self.basic_flow = None
+        if bal_window.bal_plugin.is_basic_mode():
+            # Lazy import: basic_wizard imports this module.
+            from .basic_wizard import BasicWizardFlow
+
+            self.basic_flow = BasicWizardFlow(self)
+            self.widget = self.basic_flow.first_page()
+        else:
+            self.widget = BalWizardHeirsWidget(
+                bal_window, self, self.on_next_heir, None, self.on_cancel_heir
+            )
         self.layout.addWidget(self.widget)
+
+    def switch_to_advanced(self):
+        """ADVANCED was confirmed on the BASIC page 1 (#134): go on with the
+        old pages, from the Heirs page.
+
+        The BASIC snapshot is dropped: the old pages save every change at
+        once and their Cancel undoes nothing, exactly as today, and what the
+        BASIC pages had already saved stays (a date chosen on page 1 is
+        saved only by its Next).
+        """
+        self.basic_flow = None
+        self.next_widget(
+            BalWizardHeirsWidget(
+                self.bal_window, self, self.on_next_heir, None, self.on_cancel_heir
+            )
+        )
+
+    def show_executors_step(self):
+        """Open the wizard at its will-executor step (#134).
+
+        BASIC: page 3 of the new wizard (download, ping, select); ADVANCED:
+        the old download-method page, as before. Used by the build window's
+        "no will-executor" buttons.
+        """
+        if self.basic_flow is not None:
+            self.basic_flow.show_executors()
+            return
+        self.on_next_heir()
+        self.on_next_locktimeandfee()
 
     def next_widget(self, widget):
         """Show wizard page ``widget`` in place of the current one.
@@ -319,6 +372,8 @@ class BalWizardDialog(BalDialog):
         check as the Check button (allegato15, case B) in a separate "Check
         Transaction" window opened after that dialog had closed.
         """
+        # #134: the BASIC wizard keeps its changes (no restore at close).
+        self._keep_changes = True
         close_window = BalBuildWillDialog(self.bal_window)
         close_window.build_will_task()
         self.close()
@@ -347,9 +402,27 @@ class BalWizardDialog(BalDialog):
         pass
 
     def closeEvent(self, event):
+        """Cancel and the close button end here (#134: the BASIC wizard
+        puts back what it changed, unless "Create the will" was pressed)."""
         self._stopping = True
+        self._restore_if_cancelled()
         # self.bal_window.heir_list_widget.will_settings_widget.update_will_settings()
-        pass
+
+    def reject(self):
+        """Esc closes a QDialog through ``reject`` without a close event:
+        restore there too (#134), then close as Qt does."""
+        self._restore_if_cancelled()
+        super().reject()
+
+    def _restore_if_cancelled(self):
+        """The BASIC snapshot back (once), unless the changes are kept."""
+        flow = self.basic_flow
+        if flow is None or self._keep_changes:
+            return
+        try:
+            flow.restore()
+        except Exception as e:
+            _logger.error(f"wizard cancel: restore failed: {e!r}")
 
 
 
@@ -483,7 +556,12 @@ class BalWizardWEDownloadWidget(BalWizardWidget):
         return True
 
     def _on_next(self):
+        """Run the chosen download method, then go to the next page.
 
+        0: download, ping and select only who answers; 1: download and ping
+        only; 2: import a file; 3: nothing (manual). 0 and 1 go through
+        ``BalWindow.download_and_select_willexecutors`` (#134).
+        """
         index = self.combo.currentIndex()
         _logger.debug(f"selected index:{index}")
         if index < 3:
@@ -508,48 +586,14 @@ class BalWizardWEDownloadWidget(BalWizardWidget):
                 )
 
             if index < 2:
-
-                def on_success(willexecutors):
-                    def ping_on_success(result):
-                        ping_on_done()
-
-                    def ping_on_failure(exec_info):
-                        ping_on_done()
-
-                    def ping_on_done():
-                        # Task #02 - "Automatically download and select"
-                        # (index 0): the green SELECTED tick must follow the
-                        # green ping dot, i.e. select ONLY servers that actually
-                        # answered the ping (status == 200) and DESELECT every
-                        # server that did not (timeout / error / never pinged).
-                        #
-                        # Why the explicit deselect matters: previously a server
-                        # that had been selected on an earlier download but is
-                        # now unreachable stayed selected, so the plugin kept
-                        # broadcasting to a dead server and got stuck. Forcing
-                        # selected=False for non-200 servers discards them at the
-                        # source. Re-running this (each "Automatically download"
-                        # action) re-evaluates every server: one that failed
-                        # before but now answers is selected again.
-                        #
-                        # We compare the status as a string ("200") to stay
-                        # consistent with the will-executor list view
-                        # (lists.py uses str(status) == "200"), and use .get()
-                        # so a missing "status" key never raises.
-                        if index < 1:
-                            for we in self.bal_window.willexecutors:
-                                wedict = self.bal_window.willexecutors[we]
-                                responded = str(wedict.get("status", "")) == "200"
-                                wedict["selected"] = responded
-                        Willexecutors.save(
-                            self.bal_window.bal_plugin, self.bal_window.willexecutors
-                        )
-
-                    self.bal_window.ping_willexecutors(
-                        self.bal_window.willexecutors, ping_on_success, ping_on_failure
-                    )
-
-                self.bal_window.download_list(self.bal_window.willexecutors, on_success)
+                # Task #02 - "Automatically download and select" (index 0)
+                # and "Only download" (index 1). Since CHANGELOG #134 the
+                # download, ping and select-only-who-answers live in one
+                # function shared with the BASIC wizard's will-executor page
+                # (see its docstring for why the deselect matters).
+                self.bal_window.download_and_select_willexecutors(
+                    select_responding=index < 1
+                )
 
         elif index == 3:
             # TODO DO NOTHING
@@ -719,6 +763,9 @@ class BalBuildWillDialog(BalDialog):
     # CHANGELOG #93 (same reason as above).
     _close_layout = None
     report_view = None
+    # CHANGELOG #134 (same reason as above): see _revert_cancelled_postpone.
+    _postpone_reverted = None
+    _later_by_question = False
 
     def __init__(self, bal_window, parent=None, renew=False, closing=False):
         """``renew=True``: the owner already chose "Renew" for a passed Check
@@ -832,6 +879,9 @@ class BalBuildWillDialog(BalDialog):
         # earlier but never signed. Only used to word the "Checking your will"
         # row; see _rebuild_reason_message.
         self._postpone_invalidation = False
+        # #134: (chosen, restored) when a postpone was cancelled before its
+        # invalidation reached the network and the stored date went back.
+        self._postpone_reverted = None
         self._unsigned_executors = None
         self.network = Network.get_instance()
         self._stopping = False
@@ -1726,6 +1776,10 @@ class BalBuildWillDialog(BalDialog):
         _logger.debug(f"invalidate tx: {tx}")
         # fee_per_byte = bal_window.will_settings.get("baltx_fees", 1)
         tx = self.bal_window.wallet.sign_transaction(tx, password)
+        if not tx or not tx.is_complete():
+            # #134: not signed, so certainly not broadcast: a postpone is
+            # cancelled as at the password's Cancel (the date goes back).
+            self._revert_cancelled_postpone()
         try:
             if tx:
                 if tx.is_complete():
@@ -1786,6 +1840,35 @@ class BalBuildWillDialog(BalDialog):
             text += " — " + _("waiting for: {}").format(names)
         return text
 
+    def _revert_cancelled_postpone(self):
+        """A postpone whose invalidation was NOT done: the date goes back (#134).
+
+        Owner's ZIP test (option B): after "Invalidate your old will" ->
+        Cancel the stored date stayed on the later one: no will item had it,
+        the summary never showed it, and every Check and wallet close asked
+        for the invalidation again. Now the stored date goes back to the
+        date the will items really use (the prepared draft's, else the will
+        in force's: ``engine.context.revert_cancelled_postpone``) and the
+        result says the later date was not applied.
+
+        Called only before any broadcast: Cancel at the invalidation's
+        password, or its signing failed. Never after a broadcast, even a
+        failed or unconfirmed one (the invalidation may be on its way, so
+        the postpone stays; ``loop_broadcast_invalidating``). Only for a
+        postpone (``_postpone_invalidation``): an expired will or a renewal
+        keeps today's behaviour. Not after "Use <later date>" of the #123
+        "which date?" question in this Check (``_later_by_question``: the
+        owner's explicit answer stays), nor when the stored date is the date
+        of a VALID will already signed or sent (``cancelled_postpone_date``:
+        going back would sign that newer will at an earlier date).
+        """
+        if (not self._postpone_invalidation or self._postpone_reverted
+                or self._later_by_question):
+            return
+        self._postpone_reverted = engine_context.revert_cancelled_postpone(
+            self.bal_window
+        )
+
     def on_success_invalidate(self, success):
         self.thread.add(
             self.task_phase1,
@@ -1831,12 +1914,23 @@ class BalBuildWillDialog(BalDialog):
             _logger.info("wallet close: the delivery date question is pending")
             self._add_close_button()
             return
+        before = (self.bal_window.will_settings or {}).get("locktime")
         if not self.bal_window.choose_delivery_date(parent=self):
             self.msg_edit_row(
                 self.msg_alert(_("The check stopped: nothing was changed."))
             )
             self._add_close_button()
             return
+        # #134: "Use <later date>" (its button says the old will must be
+        # invalidated, miner fee) is the owner's explicit answer of #123: a
+        # Cancel at that invalidation keeps it, as before #134 (the test
+        # "question use later asks for the invalidation"); only a later date
+        # chosen elsewhere goes back (_revert_cancelled_postpone).
+        after = (self.bal_window.will_settings or {}).get("locktime")
+        try:
+            self._later_by_question = int(after) > int(before)
+        except (TypeError, ValueError):
+            self._later_by_question = False
         self.thread.add(
             self.task_phase1,
             on_success=self.on_success_phase1,
@@ -1972,7 +2066,9 @@ class BalBuildWillDialog(BalDialog):
             # phase-1 pass then prepares the new will (the old items are
             # marked INVALIDATED first, see BalWindow.init_class_variables).
             if not getattr(self, "_renew_approved", False):
-                question = check_alive_message(self._check_alive_info)
+                question = check_alive_message(
+                    self._check_alive_info, datetext.utc_text
+                )
                 if not self.bal_window.ask_renew_will(question, parent=self):
                     self.msg_edit_row(
                         self.msg_alert(
@@ -2020,6 +2116,7 @@ class BalBuildWillDialog(BalDialog):
                 # normal finish path), so the user can read the outcome and
                 # dismiss the dialog when they want, without blocking the GUI.
                 self.msg_set_invalidating(_("Aborted"))
+                self._revert_cancelled_postpone()
                 self._add_close_button()
                 return
             self.thread.add(
@@ -2147,12 +2244,45 @@ class BalBuildWillDialog(BalDialog):
     # ------------------------------------------------------------------ #
 
     def _set_report_actions(self, enabled):
-        """Offer (or stop offering) "Exclude" and "Retry" in the report."""
+        """Offer (or stop offering) "Exclude", "Retry" and (#134) "Open
+        Will-Executors" in the report."""
         view = getattr(self, "report_view", None)
         if view is None:
             return
         view.on_exclude = self._exclude_executor if enabled else None
         view.on_retry = self._retry_check if enabled else None
+        view.on_open_executors = self._open_executors_window if enabled else None
+
+    def _selected_willexecutors(self):
+        """The URLs of the will-executors selected now (#134), or None.
+
+        ``BalWindow.selected_willexecutors``; anything that is not a set
+        (a window built another way, a test double) means "no rule".
+        """
+        try:
+            selected = self.bal_window.selected_willexecutors()
+        except Exception:
+            return None
+        return selected if isinstance(selected, (set, frozenset)) else None
+
+    def _open_executors_window(self):
+        """"Open Will-Executors" (#134): the Tools window; when it closes,
+        the rows and the Will tab summary follow the selection (a
+        will-executor selected again is "to send", Send pushes it)."""
+        self.bal_window.show_willexecutor_dialog(on_close=self._after_executors_window)
+
+    def _after_executors_window(self):
+        """The will-executor window closed: refresh the rows and the summary."""
+        try:
+            self._merge_executors_and_send_note()
+            self.updatemessage.emit()
+        except Exception as e:
+            _logger.debug(f"rows not refreshed after the will-executor window: {e!r}")
+        try:
+            # The Will tab too: its summary box and the List's rows (#134).
+            self.bal_window._after_executors_window()
+        except Exception as e:
+            _logger.debug(f"summary not refreshed: {e!r}")
 
     def _retry_check(self):
         """"Retry": run the whole check again, in this dialog.
@@ -2271,8 +2401,8 @@ class BalBuildWillDialog(BalDialog):
         will-executor download step so the user can add one."""
         self.close()
         wizard = BalWizardDialog(self.bal_window)
-        wizard.on_next_heir()
-        wizard.on_next_locktimeandfee()
+        # #134: BASIC opens the new wizard's will-executor page.
+        wizard.show_executors_step()
         wizard.exec()
 
     def _retry_build_after_willexecutor(self):
@@ -2539,9 +2669,8 @@ class BalBuildWillDialog(BalDialog):
             current = Will.get_current_will_locktime(bw.willitems, fallback)
 
             def day(locktime):
-                return BalTimestamp._safe_fromtimestamp(int(locktime)).strftime(
-                    "%Y-%m-%d"
-                )
+                """The one long date style (#134): "13 October 2028, 00:00 UTC"."""
+                return datetext.utc_text(int(locktime))
 
             # One line per executor and date: an executor may hold several
             # old transactions with the same date.
@@ -3286,6 +3415,10 @@ class BalBuildWillDialog(BalDialog):
                 bw.bal_plugin.is_basic_mode(),
                 still_active=bw._still_active_for_summary(),
                 warn_months=getattr(bw.bal_plugin, "warning_months", lambda: None)(),
+                # #134: the one date style and the in-force comparison.
+                long_dates=True,
+                # #134: deselected will-executors are not "to send".
+                selected=self._selected_willexecutors(),
             )
             failed_step = next(
                 (s for s in ("check", "prepare", "sign", "send")
@@ -3306,6 +3439,17 @@ class BalBuildWillDialog(BalDialog):
                     "sign": _("The new will was not signed."),
                     "send": _("The will was not sent to the will-executors."),
                 }[failed_step])))
+                report.set_will_now(self._will_now_text(summary))
+            elif "prepare" in interrupted and self._postpone_reverted:
+                # #134: the later date was put back (see
+                # _revert_cancelled_postpone): "nothing was changed" would
+                # not be true.
+                report.set_result("warn", "<b>{}</b>".format(html.escape(_(
+                    "Interrupted: the old will was not invalidated. Your later "
+                    "date ({chosen}) was not applied: the will in force needs "
+                    "the paid invalidation first. When you are ready, choose it "
+                    "again."
+                ).format(chosen=datetext.utc_text(self._postpone_reverted[0])))))
                 report.set_will_now(self._will_now_text(summary))
             elif "prepare" in interrupted:
                 report.set_result("warn", "<b>{}</b>".format(html.escape(_(
@@ -3343,8 +3487,15 @@ class BalBuildWillDialog(BalDialog):
         """
         report = self._report()
         valid = Will.only_valid_list(self.bal_window.willitems)
-        report.merge_executors(executor_states(valid))
+        # #134: a deselected will-executor never received the will and the
+        # sending skips it: "deselected: not sent", not counted in "n/m".
+        selected = self._selected_willexecutors()
+        report.merge_executors(executor_states(valid, selected))
         executors = report.executors()
+        # A will-executor selected again since gets its real state ("to
+        # send") from the merge above. The deselected ones stay in the box
+        # but are left out of the counts.
+        executors = {u: v for u, v in executors.items() if v[0] != "deselected"}
         total = len(executors)
         received = sum(
             1 for st, _sec in executors.values()
@@ -3571,6 +3722,9 @@ class WillExecutorDialog(BalDialog, MessageBoxMixin):
         self.config = self.bal_plugin.config
         self.bal_window = bal_window
         self.willexecutors_list = Willexecutors.get_willexecutors(self.bal_plugin)
+        # #134: called when the window closes (the summary box and the Check
+        # window show the will-executors selected again as "to send").
+        self.on_close_callbacks = []
 
         self.setWindowTitle(_("Will-Executor Service List"))
         self.setMinimumSize(1000, 200)
@@ -3599,7 +3753,13 @@ class WillExecutorDialog(BalDialog, MessageBoxMixin):
         bring_to_front(self)
 
     def closeEvent(self, event):
+        """Close, then run the ``on_close_callbacks`` (#134; never raise)."""
         event.accept()
+        for callback in list(self.on_close_callbacks):
+            try:
+                callback()
+            except Exception as e:
+                _logger.error(f"will-executor window close callback: {e!r}")
 
 
 class HeirsDialog(BalDialog, MessageBoxMixin):

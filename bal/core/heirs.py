@@ -321,6 +321,39 @@ def get_change_output(wallet, in_amount, out_amount, fee):
         return out
 
 
+def percent_total(heirs):
+    """The sum of the heirs' percentages, or None (CHANGELOG #134).
+
+    ``heirs``: ``{name: [address, amount, locktime]}`` as stored. The
+    BASIC wizard shows "Total: N% of the wallet balance." under the heirs.
+    The OP_RETURN message rows carry no amount and are skipped. None when
+    an heir has a FIXED amount (or an amount that cannot be read): the
+    percentages are then shared out of what is left after the fixed amounts
+    (``Heirs.fixed_percent_lists_amount``), so "N% of the wallet balance"
+    would not be true and the wizard says nothing. 0 for no heirs.
+
+    The percentages are weights: ``Heirs.normalize_perc`` gives each heir
+    ``balance * share / total``, so a total other than 100 still spends the
+    whole balance; the wizard says so in that case.
+    """
+    total = 0.0
+    for value in heirs.values():
+        try:
+            address, amount = value[HEIR_ADDRESS], value[HEIR_AMOUNT]
+        except (TypeError, IndexError, KeyError):
+            return None
+        if is_op_return_address(str(address)):
+            continue
+        text = str(amount).strip()
+        if not text.endswith("%"):
+            return None
+        try:
+            total += float(text[:-1])
+        except ValueError:
+            return None
+    return total
+
+
 def _json_safe(value, _path="heirs"):
     """Backward-compatible alias of :func:`bal.core.util.copy_structure`.
 

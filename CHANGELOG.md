@@ -8026,3 +8026,419 @@ Electrum 4.8.2: pass.
 
 **Outcome:** DONE. The owner tested two ZIPs (2026-10-13): the first
 background was a little too dark, the second ok.
+
+## 134. A new wizard for BASIC mode: When, Heirs, Will-executors, Summary
+
+**Date:** 2026-10-13
+
+**Problem (the owner):** in BASIC mode the wizard "Build / Edit Your Will"
+showed the same pages as ADVANCED: the heirs, a settings page with the
+plugin mode, the delivery date editor, the miner fee and two notes, a
+combo with four ways to get the will-executors, then the will-executor
+list. Too many choices for a basic user, no clear question per page, the
+date editor in local time with no word on UTC, and Cancel undid nothing
+(every change was already saved).
+
+**What changed:**
+
+- `bal/gui/qt/basic_wizard.py` (new): the BASIC wizard, four pages with a
+  step bar on top ("1 When", "2 Heirs", "3 Will-executors", "4 Summary")
+  and a question as the first line of each page; Next has the light blue
+  look of the #133 main button. The pages are built on the old
+  `BalWizardWidget` (same Previous / Next / Cancel buttons and layout).
+  - **1 When** ("When do the heirs receive the bitcoin?"): quick buttons
+    "In 1 year", "In 2 years" (chosen when the wallet has no will, the
+    default date of a new wallet), "In 5 years", "Choose the date…", and
+    "Leave as it is" (offered and chosen only when the wallet has a will
+    and a stored date in the future). "Choose the date…" shows Year |
+    Month (the month name in the plugin's language) | Day | Hour (whole
+    hours) in the computer's time, with a "?" whose new text mentions UTC
+    and the network delay (the old text stays for ADVANCED); the day
+    follows the month length. Under them the will's day in big letters
+    with the time left, then "On your computer: … (your computer's time,
+    UTC+2)" and "In the will: … UTC", and a line when the UTC day is the
+    day before / after. A moment not after now is refused (Next off, a
+    short message). A date later than the will in force shows the yellow
+    note about the paid invalidation. A period-form wallet (#127) only
+    sees its renewal. The box "Why two times?" explains UTC and the block
+    clock delay. Bottom left, "Mode: Basic · Advanced" switches the plugin
+    mode through the same "at My Risk" gate as the settings page
+    (`common.switch_user_type`); confirmed, the wizard goes on with the
+    old ADVANCED pages. No calendar button, no truck icon, no miner fee,
+    no Check Alive (BASIC uses the stored fee).
+  - **2 Heirs** ("Who receives the bitcoin?"): a reminder of the chosen
+    day, the real heirs list, "+ Add heir" (today's New heir window),
+    Import, Export, "Total: 100% of the wallet balance." (only for
+    percentage heirs; a total other than 100 says that the shares count in
+    proportion and the whole balance is spent, which is what
+    `Heirs.normalize_perc` does; with fixed amounts no total line) and the
+    note "Remember: 100% of the wallet balance is spent.". Next is off
+    without heirs.
+  - **3 Will-executors** ("Who keeps the will?"): a one-line explanation
+    (no "Learn more" link: there is no published manual page to point
+    to), then the list is downloaded and pinged at once and only the
+    will-executors that answer are selected; "✔ List updated: 3
+    will-executors answer, 3 will-executors selected." Nobody answers: a
+    yellow note with Retry, Next off. One selected: "At least 2
+    will-executors are recommended." (Next allowed). None selected: Next
+    off. The full `WillExecutorWidget` is shown below. The old
+    four-choice combo page is not used in BASIC.
+  - **4 Summary** ("Check and create"): a light green box with the
+    delivery (UTC day and time, time left, the computer's time), the
+    heirs and their shares, the number of will-executors and their fee
+    ("1,000 sat each", or "from … to … each"), two short notes, and
+    "Create the will", which runs exactly the old last step
+    (`BalWizardDialog.on_next_we`: the build / sign / send / verify
+    window, unchanged).
+  - **Cancel is linear (owner decision):** a `WizardSnapshot` is taken
+    when the BASIC wizard opens (the heirs, the delivery date with the
+    keys its write clears: the "which date?" question, its note and the
+    later wish of the migration, and every will-executor's `selected`
+    flag). Cancel, the window's close button and Esc put them back
+    exactly, through the same writers (`Heirs.save`, the validated
+    `update_setting_widgets`, `delivery.validate_values` +
+    `write_values`, `Willexecutors.save`); will-executors downloaded
+    meanwhile stay in the list, not selected. "Create the will" keeps the
+    changes. The date is written when page 1 is left (a heir added on page
+    2 gets it from the settings) and restored on Cancel. After a switch to
+    ADVANCED the old pages behave as today (nothing restored).
+- `bal/core/wizard_date.py` (new, no Qt): the date logic of page 1: the
+  quick dates (00:00 UTC + 12/24/60 calendar months), the local boxes read
+  in the time zone of the CHOSEN date (summer/winter time), the UTC offset
+  text, the day change, the month length, the refused past, "Leave as it
+  is" and "later than the will in force". 2038-safe.
+- `bal/gui/qt/dialogs.py`: `BalWizardDialog` opens the BASIC flow in BASIC
+  mode and the old pages in ADVANCED (unchanged); `switch_to_advanced`,
+  `show_executors_step` (the build window's "no will-executor" button opens
+  page 3 in BASIC, the old download page in ADVANCED), the restore on
+  close / Esc, and "Create the will" keeps the changes. The old download
+  page's "download and select" now calls the shared function below.
+- `bal/gui/qt/window.py`: `download_and_select_willexecutors`, the
+  download + ping + select-only-who-answers of Task #02 in one place,
+  used by the old page and the new page 3 (the new page also pings the
+  saved list when the download fails, so an offline computer shows
+  "nobody answers").
+- `bal/gui/qt/lists.py` `WillExecutorWidget` (the Tools menu window and
+  both wizards; look only, owner option A): the empty size line is hidden,
+  the rows alternate colours, the "Add transactions without willexecutor"
+  row moved below the buttons in small grey text. Every column, button and
+  setting is unchanged (the columns already fit their content).
+- `bal/core/heirs.py`: `percent_total` (the total line of page 2).
+- `bal/i18n.py`: `language()` (the month names follow the plugin's
+  language).
+- Catalogs: 54 new msgids (98 with the follow-ups below), Italian (the owner's wording of the approved
+  prototype) and Spanish.
+- `docs/manual/README.md` and `manual.html`: "The wizard in BASIC mode".
+- `tests/test_gui_delivery_form.py`: the BASIC wizard now opens on the
+  taller "When" page, so `test_wizard_grows_when_advanced_is_chosen`
+  checks that the dialog opens at least 800x400 instead of exactly.
+
+**Tests:** `tests/test_core_wizard_date.py` (new: quick dates, Europe/Rome
+summer and winter, a zone behind UTC, UTC+5:30, the month length and 29
+February, the past refused, "Leave as it is", later than the will in
+force, dates after 2038) and `tests/test_gui_basic_wizard.py` (new, the
+REAL window on flowkit wallets with three fake will-executors, the time
+zone fixed to Europe/Rome, the welist and the ping faked: the four pages
+in order and ADVANCED unchanged, the quick choices and the boxes, the day
+change, the past refused, "Leave as it is" with a will in force and the
+later-date note, the period form, a new heir gets the chosen date, only
+the will-executors that answer are selected, nobody answers then Retry,
+one selected, the summary texts, "Create the will" builds, signs, sends
+to the three and verifies, Cancel / close / Esc restore heirs, date and
+selection, the keys the date write clears come back, a new will-executor
+stays unselected, the mode link, the look of the Tools window).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+suite: 1999 passed in the normal order, 1999 passed in the reverse
+order (first ZIP); goldens unchanged then (see below for the follow-up); no CRLF. Catalogs: 634 -> 688 entries (732 after the follow-ups) in the
+three catalogs, no fuzzy, no empty, nothing else changed;
+`tests/test_translations.py` + `tests/test_i18n.py` pass. `build_zip.py` +
+`external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass. Italian
+previews of the real pages checked by eye.
+
+**After the owner's ZIP test (2026-10-13):** the owner tested the first
+ZIP (all OK) and asked for these changes inside #134:
+
+- **Wording:** "On your computer:" becomes "In your time zone:" (IT "Nel
+  tuo fuso orario:") on page 1 and in the summary of page 4; the local line
+  shows only the offset, "(UTC+2)".
+- **Bug: a prepared draft was called "the will in force".** Owner's real
+  wallet: a will sent and verified for 26/02/2031 and a will prepared (not
+  signed nor sent) for 13/10/2028, the stored date. Page 1 offered "Leave
+  as it is" with 13 October 2028 and said "The date of the will in force".
+  Cause: `delivery.earliest_in_force` reads the VALID items first, and the
+  draft is VALID. Now the wizard uses `engine.context.in_force_delivery`
+  (new): the earliest date of `Will.in_force_items`
+  (`will_state.is_in_force`: signed and/or sent, not invalidated, still
+  executable), so a draft never counts. The note of "Leave as it is" says
+  what the date really is: "The date of the will in force" only when it
+  is; "The date you chose last time (prepared will, not sent yet)" with a
+  draft; "The date already chosen" otherwise. The later-date note compares
+  with the will really in force.
+- **A reference for the comparison (owner: "serve un riferimento di
+  confronto"):** page 1 shows, under the choices while a will is in force,
+  "Will in force: … · Your choice: … (earlier — free)" / "(later — requires
+  the paid invalidation)" / "(same date)"; page 4 adds "In force now: … →
+  After signing: … — moved earlier by 1 year"; the will summary of the
+  Will tab, for a will prepared or signed but not sent whose date differs
+  from the will sent before (still executable), adds the two lines "In
+  force now" and "After signing … → delivery moved earlier by 2 years and 4
+  months" (or "later by … — requires the paid invalidation of the will in
+  force"). The span is `bal.core.future.span_text` (calendar months).
+- **One date style (owner decision):** `bal/core/datetext.py` (new, no Qt)
+  writes every delivery date the owner reads: long "13 October 2028, 00:00
+  UTC" (IT "13 ottobre 2028, ore 00:00 UTC"), with the optional second line
+  "In your time zone: 13 October 2028, 02:00", and short "13 Oct 2028,
+  00:00 UTC". The month names are msgids (the short name is the first
+  three letters of the translated name). Used by the wizard (all pages;
+  the Qt month names of the first ZIP are gone), the will summary of the
+  Will tab (with the italic note), the version headers of the List view
+  (before: the LOCAL time in the locale's format, "13/10/2028 02:00",
+  without saying so), the result sentence and "Your will now" of the Check
+  window, the Check Alive question and reasons in the GUI and the
+  "older will still active" warning. `will_summary(long_dates=True)` and
+  `messages.check_alive_message(info, day=...)` choose the style: the PDF
+  report, the Future view and the command line keep `YYYY-MM-DD` (the
+  report and the Future view in step #137). Technical columns (Locktime,
+  txids) are unchanged.
+- **Golden files:** 66 files of `tests/golden/5e` (check/ and copies/)
+  changed, 114 lines, each line only because of the new date style of the
+  Check window's result sentence, "Your will now" and the Check Alive
+  texts (for example "Delivery to the heirs: <b>2032-09-23</b>" ->
+  "<b>23 September 2032, 00:00 UTC</b>"); nothing else changed in them.
+- Tests: `tests/test_gui_basic_wizard.py` +4 (the owner's draft case on
+  page 1 and page 4, the Will tab summary lines, the date and change texts);
+  the date literals of `test_gui_will_versions_list.py` (the header test now
+  checks the short UTC form, also in Italian), `test_gui_check_variables_rows.py`,
+  `test_gui_flow_adapter.py`, `test_gui_still_active_warning.py` and
+  `test_delivery_period_flow.py` follow the new style. Affected tests and
+  the golden tests: pass; the whole suite (both orders) runs before the
+  commit. Catalogs: 712 entries, no fuzzy, no empty.
+
+**After the owner's second ZIP test (2026-10-13):**
+
+- **The will-executors' fee on page 4 is paid once, not "each":** every
+  selected will-executor holds its own copy of the will with its own fee
+  output, but the copies spend the same coins, so only one can be
+  confirmed and one fee is paid. The row shows the fee (or "from <lowest>
+  to <highest>", in the wallet's unit with the fiat value when Electrum
+  shows it) and, in grey, "you will pay only one: the one of the
+  will-executor that sends the will on the delivery day." ("…only one of
+  these…" for a range; IT the owner's words "ne pagherai una sola (di
+  queste): quella del will-executor che invia il testamento il giorno
+  della consegna."). The "each" texts are gone.
+- **The comparison is shown only when the dates differ, on two lines:**
+  page 1 "Will in force: …" / "Your choice: … (earlier — free)" or
+  "(later — requires the paid invalidation)"; page 4 "In force now: …" /
+  "After signing: … → delivery moved earlier by …"
+  (`datetext.in_force_change_lines`, empty for the same date); the Will
+  tab summary already showed its two rows only for different dates. The
+  value column of page 4 wraps inside the window instead of being cut.
+- Tests: `tests/test_gui_basic_wizard.py` (28: the fee texts, the two
+  lines, the same date shows no comparison on page 1 and page 4),
+  `tests/test_will_summary.py`, `tests/test_translations.py`,
+  `tests/test_i18n.py`: 86 passed; ruff clean; catalogs 714 entries, no
+  fuzzy, no empty, the replaced msgids removed. No golden file changed
+  (these texts are only in the wizard).
+
+**After the owner's third look (2026-10-13):**
+
+- **The Future view in the one date style:** it sits under the will
+  summary, so it writes the dates the same way (`future_view.view_scene`):
+  "Today 13 Oct 2026, 14:31 UTC" on the time line, the card "Delivery to
+  the heirs" with "31 Dec 2030, 01:00 UTC" under it (the date left the
+  title: "· 23 set 2032" was cut on a narrow card), and the long form in
+  the lines under the time line, the sentence ("…, on 31 December 2030,
+  01:00 UTC the bitcoin will go to …") and the italic note
+  (`build_future(day=...)`). The PDF report calls the same functions with
+  their defaults, so none of its texts changed, its time line included
+  (the report's dates come in #137). The overlap test of the time line
+  runs in both styles at 300 to 1600 px.
+- **The main button of the Will tab** ("Build / Edit Your Will") now looks
+  like the unchecked quick-choice buttons of the wizard's first page:
+  white, thin light blue border, rounded corners, bold, light blue only on
+  hover (`lists.MAIN_BUTTON_STYLE`); it replaces the #133 light blue
+  background, which stays only on the wizard's primary button (Next).
+  Same size (icon 28 px, height 40, same padding). "Check your will" is
+  unchanged.
+- No new msgid; no golden file changed (the Will tab's Future view and the
+  button are not in the golden records). Tests: `test_gui_future_view.py`
+  (the view's texts in the new style; the overlap test also in that
+  style), `test_core_future.py`, `test_inheritance_report.py`,
+  `test_gui_basic_wizard.py`, `test_will_summary.py`,
+  `test_check_button.py` (the button's new look), `test_translations.py`,
+  `test_i18n.py`: 208 passed; ruff clean; catalogs OK.
+
+**After the owner's fourth look (2026-10-13):** with a will PREPARED
+(a draft or a partly signed version, not sent) whose date differs from
+the will in force, the Future view looked like a normal green "in force"
+view under the orange "Will prepared: it must be signed and sent". Now
+`core.future.build_future` sets `pending_locktime` (the prepared will's
+date, from the same versions the view already reads: the draft version
+differs from the version in force; derived, nothing stored) and the Will
+tab's `future_view.view_scene` shows it in grey: the title "Current
+situation at the will-executors", a light blue box "This is what the
+will-executors hold today (delivery …). The prepared will (delivery …) is
+not signed and sent yet: when you sign and send it, this view is in
+colour again with the new date.", every colour of the will in force grey,
+and the prepared date as a dashed grey ghost "prepared, not sent" (the
+draft marker of #131 reused); the time-left pill keeps clear of it. The
+italic note is left out (the box says the same). Without a different
+prepared will the view is in colour as before. The PDF report never
+greys (it calls `future_scene` directly): no report text changed. A
+wallet with only a draft and nothing ever sent keeps today's view ("No
+will in force", the draft's dashed date, "Will prepared: it must be
+signed and sent"). A will signed but not sent counts as in force in the
+versions of #128, so it is not greyed (unchanged). Tests:
+`test_gui_future_view.py` (the grey scene and its texts, the colours back
+without a different prepared will, the report's scene never grey; the
+overlap test also with a prepared will one year earlier or later, at 300
+to 1600 px), `test_core_future.py`, `test_inheritance_report.py`,
+`test_gui_basic_wizard.py`, `test_will_summary.py`, `test_translations.py`,
+`test_i18n.py`: pass; ruff clean; 3 new msgids (IT/ES).
+
+Also (owner): the legend symbol of "time left" under the time line is now an elongated pill, 24 x 8 px like the one on the axis (it read as a dot); the same legend is drawn in the PDF report's time line, so the symbol changed there too (no text changed). `test_gui_future_view.py`: 143 passed.
+
+**After the owner's fifth look (2026-10-13):** the Future view is in
+colour only when at least one will-executor has received and verified
+the will it shows (`future_view.nothing_received`: no executor mark of
+that version is "verified", the same states as the summary's "x of N
+received and verified"; view-only, the #128 notion of "in force" in
+`will_versions` / `will_state` is untouched). Otherwise (a draft only, or
+a will signed but not sent, e.g. signed offline) the view is grey and
+drawn at 48% opacity under its title, with a big centred overlay on the
+time line: "NOT SENT TO THE WILL-EXECUTORS YET" / "Until you send it,
+nothing happens on the date." (IT "NON ANCORA INVIATO AI WILL-EXECUTOR" /
+"Finché non lo invii, alla data non succede niente."); the draft-only
+view keeps its title and note. A will with no will-executor at all (the
+backup transaction kept by the owner) keeps its colours. An older will
+really sent plus a prepared one with another date stays the grey case of
+the fourth look. The PDF report never fades. The Will tab still opens on
+"List" by default, List on the left and Future on the right (checked:
+#134 did not touch `WILL_VIEW` or the selector). Tests:
+`test_gui_future_view.py` (colour only with one verified executor, five
+state mixes; draft only; backup only; the overlay inside the view under
+the title at 300 to 1600 px; the overlap test also for the faded case),
+`test_core_future.py`, `test_inheritance_report.py`,
+`test_gui_basic_wizard.py`, `test_will_summary.py`, `test_translations.py`,
+`test_i18n.py`: pass; ruff clean; 2 new msgids (IT/ES).
+
+Also (owner): a will signed but not sent (every will-executor still "to send" or failed) has the faded view's title "Will signed, not sent yet" (IT "Testamento firmato, non ancora inviato") instead of "Your will is in force"; the draft-only view keeps its title.
+
+Also (owner): BASIC hides the "Add transactions without willexecutor" option of the will-executor list (wizard page 3 and Tools → Will-Executors); ADVANCED shows it; the stored value is never changed; a window opened after a mode switch follows the mode.
+
+**After the owner's ZIP test: cancelled postpone (owner, option B).**
+The owner's real case: a will sent and verified for 31 Dec 2030, a draft
+for 13 Oct 2028, the wizard's "In 5 years" (10 Oct 2031: a postpone),
+"Create the will", Cancel at "Invalidate your old will". The later date
+stayed in the settings with no will item carrying it: the summary never
+showed it, the result said "nothing was changed", and every Check and
+wallet close asked for the invalidation again. Now, when a postpone's paid
+invalidation is not done and certainly reached no network, the stored date
+goes back to the date the will items really use: the prepared draft's date
+(when it is not later than the will in force), else the will in force's
+date (`engine.context.cancelled_postpone_date` /
+`revert_cancelled_postpone`, Qt-free, the validated write; the #128 notion
+of "in force" is untouched; nothing new stored). The result says
+"Interrupted: the old will was not invalidated. Your later date (10
+October 2031, 00:00 UTC) was not applied: the will in force needs the paid
+invalidation first. When you are ready, choose it again." Cases:
+
+- Cancel at the invalidation's password in the Check window (the wizard's
+  "Create the will", the Check button, the summary's "Sign and send" in
+  BASIC, the Check at wallet close): reverted.
+- The invalidation could not be signed: reverted (never broadcast).
+- The invalidation was broadcast (also with a broadcast error, or not yet
+  confirmed): NOT reverted, the postpone may be underway.
+- An expired will or a renewal (#79): unchanged (not a postpone).
+- The automatic rebuild: not reverted (it never asks; an encrypted wallet
+  cannot invalidate there, so the next Check asks the owner).
+- The command line (`bal_will_check` / prepare): not reverted; it returns
+  the invalidation transaction to sign and broadcast and has no Cancel.
+
+Golden file: `check/cancel_at_invalidate` ("date later, Cancel at the
+invalidation, Check again"): the result of the cancelled Check is the new
+sentence, the date goes back to 2032-09-23, and the second Check finds the
+will coherent (nothing to invalidate, sign or send) instead of
+invalidating. No other golden changed. Tests: `tests/test_cancelled_postpone.py`
+(new, 7: the rule; the owner's case through the wizard with the next Check
+not asking; no draft -> the will in force's date; wallet close; signing
+failure; a broadcast invalidation keeps the later date; the command line);
+all golden test files (247 passed) and the affected files pass; ruff clean;
+1 new msgid (IT/ES).
+
+**After the owner's ZIP test: complete the sending, deselected
+will-executors.** Owner's real test: version #20 for 5 will-executors, 3
+signed, sent and verified, 2 signed but not sent; the summary said "Will
+signed: it must be sent", "3 of 5 verified it · 2 to be sent" and the
+false italic "Until you sign and send it, the will sent before stays in
+force" (same date, the same will). His log then showed the 2 had been
+DESELECTED after the signing: the sending rightly skipped them, so Send
+pushed nothing and the box asked to send forever.
+
+- `bal/core/summary.py`: a will received and verified by at least one
+  will-executor with SELECTED ones still to send: "Will in force: complete
+  the sending" (orange, the colour of "In force, but N did not receive
+  it"), "3 of 5 will-executors received and verified it. Send it to the
+  other 2 too, for more safety.", the Send button; no "will sent before"
+  note and no comparison rows. That note now appears only when the will
+  sent before has another date than the one prepared or signed now.
+- One rule for deselected will-executors (`summary.selected_urls`,
+  `executor_states(..., selected)`), used by the summary, the Check
+  window's rows and counts, the report's states and gating, and the Future
+  view's squares: a copy for a will-executor deselected now that never
+  received the will is "deselected: not sent", not "to send", and is not
+  counted ("3 of 3 received and verified it": green, no Send). The summary
+  box and the Check window add "2 will-executors are deselected, so they
+  did not receive the will. To send it to them too, select them again."
+  with a small secondary "Open Will-Executors" button (the Tools window);
+  when it closes, the box and the rows follow the selection, so a
+  will-executor selected again is "to send" and Send pushes it. What is
+  pushed did not change. When every will-executor is deselected the rule
+  is not applied (nothing would be counted).
+- Golden files: none changed (all 247 golden tests pass unchanged). Tests:
+  `tests/test_will_summary.py` (+3: the owner's 3/5 case, singular and
+  failed, the note only for another date), `tests/test_deselected_executors.py`
+  (new, 7: 3 verified + 2 deselected -> green 3/3 and the line; the Check
+  pushes nothing to them, rows "deselected: not sent"; selected again ->
+  "complete the sending", Send pushes it; the box's line and button and
+  the refresh at the window's close; the window's close callbacks; the
+  Check window's line and button); 9 new msgids (IT/ES).
+
+Also (owner): the List's row of the will in force follows the same rule: "sent and verified 3 of 3 · 2 deselected" (IT "inviata e verificata 3 su 3 · 2 deselezionati"); older versions keep their counts as built (history). The Will-Executors window's close refreshes the summary box and the List. No golden changed (247 passed); `tests/test_deselected_executors.py` +1; 2 new msgids.
+
+**Full-suite fix of the cancelled postpone (#123 funds-safety tests).**
+Two tests of `tests/test_per_wallet_settings_flow.py` failed with option B
+(both orders, 2 of 2159):
+
+- `test_sent_will_earlier_than_the_will_in_force_is_a_postpone`: a VALID
+  will B signed and sent at the stored date, and an older sent will A,
+  REPLACED but still executable, EARLIER. The Check asks to invalidate A;
+  Cancel. Option B took the "will in force" date (A's, the earliest) and
+  wrote it back: the next Check would read an anticipation and sign the
+  newer will at the earlier date, exactly what the test forbids. Fix: no
+  revert when the stored date is the date of a VALID will already signed
+  or sent (`engine.context.cancelled_postpone_date`): that is a newer will,
+  not a wish to undo.
+- `test_question_use_later_asks_for_the_invalidation`: the #123 "which
+  date?" question answered "Use 15/07/2029 (later: the old will must be
+  invalidated, miner fee)", then Cancel at the invalidation: the explicit
+  answer must stay (as before #123/#134). Fix: no revert when the later
+  date was chosen through that question in the same Check
+  (`BalBuildWillDialog._later_by_question`).
+
+The owner's option-B case (a later date chosen in the wizard or the
+settings, carried by no will item) still goes back. Results:
+`test_per_wallet_settings_flow.py` + `test_cancelled_postpone.py`: 53
+passed; all golden tests: 247 passed, unchanged; ruff clean.
+
+**Final verification before the commit:** `ruff check bal/ tests/`: all
+checks passed. Whole `tests/` directory: 2159 passed in the normal order,
+2159 passed in the reverse order, 0 failed, 0 errors. Golden files: the 66
+of `tests/golden/5e` listed above (date style; `check/cancel_at_invalidate`
+also for the cancelled postpone), nothing else. No CRLF in the touched
+files. Catalogs: 732 entries, no fuzzy, no empty. `build_zip.py` +
+`external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass.
+
+**Outcome:** DONE. The owner tested the ZIPs on his wallet (2026-10-13)
+and asked for every follow-up above; last ZIP OK.

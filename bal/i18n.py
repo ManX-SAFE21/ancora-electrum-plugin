@@ -184,6 +184,17 @@ def set_language(plugin, lang: Optional[str]) -> None:
     _logger.info(f"no BAL catalog for {lang!r}, using English")
 
 
+def language() -> Optional[str]:
+    """Return the language code :func:`set_language` was given, or None.
+
+    For example ``"it_IT"``; None in English without a code, on the command
+    line and before the Qt plugin loads a catalog. The BASIC wizard (#134)
+    uses it to write the month names in the same language as the texts
+    around them (a ``QLocale`` of the system could be another language).
+    """
+    return _language
+
+
 def number_separators() -> tuple:
     """Return ``(decimal, thousands)`` separators for the current language.
 

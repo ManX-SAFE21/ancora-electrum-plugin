@@ -128,7 +128,7 @@
    ],
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2026-12-10</b> (in 2 months)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>10 December 2026, 00:00 UTC</b> (in 2 months)"
    ],
    "steps": [
     [
@@ -272,7 +272,7 @@
   "questions": [
    [
     "renew",
-    "Are you still here? The Check Alive date (2026-11-10) has passed.\n\nRenew your will: the new delivery date will be 2027-01-19 (today + 2 months). The old will is invalidated on the blockchain (this costs a miner fee) and the new one is prepared right away.\n\nNot now: nothing changes, your current will stays valid."
+    "Are you still here? The Check Alive date (10 November 2026, 00:00 UTC) has passed.\n\nRenew your will: the new delivery date will be 19 January 2027, 00:00 UTC (today + 2 months). The old will is invalidated on the blockchain (this costs a miner fee) and the new one is prepared right away.\n\nNot now: nothing changes, your current will stays valid."
    ]
   ],
   "report": {
@@ -303,7 +303,7 @@
    "heirs": null,
    "result": [
     "warn",
-    "<b>The Check Alive date has passed: renew your will</b><br>Delivery to the heirs: <b>2026-12-10</b> (in 20 days)"
+    "<b>The Check Alive date has passed: renew your will</b><br>Delivery to the heirs: <b>10 December 2026, 00:00 UTC</b> (in 20 days)"
    ],
    "steps": [
     [

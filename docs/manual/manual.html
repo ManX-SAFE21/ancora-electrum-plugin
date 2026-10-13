@@ -99,6 +99,27 @@ inheritance cases.</p>
 <p><img alt="Figure 2 — HEIRS tab parameters" src="./images/fig2.png" /></p>
 <p><em>Figure 2 — the parameters on the HEIRS tab: (1) Delivery Time, (2) Check Alive,
 (3) Fees.</em></p>
+<h3 id="the-wizard-in-basic-mode">The wizard in BASIC mode</h3>
+<p>In BASIC mode <strong>Build / Edit Your Will</strong> has four short steps, each with a
+question; a bar on top shows where you are (<em>1 When, 2 Heirs,
+3 Will-executors, 4 Summary</em>).</p>
+<ol>
+<li><strong>When do the heirs receive the bitcoin?</strong> Choose <em>In 1 year</em>, <em>In 2 years</em> (the default) or <em>In 5 years</em>, or <em>Choose the date…</em>: Year, Month, Day and Hour (whole hours) in your <strong>computer's time</strong>. A wallet that already has a will also offers <em>Leave as it is</em> (chosen at first). Under the choice the page shows the same moment twice: <em>In your time zone</em> and <em>In the will</em>, which is in <strong>UTC</strong> (Bitcoin counts time in UTC); when the UTC day is another day, it says so. While a will is in force, a line compares it with your choice: <em>Will in force: … · Your choice: … (earlier — free)</em> or <em>(later — requires the paid invalidation)</em>. <em>Leave as it is</em> says whether its date is the will in force or the date you chose last time (a will prepared but not sent yet). A date or hour that has already passed cannot be chosen. A date later than the will in force shows a note: moving it later needs the paid invalidation of that will, moving it earlier is free. A will in the renewable period form only shows its renewal here. At the bottom left, <em>Mode: Basic · Advanced</em> switches to ADVANCED (with the phrase "at My Risk") and the wizard goes on with the ADVANCED pages.</li>
+<li><strong>Who receives the bitcoin?</strong> The heirs list with <em>+ Add heir</em>, <em>Import</em> and <em>Export</em>, the total of the shares and the reminder that 100% of the wallet balance is spent. At least one heir is needed.</li>
+<li><strong>Who keeps the will?</strong> The will-executors list is downloaded and pinged at once, and only the will-executors that answer are selected. If nobody answers, check the internet connection and press <em>Retry</em>. At least two will-executors are recommended. The full will-executor list (all columns and buttons, and the option <em>Add transactions without will-executor</em>) is shown below.</li>
+<li><strong>Check and create.</strong> The delivery (UTC and your time zone, and, while a will is in force, <em>In force now → After signing</em> with how much earlier or later), the heirs, the will-executors and their fee. <em>Create the will</em> prepares the will, asks for the password to sign it and sends it to the will-executors.</li>
+</ol>
+<p><strong>Dates.</strong> The plugin writes a delivery date in one style: "13 October
+2028, 00:00 UTC" (the time saved in the will), with "In your time zone: …" where
+there is room; the version rows of the Will tab use the short form "13 Oct 2028,
+00:00 UTC". When a will is prepared but not sent and its date differs from the will
+in force, the will summary of the Will tab shows both: <em>In force now</em> and
+<em>After signing</em> (moved earlier or later by …). The Future view and the PDF
+report keep their dates for now.</p>
+<p><strong>Cancel</strong> (or closing the window) puts everything back as it was when the
+wizard opened: the heirs, the delivery date and the will-executors'
+selection. Only <em>Create the will</em> keeps the changes. BASIC hides the miner
+fee and the Check Alive: the stored fee is used.</p>
 <h3 id="1-delivery-time-locktime">1 — Delivery Time (Locktime)</h3>
 <p>Indicates the date on which the inheritance of your wallet on the blockchain
 will be transferred to the recipient. It is always a <strong>Precise Date</strong>.</p>
@@ -112,8 +133,8 @@ months from today.</p>
 <li><strong>Fixed date</strong> (default): the will is delivered on the date you choose. When its Check Alive passes, the plugin cannot renew it: choose a later date (a will already sent must then be invalidated, miner fee).</li>
 <li><strong>Period (renewable)</strong>, offered only in ADVANCED mode: the will is delivered N calendar months (1 to 240) after the day it is prepared. When its Check Alive passes, the plugin asks to <strong>Renew</strong>: the old will is invalidated on the blockchain (miner fee) and a new will is prepared at once, delivered N months after that day. The Heirs and Will tabs show the period and the date it gives, for example "36 months (3 years) -&gt; 12/10/2029" (the day is the UTC day). A will already in the period form keeps being renewed in BASIC mode too: the mode only hides the choice.</li>
 </ul>
-<p>In BASIC mode with a fixed date the wizard shows no choice: only the mode
-and the date.</p>
+<p>In BASIC mode the wizard has no settings page: it asks only the date (see
+<em>The wizard in BASIC mode</em>).</p>
 <p>The form cannot change while a will is in force (signed or sent): in
 ADVANCED mode the wizard says so and the two choices are disabled. To change it, invalidate
 the will (Invalidate, miner fee); when the invalidation is confirmed, choose

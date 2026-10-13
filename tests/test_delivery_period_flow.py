@@ -172,7 +172,8 @@ def test_renewal_is_offered_and_builds_today_plus_n_months(make, phase1):
     step = last(s)
     assert [k for k, _t in step["questions"]][:1] == ["renew"]
     assert RENEW_QUESTION in step["questions"][0][1]
-    assert "2027-01-19 (today + 2 months)" in step["questions"][0][1]
+    # #134: the GUI writes the dates in the one long style (UTC).
+    assert "19 January 2027, 00:00 UTC (today + 2 months)" in step["questions"][0][1]
     assert [k for k, _t in step["broadcasts"]] == ["invalidation(dialog)"]
     assert valid_dates(s) == ["2027-01-19"]
     d = s.wallet.db.get_dict("will_settings")
@@ -229,7 +230,7 @@ def test_new_n_is_used_at_the_next_renewal(make, phase1, monkeypatch):
     engine_context.set_delivery(s.bw, months=3)
     s.clock.travel(40)
     s.check()
-    assert "2027-02-19 (today + 3 months)" in last(s)["questions"][0][1]
+    assert "19 February 2027, 00:00 UTC (today + 3 months)" in last(s)["questions"][0][1]
     assert valid_dates(s) == ["2027-02-19"]
     assert_ok_next_day(s)
 

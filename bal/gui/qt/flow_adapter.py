@@ -27,6 +27,7 @@ and settings that could not be prepared (note
 with the window (``bal.gui.qt.window``), which shows them too.
 """
 
+from ...core import datetext
 from ...core.messages import check_alive_message
 from ...engine.ui import Step
 from ...i18n import N_, _
@@ -133,7 +134,9 @@ class DialogFlowUI:
         """
         d = self._dialog
         if code == "check_alive_reason":
-            d.msg_edit_row(d.msg_error(check_alive_message(data["info"])))
+            d.msg_edit_row(d.msg_error(
+                check_alive_message(data["info"], datetext.utc_text)
+            ))
         elif code == "check_alive_error":
             d.msg_edit_row(d.msg_error(data["error"]))
         elif code == "fixed_amounts_exceed":

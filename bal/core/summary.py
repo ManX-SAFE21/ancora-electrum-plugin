@@ -18,6 +18,7 @@ Must never import Qt (``bal/core`` rule).
 from datetime import datetime, timezone
 
 from ..i18n import _
+from . import datetext
 from . import delivery as _delivery
 from .checkalive import check_alive_basic, check_alive_renewal, resolve_date_to_check
 from .messages import _day, check_alive_cannot_renew
@@ -28,7 +29,26 @@ _DAY = 86400
 # Where a will-executor stands with the will in force, worst first: the
 # summary reports an executor by its worst copy (a will usually has one tx
 # per executor, but several coins can give several txs).
-_EXECUTOR_ORDER = ("failed", "to_sign", "to_send", "to_verify", "verified")
+_EXECUTOR_ORDER = ("failed", "to_sign", "to_send", "to_verify", "verified",
+                   "deselected")
+
+#: The states a DESELECTED will-executor's copy turns into "deselected"
+#: (#134): it never received the will, and the sending skips it
+#: (``Willexecutors.get_willexecutor_transactions``), so it is not "to
+#: send". A copy it already received keeps its state.
+_NOT_RECEIVED = ("failed", "to_sign", "to_send")
+
+
+def selected_urls(willexecutors):
+    """The URLs of the will-executors selected now (#134), as a set.
+
+    ``willexecutors``: the plugin's list (``Willexecutors.get_willexecutors``).
+    The one rule shared by the will summary, the Check window's rows, the
+    report's states and the Future view's squares: a copy for a will-executor
+    not in this set, never received, is "deselected", not "to send".
+    """
+    return {url for url, we in (willexecutors or {}).items()
+            if isinstance(we, dict) and we.get("selected")}
 
 
 def _now(now):
@@ -118,11 +138,14 @@ def _row(label, strong="", text="", alarm="", red=False, level=None, tip=""):
             "red": red, "level": level, "tip": tip}
 
 
-def _delivery_row(delivery, now, warn_months):
-    """The "Delivery to the heirs" line, with its remaining-time colour."""
+def _delivery_row(delivery, now, warn_months, day=_day):
+    """The "Delivery to the heirs" line, with its remaining-time colour.
+
+    ``day``: how a date is written (see :func:`will_summary`).
+    """
     level, tip = delivery_warning(delivery, now, warn_months)
     return _row(
-        _("Delivery to the heirs"), strong=_day(delivery),
+        _("Delivery to the heirs"), strong=day(delivery),
         text=relative_date(delivery, now), red=delivery <= now,
         level=level, tip=tip,
     )
@@ -147,11 +170,14 @@ def _executor_state(w):
     return "to_sign"
 
 
-def executor_states(valid):
+def executor_states(valid, selected=None):
     """``{url: state}`` for the VALID items ``valid``, at each executor's worst copy.
 
     States: ``failed``, ``to_sign``, ``to_send``, ``to_verify``,
-    ``verified``. Items without a will-executor (backup transactions) are
+    ``verified`` and (#134) ``deselected``: with ``selected`` (the URLs
+    selected now, :func:`selected_urls`), a copy for a will-executor not
+    selected that never received the will. None: no selection rule (as
+    before #134). Items without a will-executor (backup transactions) are
     left out. Also used by the Building Will dialog (#84b).
     """
     worst = {}
@@ -160,25 +186,33 @@ def executor_states(valid):
         if not url:
             continue
         state = _executor_state(w)
+        if selected is not None and url not in selected and state in _NOT_RECEIVED:
+            state = "deselected"
         old = worst.get(url)
         if old is None or _EXECUTOR_ORDER.index(state) < _EXECUTOR_ORDER.index(old):
             worst[url] = state
     return worst
 
 
-def executor_counts(valid):
+def executor_counts(valid, selected=None):
     """``{state: number of will-executors}`` for the VALID items ``valid``.
 
-    One entry per executor URL, at its worst copy (:func:`executor_states`).
+    One entry per executor URL, at its worst copy (:func:`executor_states`,
+    ``selected`` as there).
     """
     counts = {state: 0 for state in _EXECUTOR_ORDER}
-    for state in executor_states(valid).values():
+    for state in executor_states(valid, selected).values():
         counts[state] += 1
     return counts
 
 
 def _executors_row(counts):
-    """The "Will-Executor" line: who received and verified the will."""
+    """The "Will-Executor" line: who received and verified the will.
+
+    The deselected will-executors (#134) are not counted: they are told
+    apart by their own line (:func:`deselected_text`).
+    """
+    counts = {k: v for k, v in counts.items() if k != "deselected"}
     total = sum(counts.values())
     label = _("Will-Executor")
     if total == 0:
@@ -229,6 +263,25 @@ def _executors_row(counts):
     return _row(label, text=" · ".join(parts), alarm=alarm)
 
 
+def deselected_text(count):
+    """Why some will-executors did not receive the will (#134).
+
+    "2 will-executors are deselected, so they did not receive the will. To
+    send it to them too, select them again." (singular for one). The Will
+    tab summary and the Check window show it with an "Open Will-Executors"
+    button.
+    """
+    if count == 1:
+        return _(
+            "1 will-executor is deselected, so it did not receive the will. "
+            "To send it to it too, select it again."
+        )
+    return _(
+        "{} will-executors are deselected, so they did not receive the will. "
+        "To send it to them too, select them again."
+    ).format(count)
+
+
 def _heirs_row(heirs_count, prepared=True):
     """The "Heirs" line (their number; the names are in the Heirs tab)."""
     text = str(heirs_count)
@@ -238,7 +291,8 @@ def _heirs_row(heirs_count, prepared=True):
 
 
 def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
-                 still_active=None, warn_months=None):
+                 still_active=None, warn_months=None, long_dates=False,
+                 selected=None):
     """Describe the will in force for the summary box of the Will tab.
 
     Args:
@@ -254,12 +308,24 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
             wrong, the blockchain is not (owner's wallet, #84a).
         warn_months: ``(yellow, red)`` thresholds of the delivery colour in
             months (#124); ``None`` uses the defaults 12 and 6.
+        long_dates: CHANGELOG #134 (owner): the dates in the one long style
+            of ``bal.core.datetext`` ("13 October 2028, 00:00 UTC") and, for
+            a prepared will not sent yet whose delivery differs from the will
+            in force, the two lines "In force now" / "After signing". The Will
+            tab and the Check window pass True; the PDF report keeps the
+            ``YYYY-MM-DD`` dates until its own step (#137).
+        selected: the URLs of the will-executors selected now
+            (:func:`selected_urls`, #134): a copy for a deselected one, never
+            received, is not "to send" (the sending skips it); the summary
+            then has ``deselected`` (their number) and ``deselected_text``.
+            None: no selection rule.
 
     Returns:
         A dict: ``state`` (``"ok"``, ``"to_sign"``, ``"to_send"``,
         ``"not_received"``, ``"none_received"``, ``"check_alive"``,
         ``"expired"``, ``"still_active"``, ``"none"``, ``"executed"``,
-        ``"mempool"``, ``"busy"``), ``kind`` (the colour: ``"ok"`` green,
+        ``"mempool"``, ``"busy"``, ``"complete_send"`` (#134: in force at some
+        will-executors, still to send to the others)), ``kind`` (the colour: ``"ok"`` green,
         ``"warn"`` orange, ``"bad"`` red, ``"info"`` and ``"busy"`` grey), ``title``, ``rows`` (see :func:`_row`), ``note``
         (or ``None``), ``action`` (``"check"``, ``"sign_send"``,
         ``"send"``, ``"renew"``, ``"wizard"`` or ``None``) and
@@ -267,16 +333,45 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         on an unexpected error it returns ``None`` and the GUI hides the box.
     """
     try:
-        return _will_summary(willitems or {}, heirs_count, will_settings or {},
+        return _with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
                              is_basic_mode, _now(now), still_active or [],
-                             warn_months)
+                             warn_months, datetext.utc_text if long_dates else _day,
+                             long_dates, selected), willitems or {}, selected)
     except Exception:
         return None
 
 
+def _is_deselected(w, selected, deselected):
+    """True for a copy of a deselected will-executor that never received
+    the will (#134); False when the rule is off (``deselected`` 0)."""
+    if not deselected or selected is None:
+        return False
+    url = (w.we or {}).get("url")
+    return bool(url) and url not in selected and _executor_state(w) in _NOT_RECEIVED
+
+
+def _with_deselected(summary, willitems, selected):
+    """Add ``deselected`` / ``deselected_text`` to ``summary`` (#134)."""
+    if summary is None:
+        return None
+    count = 0
+    if selected is not None and summary.get("state") not in ("busy", "none"):
+        counts = executor_counts(Will.only_valid_list(willitems), selected)
+        if any(v for k, v in counts.items() if k != "deselected"):
+            count = counts["deselected"]
+    summary["deselected"] = count
+    summary["deselected_text"] = deselected_text(count) if count else ""
+    return summary
+
+
 def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
-                  still_active, warn_months=None):
-    """:func:`will_summary` without the safety net (see there)."""
+                  still_active, warn_months=None, day=_day, compare=False,
+                  selected=None):
+    """:func:`will_summary` without the safety net (see there).
+
+    ``day`` writes a date; ``compare`` adds the "In force now" / "After
+    signing" lines (both from ``long_dates``).
+    """
     valid = Will.only_valid_list(willitems)
     if not valid:
         # No will in force. A will already on its way to the heirs is not
@@ -286,7 +381,8 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         if any(w.get_status("MEMPOOL") for w in willitems.values()):
             return _summary("mempool", "info", _("Your will is being executed (mempool)"))
         if still_active:
-            return _still_active_summary(still_active, heirs_count, now, warn_months)
+            return _still_active_summary(still_active, heirs_count, now, warn_months,
+                                         day)
         invalidated = any(w.get_status("INVALIDATED") for w in willitems.values())
         if invalidated:
             note = _(
@@ -306,7 +402,7 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
     creation = Will.get_creation_time(valid)
     rows = []
     expired = delivery <= now
-    rows.append(_delivery_row(delivery, now, warn_months))
+    rows.append(_delivery_row(delivery, now, warn_months, day))
     if expired:
         # The executors can broadcast it now: the Check invalidates it and
         # prepares a new one (same text as the Check Alive message, #79).
@@ -316,7 +412,7 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
                 "The delivery date of your will ({date}) has already passed: the "
                 "will can be executed now. Press Check to invalidate it and "
                 "prepare a new one."
-            ).format(date=_day(delivery)),
+            ).format(date=day(delivery)),
             action="check", action_text=_("Check"),
         )
 
@@ -337,14 +433,22 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
             )
         )
         check_row = _row(
-            _("Check Alive"), strong=_day(check_date),
+            _("Check Alive"), strong=day(check_date),
             text=relative_date(check_date, now), red=bool(renewal),
         )
         rows.append(check_row)
 
-    counts = executor_counts(valid)
+    counts = executor_counts(valid, selected)
+    if counts["deselected"] and not any(
+            v for k, v in counts.items() if k != "deselected"):
+        # Every will-executor is deselected: nothing would be counted, so
+        # the will reads as before (the rule only tells apart SOME).
+        counts = executor_counts(valid)
     rows.append(_executors_row(counts))
     rows.append(_heirs_row(heirs_count))
+    deselected = counts["deselected"]
+    unsigned = [w for w in valid.values() if not w.get_status("COMPLETE")
+                and not _is_deselected(w, selected, deselected)]
 
     if renewal:
         if renewal.get("renewable"):
@@ -355,7 +459,7 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
                 note=_(
                     "If you do not renew it, your will stays valid and will be "
                     "delivered on {}."
-                ).format(_day(delivery)),
+                ).format(day(delivery)),
                 action="renew", action_text=_("Renew"),
             )
         # A fixed delivery date, or settings that would put the renewed
@@ -363,20 +467,36 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         # first, so there is nothing to press here.
         return _summary(
             "check_alive", "warn", _("The Check Alive date has passed"),
-            rows=rows, note=check_alive_cannot_renew(renewal),
+            rows=rows, note=check_alive_cannot_renew(renewal, day),
         )
 
-    if any(not w.get_status("COMPLETE") for w in valid.values()):
+    if unsigned:
+        if compare:
+            _insert_comparison(rows, still_active, delivery)
         return _summary(
             "to_sign", "warn", _("Will prepared: it must be signed and sent"),
-            rows=rows, note=_previous_will_note(still_active),
+            rows=rows, note=_previous_will_note(still_active, day, delivery),
             action="sign_send", action_text=_("Sign and send"),
         )
+    if counts["to_send"] and counts["verified"]:
+        # #134 (owner's real test): the will is already in force at some
+        # will-executors (received and verified) and only the others still
+        # have to receive it (signed and not sent, or failed). Nothing of
+        # "the will sent before stays in force": THIS will is in force. The
+        # orange of an action to do, as "In force, but N did not receive
+        # it" (state "not_received"); the button sends it.
+        return _summary(
+            "complete_send", "warn", _("Will in force: complete the sending"),
+            rows=rows, note=_complete_send_note(counts),
+            action="send", action_text=_("Send"),
+        )
     if counts["to_send"]:
+        if compare:
+            _insert_comparison(rows, still_active, delivery)
         return _summary(
             "to_send", "warn",
             _("Will signed: it must be sent to the will-executors"),
-            rows=rows, note=_previous_will_note(still_active),
+            rows=rows, note=_previous_will_note(still_active, day, delivery),
             action="send", action_text=_("Send"),
         )
     failed = counts["failed"]
@@ -405,24 +525,75 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
     return _summary("ok", "ok", _("Your will is in force"), rows=rows)
 
 
-def _previous_will_note(still_active):
+def _insert_comparison(rows, still_active, delivery):
+    """Add "In force now" and "After signing" under the delivery row (#134).
+
+    Owner (ZIP test): with a prepared will not sent yet, the summary showed
+    only the new date and the reader had nothing to compare it with. When
+    the will sent before (``still_active``, still executable on-chain) has
+    another delivery date, two lines follow the delivery row: its date, and
+    the prepared one with "moved earlier by …" or "moved later by …"
+    (``datetext.delivery_change``). Nothing when the dates are equal or no
+    sent will is in force. The delivery row stays first (the Check window's
+    result sentence reads the first dated row).
+    """
+    if not still_active:
+        return
+    in_force = min(int(locktime) for _item, locktime, _url in still_active)
+    if in_force == int(delivery):
+        return
+    rows.insert(1, _row(_("In force now"), strong=datetext.utc_text(in_force)))
+    rows.insert(2, _row(
+        _("After signing"), strong=datetext.utc_text(delivery),
+        text="→ " + _("delivery {}").format(datetext.delivery_change(in_force, delivery)),
+    ))
+
+
+def _complete_send_note(counts):
+    """"3 of 5 will-executors received and verified it. Send it to the
+    other 2 too, for more safety." (#134). The others: those still to send
+    and those whose sending failed."""
+    # The deselected will-executors (#134) are not part of "of m".
+    total = sum(v for k, v in counts.items() if k != "deselected")
+    verified = counts["verified"]
+    others = counts["to_send"] + counts["failed"]
+    first = (
+        _("1 of {m} will-executors received and verified it.").format(m=total)
+        if verified == 1
+        else _("{n} of {m} will-executors received and verified it.").format(
+            n=verified, m=total)
+    )
+    second = (
+        _("Send it to the other one too, for more safety.")
+        if others == 1
+        else _("Send it to the other {} too, for more safety.").format(others)
+    )
+    return first + " " + second
+
+
+def _previous_will_note(still_active, day=_day, current=None):
     """The will sent before, still in force until the new one is sent (#84b).
 
     After a Cancel at signing (or before sending) the executors still hold
     the will sent before, and it can be executed: say so, with its date,
     instead of letting "it must be signed" suggest there is no will. None
-    when no sent will can still be executed.
+    when no sent will can still be executed, and (#134) when its date is the
+    date of the will prepared now (``current``): then there is no different
+    will to warn about (owner's real test: the sentence was false).
     """
     if not still_active:
         return None
     delivery = min(int(locktime) for _item, locktime, _url in still_active)
+    if current is not None and delivery == int(current):
+        return None
     return _(
         "Until you sign and send it, the will sent before stays in force: "
         "delivery on {}."
-    ).format(_day(delivery))
+    ).format(day(delivery))
 
 
-def _still_active_summary(still_active, heirs_count, now, warn_months=None):
+def _still_active_summary(still_active, heirs_count, now, warn_months=None,
+                          day=_day):
     """No VALID item, but a will sent before can still be executed (#84a).
 
     Owner's wallet: after "later delivery date -> Cancel" the records marked
@@ -434,7 +605,7 @@ def _still_active_summary(still_active, heirs_count, now, warn_months=None):
     """
     delivery = min(int(locktime) for _item, locktime, _url in still_active)
     urls = {url for _item, _locktime, url in still_active if url}
-    rows = [_delivery_row(delivery, now, warn_months)]
+    rows = [_delivery_row(delivery, now, warn_months, day)]
     rows.append(_row(
         _("Will-Executor"),
         text=(
@@ -451,7 +622,7 @@ def _still_active_summary(still_active, heirs_count, now, warn_months=None):
         note=_(
             "The plugin marks it as replaced or invalidated, but its coins "
             "were never spent on the blockchain: it will be delivered on {}."
-        ).format(_day(delivery)),
+        ).format(day(delivery)),
     )
 
 

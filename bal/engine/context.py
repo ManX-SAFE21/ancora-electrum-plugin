@@ -40,7 +40,7 @@ from datetime import datetime, timedelta, timezone
 from electrum.logging import get_logger
 from electrum.util import MyEncoder
 
-from ..core import checkalive, delivery
+from ..core import checkalive, delivery, will_state
 from ..core.heirs import Heirs
 from ..core.util import Util, copy_structure
 from ..core.will import NoHeirsException, Will, WillItem
@@ -823,6 +823,119 @@ def will_in_force(host):
     except Exception as e:
         _logger.warning(f"will in force not read, date kept: {e!r}")
         return True
+
+
+def in_force_delivery(host):
+    """The delivery date of the will REALLY in force, or None (#134).
+
+    The items of ``Will.in_force_items`` (``bal.core.will_state.is_in_force``:
+    signed and/or sent, VALID or REPLACED, not invalidated or executed, still
+    executable on a synchronized wallet), their earliest date locktime: the
+    date the will-executors would execute. A prepared draft (never signed
+    nor sent) is NOT the will in force, even when it is VALID and its date
+    is the stored one (owner's ZIP test of #134: a draft for 13/10/2028 was
+    shown as "the will in force" while the executors held 26/02/2031).
+    Refreshes the invalidated items first; None when the will cannot be
+    read (logged).
+    """
+    try:
+        refresh_invalidated_items(host)
+        willitems = host.willitems or {}
+        items = Will.in_force_items(willitems, host.wallet, _wallet_synced(host))
+        dates = [delivery.as_delivery(w.tx.locktime) for w in items.values()]
+        dates = [d for d in dates if d is not None]
+        return min(dates) if dates else None
+    except Exception as e:
+        _logger.warning(f"will in force not read: {e!r}")
+        return None
+
+
+def cancelled_postpone_date(host):
+    """The delivery date to go back to after a cancelled postpone, or None.
+
+    CHANGELOG #134 (owner, option B): a Check found a POSTPONE (the stored
+    date is later than the will really in force) and the paid invalidation
+    was not done. The stored date then goes back to the date the will items
+    really use:
+
+    * the prepared draft's date (``will_state.draft_ids``: VALID, never
+      signed nor sent), when there is one and it is not later than the will
+      in force (a later draft would read as a postpone again);
+    * otherwise the date of the will really in force
+      (:func:`in_force_delivery`, the #128 notion, untouched).
+
+    None when there is nothing to go back to, when the stored date is not
+    later than that date (then it was not a postpone), or when the stored
+    date is the date of a VALID will already signed or sent (a newer will
+    that is not undone: see the comment below). Pure reading.
+    """
+    stored = delivery.as_delivery((getattr(host, "will_settings", None) or {}).get("locktime"))
+    if stored is None:
+        return None
+    willitems = getattr(host, "willitems", None) or {}
+    # Funds safety (#123 FS tests): when the stored date IS the date of a
+    # VALID will already signed or sent, it is not a wish to undo. That will
+    # is the newer one; an older sent will dated earlier is what asks for
+    # the invalidation. Going back to the earlier date would read as an
+    # anticipation and sign the newer will at the earlier date.
+    for item in willitems.values():
+        try:
+            lt = delivery.as_delivery(int(item.tx.locktime))
+        except Exception:
+            continue
+        if (lt == stored and item.get_status("VALID")
+                and will_state.is_signed_or_sent(item)):
+            return None
+    in_force = in_force_delivery(host)
+    target = in_force
+    drafts = []
+    for wid in will_state.draft_ids(willitems):
+        try:
+            lt = delivery.as_delivery(int(willitems[wid].tx.locktime))
+        except Exception:
+            lt = None
+        if lt is not None:
+            drafts.append(lt)
+    if drafts:
+        draft = min(drafts)
+        if in_force is None or draft <= in_force:
+            target = draft
+    if target is None or stored <= target:
+        return None
+    return target
+
+
+def revert_cancelled_postpone(host):
+    """Put the stored delivery date back after a cancelled postpone (#134).
+
+    The rule of :func:`cancelled_postpone_date`, written through the host's
+    validated write (``host.store_will_setting``: ``set_will_setting``, the
+    GUI fields refreshed on the GUI thread, rule I5). Called ONLY when the
+    paid invalidation of a postpone was not done and certainly reached no
+    network: Cancel at its password, or its signing failed. NEVER once an
+    invalidation was broadcast (even with an error or not confirmed yet):
+    then the postpone may be legitimately underway and the later date must
+    stay. Returns ``(chosen, restored)`` (the later date that was not
+    applied and the date stored now), or None when nothing was changed.
+    Never raises (logged).
+    """
+    try:
+        chosen = delivery.as_delivery(host.will_settings.get("locktime"))
+        target = cancelled_postpone_date(host)
+        if chosen is None or target is None:
+            return None
+        _logger.info(
+            "will settings: postpone to {} cancelled (no invalidation): the "
+            "delivery date goes back to {}".format(utc_day_text(chosen), utc_day_text(target))
+        )
+        host.store_will_setting("locktime", target)
+        if delivery.as_delivery(host.will_settings.get("locktime")) != target:
+            _logger.error("will settings: the date of the cancelled postpone was not restored")
+            return None
+        return chosen, target
+    except Exception as e:
+        _logger.error(f"cancelled postpone not reverted: {e!r}")
+        return None
 
 
 def _multiverse(host):

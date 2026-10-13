@@ -45,9 +45,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ...core import datetext
 from ...core import future as core_future
 from ...core.report import _EXECUTOR_TEXTS
-from ...core.summary import busy_summary
+from ...core.summary import busy_summary, selected_urls
+from ...core.willexecutors import Willexecutors
 from ...i18n import _, number_separators
 from .common import _logger
 from .widgets import DELIVERY_LEVEL_COLOURS
@@ -195,7 +197,8 @@ def _executor_legend(executors):
         out.append((_EXECUTOR_COLOURS["verified"], executor_state_text("verified")))
     grey = [
         executor_state_text(state)
-        for state in ("to_verify", "to_send", "to_sign") if state in present
+        for state in ("to_verify", "to_send", "to_sign", "deselected")
+        if state in present
     ]
     if grey:
         out.append((_EXECUTOR_OTHER, " / ".join(grey)))
@@ -209,12 +212,19 @@ def _sats(sats):
     return "{} sat".format(sats)
 
 
-def future_scene(model, format_date=utc_date_text, format_amount=_sats):
+def future_scene(model, format_date=utc_date_text, format_amount=_sats,
+                 format_short=None, split_date=None):
     """Turn a :class:`bal.core.future.Future` into the texts and colours to draw.
 
-    ``format_date(ts)``: a date as the Will tab shows it (local time,
-    four-digit year, #129); ``format_amount(sats)``: an amount in the
-    wallet's unit (tooltip only). Returns a plain dict (no Qt object):
+    ``format_date(ts)``: a date in the texts under the time line (the
+    delivery line, the Check Alive line, the sentence); ``format_short``:
+    a date on the time line itself (today, the Check Alive card, a draft's
+    marker, the later instalments; default ``format_date``);
+    ``split_date(ts)``: ``(day, time)`` of a delivery card (default: the
+    ``format_date`` text cut at its first space, "27/02/2027" and "22:00
+    UTC"). The Will tab passes the one date style of #134
+    (:func:`view_scene`); the PDF report keeps the defaults until #137.
+    ``format_amount(sats)``: an amount in the wallet's unit (tooltip only). Returns a plain dict (no Qt object):
     ``title`` / ``title_kind``, ``today`` (date and "(today)"),
     ``marker`` (the delivery or the draft on the axis, or None),
     ``check_alive`` (or None), ``executors`` (squares: colour, tooltip),
@@ -231,10 +241,11 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
     (``(kind, text)`` of the small legend), the Check Alive's ``title``,
     ``hint`` and ``passed``, and today's ``name`` ("Today").
     """
+    short = format_short or format_date
     scene = {
         "title": model.title,
         "title_kind": "info",
-        "today": {"date": format_date(model.now), "label": _("(today)"),
+        "today": {"date": short(model.now), "label": _("(today)"),
                   "name": _capital(_bare(_("(today)")))},
         "marker": None,
         "check_alive": None,
@@ -260,7 +271,7 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
         scene["title_kind"] = "bad" if model.level == "passed" else "ok"
         first = model.delivery
         scene["marker"] = {
-            "at": first, "date": format_date(first), "left": model.time_left,
+            "at": first, "date": short(first), "left": model.time_left,
             "colour": colour, "draft": False, "tip": model.level_tip,
         }
         scene["end"] = max(first, model.now)
@@ -277,7 +288,7 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
         if model.check_alive is not None:
             check_colour = "#c62828" if model.check_alive_passed else CHECK_ALIVE_COLOUR
             scene["check_alive"] = {
-                "at": model.check_alive, "date": format_date(model.check_alive),
+                "at": model.check_alive, "date": short(model.check_alive),
                 "colour": check_colour, "title": _("Check Alive"),
                 "passed": model.check_alive_passed,
                 "hint": "" if model.check_alive_passed else _(
@@ -316,17 +327,18 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats):
         # markers on the same time scale, and as lines (date: heirs).
         for inst in model.deliveries[1:]:
             scene["instalments"].append(
-                {"at": inst.locktime, "date": format_date(inst.locktime)})
+                {"at": inst.locktime, "date": short(inst.locktime)})
             scene["end"] = max(scene["end"], inst.locktime)
             text = _heirs_text(inst.heirs)
             if text:
                 scene["more"].append("{}: {}".format(format_date(inst.locktime), text))
-        _delivery_cards(scene, model, colour, format_date)
+        _delivery_cards(scene, model, colour,
+                        split_date or (lambda ts: _split_date(format_date(ts))))
     elif model.state == core_future.STATE_DRAFT_ONLY:
         scene["title_kind"] = "bad"
         if model.draft_locktime:
             scene["marker"] = {
-                "at": model.draft_locktime, "date": format_date(model.draft_locktime),
+                "at": model.draft_locktime, "date": short(model.draft_locktime),
                 "left": _("Draft"), "colour": _DRAFT, "draft": True, "tip": "",
             }
             scene["end"] = max(model.draft_locktime, model.now)
@@ -352,8 +364,13 @@ def _split_date(text):
     return day, rest
 
 
-def _delivery_cards(scene, model, colour, format_date):
+def _delivery_cards(scene, model, colour, split_date):
     """Fill the #132 time line data of a will in force (see :func:`future_scene`).
+
+    ``split_date(ts)``: the ``(day, time)`` of a card: the day goes in the
+    title ("Delivery to the heirs · 27/02/2027"), the time under it; an
+    empty day keeps the title to the name and puts the whole date under it
+    (the Will tab, #134: "31 Dec 2030, 01:00 UTC").
 
     The user reads "Delivery 1, 2, ..." where the code says "instalment"
     (owner, #132: an inheritance in stages delivers several times; "rata"
@@ -364,11 +381,14 @@ def _delivery_cards(scene, model, colour, format_date):
     scene["pill"] = _bare(model.time_left)
     many = len(model.deliveries) > 1
     for number, inst in enumerate(model.deliveries, 1):
-        day, time = _split_date(format_date(inst.locktime))
+        day, time = split_date(inst.locktime)
         head = _("Delivery {}").format(number) if many else _("Delivery to the heirs")
         scene["deliveries"].append({
             "at": inst.locktime, "number": number if many else None,
-            "title": "{} · {}".format(head, day), "time": time,
+            # No day (the Will tab's style, #134): the title is the name
+            # alone and the date line carries the whole short date, so a
+            # card of the narrowest width never cuts it.
+            "title": "{} · {}".format(head, day) if day else head, "time": time,
             "heirs": " · ".join(
                 "{} {}".format(h.name, _percent_text(h.percent))
                 for h in inst.heirs if h.percent is not None),
@@ -385,6 +405,131 @@ def _delivery_cards(scene, model, colour, format_date):
     scene["legend"] = legend
 
 
+#: The palette of the Future view while a prepared will is not sent yet
+#: (#134): the will the executors hold, drawn desaturated.
+_GHOST_GREY = "#9e9e9e"
+_INFO_FILL = "#EEF4FB"
+_INFO_BORDER = "#C9DBF0"
+_INFO_TEXT = "#24374D"
+
+
+def _grey_scene(scene, model, format_date, format_short):
+    """Turn an in-force scene grey while a prepared will waits (#134).
+
+    Owner (ZIP test): with a will prepared and not sent, the summary above
+    says "Will prepared: it must be signed and sent" while the Future view
+    looked like a normal green "in force" view. Now: the title "Current
+    situation at the will-executors" (grey), an info box that names both
+    dates, every colour of the will in force grey, and the prepared will's
+    date as a dashed grey ghost on the time line, "prepared, not sent". The
+    italic note says the same as the box, so it is left out.
+    """
+    pending = model.pending_locktime
+    scene["title"] = _("Current situation at the will-executors")
+    scene["title_kind"] = "info"
+    scene["info"] = _(
+        "This is what the will-executors hold today (delivery {held}). The "
+        "prepared will (delivery {prepared}) is not signed and sent yet: when "
+        "you sign and send it, this view is in colour again with the new date."
+    ).format(held=format_date(model.delivery), prepared=format_date(pending))
+    scene["note"] = ""
+    _grey_colours(scene)
+    scene["ghost"] = {"at": pending, "date": format_short(pending),
+                      "left": _("prepared, not sent")}
+    scene["end"] = max(scene["end"], pending)
+    return scene
+
+
+def _grey_colours(scene):
+    """Every colour of the will shown turns grey (#134): the axis stretch,
+    the next delivery, the pill, the card, the Check Alive, the executor
+    squares and their legend, the coloured lines."""
+    scene["level"] = "grey"
+    scene["level_colour"] = _GHOST_GREY
+    if scene["marker"]:
+        scene["marker"]["colour"] = _GHOST_GREY
+    if scene["check_alive"]:
+        scene["check_alive"]["colour"] = _GHOST_GREY
+    for square in scene["executors"]:
+        square["colour"] = _GHOST_GREY
+    scene["executor_legend"] = [(_GHOST_GREY, text)
+                                for _colour, text in scene["executor_legend"]]
+    scene["lines"] = [(_GHOST_GREY if colour else None, text, tip, kind)
+                      for colour, text, tip, kind in scene["lines"]]
+
+
+#: The opacity of a Future view whose will no will-executor received (#134).
+_FADED_OPACITY = 0.48
+
+
+def nothing_received(model):
+    """True when no will-executor has received and verified the will the
+    view shows (#134, owner): a draft only, or a will signed but not sent
+    (e.g. signed offline). View-only: the #128 notion of "in force" is not
+    touched.
+
+    The executor marks of the version shown (``Future.executors``, from
+    ``bal.core.summary.executor_states``, the source of the summary's "x of
+    N received and verified"): not one is ``"verified"``. A will with no
+    will-executor at all (the backup transaction kept by the owner) is not
+    "not sent": it was never meant to be, so it keeps its colours.
+    """
+    if model.state == core_future.STATE_DRAFT_ONLY:
+        return True
+    marks = [m for m in model.executors if m.state != "deselected"]
+    if model.state != core_future.STATE_IN_FORCE or not marks:
+        return False
+    return not any(mark.state == "verified" for mark in marks)
+
+
+def _faded_scene(scene):
+    """Grey, faded, with the big "NOT SENT TO THE WILL-EXECUTORS YET" over
+    the time line (#134, owner): nothing happens on the date until the will
+    is sent. The texts of the scene stay (the draft-only view keeps its own
+    title and note)."""
+    _grey_colours(scene)
+    scene["title_kind"] = "info"
+    scene["faded"] = True
+    scene["overlay"] = (_("NOT SENT TO THE WILL-EXECUTORS YET"),
+                        _("Until you send it, nothing happens on the date."))
+    return scene
+
+
+def view_scene(model, format_amount=_sats):
+    """:func:`future_scene` in the one date style of the Will tab (#134).
+
+    Owner (ZIP test): the Future view sits under the will summary, so it
+    writes the dates the same way: "31 December 2030, 01:00 UTC" in the
+    texts, the short "31 Dec 2030, 01:00 UTC" on the time line, and the
+    cards "Delivery to the heirs" over "31 Dec 2030, 01:00 UTC" (owner's
+    ZIP test: "· 23 set 2032" in the title was cut on a narrow card).
+    """
+    scene = future_scene(
+        model, format_date=datetext.utc_text, format_amount=format_amount,
+        format_short=datetext.utc_short,
+        split_date=lambda ts: ("", datetext.utc_short(ts)),
+    )
+    # #134: a prepared will that is not the will in force greys the view
+    # (the PDF report never does: it describes the will in force only).
+    # #134: no will-executor received it: faded, with the overlay (wins
+    # over the case below: what the executors hold is nothing yet).
+    if nothing_received(model):
+        _faded_scene(scene)
+        # Signed but not sent (owner): "Your will is in force" would be
+        # wrong. Signed = every executor is still "to send" (or its sending
+        # failed); a draft-only view keeps its own title.
+        states = {mark.state for mark in model.executors} - {"deselected"}
+        if (model.state == core_future.STATE_IN_FORCE and states
+                and states <= {"to_send", "failed"}):
+            scene["title"] = _("Will signed, not sent yet")
+        return scene
+    if (model.state == core_future.STATE_IN_FORCE
+            and getattr(model, "pending_locktime", None)
+            and model.pending_locktime != model.delivery):
+        _grey_scene(scene, model, datetext.utc_text, datetext.utc_short)
+    return scene
+
+
 def neutral_scene(now, format_date=utc_date_text, busy=False):
     """Today only, with no claim about the will.
 
@@ -398,9 +543,20 @@ def neutral_scene(now, format_date=utc_date_text, busy=False):
     return future_scene(model, format_date)
 
 
+def view_neutral_scene(now, busy=False):
+    """:func:`neutral_scene` with today in the short date style of #134."""
+    model = core_future.Future(state="neutral", now=now)
+    if busy:
+        model.title = busy_summary()["title"]
+    return view_scene(model)
+
+
 def scene_texts(scene):
     """Every text the scene draws, in drawing order (for tests and #132)."""
-    out = [scene["title"], scene["today"]["name"], scene["today"]["date"]]
+    out = [scene["title"], scene.get("info", ""), scene["today"]["name"],
+           scene["today"]["date"]]
+    if scene.get("overlay"):
+        out += list(scene["overlay"])
     check = scene["check_alive"]
     if check:
         out += [check["title"], check["date"], check["hint"]]
@@ -409,6 +565,8 @@ def scene_texts(scene):
         out += [card["title"], card["time"], card["heirs"]]
     if scene["marker"] and scene["marker"]["draft"]:
         out += [scene["marker"]["date"], scene["marker"]["left"]]
+    if scene.get("ghost"):
+        out += [scene["ghost"]["date"], scene["ghost"]["left"]]
     out += [text for _kind, text in scene["legend"]]
     for _colour, text, _tip, kind in scene["lines"]:
         out.append(text)
@@ -665,6 +823,12 @@ def _arrange_cards(widths, heights, centres, radii, x, w, axis_y):
     return out
 
 
+#: The legend's pill symbol (#134): 24 x 8 px, and the room it takes
+#: before its text.
+_LEGEND_PILL_W = 24.0
+_LEGEND_PILL_SLOT = 30
+
+
 def timeline_layout(scene, x, y, w, base):
     """Where every part of the time line goes, from ``y`` down, in width ``w``.
 
@@ -691,6 +855,7 @@ def timeline_layout(scene, x, y, w, base):
     level_colour = scene.get("level_colour") or _TEXT
     cards = scene.get("deliveries") or []
     next_x = _x_of(cards[0]["at"], scene, x0, x1) if cards else None
+    marker = scene["marker"]
 
     # 1. The Check Alive: flag, pole and card (relative offsets for now).
     check_item = None
@@ -727,9 +892,23 @@ def timeline_layout(scene, x, y, w, base):
         text = scene["pill"]
         pw, ph = sbm.horizontalAdvance(text) + 16, sbm.height() + 4
         a, b = x0 + _R_TODAY + 6, next_x - _R_NEXT - 6
+        # Keep the pill off the Check Alive pole and (#134) off the dashed
+        # circle of a prepared will's ghost: split the stretch around them.
+        cuts = []
+        if check_item:
+            cuts.append((check_item["cx"], 6))
+        early = marker if marker and marker["draft"] else scene.get("ghost")
+        if early:
+            cuts.append((_x_of(early["at"], scene, x0, x1), _R_LATER + 6))
         pieces = [(a, b)]
-        if check_item and a < check_item["cx"] < b:
-            pieces = [(a, check_item["cx"] - 6), (check_item["cx"] + 6, b)]
+        for cx, gap in sorted(cuts):
+            out_pieces = []
+            for lo, hi in pieces:
+                if lo < cx < hi:
+                    out_pieces += [(lo, cx - gap), (cx + gap, hi)]
+                else:
+                    out_pieces.append((lo, hi))
+            pieces = out_pieces
         best = max(pieces, key=lambda p: p[1] - p[0])
         if best[1] - best[0] >= pw:
             mid = (best[0] + best[1]) / 2.0
@@ -750,11 +929,14 @@ def timeline_layout(scene, x, y, w, base):
     today_item = {"left": t_left, "w": tw, "h": th,
                   "bottom": _place_above(placed, t_left, t_left + tw, th)}
     draft_item = None
-    marker = scene["marker"]
-    if marker and marker["draft"]:
-        text = "{} · {}".format(marker["date"], marker["left"])
+    # The draft of a wallet with no will in force, or (#134) the ghost of a
+    # prepared will while another one is in force: the same dashed label.
+    ghost = marker if marker and marker["draft"] else scene.get("ghost")
+    if ghost:
+        marker_at = ghost["at"]
+        text = "{} · {}".format(ghost["date"], ghost["left"])
         dw, dh = sm.horizontalAdvance(text) + 2, sm.height()
-        mx = _x_of(marker["at"], scene, x0, x1)
+        mx = _x_of(marker_at, scene, x0, x1)
         d_left = max(x, min(mx - dw / 2.0, x + w - dw))
         draft_item = {"x": mx, "left": d_left, "w": dw, "h": dh, "text": text,
                       "bottom": _place_above(placed, d_left, d_left + dw, dh)}
@@ -812,8 +994,8 @@ def timeline_layout(scene, x, y, w, base):
 
     # Circles on the axis.
     out["circles"].append({"kind": "today", "x": x0, "r": _R_TODAY})
-    if marker and marker["draft"]:
-        out["circles"].append({"kind": "draft", "x": _x_of(marker["at"], scene, x0, x1),
+    if ghost:
+        out["circles"].append({"kind": "draft", "x": _x_of(ghost["at"], scene, x0, x1),
                                "r": _R_LATER})
     for card, cx in zip(cards, centres, strict=True):
         out["circles"].append({"kind": "next" if card["next"] else "later", "x": cx,
@@ -852,10 +1034,13 @@ def timeline_layout(scene, x, y, w, base):
     lx = x
     lh = sm.height()
     for kind, text in scene.get("legend") or []:
-        width = 18 + sm.horizontalAdvance(text) + 16
+        # The pill's symbol is a long pill, like the one on the axis (owner,
+        # #134: a short one read as a dot); the others need 18 px.
+        sym = _LEGEND_PILL_SLOT if kind == "pill" else 18
+        width = sym + sm.horizontalAdvance(text) + 16
         if lx > x and lx + width > x + w:
             lx, ly = x, ly + lh + 4
-        out["legend"].append({"kind": kind, "text": text,
+        out["legend"].append({"kind": kind, "text": text, "sym": sym,
                               "rect": QRectF(lx, ly, width - 16, lh)})
         lx += width
     out["legend_font"] = small
@@ -1017,10 +1202,13 @@ def _paint_timeline(painter, lay, scene, hits):
             painter.setBrush(QBrush(QColor(_LATER_FILL)))
             painter.drawEllipse(QPointF(sx, mid), 4, 4)
         elif kind == "pill":
+            # 3x as wide as high: the elongated pill of the axis (#134).
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(QColor(level_colour)))
-            painter.drawRoundedRect(QRectF(sx - 6, mid - 4, 13, 8), 4, 4)
-        _text(painter, rect.left() + 18, rect.top(), rect.width() - 18 + 2, entry["text"],
+            painter.drawRoundedRect(
+                QRectF(rect.left(), mid - 4, _LEGEND_PILL_W, 8), 4, 4)
+        sym = entry.get("sym", 18)
+        _text(painter, rect.left() + sym, rect.top(), rect.width() - sym + 2, entry["text"],
               _GREY, font)
     return lay["bottom"]
 
@@ -1047,9 +1235,26 @@ def paint_future(painter, rect, scene, base_font=None):
     if scene["title"]:
         y += _text(painter, x, y, w, scene["title"], title_colour,
                    _font(base, bold=True, delta=2)) + line * 0.6
+    if scene.get("info"):
+        # #134: the light box that says which will this is (a prepared
+        # will is not sent yet).
+        pad = 8.0
+        text_h = QFontMetricsF(normal).boundingRect(
+            QRectF(0, 0, w - 2 * pad, 10000),
+            int(Qt.TextFlag.TextWordWrap), scene["info"]).height()
+        box = QRectF(x, y, w, text_h + 2 * pad)
+        painter.setPen(QPen(QColor(_INFO_BORDER), 1))
+        painter.setBrush(QBrush(QColor(_INFO_FILL)))
+        painter.drawRoundedRect(box, 6, 6)
+        _text(painter, x + pad, y + pad, w - 2 * pad, scene["info"], _INFO_TEXT, normal)
+        y += box.height() + line * 0.6
 
+    # #134: a will no will-executor received is drawn faded under the title.
+    if scene.get("faded"):
+        painter.setOpacity(_FADED_OPACITY)
     # The time line (#132, owner's mockup): see timeline_layout.
     lay = timeline_layout(scene, x, y, w, base)
+    timeline_top = y
     y = _paint_timeline(painter, lay, scene, hits) + line * 0.4
 
     # The legend under the axis.
@@ -1078,8 +1283,45 @@ def paint_future(painter, rect, scene, base_font=None):
         y += line * 0.5
         y += _text(painter, x, y, w, scene["note"], "#333333",
                    _font(base, italic=True)) + 3
+    if scene.get("overlay"):
+        painter.setOpacity(1.0)
+        ov = overlay_layout(scene, x, w, timeline_top, lay["axis_y"], base)
+        painter.setPen(QPen(QColor(_INFO_BORDER), 1))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 225)))
+        painter.drawRoundedRect(ov["rect"], 8, 8)
+        _text(painter, ov["text_x"], ov["rect"].top() + _OVERLAY_PAD, ov["text_w"],
+              ov["title"], "#555555", ov["title_font"], Qt.AlignmentFlag.AlignHCenter)
+        _text(painter, ov["text_x"], ov["rect"].top() + _OVERLAY_PAD + ov["title_h"] + 2,
+              ov["text_w"], ov["sub"], "#555555", ov["sub_font"],
+              Qt.AlignmentFlag.AlignHCenter)
     painter.restore()
     return y + _MARGIN, hits
+
+
+_OVERLAY_PAD = 10.0
+
+
+def overlay_layout(scene, x, w, top, axis_y, base):
+    """Where the "NOT SENT…" overlay goes (#134): centred on the axis,
+    inside ``[x, x + w]`` (the texts wrap), never above ``top`` (under the
+    title). Returns ``rect``, ``text_x`` / ``text_w``, the two texts, their
+    fonts and the title's height."""
+    title, sub = scene["overlay"]
+    title_font = _font(base, bold=True, delta=4)
+    sub_font = QFont(base)
+    pad = _OVERLAY_PAD
+    flags = int(Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap)
+    tm, sm = QFontMetricsF(title_font), QFontMetricsF(sub_font)
+    width = min(w, max(tm.horizontalAdvance(title), sm.horizontalAdvance(sub)) + 2 * pad + 4)
+    text_w = width - 2 * pad
+    title_h = tm.boundingRect(QRectF(0, 0, text_w, 10000), flags, title).height()
+    sub_h = sm.boundingRect(QRectF(0, 0, text_w, 10000), flags, sub).height()
+    height = title_h + 2 + sub_h + 2 * pad
+    left = x + (w - width) / 2.0
+    rect = QRectF(left, max(top, axis_y - height / 2.0), width, height)
+    return {"rect": rect, "text_x": left + pad, "text_w": text_w, "title": title,
+            "sub": sub, "title_font": title_font, "sub_font": sub_font,
+            "title_h": title_h}
 
 
 def scene_height(scene, width, base_font=None):
@@ -1137,7 +1379,7 @@ class FutureView(QWidget):
         now = self._now()
         if getattr(bw, "_will_summary_busy", 0) > 0:
             self.model = None
-            self.scene = neutral_scene(now, busy=True)
+            self.scene = view_neutral_scene(now, busy=True)
             return
         try:
             plugin = bw.bal_plugin
@@ -1145,12 +1387,16 @@ class FutureView(QWidget):
             self.model = core_future.build_future(
                 bw.willitems, bw.will_settings, plugin.is_basic_mode(), now=now,
                 warn_months=warn, wallet=getattr(bw, "wallet", None),
+                day=datetext.utc_text,
+                # #134: deselected will-executors are not "to send".
+                selected=selected_urls(Willexecutors.get_willexecutors(plugin)),
             )
-            self.scene = future_scene(self.model, format_amount=self._format_amount)
+            # #134: the one date style of the Will tab.
+            self.scene = view_scene(self.model, format_amount=self._format_amount)
         except Exception as e:
             _logger.warning(f"future view failed: {e!r}")
             self.model = None
-            self.scene = neutral_scene(now)
+            self.scene = view_neutral_scene(now)
 
     def refresh(self):
         """The will or its settings may have changed: redraw when visible."""

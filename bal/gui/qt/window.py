@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import QMessageBox
 
-from ...core import delivery
+from ...core import datetext, delivery
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
@@ -29,7 +29,7 @@ from ...core.checkalive import (
     resolve_guard_threshold,
 )
 from ...core.messages import check_alive_message, will_change_message
-from ...core.summary import busy_summary, will_summary
+from ...core.summary import busy_summary, selected_urls, will_summary
 from ...engine import build, context
 from .common import (
     N_,
@@ -602,11 +602,40 @@ class BalWindow:
         wizard_dialog = BalWizardDialog(self)
         wizard_dialog.exec()
 
-    def show_willexecutor_dialog(self):
+    def show_willexecutor_dialog(self, on_close=None):
+        """The Tools -> Will-Executors window.
+
+        ``on_close`` (#134): called when it closes, e.g. to show the
+        will-executors selected again as "to send" in the summary box and
+        the Check window.
+        """
         self.willexecutor_dialog = WillExecutorDialog(self)
+        if on_close is not None:
+            self.willexecutor_dialog.on_close_callbacks.append(on_close)
         # Keep it in front of Electrum (window-modal) instead of letting it
         # fall behind the main window.
         show_on_top(self.willexecutor_dialog)
+
+    def _after_executors_window(self):
+        """The will-executor window closed (#134): the summary box and the
+        List's version rows follow the selection made there."""
+        self.update_will_summary()
+        try:
+            self.will_list_widget.update()
+        except Exception as e:
+            _logger.debug(f"will list not refreshed: {e!r}")
+
+    def selected_willexecutors(self):
+        """The URLs of the will-executors selected now (#134), or None.
+
+        ``bal.core.summary.selected_urls`` of the plugin's list: the one rule
+        of the summary, the Check window, the report and the Future view.
+        """
+        try:
+            return selected_urls(Willexecutors.get_willexecutors(self.bal_plugin))
+        except Exception as e:
+            _logger.debug(f"selected will-executors not read: {e!r}")
+            return None
 
     def create_heirs_tab(self):
         if not self.heirs:
@@ -671,6 +700,10 @@ class BalWindow:
                 self.bal_plugin.is_basic_mode(),
                 still_active=self._still_active_for_summary(),
                 warn_months=getattr(self.bal_plugin, "warning_months", lambda: None)(),
+                # #134: the one date style and the in-force comparison.
+                long_dates=True,
+                # #134: deselected will-executors are not "to send".
+                selected=self.selected_willexecutors(),
             )
         except Exception as e:
             _logger.debug(f"will summary failed: {e!r}")
@@ -758,6 +791,11 @@ class BalWindow:
         hand.
         """
         auto = self.bal_plugin.is_basic_mode() or self.bal_plugin.AUTO_SIGN.get()
+        if action == "open_executors":
+            # #134: the deselected will-executors' line; the box follows
+            # what the owner selects there when the window closes.
+            self.show_willexecutor_dialog(on_close=self._after_executors_window)
+            return
         if action == "wizard":
             self.init_wizard()
         elif action == "renew":
@@ -1168,7 +1206,7 @@ class BalWindow:
         info = info or self.check_alive_info()
         if not info:
             return False
-        text = check_alive_message(info)
+        text = check_alive_message(info, datetext.utc_text)
         if info.get("renewable") and info.get("has_will"):
             if self.ask_renew_will(text, parent=parent):
                 BalBuildWillDialog(self, renew=True).build_will_task()
@@ -1870,6 +1908,11 @@ class BalWindow:
                 _logger.info(
                     "auto rebuild: {} -> invalidate".format(type(e).__name__)
                 )
+                # #134: a postpone that cannot be invalidated here (encrypted
+                # wallet, no network) is NOT reverted like a Cancel in the
+                # Check window (``engine.context.revert_cancelled_postpone``):
+                # nobody declined it, the owner was never asked; the next Check
+                # asks him.
                 self._auto_invalidate_will()
                 return True
             except NoHeirsException:
@@ -2906,6 +2949,67 @@ class BalWindow:
             self, base_msg, task, on_success, on_failure, exe=False
         )
         self.waiting_dialog.exe()
+
+    def download_and_select_willexecutors(self, select_responding=True,
+                                          ping_without_list=False):
+        """Download the will-executor list, ping it, keep only who answers.
+
+        The "Automatically download and select willexecutors" choice of the
+        wizard (Task #02), shared since CHANGELOG #134 by the old wizard page
+        (ADVANCED) and the BASIC wizard's "Will-executors" page, so the rule
+        lives in one place:
+
+        * ``self.willexecutors`` is reloaded from the saved list, then the
+          welist is downloaded (``download_list``: the "Please wait" window,
+          the warnings when it fails) and merged into it;
+        * every will-executor is pinged (``ping_willexecutors``);
+        * ``select_responding``: the green SELECTED tick must follow the
+          green ping dot, i.e. select ONLY servers that actually answered
+          the ping (status 200) and DESELECT every server that did not
+          (timeout / error / never pinged). Why the explicit deselect
+          matters: a server selected on an earlier download but now
+          unreachable stayed selected, so the plugin kept broadcasting to a
+          dead server and got stuck. Re-running this re-evaluates every
+          server: one that failed before but now answers is selected again.
+          The status is compared as a string ("200"), like the will-executor
+          list view, and read with ``.get()`` so a missing key never raises.
+          False ("Only download willexecutors list"): the selection stays;
+        * the list is saved (``Willexecutors.save``) after the ping.
+
+        ``ping_without_list`` (the BASIC page only): when the download fails
+        the SAVED list is pinged and selected the same way, so an offline
+        computer ends with nobody selected (the page then says nobody
+        answers) instead of a stale selection. The old page keeps today's
+        behaviour (False: a failed download changes nothing).
+
+        Returns True when the list was downloaded. Both windows are modal:
+        the whole run is over when this returns.
+        """
+        self.willexecutors = Willexecutors.get_willexecutors(self.bal_plugin)
+        outcome = {"downloaded": False}
+
+        def ping_on_done(*_args):
+            """After the ping (answer or failure): select and save."""
+            if select_responding:
+                for we in self.willexecutors:
+                    wedict = self.willexecutors[we]
+                    responded = str(wedict.get("status", "")) == "200"
+                    wedict["selected"] = responded
+            Willexecutors.save(self.bal_plugin, self.willexecutors)
+
+        def ping():
+            """Ping every will-executor of ``self.willexecutors``."""
+            self.ping_willexecutors(self.willexecutors, ping_on_done, ping_on_done)
+
+        def on_success(_willexecutors):
+            """The list was downloaded (and merged by ``download_list``)."""
+            outcome["downloaded"] = True
+            ping()
+
+        self.download_list(self.willexecutors, on_success)
+        if ping_without_list and not outcome["downloaded"]:
+            ping()
+        return outcome["downloaded"]
 
     def ping_willexecutors_task(self, wes):
         _logger.info("ping willexecutots task")

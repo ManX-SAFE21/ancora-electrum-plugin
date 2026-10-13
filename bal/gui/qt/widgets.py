@@ -42,6 +42,7 @@ from ...core.input_rules import (
 )
 from ...core.messages import months_text
 from ...core.reminders import build_ics_reminders, write_temp_ics
+from ...core.summary import deselected_text
 from ...engine import context as engine_context
 from .calendar import BalCalendar, BalCalendarButton
 from .common import (
@@ -2128,6 +2129,15 @@ def delivery_level_colour(level):
     return DELIVERY_LEVEL_COLOURS.get(level)
 
 
+#: A small secondary button (#134, "Open Will-Executors"): plain, never
+#: the colour of the box's main action.
+SECONDARY_BUTTON_STYLE = (
+    "QPushButton{color:#333333; background:#ffffff; border:1px solid #bdbdbd;"
+    " border-radius:4px; padding:2px 10px;}"
+    "QPushButton:hover{background:#f2f2f2;}"
+)
+
+
 class WillSummaryWidget(QFrame):
     """The will summary box at the top of the Will tab (CHANGELOG #84a).
 
@@ -2179,6 +2189,21 @@ class WillSummaryWidget(QFrame):
         self.note = QLabel()
         self.note.setWordWrap(True)
         column.addWidget(self.note)
+        # #134: the deselected will-executors: one line and a small
+        # secondary button that opens the will-executor window.
+        self.deselected_row = QWidget()
+        drow = QHBoxLayout(self.deselected_row)
+        drow.setContentsMargins(0, 0, 0, 0)
+        self.deselected_label = QLabel()
+        self.deselected_label.setWordWrap(True)
+        self.deselected_label.setStyleSheet("color:#555555;")
+        drow.addWidget(self.deselected_label, 1)
+        self.deselected_button = QPushButton(_("Open Will-Executors"))
+        self.deselected_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self.deselected_button.clicked.connect(self._on_open_executors)
+        drow.addWidget(self.deselected_button, 0, Qt.AlignmentFlag.AlignTop)
+        self.deselected_row.setVisible(False)
+        column.addWidget(self.deselected_row)
         box.addLayout(column, 1)
         self.button = QPushButton()
         self.button.setMinimumHeight(32)
@@ -2191,6 +2216,12 @@ class WillSummaryWidget(QFrame):
         """Run the action of the state shown (see ``BalWindow.on_will_summary_action``)."""
         if self.action and self.on_action:
             self.on_action(self.action)
+
+    def _on_open_executors(self):
+        """"Open Will-Executors" (#134): the window's ``open_executors``
+        action (the will-executor window; the box follows it when closed)."""
+        if self.on_action:
+            self.on_action("open_executors")
 
     def _clear_rows(self):
         """Remove the label/value lines of the previous summary.
@@ -2272,6 +2303,9 @@ class WillSummaryWidget(QFrame):
         self.note.setText(note or "")
         self.note.setStyleSheet("color:#333333;font-style:italic;")
         self.note.setVisible(bool(note))
+        deselected = summary.get("deselected_text") or ""
+        self.deselected_label.setText(deselected)
+        self.deselected_row.setVisible(bool(deselected))
         self.action = summary.get("action")
         if self.action:
             self.button.setText(summary.get("action_text") or "")
@@ -2323,6 +2357,7 @@ class BuildReportView(QWidget):
         "timeout": ("✖", "#c62828"),
         "to_sign": ("–", "#8a8a8a"),
         "to_send": ("–", "#8a8a8a"),
+        "deselected": ("–", "#8a8a8a"),
     }
 
     #: States of a will-executor that did not get the will (#93).
@@ -2336,6 +2371,9 @@ class BuildReportView(QWidget):
         # not get the will, and "Retry" under it. None while it works.
         self.on_exclude = None
         self.on_retry = None
+        # #134: opens the will-executor window (deselected ones); set by
+        # the dialog.
+        self.on_open_executors = None
         self.box = QVBoxLayout(self)
         self.box.setContentsMargins(0, 0, 0, 0)
         self.box.setSpacing(10)
@@ -2356,6 +2394,7 @@ class BuildReportView(QWidget):
             "failed": _("not received"),
             "to_sign": _("to sign"),
             "to_send": _("to send"),
+            "deselected": _("deselected: not sent"),
         }.get(state, "")
 
     def _clear(self):
@@ -2464,6 +2503,27 @@ class BuildReportView(QWidget):
             column.addWidget(footer, 0, Qt.AlignmentFlag.AlignRight)
         return frame
 
+    def _deselected_footer(self, count, other=None):
+        """Why ``count`` will-executors are "deselected: not sent", with an
+        "Open Will-Executors" button (#134); ``other``: the Retry button,
+        kept beside it."""
+        widget = QWidget()
+        column = QVBoxLayout(widget)
+        column.setContentsMargins(0, 4, 0, 0)
+        line = QLabel(deselected_text(count))
+        line.setWordWrap(True)
+        line.setStyleSheet("color:#555555;")
+        column.addWidget(line)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        if self.on_open_executors:
+            row.addWidget(self._small_button(
+                _("Open Will-Executors"), lambda _c=False: self.on_open_executors()))
+        if other is not None:
+            row.addWidget(other)
+        column.addLayout(row)
+        return widget
+
     @staticmethod
     def _small_button(text, slot):
         """A small button for a box row (#93)."""
@@ -2537,6 +2597,9 @@ class BuildReportView(QWidget):
             footer = None
             if failed and self.on_retry:
                 footer = self._small_button(_("Retry"), lambda _c=False: self.on_retry())
+            deselected = sum(1 for _url, (st, _s) in executors if st == "deselected")
+            if deselected:
+                footer = self._deselected_footer(deselected, footer)
             self.box.addWidget(
                 self._group(_("Will-Executor"), rows, actions=actions, footer=footer)
             )

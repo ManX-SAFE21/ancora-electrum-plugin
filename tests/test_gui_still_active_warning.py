@@ -78,7 +78,9 @@ def test_warning_row_and_popup():
     row = dlg.labels[0]
     assert BalBuildWillDialog.COLOR_ERROR in row
     assert row.count("https://we.example") == 1
-    assert "2032-09-25" in row and "2033-09-25" in row
+    # #134: the dates in the one long style of the plugin (UTC).
+    assert "25 September 2032, 00:00 UTC" in row
+    assert "25 September 2033, 00:00 UTC" in row
     text = dlg._still_active_warning
     assert text.startswith("Warning: an older will is still active.")
     assert "Max" in text

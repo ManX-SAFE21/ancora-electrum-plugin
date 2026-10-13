@@ -308,7 +308,9 @@ def test_wizard_grows_when_advanced_is_chosen(make, monkeypatch, phrase):
     try:
         dialog.show()
         _APP.processEvents()
-        assert (dialog.width(), dialog.height()) == (800, 400)  # opens as before
+        # #134: BASIC opens on the new "When" page, taller than the old
+        # Heirs page: the dialog has grown to fit it (never below 800x400).
+        assert dialog.width() >= 800 and dialog.height() >= 400
         dialog.on_next_heir()
         _APP.processEvents()
         (box,) = dialog.findChildren(DeliveryFormWidget)

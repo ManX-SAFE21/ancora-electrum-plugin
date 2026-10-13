@@ -128,7 +128,7 @@
    ],
    "result": [
     "ok",
-    "<b>Your will is in force</b><br>Delivery to the heirs: <b>2026-12-09</b> (in 59 days)"
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>9 December 2026, 00:00 UTC</b> (in 59 days)"
    ],
    "steps": [
     [
@@ -260,7 +260,7 @@
   "popups": [
    [
     "warning",
-    "The delivery date of your will (2026-12-09) has already passed: the will can be executed now. Press Check to invalidate it and prepare a new one."
+    "The delivery date of your will (9 December 2026, 00:00 UTC) has already passed: the will can be executed now. Press Check to invalidate it and prepare a new one."
    ]
   ],
   "pushed": [],

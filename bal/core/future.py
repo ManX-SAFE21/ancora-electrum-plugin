@@ -109,6 +109,10 @@ class Future:
     delivery of a draft not signed or sent yet, ``None`` without one.
     ``form``: the delivery form of the settings (#127, ``delivery.form_of``:
     ``"fixed"`` or ``"period"``; #132 shows it in the report and the view).
+    ``pending_locktime`` (#134): the delivery of a will PREPARED (a draft
+    or partly signed version, not sent) that is not the will in force,
+    ``None`` without one: the Will tab's Future view then shows the will
+    the executors hold in grey (derived each time, nothing stored).
     """
 
     state: str
@@ -126,6 +130,7 @@ class Future:
     executors_text: str = ""
     draft_locktime: Optional[int] = None
     form: str = _delivery.FORM_FIXED
+    pending_locktime: Optional[int] = None
 
     @property
     def delivery(self):
@@ -350,7 +355,8 @@ def _check_alive(future, version, will_settings, is_basic_mode, now):
 
 
 def build_future(willitems, will_settings, is_basic_mode, now=None,
-                 warn_months=None, wallet=None, synced=None, history=None):
+                 warn_months=None, wallet=None, synced=None, history=None,
+                 day=None, selected=None):
     """The data of the Future view (a :class:`Future`).
 
     Args:
@@ -364,6 +370,12 @@ def build_future(willitems, will_settings, is_basic_mode, now=None,
         wallet, synced: passed to ``will_versions.build_history`` (the
             chain decides which sent will is still executable).
         history: a ``will_versions.History`` already built, to reuse.
+        day: how the note writes a date (#134): the Future view passes
+            ``bal.core.datetext.utc_text``, the one date style of the Will
+            tab; None keeps ``YYYY-MM-DD`` (the PDF report, until #137).
+        selected: the URLs of the will-executors selected now (#134,
+            ``summary.selected_urls``): a deselected one that never
+            received the will is "deselected", not "to send".
 
     Raises whatever the data raises: the GUI catches it, logs it and shows
     a neutral view (see ``bal/gui/qt/future_view.py``).
@@ -412,15 +424,18 @@ def build_future(willitems, will_settings, is_basic_mode, now=None,
     future.form = _delivery.form_of(settings)
 
     items = {wid: will[wid] for wid in current.items if wid in will}
-    states = executor_states(items)
+    states = executor_states(items, selected)
     future.executors = [ExecutorMark(url=url, state=states[url]) for url in sorted(states)]
-    row = _executors_row(executor_counts(items))
+    row = _executors_row(executor_counts(items, selected))
     future.executors_text = row["text"] + (" · " + row["alarm"] if row["alarm"] else "")
     if draft is not None and draft.vid != current.vid:
+        # #134: the prepared will that is not in force yet (the view greys
+        # the will the executors hold and shows this date as a ghost).
+        future.pending_locktime = future.draft_locktime
         # The same sentence as the will summary (#84b): a newer will is
         # prepared but the executors still hold this one.
         future.note = _(
             "Until you sign and send it, the will sent before stays in force: "
             "delivery on {}."
-        ).format(_day(first))
+        ).format((day or _day)(first))
     return future

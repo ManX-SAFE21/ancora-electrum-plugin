@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import QApplication
 from test_cli_controller_offline import FakeWallet
 
 import bal.i18n
+from bal.core import datetext
 from bal.core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
@@ -406,17 +407,24 @@ def test_renewal_fee_defaults_to_one(core):
     assert core.invalidate.call_args.args[2] == 1
 
 
+def gui_message(info):
+    """The Check Alive text as the GUI writes it: the dates in the one long
+    style of #134 (``bal.core.datetext.utc_text``)."""
+    return check_alive_message(info, datetext.utc_text)
+
+
 def test_renewal_without_tx_shows_the_question_in_red(core):
     """Renewable but no transaction could be built: the check stops and the
-    renewal question is shown as an error (today's text, unchanged)."""
+    renewal question is shown as an error (today's text; the dates in the
+    one long style since #134)."""
     info = _renewal("period")
     d = _dialog(info=info, init_error=CheckAliveError(DATE))
     assert _run(d) == ("check_alive_stop", None)
-    row = _error(check_alive_message(info))
+    row = _error(gui_message(info))
     assert d.labels == [STOPPED, row]
     assert d.history == [WAIT, STOPPED, row]
     assert _check_step(d)[0] == "err"
-    assert _boxes(d) == {"problems": [check_alive_message(info)]}
+    assert _boxes(d) == {"problems": [gui_message(info)]}
 
 
 def test_not_renewable_row(core):
@@ -425,7 +433,7 @@ def test_not_renewable_row(core):
     assert not info["renewable"] and info["reason"] == "fixed_date"
     d = _dialog(info=info, init_error=CheckAliveError(DATE))
     assert _run(d) == ("check_alive_stop", None)
-    assert d.labels == [STOPPED, _error(check_alive_message(info))]
+    assert d.labels == [STOPPED, _error(gui_message(info))]
     core.invalidate.assert_not_called()
     assert d._check_alive_info is info
 
@@ -591,7 +599,8 @@ def test_passed_check_alive_after_the_update_invalidates_nothing(flow_session):
     s.clock.travel(40)
     s.world.wallet_lags = True
     reason = (
-        "The Check Alive date (2026-11-09) has passed. Your delivery is a "
+        "The Check Alive date (9 November 2026, 00:00 UTC) has passed. Your "
+        "delivery is a "
         "fixed date: choose a later delivery date to renew your will. Until "
         "then your current will stays valid."
     )
