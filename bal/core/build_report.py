@@ -51,13 +51,37 @@ EXECUTOR_STATES = (
 )
 
 
-def heir_shares(willitems):
+def _current_name(name, address, heirs):
+    """The name the Heirs tab gives today to the heir paid at ``address``.
+
+    ``heirs``: the Heirs tab (``{name: [address, ...]}``) or None. The one
+    heir of the tab with that address; ``name`` (the name stored in the will
+    item) when there is none or more than one (#135 follow-up).
+    """
+    if not heirs:
+        return name
+    found = []
+    for n, h in heirs.items():
+        try:
+            if str(h[0]) == address:
+                found.append(n)
+        except (IndexError, KeyError, TypeError):
+            continue        # an entry without an address: not this heir
+    return str(found[0]) if len(found) == 1 else name
+
+
+def heir_shares(willitems, heirs=None):
     """``[(name, satoshi, percent)]`` of the will in force, for the heirs box.
 
     Read from the first VALID item: every will-executor copy carries the same
     heirs with the same resolved amounts. Leaves out the will-executor fee
     entries (reserved ``w!ll3x3c"`` names) and OP_RETURN messages (no
     amount). Empty when the amounts are not resolved (not a number).
+
+    ``heirs`` (the Heirs tab, optional, #135 follow-up): each heir is named
+    as the tab names its address today. WHY: a copy already sent keeps the
+    name it was built with, so after a rename (same address) the box showed
+    the old name next to "renamed: old → new".
     """
     for w in Will.only_valid_list(willitems).values():
         rows = []
@@ -65,7 +89,8 @@ def heir_shares(willitems):
             if str(name)[:9] == 'w!ll3x3c"' or is_op_return_address(str(heir[0])):
                 continue
             try:
-                rows.append((str(name), int(heir[HEIR_REAL_AMOUNT])))
+                rows.append((_current_name(str(name), str(heir[0]), heirs),
+                             int(heir[HEIR_REAL_AMOUNT])))
             except (IndexError, TypeError, ValueError):
                 if "DUST" in str(heir[HEIR_REAL_AMOUNT:HEIR_REAL_AMOUNT + 1]):
                     continue        # excluded heir: reported in the warnings
@@ -116,6 +141,16 @@ class BuildReport:
             self._will_now = None
             self._result = None
             self._interrupted = set()
+            # #135: the "What changes" box (rows) and whether it is shown
+            # before the signature (with its sentence) or the invalidation.
+            self._changes = None
+            self._changes_for = None
+            self._changes_renamed = False
+            # #135: the shares recalculated in proportion: (text, prominent).
+            self._amounts_note = None
+            # #135 follow-up: the facts of the invalidation about to be
+            # signed (``invalidation_preview.invalidation_facts``) or None.
+            self._invalidation = None
 
     # ---- updates (any thread) ---------------------------------------- #
     def set_step(self, step, state, note=None):
@@ -166,6 +201,36 @@ class BuildReport:
         with self._lock:
             self._heirs = list(heirs) if heirs else None
 
+    def set_changes(self, rows, when="sign", renamed=False):
+        """The rows of "What changes compared with the will in force"
+        (``bal.core.will_changes.change_rows``; None: no box) and ``when``
+        it is shown: ``"sign"`` (before the signature), ``"invalidate"``
+        (before the invalidation of a postpone) or ``"check"`` (a Check
+        with only heirs renamed, nothing to sign). #135. ``renamed``: the
+        rows hold an heir rename, already saved (the Cancel sentence says
+        so)."""
+        with self._lock:
+            self._changes = list(rows) if rows else None
+            self._changes_for = when if rows else None
+            self._changes_renamed = bool(rows) and bool(renamed)
+
+    def set_amounts_note(self, text, prominent=False):
+        """The note "shares recalculated in proportion" (#135, owner).
+
+        ``prominent``: the shares change compared with the will in force
+        (or it is the first will): a box with a calm title; otherwise one
+        quiet grey line by the heirs. None/empty ``text``: no note.
+        """
+        with self._lock:
+            self._amounts_note = (str(text), bool(prominent)) if text else None
+
+    def set_invalidation(self, facts):
+        """The box "Invalidation of the old will" shown before its password
+        (``bal.core.invalidation_preview.invalidation_facts``; None: no
+        box). #135 follow-up."""
+        with self._lock:
+            self._invalidation = dict(facts) if facts else None
+
     def set_will_now(self, text):
         """The will in force after an error or a Cancel (None: no box)."""
         with self._lock:
@@ -202,4 +267,14 @@ class BuildReport:
                 "heirs": list(self._heirs) if self._heirs else None,
                 "executors": sorted(self._executors.items()),
                 "will_now": self._will_now,
+                # #135: only when shown, so the snapshots (and the golden
+                # files) of the dialogs without the box are unchanged.
+                **({"changes": [list(r) for r in self._changes],
+                    "changes_for": self._changes_for} if self._changes else {}),
+                **({"changes_renamed": True} if self._changes_renamed else {}),
+                **({"amounts_note": list(self._amounts_note)}
+                   if self._amounts_note else {}),
+                # #135 follow-up: only when shown, as "changes".
+                **({"invalidation": dict(self._invalidation)}
+                   if self._invalidation else {}),
             }

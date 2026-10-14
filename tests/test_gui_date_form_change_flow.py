@@ -401,7 +401,8 @@ def test_a_later_period_still_invalidates(flow_session):
     _heirs_get(s, later)
     s.check()
     step = s.recorder.steps[-1]
-    assert [q[1] for q in step["questions"]][:1] == ["Invalidate your old will"]
+    # #135: the invalidation step's "Invalidate now", then the password.
+    assert [q[1] for q in step["questions"]][:2] == ["Invalidate now", "Invalidate your old will"]
     assert any(kind.startswith("invalidation") for kind, _txid in step["broadcasts"])
     assert Will.get_min_locktime(s.bw.willitems) > date
 

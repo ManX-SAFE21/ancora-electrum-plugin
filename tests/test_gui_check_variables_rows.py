@@ -498,7 +498,12 @@ def test_percentages_are_explained_and_the_check_goes_on(core):
     assert d.labels == [OK, _alert(text)]
     assert d.history == [WAIT, OK, _alert(text)]
     assert _check_step(d) == ("ok", "ok")
-    assert _boxes(d) == {"warnings": [text]}
+    # #135 (owner): no "Attention" box; the report has the shares note (a
+    # box only when the shares change or there is no will in force: none
+    # here, so a box with the calm text).
+    assert _boxes(d) == {}
+    note = d._report().snapshot()["amounts_note"]
+    assert note[1] is True and "add up to 80%" in note[0]
 
 
 @pytest.mark.parametrize("coins, locktime", [
@@ -659,14 +664,17 @@ def test_renewal_sent_but_not_seen_yet(flow_session):
     assert report["boxes"] == {"changes": [], "warnings": ["Check Alive passed"],
                                "problems": []}
     assert step["broadcasts"] == [["invalidation(dialog)", "T4"]]
-    assert [kind for kind, _text in step["questions"]] == ["renew"]
+    # #135: then the invalidation step's "Invalidate now" (no password:
+    # this wallet has none).
+    assert [kind for kind, _text in step["questions"]] == ["renew", "button"]
     assert "today + 2 months" in step["questions"][0][1]
     assert step["popups"] == [["message", (
         "Your old will has been invalidated and the transaction was "
         "broadcast.\nElectrum may need a little time to register it.\n"
         "Please wait until the invalidation transaction is confirmed, then "
         "press the Check button again to finish updating your will.")]]
-    assert step["dialog_events"] == ["close-button"]
+    # #135: the invalidation step (its buttons), then Close.
+    assert step["dialog_events"] == ["invalidation-buttons", "close-button"]
     # The wallet has not seen the invalidation: the old will is still in
     # force for the period policy, so the date is not moved yet.
     assert step["settings"]["locktime"] == "2026-12-10"

@@ -92,14 +92,16 @@
   ],
   "questions": [],
   "report": {
+   "amounts_note": [
+    "The percentages you wrote add up to 80%. The will always spends the whole balance, so each heir receives a share in proportion: alice 62.5% · bob 37.5%.",
+    true
+   ],
    "boxes": {
     "changes": [
      "The will contains no valid transaction: a new will must be prepared."
     ],
     "problems": [],
-    "warnings": [
-     "The heirs' percentages add up to 80%: the will always empties the whole wallet, so the shares are recalculated in proportion (alice 62.5%, bob 37.5%)."
-    ]
+    "warnings": []
    },
    "executors": [
     [

@@ -221,6 +221,7 @@
    ]
   ],
   "dialog_events": [
+   "invalidation-buttons",
    "close-button"
   ],
   "heirs": {
@@ -352,7 +353,12 @@
     "T4"
    ]
   ],
-  "questions": [],
+  "questions": [
+   [
+    "button",
+    "Invalidate now"
+   ]
+  ],
   "report": {
    "boxes": {
     "changes": [

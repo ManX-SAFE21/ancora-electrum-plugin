@@ -142,7 +142,9 @@ class DialogFlowUI:
         elif code == "fixed_amounts_exceed":
             d.msg_edit_row(d.msg_error(data["text"]))
         elif code == "amounts_explained":
-            d.msg_edit_row(d.msg_alert(data["text"]))
+            # #135 (owner): an orange box only when the shares change (or a
+            # first will), else a quiet grey line; the dialog decides.
+            d._amounts_note(data["text"], data.get("info"))
         elif code == "amounts_adjust":
             d.msg_edit_row(
                 d.msg_alert(

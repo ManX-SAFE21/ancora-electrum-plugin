@@ -51,9 +51,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QValidator
 
 from ... import i18n
-from ...core import datetext, delivery, will_state, wizard_date
+from ...core import datetext, delivery, will_changes, will_state, wizard_date
 from ...core.future import delivery_form_text, time_left_text
 from ...core.heirs import is_op_return_address, percent_total
+from ...core.summary import selected_urls
 from ...core.util import Util, copy_structure
 from ...engine import context as engine_context
 from .common import (
@@ -75,8 +76,13 @@ from .common import (
     switch_user_type,
 )
 from .dialogs import BalWizardWidget
-from .lists import FRAMED_BUTTON_STYLE, HeirListWidget, WillExecutorWidget
-from .widgets import LockTimeWidget
+from .lists import (
+    FRAMED_BUTTON_STYLE,
+    HeirListWidget,
+    WillExecutorWidget,
+    same_address_text,
+)
+from .widgets import LockTimeWidget, what_changes_box
 
 if TYPE_CHECKING:
     from .window import BalWindow
@@ -607,8 +613,10 @@ class WhenPage(_StepPage):
         self.error_label = _label("", ERROR_STYLE, wrap=True)
         layout.addWidget(self.error_label)
         self.later_note = _label(
+            # #135 follow-up (owner): never "paid" (see datetext).
             _("<b>This date is later than the will in force.</b><br>Moving it "
-              "later requires invalidating the current will (a network fee). "
+              "later needs an invalidation transaction on the blockchain: your "
+              "bitcoin stay yours, you only pay the normal network fee. "
               "Moving it earlier is free."), NOTE_STYLE, wrap=True)
         layout.addWidget(self.later_note)
         layout.addSpacing(6)
@@ -834,7 +842,8 @@ class WhenPage(_StepPage):
 
     def compare_text(self, ts):
         """"Will in force: <date>" and, below, "Your choice: <date>
-        (earlier — free)" or "(later — requires the paid invalidation)".
+        (earlier — free)" or "(later — needs an invalidation transaction: you
+        only pay the network fee)" (#135 follow-up wording).
 
         Only while a will is really in force (:func:`in_force_date`) and the
         choice is another date; "" else (owner, ZIP test: the same date
@@ -845,7 +854,8 @@ class WhenPage(_StepPage):
         if ts < self.in_force:
             how = _("(earlier — free)")
         else:
-            how = _("(later — requires the paid invalidation)")
+            how = _("(later — needs an invalidation transaction: you only pay "
+                    "the network fee)")
         return "{}<br>{}".format(
             _("Will in force: <b>{}</b>").format(datetext.utc_text(self.in_force)),
             _("Your choice: <b>{choice}</b> {how}").format(
@@ -922,6 +932,9 @@ class HeirsPage(_StepPage):
         layout.addLayout(row)
         self.total_label = _label("", MUTED_STYLE, wrap=True)
         layout.addWidget(self.total_label)
+        # #135: heirs sharing an address (an old wallet): shown, not changed.
+        self.same_address_label = _label("", NOTE_STYLE, wrap=True)
+        layout.addWidget(self.same_address_label)
         self.error_label = _label(_("Add at least one heir."), ERROR_STYLE)
         layout.addWidget(self.error_label)
         layout.addWidget(_label(
@@ -949,6 +962,9 @@ class HeirsPage(_StepPage):
                          "this total: the whole balance is spent.").format(number)
         self.total_label.setText(text)
         self.total_label.setVisible(bool(text))
+        same = same_address_text(heirs)
+        self.same_address_label.setText(same)
+        self.same_address_label.setVisible(bool(same))
 
     def add_heir(self):
         """"+ Add heir": today's New heir window, then the list again."""
@@ -1063,7 +1079,7 @@ class SummaryPage(_StepPage):
         self.next_button.setText(_("Create the will"))
 
     def build(self, layout):
-        """The green box and the two notes."""
+        """The green box, the "What changes" box (#135) and the two notes."""
         bw = self.bal_window
         now = time_now()
         zone = wizard_date.local_zone()
@@ -1077,16 +1093,15 @@ class SummaryPage(_StepPage):
             when = "<b>{}</b>  {}<br><span style='color:#4A5560'>{}</span>".format(
                 datetext.utc_text(locktime), time_left_text(locktime, now),
                 datetext.local_line(locktime, zone))
-            # Owner (ZIP test): the reference while a will is in force.
-            in_force = in_force_date(bw)
-            for line in datetext.in_force_change_lines(in_force, locktime):
-                when += "<br><span style='color:#4A5560'>{}</span>".format(line)
+            # #135: the comparison with the will in force is now the "What
+            # changes" box under this one (it replaces the two lines of
+            # #134; owner's mockup).
         else:
             when = "-"
         wes = Willexecutors.get_willexecutors(bw.bal_plugin)
         count = len(_selected(wes))
         rows = [(_("Delivery to the heirs"), when),
-                (_("Heirs"), heirs_text(bw, bw.heirs or {})),
+                (_("Heirs"), self._heirs_value(bw)),
                 (_("Will-executors"), selected_text(count))]
         fee = executor_fee_text(bw, wes)
         if fee:
@@ -1104,6 +1119,12 @@ class SummaryPage(_StepPage):
             self.values[key] = v
         grid.setColumnStretch(1, 1)
         layout.addWidget(box)
+        self.changes_box = None
+        changes = self._changes_rows(bw, wes)
+        if changes:
+            layout.addSpacing(6)
+            self.changes_box = what_changes_box(changes)
+            layout.addWidget(self.changes_box)
         layout.addSpacing(8)
         layout.addWidget(_label(
             _("«Create the will» prepares it, asks for the password to sign it "
@@ -1112,6 +1133,48 @@ class SummaryPage(_StepPage):
         layout.addWidget(_label(
             _("After it is created you can put the dates in your calendar with "
               "the 📅 button of the Will tab."), MUTED_STYLE, wrap=True))
+
+
+    @staticmethod
+    def _heirs_value(bw):
+        """The "Heirs" value: the REAL shares (#135, owner).
+
+        Each written percentage in proportion to their total (what the build
+        pays), e.g. "alice 38.5% · bob 23.1% · carol 38.5%", with the grey
+        "(recalculated in proportion)" when the written total is not 100.
+        With a fixed amount the real shares depend on the balance: today's
+        text (``heirs_text``), never an invented share.
+        """
+        heirs = bw.heirs or {}
+        real = will_changes.real_shares_text(heirs)
+        if real is None:
+            return heirs_text(bw, heirs)
+        text, rescaled = real
+        if rescaled:
+            text += " <span style='color:#6A737D'>{}</span>".format(
+                _("(recalculated in proportion)"))
+        return text
+
+    @staticmethod
+    def _changes_rows(bw, wes):
+        """The rows of "What changes compared with the will in force" (#135).
+
+        The will in force (``engine.context.in_force_items``, the #128
+        notion) against what the NEW SETTINGS will give (nothing is built
+        yet): the date, the heirs, the will-executors selected now, the
+        miner fee. None with no will in force (a first will: no box).
+        """
+        try:
+            selected = selected_urls(wes)
+            old = will_changes.side_from_items(engine_context.in_force_items(bw), selected)
+            settings = bw.will_settings or {}
+            new = will_changes.side_from_settings(
+                bw.heirs or {}, settings.get("locktime"), selected,
+                settings.get("baltx_fees"))
+            return will_changes.change_rows(will_changes.will_changes(old, new), wizard=True)
+        except Exception as e:
+            _logger.error(f"what changes not shown: {e!r}")
+            return None
 
 
 # ----------------------------------------------------------------- flow

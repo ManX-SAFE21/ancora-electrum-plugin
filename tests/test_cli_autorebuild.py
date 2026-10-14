@@ -48,6 +48,9 @@ PRIVKEY = bytes(range(32))
 PUBKEY = crypto.privkey_to_pubkey(PRIVKEY)
 ADDRESS = bitcoin.public_key_to_p2wpkh(PUBKEY)
 SCRIPT = bitcoin.address_to_script(ADDRESS)
+# #135: no two heirs may share an address: each heir has its own.
+OTHER_ADDRESS = bitcoin.public_key_to_p2wpkh(crypto.privkey_to_pubkey(bytes(range(1, 33))))
+THIRD_ADDRESS = bitcoin.public_key_to_p2wpkh(crypto.privkey_to_pubkey(bytes(range(2, 34))))
 FUNDING_SATOSHIS = 500000
 
 
@@ -175,7 +178,7 @@ def _make_controller(plugin, wallet):
     c = BalController(plugin, wallet)
     c.will_settings["locktime"] = "1y"
     c.heirs_add("alice", ADDRESS, "100000")
-    c.heirs_add("bob", ADDRESS, "100%")
+    c.heirs_add("bob", OTHER_ADDRESS, "100%")
     return c
 
 
@@ -411,7 +414,7 @@ def _rebuild_after_new_funds(run_rebuild):
             wallet = FakeWallet([make_funding_input()])
             c = BalController(plugin, wallet)
             c.heirs_add("alice", ADDRESS, "100000")
-            c.heirs_add("bob", ADDRESS, "100%")
+            c.heirs_add("bob", OTHER_ADDRESS, "100%")
             c.prepare_will()
             c.sign_transactions(None)
             _, old_item = _single(c)

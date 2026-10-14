@@ -305,3 +305,21 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_heirs_same_address_refused():
+    """#135 (owner): no two heirs on one address. The command line refuses
+    it on add and update (the heir's own address stays allowed; a bech32
+    address in another case is the same address)."""
+    with Plugin() as plugin:
+        c = _make_controller(plugin)
+        c.heirs_add("alice", VALID_ADDRESS, "100000")
+        for call in (lambda: c.heirs_add("bob", VALID_ADDRESS.upper(), "100000"),
+                     lambda: c.heirs_add("bob", " " + VALID_ADDRESS, "100000")):
+            try:
+                call()
+                raise AssertionError("expected UserFacingException")
+            except UserFacingException as e:
+                assert str(e) == "This address is already used by the heir alice."
+        c.heirs_update("alice", address=VALID_ADDRESS, amount="200000")
+        assert list(c.heirs) == ["alice"]

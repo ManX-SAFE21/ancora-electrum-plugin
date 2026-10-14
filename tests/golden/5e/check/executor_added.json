@@ -317,6 +317,14 @@
     "problems": [],
     "warnings": []
    },
+   "changes": [
+    [
+     "Will-executors",
+     "from 2 to <b>3</b>: added <b>we2.test</b>",
+     null
+    ]
+   ],
+   "changes_for": "sign",
    "executors": [
     [
      "https://we0.test",

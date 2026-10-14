@@ -271,12 +271,14 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
     Raises what the data raises: the GUI catches it and says the report
     could not be prepared.
     """
+    will = dict(willitems or {})
+    history = will_versions.build_history(will, wallet)
     summary = will_summary(
         willitems, len(heirs or {}), will_settings, is_basic_mode, now=now,
         still_active=still_active, warn_months=warn_months, selected=selected,
+        # #135: the will in force by the one rule of the Will tab.
+        in_force=will_versions.in_force_delivery(history, will),
     ) or {}
-    will = dict(willitems or {})
-    history = will_versions.build_history(will, wallet)
     future = core_future.build_future(
         will, will_settings, is_basic_mode, now=now, warn_months=warn_months,
         wallet=wallet, history=history, selected=selected,

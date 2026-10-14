@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 
 from ...core import datetext, will_state, will_versions
+from ...core.heirs import shared_addresses
 from ...core.messages import protected_executor_message
 from ...core.report import executor_fee
 from ...core.summary import executor_states
@@ -154,6 +155,15 @@ def _apply_select_all(willexecutors, select, valid=None):
     return willexecutors
 
 
+def same_address_text(heirs):
+    """"alice and bob have the same address: keep only one." for each pair
+    of heirs on one address (``core.heirs.shared_addresses``, #135), one
+    line each; "" when none."""
+    return "\n".join(
+        _("{a} and {b} have the same address: keep only one.").format(a=a, b=b)
+        for a, b in shared_addresses(heirs or {}))
+
+
 class HeirListWidget(MyTreeView, MessageBoxMixin):
     class Columns(MyTreeView.BaseColumnsEnum):
         NAME = enum.auto()
@@ -172,25 +182,16 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
     ROLE_HEIR_KEY = Qt.ItemDataRole.UserRole + 4000
     key_role = ROLE_HEIR_KEY
 
-    def createEditor(self, parent, option, index):
-        return QLineEdit(parent)
-
-    def setEditorData(self, editor, index):
-        editor.setText(index.data())
-
-    def setModelData(self, editor, model, index):
-        model.setData(index, editor.text())
-
     def __init__(self, bal_window: "BalWindow", parent):
         super().__init__(
             parent=parent,
             main_window=bal_window.window,
             stretch_column=self.Columns.NAME,
-            editable_columns=[
-                self.Columns.NAME,
-                self.Columns.ADDRESS,
-                self.Columns.AMOUNT,
-            ],
+            # #135 (owner): ONE way to edit an heir, the "Edit heir"
+            # dialog (double click or right click > Edit). The inline cell
+            # editing renamed by delete + add while the dialog added a
+            # second heir at the same address (the owner's ZIP test).
+            editable_columns=[],
         )
         self.decimal_point = bal_window.window.get_decimal_point()
         self.bal_window = bal_window
@@ -216,28 +217,9 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         self.bal_window.new_heir_dialog(edit_key)
 
     def on_edited(self, idx, edit_key, *, text):
-        prior_name = self.bal_window.heirs.get(edit_key)
-        if not prior_name:
-            return
-        col = idx.column()
-        try:
-            if col == 2:
-                text = Util.encode_amount(text, self.decimal_point)
-            elif col == 0:
-                self.bal_window.delete_heirs([edit_key])
-                edit_key = text
-            prior_name[col - 1] = text
-            prior_name.insert(0, edit_key)
-            prior_name = tuple(prior_name)
-        except Exception:
-            prior_name = (
-                (edit_key,) + prior_name[: col - 1] + (text,) + prior_name[col:]
-            )
-
-        try:
-            self.bal_window.set_heir(prior_name)
-        except Exception:
-            self.update()
+        """No inline editing (#135): the cells are not editable; an heir is
+        edited only in the "Edit heir" dialog (``new_heir_dialog``)."""
+        self.update()
 
     def delete_heirs(self, selected_keys):
         self.bal_window.delete_heirs(selected_keys)
@@ -262,14 +244,10 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
                 _("Copy {}").format(column_title),
                 lambda: self.place_text_on_clipboard(column_data, title=column_title),
             )
-            if column in self.editable_columns:
-                item = self.model().itemFromIndex(idx)
-                if item.isEditable():
-                    persistent = QPersistentModelIndex(idx)
-                    menu.addAction(
-                        _("Edit {}").format(column_title),
-                        lambda p=persistent: self.edit(QModelIndex(p)),
-                    )
+            if len(selected_keys) == 1:
+                # #135: the same "Edit heir" dialog as the double click.
+                key = selected_keys[0]
+                menu.addAction(_("Edit"), lambda k=key: self.bal_window.new_heir_dialog(k))
             menu.addAction(_("Delete"), lambda: self.delete_heirs(selected_keys))
         menu.exec(self.viewport().mapToGlobal(position))
 
@@ -300,9 +278,9 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
             )
 
             items = [QStandardItem(x) for x in labels]
-            items[self.Columns.NAME].setEditable(True)
-            items[self.Columns.ADDRESS].setEditable(True)
-            items[self.Columns.AMOUNT].setEditable(True)
+            # #135: not editable in place (see __init__).
+            for item in items:
+                item.setEditable(False)
             items[self.Columns.NAME].setData(
                 key, self.ROLE_HEIR_KEY + self.Columns.NAME
             )
@@ -326,6 +304,7 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         self.set_current_idx(set_current)
         # FIXME refresh loses sort order; so set "default" here:
         self.filter()
+        self._show_same_address()
 
     def refresh_row(self, key, row):
         # nothing to update here
@@ -353,7 +332,29 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
 
         toolbar.insertWidget(2, widget)
 
-        return toolbar
+        # #135: heirs sharing an address (old wallets), under the toolbar.
+        column = QVBoxLayout()
+        column.addLayout(toolbar)
+        self.same_address_label = QLabel("")
+        self.same_address_label.setWordWrap(True)
+        self.same_address_label.setStyleSheet("color:#b26a00;")
+        column.addWidget(self.same_address_label)
+        self._show_same_address()
+        return column
+
+    def _show_same_address(self):
+        """The warning of the Heirs tab about heirs on one address (#135).
+
+        Owner: no two heirs may share an address; an old wallet may have
+        such heirs: they are only shown ("a and b have the same address:
+        keep only one."), never changed, and the Check is not blocked.
+        """
+        label = getattr(self, "same_address_label", None)
+        if label is None:
+            return
+        text = same_address_text(self.bal_window.heirs)
+        label.setText(text)
+        label.setVisible(bool(text))
 
     def build_transactions(self):
         # will = self.bal_window.prepare_will()
@@ -1227,7 +1228,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             sub.append("{} {}".format(_("Miner fee"), self._format_sats(inv.fee)))
         sub.append(inv.txid)
         return self._spanned_row(
-            "invalidation", inv.txid, _("Paid invalidation"), " · ".join(sub),
+            # #135 follow-up (owner): never "paid"; the bitcoin went back to
+            # the same wallet, only the network fee was paid.
+            "invalidation", inv.txid, _("Invalidation transaction"), " · ".join(sub),
             state, version_state_colour("invalidated"),
         )
 

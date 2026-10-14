@@ -261,6 +261,19 @@
       "problems": [],
       "warnings": []
      },
+     "changes": [
+      [
+       "Delivery",
+       "23 September 2032, 00:00 UTC → <b>22 September 2032, 00:00 UTC</b>",
+       "moved earlier by 1 day — free"
+      ],
+      [
+       "Miner fee",
+       "13 → <b>14 sat/vB</b>",
+       null
+      ]
+     ],
+     "changes_for": "sign",
      "executors": [
       [
        "https://we0.test",

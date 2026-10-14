@@ -31,8 +31,9 @@ HINTS = (
 CHECK_HINTS = (
     "Nothing is signed or sent until you choose the delivery date: press "
     "'Check your will'.",
-    "To use the later date again, choose it and press 'Check your will': the "
-    "old will must be invalidated first (miner fee).",
+    "To use the later date again, choose it and press 'Check your will': first "
+    "the old will needs an invalidation transaction (your bitcoin stay yours, "
+    "you only pay the network fee).",
 )
 
 

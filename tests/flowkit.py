@@ -711,6 +711,11 @@ class FlowDialog(BalBuildWillDialog):
         self._no_we_buttons_added = False
         self._no_heirs_buttons_added = False
         self._still_active_warning = None
+        # #135: the invalidation step (box, "Invalidate now").
+        self._pending_invalidation = None
+        self._invalidation_layout = None
+        self._invalidation_tx = None
+        self._renames_seen = None
 
     def build_will_task(self):
         """Queue phase 1 as the real one does, then run it to the end.
@@ -765,6 +770,21 @@ class FlowDialog(BalBuildWillDialog):
         self._no_heirs_buttons_added = True
         self._finish_report()
         self.events.append("no-heirs-buttons")
+
+    def _add_invalidation_buttons(self):
+        """The "Cancel" / "Invalidate now" row (dialogs.py, #135): the
+        scripted owner presses "Invalidate now", or Cancel when a
+        ``cancel_on`` word matches (e.g. "invalidat"); the rest of each
+        path is the real one."""
+        self.events.append("invalidation-buttons")
+        if self.bal_window.user.answer("button", "Invalidate now"):
+            self._invalidate_now()
+        else:
+            self._invalidation_cancelled()
+
+    def _remove_invalidation_buttons(self):
+        """The row goes away: nothing to remove."""
+        self._invalidation_layout = None
 
     def resize(self, *a):
         """Window size: nothing to resize."""

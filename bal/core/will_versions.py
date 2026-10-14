@@ -456,6 +456,26 @@ def _current(versions, states, will):
     return best[1] if best else None
 
 
+def in_force_delivery(history, will):
+    """The delivery date (locktime) of THE will in force, or ``None`` (#135).
+
+    The earliest locktime among the items whose state is
+    ``will_state.IN_FORCE`` in ``history`` (:func:`build_history`), the
+    same items and the same rule as ``History.current`` and as
+    ``engine.context.in_force_delivery`` (``Will.in_force_items``). For the
+    callers that already have the history (the PDF report).
+    """
+    dates = []
+    for wid, state in (history.states or {}).items():
+        if state != will_state.IN_FORCE or wid not in will:
+            continue
+        try:
+            dates.append(int(will[wid].tx.locktime))
+        except Exception:
+            continue
+    return min(dates) if dates else None
+
+
 def _chronology(version):
     """Sort key, oldest first: versions without ``time`` first, then by time."""
     if version.time_min is None:

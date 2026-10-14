@@ -388,6 +388,19 @@
     "problems": [],
     "warnings": []
    },
+   "changes": [
+    [
+     "Delivery",
+     "27 February 2027, 22:00 UTC → <b>26 February 2027, 22:00 UTC</b>",
+     "moved earlier by 1 day — free"
+    ],
+    [
+     "Miner fee",
+     "21 → <b>20 sat/vB</b>",
+     null
+    ]
+   ],
+   "changes_for": "sign",
    "executors": [
     [
      "https://we0.test",
@@ -530,257 +543,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>Miner fee rate changed (the will was built with 20 sat/byte, now it is 21): a new will must be prepared.</b>",
-   "Building your will:\t<b>Wait</b>",
-   "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Heir:\t<font color=#05ad05><b>alice</b></font>",
-   "Heir:\t<font color=#05ad05><b>bob</b></font>",
-   "Signing your will:\t<b>Wait</b>",
-   "Signing your will:\t<b>Aborted</b>",
-   "Broadcasting your will to executors:\t<b>Wait</b>",
-   "Broadcasting your will to executors:\t<b>Nothing to do</b>",
-   "",
-   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
-   "Finished"
-  ],
-  "items": [
-   {
-    "executor": "https://we0.test",
-    "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2027-02-27",
-    "statuses": [
-     "CHECKED",
-     "COMPLETE",
-     "PUSHED",
-     "REPLACED"
-    ],
-    "tx": "T1"
-   },
-   {
-    "executor": "https://we1.test",
-    "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2027-02-27",
-    "statuses": [
-     "CHECKED",
-     "COMPLETE",
-     "PUSHED",
-     "REPLACED"
-    ],
-    "tx": "T2"
-   },
-   {
-    "executor": "https://we2.test",
-    "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
-    "locktime": "2027-02-27",
-    "statuses": [
-     "CHECKED",
-     "COMPLETE",
-     "PUSHED",
-     "REPLACED"
-    ],
-    "tx": "T3"
-   },
-   {
-    "executor": "https://we0.test",
-    "fee": 21,
-    "label": "BitcoinAfterLife inheritance transaction - https://we0.test",
-    "locktime": "2027-02-26",
-    "statuses": [
-     "VALID"
-    ],
-    "tx": "T7"
-   },
-   {
-    "executor": "https://we1.test",
-    "fee": 21,
-    "label": "BitcoinAfterLife inheritance transaction - https://we1.test",
-    "locktime": "2027-02-26",
-    "statuses": [
-     "VALID"
-    ],
-    "tx": "T8"
-   },
-   {
-    "executor": "https://we2.test",
-    "fee": 21,
-    "label": "BitcoinAfterLife inheritance transaction - https://we2.test",
-    "locktime": "2027-02-26",
-    "statuses": [
-     "VALID"
-    ],
-    "tx": "T9"
-   }
-  ],
-  "labels": {
-   "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction",
-   "T7": "BitcoinAfterLife inheritance transaction - https://we0.test",
-   "T8": "BitcoinAfterLife inheritance transaction - https://we1.test",
-   "T9": "BitcoinAfterLife inheritance transaction - https://we2.test"
-  },
-  "popups": [],
-  "pushed": [],
-  "questions": [
-   [
-    "password",
-    "Sign your will"
-   ]
-  ],
-  "report": {
-   "boxes": {
-    "changes": [
-     "Miner fee rate changed (the will was built with 20 sat/byte, now it is 21): a new will must be prepared."
-    ],
-    "problems": [],
-    "warnings": []
-   },
-   "executors": [
-    [
-     "https://we0.test",
-     [
-      "to_sign",
-      null
-     ]
-    ],
-    [
-     "https://we1.test",
-     [
-      "to_sign",
-      null
-     ]
-    ],
-    [
-     "https://we2.test",
-     [
-      "to_sign",
-      null
-     ]
-    ]
-   ],
-   "heirs": [
-    [
-     "alice",
-     597232,
-     59.99997990731243
-    ],
-    [
-     "bob",
-     398155,
-     40.00002009268757
-    ]
-   ],
-   "result": [
-    "warn",
-    "<b>Interrupted: the new will was not signed.</b>"
-   ],
-   "steps": [
-    [
-     "check",
-     "ok",
-     "ok"
-    ],
-    [
-     "prepare",
-     "ok",
-     "updated"
-    ],
-    [
-     "sign",
-     "warn",
-     "interrupted"
-    ],
-    [
-     "send",
-     "todo",
-     ""
-    ],
-    [
-     "verify",
-     "todo",
-     "to do"
-    ]
-   ],
-   "will_now": "Will prepared: it must be signed and sent — Delivery to the heirs: 26 February 2027, 22:00 UTC\nUntil you sign and send it, the will sent before stays in force: delivery on 27 February 2027, 22:00 UTC."
-  },
-  "rows": [
-   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>Miner fee rate changed (the will was built with 20 sat/byte, now it is 21): a new will must be prepared.</b>",
-   "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Heir:\t<font color=#05ad05><b>alice</b></font>",
-   "Heir:\t<font color=#05ad05><b>bob</b></font>",
-   "Signing your will:\t<b>Aborted</b>",
-   "Broadcasting your will to executors:\t<b>Nothing to do</b>",
-   "",
-   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
-   "Finished"
-  ],
-  "settings": {
-   "baltx_fees": 21,
-   "locktime": "2027-02-26",
-   "threshold": "-30d"
-  },
-  "stored": {
-   "T1": [
-    "CHECKED",
-    "COMPLETE",
-    "PUSHED",
-    "REPLACED"
-   ],
-   "T2": [
-    "CHECKED",
-    "COMPLETE",
-    "PUSHED",
-    "REPLACED"
-   ],
-   "T3": [
-    "CHECKED",
-    "COMPLETE",
-    "PUSHED",
-    "REPLACED"
-   ],
-   "T7": [
-    "VALID"
-   ],
-   "T8": [
-    "VALID"
-   ],
-   "T9": [
-    "VALID"
-   ]
-  },
-  "verified": [],
-  "window_events": [
-   "history-refresh"
-  ]
- },
- {
-  "action": "date 2027-02-27 22:00 UTC; Check"
- },
- {
-  "action": "check",
-  "broadcasts": [],
-  "dialog_events": [
-   "close-button"
-  ],
-  "heirs": {
-   "alice": [
-    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
-    "60%"
-   ],
-   "bob": [
-    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
-    "40%"
-   ]
-  },
-  "history": [
-   "Checking variables:\t<b>Wait</b>",
-   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>The delivery date changed: preparing a new will.</b>",
+   "Checking your will:\t<b>The will prepared earlier was not signed: preparing it again.</b>",
    "Building your will:\t<b>Wait</b>",
    "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Nothing to do</b>",
@@ -907,6 +670,188 @@
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Nothing to do</b>",
+   "Signing your will:\t<b>Nothing to do</b>",
+   "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "",
+   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "Finished"
+  ],
+  "settings": {
+   "baltx_fees": 21,
+   "locktime": "2027-02-27",
+   "threshold": "-30d"
+  },
+  "stored": {
+   "T1": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T2": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ],
+   "T3": [
+    "CHECKED",
+    "COMPLETE",
+    "PUSHED",
+    "VALID"
+   ]
+  },
+  "verified": [],
+  "window_events": [
+   "history-refresh"
+  ]
+ },
+ {
+  "action": "date 2027-02-27 22:00 UTC; Check"
+ },
+ {
+  "action": "check",
+  "broadcasts": [],
+  "dialog_events": [
+   "close-button"
+  ],
+  "heirs": {
+   "alice": [
+    "tb1qpg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2srhj63",
+    "60%"
+   ],
+   "bob": [
+    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+    "40%"
+   ]
+  },
+  "history": [
+   "Checking variables:\t<b>Wait</b>",
+   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+   "Checking your will:\t<b>Waiting</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Signing your will:\t<b>Nothing to do</b>",
+   "Broadcasting your will to executors:\t<b>Wait</b>",
+   "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "",
+   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "Finished"
+  ],
+  "items": [
+   {
+    "executor": "https://we0.test",
+    "fee": 21,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2027-02-27",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T1"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 21,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2027-02-27",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T2"
+   },
+   {
+    "executor": "https://we2.test",
+    "fee": 21,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2027-02-27",
+    "statuses": [
+     "CHECKED",
+     "COMPLETE",
+     "PUSHED",
+     "VALID"
+    ],
+    "tx": "T3"
+   }
+  ],
+  "labels": {
+   "T1": "Safe21 Heartbeat backup transaction",
+   "T2": "Safe21 Heartbeat backup transaction",
+   "T3": "Safe21 Heartbeat backup transaction"
+  },
+  "popups": [],
+  "pushed": [],
+  "questions": [],
+  "report": {
+   "boxes": {
+    "changes": [],
+    "problems": [],
+    "warnings": []
+   },
+   "executors": [
+    [
+     "https://we0.test",
+     [
+      "verified",
+      null
+     ]
+    ],
+    [
+     "https://we1.test",
+     [
+      "verified",
+      null
+     ]
+    ],
+    [
+     "https://we2.test",
+     [
+      "verified",
+      null
+     ]
+    ]
+   ],
+   "heirs": null,
+   "result": [
+    "ok",
+    "<b>Your will is in force</b><br>Delivery to the heirs: <b>27 February 2027, 22:00 UTC</b> (in 4 months)"
+   ],
+   "steps": [
+    [
+     "check",
+     "ok",
+     "ok"
+    ],
+    [
+     "prepare",
+     "skip",
+     "not needed"
+    ],
+    [
+     "sign",
+     "skip",
+     "not needed"
+    ],
+    [
+     "send",
+     "skip",
+     "not needed"
+    ],
+    [
+     "verify",
+     "ok",
+     "3/3"
+    ]
+   ],
+   "will_now": null
+  },
+  "rows": [
+   "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",

@@ -341,6 +341,14 @@
     "problems": [],
     "warnings": []
    },
+   "changes": [
+    [
+     "Delivery",
+     "23 September 2032, 00:00 UTC → <b>22 September 2032, 00:00 UTC</b>",
+     "moved earlier by 1 day — free"
+    ]
+   ],
+   "changes_for": "sign",
    "executors": [
     [
      "https://we0.test",

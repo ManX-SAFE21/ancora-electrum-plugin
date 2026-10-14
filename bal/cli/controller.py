@@ -52,6 +52,7 @@ from ..core.heirs import Heirs, is_op_return_address
 from ..core.messages import (
     check_alive_message,
     check_alive_passed_sentence,
+    heir_error_message,
     protected_executor_message,
     will_change_message,
 )
@@ -111,20 +112,11 @@ def _user_facing(e):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.HeirAmountIsDustException):
         return UserFacingException(str(e))
-    if isinstance(e, heirs_mod.NotAnAddress):
-        # The core text is "not an address,<address>": prefixing it again gave
-        # "not an address, not an address,<address>" (CHANGELOG #104).
-        text = str(e)
-        prefix = "not an address,"
-        if text.startswith(prefix):
-            return UserFacingException(
-                _("Not a valid address for this network: {}").format(text[len(prefix):])
-            )
-        return UserFacingException(text)
-    if isinstance(e, heirs_mod.AmountNotValid):
-        return UserFacingException(str(e))
-    if isinstance(e, heirs_mod.LocktimeNotValid):
-        return UserFacingException(str(e))
+    if isinstance(e, (heirs_mod.NotAnAddress, heirs_mod.AmountNotValid,
+                      heirs_mod.LocktimeNotValid)):
+        # #135: the same plain sentence as the "Edit heir" dialog (one
+        # helper; CHANGELOG #104: never "not an address, not an address").
+        return UserFacingException(heir_error_message(e))
     if isinstance(e, checkalive.CheckAliveAfterDeliveryError):
         return UserFacingException(
             _(
@@ -1895,10 +1887,19 @@ class BalController(BalSettingsController):
         """Add (or replace) the heir ``name``; ``locktime`` only with
         multiverse on (see :meth:`_check_heir_locktime`)."""
         self._check_heir_locktime(locktime)
+        self._check_address_free(address, name)
         value = self._build_heir_entry(name, address, amount, locktime)
         self.heirs[name] = value
         self.wallet.save_db()
         return {"name": name, "value": list(value)}
+
+    def _check_address_free(self, address, name):
+        """Refuse an address already used by ANOTHER heir (#135, owner: no
+        two heirs on one address); ``name``'s own address is allowed."""
+        other = heirs_mod.heir_with_address(self.heirs, address, except_name=name)
+        if other is not None:
+            raise UserFacingException(
+                _("This address is already used by the heir {}.").format(other))
 
     def heirs_update(self, name, address=None, amount=None, locktime=None):
         """Change only the given fields of the heir ``name``; ``locktime``
@@ -1910,6 +1911,7 @@ class BalController(BalSettingsController):
         address = address if address is not None else current[0]
         amount = amount if amount is not None else current[1]
         locktime = locktime if locktime is not None else current[2]
+        self._check_address_free(address, name)
         value = self._build_heir_entry(name, address, amount, locktime)
         self.heirs[name] = value
         self.wallet.save_db()
@@ -1974,6 +1976,9 @@ class BalController(BalSettingsController):
             "names": list(valid),
             "skipped": skipped,
             "total": len(self.heirs),
+            # #135: heirs on one address after the import (a warning: the
+            # file is imported as it is; keep only one of each pair).
+            "same_address": [list(p) for p in heirs_mod.shared_addresses(self.heirs)],
         }
 
     def heirs_export(self, path):

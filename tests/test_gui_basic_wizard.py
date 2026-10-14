@@ -703,7 +703,8 @@ def test_draft_is_not_called_the_will_in_force(make, monkeypatch):
         # After the will in force: the note and "later" in the reference.
         page.year_box.setValue(2033)
         assert visible(page.later_note)
-        assert "(later — requires the paid invalidation)" in page.compare_label.text()
+        assert ("(later — needs an invalidation transaction: you only pay the "
+                "network fee)") in page.compare_label.text()
         # The same date as the will in force: no comparison at all.
         page.year_box.setValue(2032)
         page.month_box.setValue(9)
@@ -716,19 +717,22 @@ def test_draft_is_not_called_the_will_in_force(make, monkeypatch):
 
 
 def test_summary_page_compares_with_the_will_in_force(make, monkeypatch):
-    """Page 4 with a will in force: "In force now → After signing" under
-    the delivery, with how much earlier (bal.core.future.span_text)."""
+    """Page 4 with a will in force: the comparison with the will in force.
+    #134 wrote it as two lines under the delivery; since #135 (owner's
+    mockup) it is the "What changes" box under the green box, with how much
+    earlier (bal.core.future.span_text)."""
     s, bw = draft_before_will_in_force(make, monkeypatch)
     dialog = open_wizard(bw)
     try:
         to_executors(dialog)
         page = press_next(dialog)
         when = page.values["Delivery to the heirs"].text()
-        # Two lines (owner, ZIP test: one line was too long and was cut).
-        assert ("<br><span style='color:#4A5560'>In force now: 23 September "
-                "2032, 00:00 UTC</span><br><span style='color:#4A5560'>After "
-                "signing: 23 September 2031, 00:00 UTC → delivery moved earlier "
-                "by 1 year</span>") in when
+        assert "In force now" not in when
+        texts = [lab.text() for lab in page.changes_box.findChildren(basic_wizard.QLabel)]
+        assert "<b>What changes compared with the will in force</b>" in texts
+        assert ("23 September 2032, 00:00 UTC → <b>23 September 2031, 00:00 UTC</b>"
+                "<br><span style='color:#6A737D'>moved earlier by 1 year — free</span>"
+                ) in texts
     finally:
         dialog.close()
 
@@ -764,7 +768,7 @@ def test_will_tab_summary_shows_in_force_and_after_signing(make, monkeypatch):
 
 
 def test_delivery_change_texts():
-    """Earlier, later (with the paid invalidation) and the same date; the
+    """Earlier, later (with the invalidation transaction) and the same date; the
     span is calendar months (2 years and 4 months)."""
     from bal.core import datetext
 
@@ -772,8 +776,9 @@ def test_delivery_change_texts():
     assert datetext.delivery_change(in_force, fk.ts(2028, 10, 13)) == (
         "moved earlier by 2 years and 4 months")
     assert datetext.delivery_change(in_force, fk.ts(2031, 5, 26)) == (
-        "moved later by 3 months — requires the paid invalidation of the "
-        "will in force")
+        "moved later by 3 months — needs an invalidation transaction on the "
+        "blockchain: your bitcoin stay yours, you only pay the normal network "
+        "fee")
     assert datetext.delivery_change(in_force, in_force) == "same date"
     assert datetext.utc_text(fk.ts(2028, 10, 13)) == "13 October 2028, 00:00 UTC"
     assert datetext.utc_text(fk.ts(2028, 10, 13), short=True) == "13 Oct 2028, 00:00 UTC"
@@ -803,7 +808,8 @@ def test_same_date_shows_no_comparison(make):
     assert datetext.in_force_change_lines(fk.D0, fk.LATER) == [
         "In force now: 23 September 2032, 00:00 UTC",
         "After signing: 23 September 2033, 00:00 UTC → delivery moved later by "
-        "1 year — requires the paid invalidation of the will in force",
+        "1 year — needs an invalidation transaction on the blockchain: your "
+        "bitcoin stay yours, you only pay the normal network fee",
     ]
 
 

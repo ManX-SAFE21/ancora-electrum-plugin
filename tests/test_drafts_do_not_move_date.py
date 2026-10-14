@@ -156,19 +156,24 @@ def test_owner_case(make, monkeypatch, mode):
     assert s.bw.will_settings["locktime"] == D - fk.DAY
     s.set_fee(21)
     s.check(closing=True, cancel_on=SIGN)
-    # The draft of 02-26 is gone, and the new one is dated against the
-    # will in force (02-27), not one day before the draft (02-25 before
-    # #128). Its date stays the stored one: the "fee put back only, date
-    # untouched" case is out of scope (TECHNICAL-NOTES).
-    assert {int(w.tx.locktime) for w in _drafts(s).values()} == {D - fk.DAY}
-    assert len(_drafts(s)) == 3
-    assert s.bw.will_settings["locktime"] == D - fk.DAY
+    # The draft of 02-26 is gone and never beaten by a 02-25 one (#128).
+    # #135 (owner's ZIP test): with the fee put back, the settings equal
+    # the will in force except the day the anticipation stored: that
+    # leftover is undone (the drafts dropped, the date back to 02-27) and
+    # the will in force is kept, nothing to sign. (Before #135 the draft
+    # stayed at 02-26 and the password was asked: the "fee put back only"
+    # case, out of scope in #128.)
+    assert _drafts(s) == {}
+    assert s.bw.will_settings["locktime"] == D
+    _assert_in_force_kept(s, first)
     s.set_date(D)
     s.check(cancel_on=SIGN)
     _assert_in_force_kept(s, first)
     rows = _rows(s)
     assert "Checking your will: Ok" in rows, rows
-    assert "Building your will: Nothing to do" in rows, rows
+    # #135: the will in force was already brought back by the Check
+    # before (the anticipation leftover undone): nothing to build here.
+    assert not any(r.startswith("Building your will") for r in rows), rows
     assert not any("preparing a new will" in r for r in rows), rows
     assert _last(s)["report"]["result"][0] == "ok"
     # The next Check finds nothing to do.

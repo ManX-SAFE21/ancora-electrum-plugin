@@ -91,6 +91,10 @@ def will_change_message(e):
         # as reported by the core (Will._heir_change). The generic
         # sentence stays for an exception without that detail.
         change = getattr(e, "change", None)
+        if change == HeirNotFoundException.HEIR_RENAMED:
+            # #135 follow-up (owner): the same heir under a new name.
+            return _("Heir renamed: {old} → {new}: preparing a new will.").format(
+                old=str(e), new=getattr(e, "new_name", ""))
         if change == HeirNotFoundException.HEIR_REMOVED:
             return _('Heir "{}" was removed: preparing a new will.').format(str(e))
         if change == HeirNotFoundException.HEIR_ADDED:
@@ -490,3 +494,42 @@ def build_failure_message(reason, date_passed):
         ),
         _("Skipped"),
     )
+
+
+def heir_error_message(e):
+    """The heir entry error ``e`` in plain, translated words (#135).
+
+    One helper for the "Edit heir" dialog and the command line (owner's ZIP
+    test: the dialog showed the raw "not an address,bc1q…"). Reads the
+    core's ``Heirs.validate_*`` exceptions; anything else: ``str(e)``.
+    """
+    from .heirs import (
+        AmountNotValid,
+        HeirExpiredException,
+        LocktimeNotValid,
+        NotAnAddress,
+    )
+
+    text = str(e)
+    if isinstance(e, NotAnAddress):
+        prefix = "not an address,"
+        if text.startswith(prefix):
+            return "{}\n{}".format(
+                _("Not a valid address for this network: {}").format(text[len(prefix):]),
+                _("Check that you copied all of it, with no extra or missing "
+                  "characters."))
+        if text.startswith("OP_RETURN data is not valid hex"):
+            return _("The OP_RETURN message is not valid: it must be written in "
+                     "hexadecimal.")
+        if text.startswith("OP_RETURN data too long"):
+            size = text[text.find("(") + 1:].split(" ")[0]
+            return _("The OP_RETURN message is too long: {} bytes, at most 80.").format(size)
+        return text
+    if isinstance(e, HeirExpiredException):
+        return _("The date of this heir is already past.")
+    if isinstance(e, LocktimeNotValid):
+        return _("The date of this heir is not valid.")
+    if isinstance(e, AmountNotValid):
+        return _("The amount is not valid: write a number, or a percentage such "
+                 "as 25%.")
+    return text
