@@ -319,18 +319,21 @@ class WizardSnapshot:
 
     * the heirs (a deep copy of ``{name: [address, amount, date]}``);
     * the delivery settings of :data:`SNAPSHOT_SETTING_KEYS`;
-    * the ``selected`` flag of every will-executor (by URL).
+    * the ``selected`` flag of every will-executor (by URL);
+    * #137: the will-executors the user deselected on purpose
+      (``bal_willexecutors_user_deselected``, every network).
 
     :meth:`restore` puts them back exactly (Cancel, the close button). New
     will-executors downloaded meanwhile stay in the list, not selected (they
     were not selected when the wizard opened).
     """
 
-    def __init__(self, heirs, settings, selected):
-        """Keep the three parts (see the class)."""
+    def __init__(self, heirs, settings, selected, user_deselected=None):
+        """Keep the parts (see the class)."""
         self.heirs = heirs
         self.settings = settings
         self.selected = selected
+        self.user_deselected = user_deselected
 
     @classmethod
     def take(cls, bal_window):
@@ -341,7 +344,11 @@ class WizardSnapshot:
         wes = Willexecutors.get_willexecutors(bal_window.bal_plugin)
         selected = {url: bool(we.get("selected")) for url, we in wes.items()
                     if isinstance(we, dict)}
-        return cls(heirs, settings, selected)
+        # #137: seeded first (the list as it is now), then copied whole.
+        Willexecutors.user_deselected(bal_window.bal_plugin)
+        setting = getattr(bal_window.bal_plugin, "WILLEXECUTORS_USER_DESELECTED", None)
+        user = copy_structure(setting.get()) if setting is not None else None
+        return cls(heirs, settings, selected, user)
 
     def restore(self, bal_window):
         """Put the heirs, the settings and the selection back (see class).
@@ -359,7 +366,8 @@ class WizardSnapshot:
         written = []
         for name, step in (("heirs", self._restore_heirs),
                            ("settings", self._restore_settings),
-                           ("willexecutors", self._restore_selection)):
+                           ("willexecutors", self._restore_selection),
+                           ("user deselections", self._restore_user_deselected)):
             try:
                 if step(bal_window):
                     written.append(name)
@@ -373,6 +381,16 @@ class WizardSnapshot:
             except Exception as e:
                 _logger.debug(f"wizard cancel: {widget_name} not refreshed: {e!r}")
         return written
+
+    def _restore_user_deselected(self, bal_window):
+        """The user's deselections as they were (#137); True when written."""
+        setting = getattr(bal_window.bal_plugin, "WILLEXECUTORS_USER_DESELECTED", None)
+        if setting is None or self.user_deselected is None:
+            return False
+        if setting.get() == self.user_deselected:
+            return False
+        setting.set(copy_structure(self.user_deselected))
+        return True
 
     def _restore_heirs(self, bal_window):
         """The heirs as they were; True when something was written."""
@@ -1171,7 +1189,11 @@ class SummaryPage(_StepPage):
             new = will_changes.side_from_settings(
                 bw.heirs or {}, settings.get("locktime"), selected,
                 settings.get("baltx_fees"))
-            return will_changes.change_rows(will_changes.will_changes(old, new), wizard=True)
+            # #137: the will-executors new on the network, selected by the
+            # download of page 3, are said so.
+            return will_changes.change_rows(
+                will_changes.will_changes(old, new), wizard=True,
+                new_in_network=getattr(bw, "new_willexecutors", None) or ())
         except Exception as e:
             _logger.error(f"what changes not shown: {e!r}")
             return None

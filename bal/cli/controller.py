@@ -2086,6 +2086,9 @@ class BalController(BalSettingsController):
                 continue
             self.willexecutors[url]["selected"] = bool(select)
             selected[url] = bool(select)
+        # #137: the user's choice (the wizards' automatic selection keeps a
+        # will-executor he deselected deselected).
+        Willexecutors.set_user_choice(self.plugin, list(selected), bool(select))
         Willexecutors.save(self.plugin, self.willexecutors)
         return selected
 

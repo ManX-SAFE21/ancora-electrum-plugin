@@ -332,6 +332,16 @@ class BalPlugin(BasePlugin):
         # follows what is saved in that wallet (the default only applies when no
         # value has been stored yet, i.e. new wallets).
         self.NO_WILLEXECUTOR = BalConfig(config, "bal_no_willexecutor", False)
+        # CHANGELOG #137 (owner): the will-executors the USER deselected on
+        # purpose, ``{chain: [url, ...]}``, the same global scope as
+        # ``bal_willexecutors``. The automatic selection (the wizards'
+        # "download and select") never selects them again; one the plugin
+        # deselected because it did not answer is selected again when it
+        # answers. A user choice, not derived state: it cannot be rebuilt
+        # from anything else. None until seeded (``Willexecutors.
+        # user_deselected``).
+        self.WILLEXECUTORS_USER_DESELECTED = BalConfig(
+            config, "bal_willexecutors_user_deselected", None)
         self.MAX_WILLEXECUTOR_FEE = BalConfig(
             config, "bal_max_willexecutor_fee", 500000
         )

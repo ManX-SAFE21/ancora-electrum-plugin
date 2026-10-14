@@ -1995,6 +1995,9 @@ class WillExecutorListWidget(MyTreeView):
             )
 
     def select(self, selected_keys):
+        """The user selects ``selected_keys`` (it also cancels an earlier
+        deselection of his, #137)."""
+        Willexecutors.set_user_choice(self._bal_parent.bal_plugin, selected_keys, True)
         for wid, w in self._bal_parent.willexecutors_list.items():
             if wid in selected_keys:
                 w["selected"] = True
@@ -2002,6 +2005,9 @@ class WillExecutorListWidget(MyTreeView):
         self.update()
 
     def deselect(self, selected_keys):
+        """The user deselects ``selected_keys`` on purpose: the automatic
+        selection will not select them again (#137, owner)."""
+        Willexecutors.set_user_choice(self._bal_parent.bal_plugin, selected_keys, False)
         for wid, w in self._bal_parent.willexecutors_list.items():
             if wid in selected_keys:
                 w["selected"] = False
@@ -2536,7 +2542,21 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         leaving the valid ones selected).
         """
         valid = self._validity() if only_valid else None
+        before = {url: bool(we.get("selected"))
+                  for url, we in self.willexecutors_list.items() if isinstance(we, dict)}
         _apply_select_all(self.willexecutors_list, select, valid)
+        # #137 (owner decision B): these are the user's choices. Every URL
+        # the action set (all of them without a validity rule, else the
+        # ones it changed) is recorded as selected or deselected by him.
+        on, off = [], []
+        for url, we in self.willexecutors_list.items():
+            if not isinstance(we, dict):
+                continue
+            now = bool(we.get("selected"))
+            if valid is None or now != before.get(url):
+                (on if now else off).append(url)
+        Willexecutors.set_user_choice(self.bal_plugin, on, True)
+        Willexecutors.set_user_choice(self.bal_plugin, off, False)
         self.save_willexecutors()
 
     def ping_selected_willexecutors(self):
