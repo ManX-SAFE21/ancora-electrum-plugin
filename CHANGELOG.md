@@ -8853,3 +8853,77 @@ still expecting the five columns before #136. It now expects
 `FEE_ADDRESS` too. No plugin code changed. Lesson (owner OK,
 2026-10-14): a look-only step also runs every test file that names the
 touched class (here `PreviewList`).
+
+## 137. Will-executor selection respects the user's choices
+
+**Date:** 2026-10-14
+
+**Problem (the owner):** the wizards' "download and select" (BASIC page 3,
+and ADVANCED "Automatically download and select willexecutors") selected
+EVERY will-executor that answered and deselected every one that did not.
+A will-executor the owner had deselected on purpose (we.divinaly.support)
+came back selected, and page 4 only said "added".
+
+**What changed:**
+
+- The rule (`Willexecutors.select_after_ping`, Qt-free), three cases:
+  1. a will-executor NEW on the network (not in the list before this
+     download) that answers: selected; page 4 says "added X (new in the
+     network)";
+  2. a will-executor deselected by the USER: stays deselected, even when
+     it answers;
+  3. one deselected by the PLUGIN (it did not answer, or Exclude):
+     selected again when it answers, deselected when it does not.
+  The same function serves BASIC and ADVANCED
+  (`BalWindow.download_and_select_willexecutors`).
+- New Electrum config key `bal_willexecutors_user_deselected`
+  (`{chain: [url, ...]}`, the same global scope as `bal_willexecutors`):
+  the will-executors the user deselected on purpose. A user choice, not
+  derived state. `bal_willexecutors`, the wallet keys and the protocol are
+  unchanged.
+  - Seeding (owner decision A): the first time this version looks at a
+    network (the wallet opens, a wizard, a download, Exclude, a selection),
+    that network's entry is created from the will-executors deselected at
+    that moment, i.e. before any new automatic deselection; from then on
+    only the user's actions change it, so it is idempotent and a later
+    plugin deselection is never added.
+  - The user's actions (`Willexecutors.set_user_choice`): the
+    Will-Executors window's select / deselect, "Select all", "Select only
+    valid", "Deselect all", "Deselect invalid" (owner decision B), and the
+    command line's select / deselect. Selecting cancels an earlier
+    deselection. Exclude is the plugin's: not recorded.
+  - The BASIC wizard's Cancel puts back the selected flags AND the user's
+    deselections.
+- The #134/#135 rules on deselected will-executors (not counted, never
+  signed or sent, "· N deselected") are unchanged.
+- Manual: the BASIC wizard's page 3 paragraph says the new rule.
+- Catalogs: "(new in the network)" (IT "(nuovo nella rete)", ES "(nuevo
+  en la red)").
+
+**Tests:** `tests/test_executor_selection.py` (new): the core rule (cases
+1/2/3 and mixed), the seeding (once, idempotent, user choices only); the
+real BASIC wizard with three fake will-executors, each with its own fee
+address, and a fourth new on the network: case 1 (selected, page 4 "new in
+the network"), the owner's we.divinaly case (deselected in the real
+Will-Executors window, stays off across downloads; selected again by him,
+stays on), case 3 (down then back), Exclude then back, Select / Deselect
+all, a mixed case, the wizard Cancel (flags and user list), the command
+line, the ADVANCED page; after each scenario a Check, then a second Check
+clean.
+
+**Verification:** ruff clean; the affected tests (196 passed) and the
+golden files (247 passed, unchanged); catalogs 792 entries, RESULT OK.
+Test ZIP `safe21-heartbeat_0.7.0-TEST-137-executor-selection.zip` (sha256
+`6664338fb89ff9775b122f2bf6f3b509da83a9c226a448908b7de6cfc56c00a8`):
+external load and smoke test OK on 4.8.2. Whole suite in both orders,
+after the owner's ZIP test: 2222 passed and 1 failed each time, in
+`test_status_column::test_no_server_column_any_more`. That test was
+left behind by #136; it was fixed in its own commit (038ac43, "#136
+follow-up"), on which this step is based. The fixed file passes.
+
+**Outcome:** owner's ZIP test OK (2026-10-14), on his wallet:
+- a user-deselected will-executor stays off in the wizard;
+- one selected again by him shows "added" without "(new in the network)";
+- Cancel keeps his earlier choice;
+- a second user deselection is respected;
+- two Checks are clean.

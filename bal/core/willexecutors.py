@@ -249,6 +249,96 @@ class Willexecutors:
         return False
 
     @staticmethod
+    def user_deselected(bal_plugin, chain=None):
+        """The URLs the USER deselected on purpose on ``chain`` (#137).
+
+        Stored in ``bal_willexecutors_user_deselected`` (``{chain: [url]}``,
+        global like the list). Owner decision A: the will-executors already
+        deselected when this version first looks at a network have no
+        recorded reason, so they count as deselected by the user. That
+        network's entry is seeded ONCE from the saved list (its URLs with
+        ``selected`` False) and then only the user's actions change it
+        (:meth:`set_user_choice`): idempotent, and a will-executor the
+        plugin deselects later (no answer, Exclude) is never added. The
+        callers ask it BEFORE any automatic deselection, so the seed sees
+        the list as it was. Returns a set (empty when the setting is not
+        available, e.g. an old plugin object).
+        """
+        chain = chain or BalPlugin.chainname
+        setting = getattr(bal_plugin, "WILLEXECUTORS_USER_DESELECTED", None)
+        if setting is None:
+            return set()
+        stored = setting.get()
+        stored = copy.deepcopy(stored) if isinstance(stored, dict) else {}
+        if chain not in stored:
+            # The list as the plugin sees it on this network (the saved one,
+            # the built-in default added back); another network: as saved.
+            if chain == BalPlugin.chainname:
+                saved = Willexecutors.get_willexecutors(bal_plugin)
+            else:
+                saved = Willexecutors._stored_or_copy_of_default(bal_plugin).get(chain, {})
+            stored[chain] = sorted(
+                url for url, we in saved.items()
+                if isinstance(we, dict) and not we.get("selected"))
+            setting.set(stored)
+            _logger.info(f"user deselections seeded on {chain}: {stored[chain]}")
+        return set(stored.get(chain) or [])
+
+    @staticmethod
+    def set_user_choice(bal_plugin, urls, selected, chain=None):
+        """Record that the USER selected (``selected`` True) or deselected
+        the will-executors ``urls`` on purpose (#137): the window's
+        select / deselect, Select all / Deselect all / only valid / invalid
+        (owner decision B), the command line. A selection removes the URL
+        from the user's deselections, a deselection adds it. Seeds first
+        (:meth:`user_deselected`). Saved only when it changes.
+        """
+        chain = chain or BalPlugin.chainname
+        setting = getattr(bal_plugin, "WILLEXECUTORS_USER_DESELECTED", None)
+        if setting is None:
+            return
+        current = Willexecutors.user_deselected(bal_plugin, chain)
+        urls = set(urls or [])
+        wanted = (current - urls) if selected else (current | urls)
+        if wanted == current:
+            return
+        stored = setting.get()
+        stored = copy.deepcopy(stored) if isinstance(stored, dict) else {}
+        stored[chain] = sorted(wanted)
+        setting.set(stored)
+
+    @staticmethod
+    def select_after_ping(willexecutors, user_deselected, known):
+        """Select who answered, except the user's deselections (#137).
+
+        ``willexecutors``: ``{url: record}`` after the ping (changed in
+        place); ``user_deselected``: :meth:`user_deselected`; ``known``: the
+        URLs of the saved list BEFORE this download. The three cases of the
+        owner:
+
+        1. new on the network (not in ``known``) and answering: selected;
+        2. deselected by the user: stays deselected, even when it answers;
+        3. otherwise (known; deselected before by the plugin because it did
+           not answer, or by Exclude): selected when it answers, deselected
+           when it does not.
+
+        Returns the URLs of case 1 (the wizard's summary says "new in the
+        network").
+        """
+        new = set()
+        for url, we in (willexecutors or {}).items():
+            if not isinstance(we, dict):
+                continue
+            if url in user_deselected:
+                we["selected"] = False
+                continue
+            responded = str(we.get("status", "")) == "200"
+            we["selected"] = responded
+            if responded and url not in known:
+                new.add(url)
+        return new
+
+    @staticmethod
     def is_selected(willexecutor, value=None):
         if not willexecutor:
             return False

@@ -387,6 +387,12 @@ class BalWindow:
         the fields show the stored values.
         """
         _logger.info("********************init_____will____________**********")
+        try:
+            # #137: seed the user's deselections once, from the list as it
+            # is when the wallet opens (owner decision A).
+            Willexecutors.user_deselected(self.bal_plugin)
+        except Exception as e:
+            _logger.error(f"user deselections not read: {e!r}")
         if not self.willexecutors:
             self.willexecutors = Willexecutors.get_willexecutors(
                 self.bal_plugin, update=False, bal_window=self
@@ -786,6 +792,10 @@ class BalWindow:
         """
         if not self.can_exclude_willexecutor(url):
             return False
+        # #137: Exclude is the plugin's deselection of a will-executor that
+        # did not answer (selected again when it answers): never a user
+        # deselection. The user's list is seeded first, as it was.
+        Willexecutors.user_deselected(self.bal_plugin)
         self.willexecutors[url]["selected"] = False
         Willexecutors.save(self.bal_plugin, self.willexecutors)
         unsent = [
@@ -3076,14 +3086,25 @@ class BalWindow:
         """
         self.willexecutors = Willexecutors.get_willexecutors(self.bal_plugin)
         outcome = {"downloaded": False}
+        # #137 (owner): read BEFORE anything is deselected here, so the
+        # first-time seed sees the list as it was; and the URLs known
+        # before this download (a URL that is not is new on the network).
+        user_deselected = Willexecutors.user_deselected(self.bal_plugin)
+        known = set(self.willexecutors)
+        self.new_willexecutors = set()
 
         def ping_on_done(*_args):
-            """After the ping (answer or failure): select and save."""
+            """After the ping (answer or failure): select and save.
+
+            #137: who answers is selected, except the will-executors the
+            user deselected on purpose (they stay deselected); one the
+            plugin deselected before (no answer, Exclude) is selected
+            again when it answers; the new ones that answer are selected
+            and remembered for the summary ("new in the network").
+            """
             if select_responding:
-                for we in self.willexecutors:
-                    wedict = self.willexecutors[we]
-                    responded = str(wedict.get("status", "")) == "200"
-                    wedict["selected"] = responded
+                self.new_willexecutors = Willexecutors.select_after_ping(
+                    self.willexecutors, user_deselected, known)
             Willexecutors.save(self.bal_plugin, self.willexecutors)
 
         def ping():

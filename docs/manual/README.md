@@ -123,8 +123,12 @@ question; a bar on top shows where you are (*1 When, 2 Heirs,
    and *Export*, the total of the shares and the reminder that 100% of the
    wallet balance is spent. At least one heir is needed.
 3. **Who keeps the will?** The will-executors list is downloaded and pinged
-   at once, and only the will-executors that answer are selected. If nobody
-   answers, check the internet connection and press *Retry*. At least two
+   at once, and only the will-executors that answer are selected. A
+   will-executor you deselected yourself (in the will-executor list) stays
+   deselected; one that did not answer before is selected again when it
+   answers; one new on the network is selected and the summary says
+   *(new in the network)*. If nobody answers, check the internet connection
+   and press *Retry*. At least two
    will-executors are recommended. The full will-executor list (all
    columns and buttons, and the option *Add transactions without
    will-executor*) is shown below.

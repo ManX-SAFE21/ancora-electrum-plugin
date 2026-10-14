@@ -409,6 +409,21 @@ def _added(names):
     return _("added {list}").format(list=_names(names))
 
 
+def _added_executors(urls, new_in_network=()):
+    """"added <b>we2.test</b> (new in the network)" (#137): the hosts of
+    ``urls``, the ones in ``new_in_network`` marked as new on the network
+    (selected automatically, owner)."""
+    names = []
+    for url in urls:
+        name = "<b>{}</b>".format(_host(url))
+        if url in (new_in_network or ()):
+            name += " " + _("(new in the network)")
+        names.append(name)
+    if len(names) == 1:
+        return _("added {}").format(names[0])
+    return _("added {list}").format(list=", ".join(names))
+
+
 def _removed(names):
     """"removed <b>dave</b>" (one) / several (see :func:`_added`)."""
     if len(names) == 1:
@@ -416,13 +431,16 @@ def _removed(names):
     return _("removed {list}").format(list=_names(names))
 
 
-def change_rows(changes, wizard=False):
+def change_rows(changes, wizard=False, new_in_network=()):
     """``[(label, value, note)]`` of ``changes`` (rich text values; ``note``
     a muted line or None). None for no changes list (no will in force).
 
     ``wizard`` (#135): the BASIC wizard's summary, where an heir renamed
     (same address, one name each side) is a name-only change the Check will
     save without signing: :func:`name_only_text` with ``saved=False``.
+    ``new_in_network`` (#137): URLs of will-executors seen for the first
+    time on the network and selected automatically: "added
+    <b>host</b> (new in the network)".
     """
     if changes is None:
         return None
@@ -480,7 +498,7 @@ def change_rows(changes, wizard=False):
                 if c.old != c.new else ""
             parts = []
             if c.added:
-                parts.append(_added([_host(u) for u in c.added]))
+                parts.append(_added_executors(c.added, new_in_network))
             if c.removed:
                 parts.append(_removed([_host(u) for u in c.removed]))
             detail = "; ".join(parts)
