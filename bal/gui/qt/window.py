@@ -28,7 +28,12 @@ from ...core.checkalive import (
     resolve_date_to_check,
     resolve_guard_threshold,
 )
-from ...core.messages import check_alive_message, will_change_message
+from ...core.heirs import AmountNotValid, heir_with_address
+from ...core.messages import (
+    check_alive_message,
+    heir_error_message,
+    will_change_message,
+)
 from ...core.summary import busy_summary, selected_urls, will_summary
 from ...engine import build, context
 from .common import (
@@ -149,6 +154,25 @@ def _stopped_by_hold(window):
     else:
         window.show_message(_(CHOOSE_DATE_FIRST))
     return True
+
+
+def edit_hint(original, current):
+    """The hint of the "Edit heir" dialog (#135, owner), or "".
+
+    ``original`` / ``current``: ``(name, address, amount text)``. A new
+    address: who receives changes, a new will must be signed; a new amount:
+    the share changes, the same; only the name: nothing to sign (the Check
+    saves a pure rename by itself, ``Will.sync_heir_names``).
+    """
+    name0, address0, amount0 = (str(x).strip() for x in original)
+    name1, address1, amount1 = (str(x).strip() for x in current)
+    if address1 != address0:
+        return _("You are changing who receives: the will must be signed again.")
+    if amount1 != amount0:
+        return _("The share changes: the will must be signed again.")
+    if name1 != name0:
+        return _("Only the name changes: no need to sign.")
+    return ""
 
 
 def _utc_day(ts):
@@ -488,8 +512,9 @@ class BalWindow:
                 # is a postpone, which costs a fee.
                 text += "\n\n" + _(
                     "To use the later date again, choose it and press "
-                    "'Check your will': the old will must be invalidated "
-                    "first (miner fee)."
+                    "'Check your will': first the old will needs an "
+                    "invalidation transaction (your bitcoin stay yours, you "
+                    "only pay the network fee)."
                 )
             return text
         return None
@@ -535,7 +560,9 @@ class BalWindow:
             _utc_day(keep)
         )
         later_text = _(
-            "Use {} (later: the old will must be invalidated, miner fee)"
+            # #135 follow-up (owner): the same wording as the other texts.
+            "Use {} (later: needs an invalidation transaction, you only pay "
+            "the network fee)"
         ).format(_utc_day(later))
         return text, keep_text, later_text
 
@@ -704,6 +731,9 @@ class BalWindow:
                 long_dates=True,
                 # #134: deselected will-executors are not "to send".
                 selected=self.selected_willexecutors(),
+                # #135: THE will in force, the one rule of the List, the
+                # Future view and the wizard (not only the REPLACED copies).
+                in_force=context.in_force_delivery(self),
             )
         except Exception as e:
             _logger.debug(f"will summary failed: {e!r}")
@@ -924,6 +954,26 @@ class BalWindow:
             grid.addWidget(HelpButton(_("locktime")), 4, 2)
 
         vbox.addLayout(grid)
+        # #135 (owner): what an edit means for the will, live.
+        hint = QLabel("")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#6A737D;")
+        vbox.addWidget(hint)
+        original = None
+        if heir:
+            original = (str(heir_key), str(heir[0]),
+                        str(Util.decode_amount(heir[1], self.window.get_decimal_point()))
+                        if not is_op_return_address(str(heir[0])) else "")
+
+            def _update_hint():
+                hint.setText(edit_hint(original, (
+                    heir_name.text(), heir_address.text(),
+                    "" if is_op_return_address(heir_address.text())
+                    else heir_amount.text())))
+
+            for field in (heir_name, heir_address, heir_amount):
+                field.textChanged.connect(_update_hint)
+            _update_hint()
         buttons = [CancelButton(d), OkButton(d)]
         if not heir:
             buttons.append(new_heir_button)
@@ -933,7 +983,13 @@ class BalWindow:
             if is_op_return_address(raw_address):
                 amount = "0"
             else:
-                amount = Util.encode_amount(heir_amount.text(), self.window.get_decimal_point())
+                try:
+                    amount = Util.encode_amount(heir_amount.text(),
+                                                self.window.get_decimal_point())
+                except Exception:
+                    # #135: a plain sentence, not a raw exception text.
+                    self.show_error(heir_error_message(AmountNotValid("")))
+                    continue
             # #81: the date of this dialog's field (multiverse); without
             # multiverse set_heir uses the will's delivery anyway.
             heir = [
@@ -942,13 +998,45 @@ class BalWindow:
                 amount,
                 str(self.heir_locktime.get_value()),
             ]
+            if heir_key is not None and original is not None and edit_hint(
+                    original, (heir[0], heir_address.text(),
+                               "" if is_op_return_address(raw_address)
+                               else heir_amount.text())) in (
+                    "", _("Only the name changes: no need to sign.")):
+                # #135 (owner's ZIP test, A -> B -> A): only the name was
+                # touched: keep the stored amount and date exactly as they
+                # were, so the will items still match them (no rebuild).
+                old_value = self.heirs.get(heir_key)
+                heir[2], heir[3] = old_value[1], old_value[2]
+            new_name = heir[0]
+            if new_name != heir_key and new_name in self.heirs:
+                # #135: never overwrite another heir (a new one, or a
+                # rename to a name already in the list).
+                self.show_error(_("An heir named {} already exists.").format(new_name))
+                continue
+            other = heir_with_address(self.heirs, raw_address, except_name=heir_key)
+            if other is not None:
+                # #135 (owner): no two heirs on one address (the second
+                # would take a second share there). The heir's own address
+                # (an edit) is allowed; compared as ``address_key`` does.
+                self.show_error(
+                    _("This address is already used by the heir {}.").format(other))
+                continue
             try:
                 self.set_heir(heir)
-                if self.add_another_heir:
-                    self.new_heir_dialog()
-                break
             except Exception as e:
-                self.show_error(str(e))
+                # #135 (owner): "not an address,bc1q…" in plain, translated
+                # words (the same helper as the command line).
+                self.show_error(heir_error_message(e))
+                continue
+            if heir_key is not None and new_name != heir_key:
+                # #135: a rename. The old name goes AFTER the new one is
+                # saved, so a refused entry never loses the heir; before,
+                # it was never removed and a second heir took a share.
+                self.delete_heirs([heir_key])
+            if self.add_another_heir:
+                self.new_heir_dialog()
+            break
 
     def set_heir(self, heir):
         heir = list(heir)
@@ -1010,14 +1098,15 @@ class BalWindow:
         """
         return build.build_will(self, with_creation_date=True)
 
-    def check_will(self):
-        """See :func:`bal.engine.context.check_will`.
+    def check_will(self, undo_anticipation=False):
+        """See :func:`bal.engine.context.check_will` (``undo_anticipation``:
+        the first check of a Check only, #135).
 
         CHANGELOG #118: ``callback_not_valid_tx=self.delete_not_valid`` is no
         longer passed: ``Will.is_will_valid`` never calls it (and
         ``delete_not_valid`` raises ``NotImplementedError``).
         """
-        return context.check_will(self)
+        return context.check_will(self, undo_anticipation=undo_anticipation)
 
     def _save_will_to_history(self):
         """Persist the current will state into the wallet's LOCAL history.

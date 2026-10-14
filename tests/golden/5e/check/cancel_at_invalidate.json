@@ -221,6 +221,7 @@
   "action": "check",
   "broadcasts": [],
   "dialog_events": [
+   "invalidation-buttons",
    "close-button"
   ],
   "heirs": {
@@ -277,8 +278,8 @@
   "pushed": [],
   "questions": [
    [
-    "password",
-    "Invalidate your old will"
+    "button",
+    "Invalidate now"
    ]
   ],
   "report": {
@@ -289,6 +290,14 @@
     "problems": [],
     "warnings": []
    },
+   "changes": [
+    [
+     "Delivery",
+     "23 September 2032, 00:00 UTC → <b>23 September 2033, 00:00 UTC</b>",
+     "moved later by 1 year — needs an invalidation transaction on the blockchain: your bitcoin stay yours, you only pay the normal network fee"
+    ]
+   ],
+   "changes_for": "invalidate",
    "executors": [
     [
      "https://we0.test",
@@ -306,9 +315,24 @@
     ]
    ],
    "heirs": null,
+   "invalidation": {
+    "address": "tb1q8gd7azm32m3lq3dgrxxu8vph5t66ww5ahfevxf",
+    "amount": 1000000,
+    "fee": 1430,
+    "mine": true,
+    "rate": 13.0,
+    "received": 998570,
+    "wills": [
+     [
+      1,
+      1979510400,
+      2
+     ]
+    ]
+   },
    "result": [
     "warn",
-    "<b>Interrupted: the old will was not invalidated. Your later date (23 September 2033, 00:00 UTC) was not applied: the will in force needs the paid invalidation first. When you are ready, choose it again.</b>"
+    "<b>Interrupted: the old will was not invalidated. Your later date (23 September 2033, 00:00 UTC) was not applied: the will in force needs an invalidation transaction on the blockchain first (your bitcoin stay yours, you only pay the normal network fee). When you are ready, choose it again.</b>"
    ],
    "steps": [
     [

@@ -46,7 +46,7 @@ from electrum.util import (
 
 from ..i18n import N_, _
 from . import will_state
-from .heirs import WillExecutorFeeTooHighException, is_op_return_address
+from .heirs import WillExecutorFeeTooHighException, address_key, is_op_return_address
 from .util import Util, copy_structure
 from .willexecutors import Willexecutors
 
@@ -2107,6 +2107,131 @@ class Will:
         return HeirNotFoundException.HEIR_ADDED
 
     @staticmethod
+    def sync_heir_names(will, heirs):
+        """Write the new name of an heir that was ONLY renamed (#135).
+
+        Owner's ZIP test: after renaming an heir (same address, share and
+        date) every Check said "Heir renamed …: preparing a new will",
+        rebuilt the very same transactions and changed nothing. The copy of
+        a will-executor that the rebuild does not make again (one
+        deselected) kept the old name, so the next Check saw the rename
+        again, forever.
+
+        A pure rename is recognised up front, item by item (the VALID items
+        and the will in force kept as REPLACED): an heir name of an item
+        that the Heirs tab no longer has, and exactly ONE heir of the tab
+        that the item does not carry with the SAME address and the same
+        amount (:meth:`_pure_rename`). Then only
+        the NAME is changed in the items' stored heirs (``WillItem.heirs``,
+        the plugin's own metadata, same key and format). Funds-safe: the
+        transaction (outputs, amounts, locktime), its signatures, statuses
+        and what the will-executors hold do not change: names are not in
+        the transaction; and the usual check then runs under the new name,
+        so a date (or anything else) that changed too is still found and
+        rebuilt. A different share, two candidates or a name used twice is
+        not touched and goes to the usual check and rebuild.
+
+        Returns ``[(old, new)]`` (sorted), empty when nothing was renamed.
+        """
+        current = dict(heirs or {})
+        # The VALID items and the will in force kept as REPLACED (signed
+        # and/or sent, #128: what the will-executors hold); never the
+        # invalidated, executed or old unsigned items (their names are the
+        # history). Owner's ZIP test (A -> B -> A): every decision is per
+        # item and per name, so one item that cannot be matched (an old
+        # name of another heir, another share) no longer blocks the others.
+        targets = [w for w in (will or {}).values()
+                   if w.get_status("VALID") or will_state.may_be_in_force(w)]
+        renames = set()
+        # Each reason is logged once per name and Check (the owner's log
+        # had the same old heir ten times: one line per copy).
+        logged = set()
+        for w in targets:
+            item_heirs = w.heirs or {}
+            item_map = {}
+            for name, their in item_heirs.items():
+                if str(name).startswith('w!ll3x3c"') or name in current:
+                    continue
+                new_name = Will._pure_rename(name, their, current, item_heirs, logged)
+                if new_name is not None:
+                    item_map[name] = new_name
+            if not item_map or len(set(item_map.values())) != len(item_map):
+                continue
+            w.heirs = {item_map.get(k, k): v for k, v in item_heirs.items()}
+            renames.update(item_map.items())
+        return sorted(renames)
+
+    @staticmethod
+    def _pure_rename(name, their, current, item_heirs, logged=None):
+        """The new name of the heir ``name`` of one item, or None (#135).
+
+        ``their``: its entry in the item; ``current``: the Heirs tab. The
+        ONE heir of the tab that the item does not carry, at the same
+        address (``heirs.address_key``) with the same amount (compared by
+        value: "20%" and "20.0%" are the same share). Logged when it is not
+        a pure rename, so the reason can be read in the log.
+        """
+        try:
+            key = address_key(their[0])
+            amount = their[1]
+        except (IndexError, TypeError):
+            return None
+        if key is None:
+            return None
+        found = []
+        for new_name, heir in current.items():
+            try:
+                if address_key(heir[0]) == key and new_name not in item_heirs:
+                    found.append(new_name)
+            except (IndexError, TypeError):
+                continue
+        reason = None
+        if len(found) != 1:
+            reason = f"{len(found)} heirs at its address"
+        elif not Will._same_amount(current[found[0]][1], amount):
+            reason = f"amount {amount!r} -> {current[found[0]][1]!r}"
+        if reason is not None:
+            if logged is None or (name, reason) not in logged:
+                _logger.info(f"heir {name!r}: not a pure rename ({reason})")
+                if logged is not None:
+                    logged.add((name, reason))
+            return None
+        return found[0]
+
+    @staticmethod
+    def _same_amount(a, b):
+        """True when two written amounts are the same share or sum ("20%"
+        and "20.0%", "1000" and "1000.0"); a percentage never equals a
+        fixed amount."""
+        a, b = str(a).strip(), str(b).strip()
+        if a == b:
+            return True
+        if a.endswith("%") != b.endswith("%"):
+            return False
+        try:
+            return abs(float(a.rstrip("%")) - float(b.rstrip("%"))) < 1e-9
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _renamed_to(old_name, their, heirs, will_heirs):
+        """The new name of the heir ``old_name`` when it was only renamed.
+
+        ``their``: its entry in the will item ([address, amount, ...]);
+        ``heirs``: the Heirs tab now; ``will_heirs``: the item's heirs. The
+        new name is the ONE heir of the Heirs tab with the same address that
+        the item does not carry; ``None`` otherwise (removed, or ambiguous).
+        Used only to word the Check message (#135 follow-up).
+        """
+        try:
+            address = str(their[0])
+        except (IndexError, TypeError):
+            return None
+        found = [name for name, heir in (heirs or {}).items()
+                 if name not in (will_heirs or {}) and str(heir[0]) == address]
+        return found[0] if len(found) == 1 else None
+
+    @staticmethod
     def check_willexecutors_and_heirs(
         will, heirs, willexecutors, self_willexecutor, check_date, tx_fees
     ):
@@ -2226,6 +2351,17 @@ class Will:
                             f"heir removed, transaction is not valid:"
                             f"{wheir} {wid}, {w}"
                         )
+                        # #135 follow-up (owner): a heir with the SAME
+                        # address under a new name is a rename, worded as
+                        # such. Only the message changes: same exception,
+                        # same rebuild (recognising a rename without a
+                        # rebuild is step #137).
+                        renamed_to = Will._renamed_to(wheir, their, heirs, w.heirs)
+                        if renamed_to is not None:
+                            raise HeirNotFoundException(
+                                wheir, HeirNotFoundException.HEIR_RENAMED,
+                                new_name=renamed_to,
+                            )
                         raise HeirNotFoundException(
                             wheir, HeirNotFoundException.HEIR_REMOVED
                         )
@@ -2636,8 +2772,9 @@ class HeirNotFoundException(NotCompleteWillException):
     ``str(e)`` is still the heir name (callers rely on it). ``change`` says
     what happened to that heir, so the Check dialog can name it (CHANGELOG
     #77): one of :data:`HEIR_REMOVED`, :data:`HEIR_ADDED`,
-    :data:`HEIR_ADDRESS`, :data:`HEIR_AMOUNT`, :data:`HEIR_DATE`, or
-    ``None`` when unknown. ``all_heirs`` (CHANGELOG #125) is True for a date
+    :data:`HEIR_ADDRESS`, :data:`HEIR_AMOUNT`, :data:`HEIR_DATE`,
+    :data:`HEIR_RENAMED` (#135 follow-up, with ``new_name``), or ``None``
+    when unknown. ``all_heirs`` (CHANGELOG #125) is True for a date
     change when every heir has the same delivery date: the will's date
     changed, not one heir's.
     """
@@ -2647,13 +2784,19 @@ class HeirNotFoundException(NotCompleteWillException):
     HEIR_ADDRESS = "address"
     HEIR_AMOUNT = "amount"
     HEIR_DATE = "date"
+    # #135 follow-up: same address, new name (``new_name``).
+    HEIR_RENAMED = "renamed"
 
-    def __init__(self, heir, change=None, all_heirs=False):
-        """Keep ``heir`` as the only arg so ``str(e)`` stays the heir name."""
+    def __init__(self, heir, change=None, all_heirs=False, new_name=None):
+        """Keep ``heir`` as the only arg so ``str(e)`` stays the heir name.
+
+        ``new_name``: the heir's new name for :data:`HEIR_RENAMED`.
+        """
         super().__init__(heir)
         self.heir = heir
         self.change = change
         self.all_heirs = all_heirs
+        self.new_name = new_name
 
 
 class WillPostponedException(NotCompleteWillException):

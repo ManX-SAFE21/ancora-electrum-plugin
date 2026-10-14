@@ -225,6 +225,7 @@
   "dialogs_opened": [
    {
     "dialog_events": [
+     "invalidation-buttons",
      "close-button"
     ],
     "history": [
@@ -450,6 +451,10 @@
    [
     "renew",
     "Are you still here? The Check Alive date (10 November 2026, 00:00 UTC) has passed.\n\nRenew your will: the new delivery date will be 19 January 2027, 00:00 UTC (today + 2 months). The old will is invalidated on the blockchain (this costs a miner fee) and the new one is prepared right away.\n\nNot now: nothing changes, your current will stays valid."
+   ],
+   [
+    "button",
+    "Invalidate now"
    ]
   ],
   "result": {

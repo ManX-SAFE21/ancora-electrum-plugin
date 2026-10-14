@@ -221,6 +221,7 @@
    ]
   ],
   "dialog_events": [
+   "invalidation-buttons",
    "close-button"
   ],
   "heirs": {
@@ -296,7 +297,12 @@
    ]
   ],
   "pushed": [],
-  "questions": [],
+  "questions": [
+   [
+    "button",
+    "Invalidate now"
+   ]
+  ],
   "report": {
    "boxes": {
     "changes": [
@@ -305,6 +311,14 @@
     "problems": [],
     "warnings": []
    },
+   "changes": [
+    [
+     "Delivery",
+     "23 September 2032, 00:00 UTC → <b>23 September 2033, 00:00 UTC</b>",
+     "moved later by 1 year — needs an invalidation transaction on the blockchain: your bitcoin stay yours, you only pay the normal network fee"
+    ]
+   ],
+   "changes_for": "invalidate",
    "executors": [
     [
      "https://we0.test",

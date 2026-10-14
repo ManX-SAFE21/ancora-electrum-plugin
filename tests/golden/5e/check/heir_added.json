@@ -346,6 +346,24 @@
     "problems": [],
     "warnings": []
    },
+   "changes": [
+    [
+     "Delivery",
+     "23 September 2032, 00:00 UTC → <b>22 September 2032, 00:00 UTC</b>",
+     "moved earlier by 1 day — free"
+    ],
+    [
+     "Heirs",
+     "added <b>carol</b>",
+     null
+    ],
+    [
+     "Real shares",
+     "alice 60% → <b>40%</b>",
+     null
+    ]
+   ],
+   "changes_for": "sign",
    "executors": [
     [
      "https://we0.test",

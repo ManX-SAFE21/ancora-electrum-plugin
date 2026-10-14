@@ -96,12 +96,15 @@ def delivery_change(in_force, new):
     """How ``new`` moves the delivery of the will in force (``in_force``).
 
     "moved earlier by 2 years and 4 months", "moved later by 3 months —
-    requires the paid invalidation of the will in force", or "same date".
+    needs an invalidation transaction on the blockchain: …", or "same
+    date".
     The span is ``bal.core.future.span_text`` (calendar months, the month
     arithmetic of the delivery dates; days only under a year). Moving the
     delivery earlier is free (the plugin pre-empts the will in force with an
-    earlier one); moving it later needs the old will invalidated on-chain
-    (a miner fee).
+    earlier one); moving it later needs the old will invalidated on-chain.
+    Owner (#135 follow-up): never "paid": the invalidation sends the will's
+    coins to a new address of the SAME wallet (``Will.invalidate_will``),
+    the bitcoin stay the owner's and only the normal network fee is paid.
     """
     # Imported here: bal.core.future imports bal.core.summary, which uses
     # this module.
@@ -111,8 +114,9 @@ def delivery_change(in_force, new):
     if new < in_force:
         return _("moved earlier by {}").format(span_text(new, in_force))
     if new > in_force:
-        return _("moved later by {} — requires the paid invalidation of the "
-                 "will in force").format(span_text(in_force, new))
+        return _("moved later by {} — needs an invalidation transaction on the "
+                 "blockchain: your bitcoin stay yours, you only pay the normal "
+                 "network fee").format(span_text(in_force, new))
     return _("same date")
 
 
@@ -120,7 +124,7 @@ def in_force_change_lines(in_force, new):
     """The reference of the wizard's summary (owner, #134), two lines:
 
     "In force now: <date>" and "After signing: <date> → delivery moved
-    earlier by …" (or later, with the paid invalidation). ``[]`` when no
+    earlier by …" (or later, with the invalidation transaction). ``[]`` when no
     will is in force (``in_force`` None) or the dates are the same: there
     is nothing to compare (owner, ZIP test).
     """

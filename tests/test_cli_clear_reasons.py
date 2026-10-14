@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from electrum import constants
 from electrum.util import UserFacingException
 from test_cli_autorebuild import (
-    ADDRESS,
+    THIRD_ADDRESS,
     FakeWallet,
     _make_controller,
     _no_willexecutors,
@@ -111,7 +111,7 @@ def test_check_and_prepare_report_an_added_heir():
         plugin.NO_WILLEXECUTOR.set(True)
         c = _make_controller(plugin, FakeWallet([make_funding_input()]))
         c.prepare_will()
-        c.heirs_add("carol", ADDRESS, "50000")
+        c.heirs_add("carol", THIRD_ADDRESS, "50000")
         try:
             c.will_check()
             raise AssertionError("will_check must fail after an heir is added")

@@ -418,7 +418,8 @@ def test_owner_wallet_back_after_an_outside_anticipation(make):
         "Your will was changed by another program. The delivery date now "
         "follows the will in force: 27/08/2029 (before: 29/08/2029).\n\n"
         "To use the later date again, choose it and press 'Check your will': "
-        "the old will must be invalidated first (miner fee).")]]
+        "first the old will needs an invalidation transaction (your bitcoin "
+        "stay yours, you only pay the network fee).")]]
     for days in (0, 1):
         s.clock.travel(days)
         s.check()
@@ -516,7 +517,8 @@ def test_question_keep_signs_the_prepared_will(make, mode):
         "shared setting (possibly changed from another wallet) asked for a "
         "later date: 15/07/2029. Which date do you want?",
         "Keep 05/07/2029 (the will already prepared, no fee)",
-        "Use 15/07/2029 (later: the old will must be invalidated, miner fee)"))
+        "Use 15/07/2029 (later: needs an invalidation transaction, you only pay "
+        "the network fee)"))
     assert question_texts(step)[1:] == ["Sign your will"]
     assert len(step["pushed"]) == 3 and step["broadcasts"] == []
     assert d["locktime"] == fk.ts(2029, 7, 5)
@@ -612,7 +614,8 @@ def test_sent_will_earlier_than_the_will_in_force_is_a_postpone(make):
         """The Check stops at the invalidation (cancelled): nothing done."""
         s.check(cancel_on={"Invalidate your old will"})
         step = last(s)
-        assert question_texts(step) == ["Invalidate your old will"], step["questions"]
+        # #135: the invalidation step's "Invalidate now", then the password.
+        assert question_texts(step) == ["Invalidate now", "Invalidate your old will"],             step["questions"]
         assert step["pushed"] == [] and step["broadcasts"] == []
         assert stored_states(s) == before
 

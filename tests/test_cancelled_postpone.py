@@ -1,4 +1,4 @@
-"""A postpone whose paid invalidation is not done puts the date back (#134).
+"""A postpone whose invalidation is not done puts the date back (#134).
 
 Owner's ZIP test (option B): a will sent and verified for 2030-12-31, a
 prepared draft for 2028-10-13; the BASIC wizard's "In 5 years"
@@ -40,10 +40,15 @@ IN_FORCE = fk.ts(2030, 12, 31, 1)
 DRAFT = fk.ts(2028, 10, 13)
 FIVE_YEARS = fk.ts(2031, 10, 10)
 INVALIDATE = "Invalidate your old will"
+# #135: the invalidation step's button, before the password; the tests
+# cancel there ("invalidat"), which is the same "not invalidated".
+STEP = "Invalidate now"
 NOT_APPLIED = (
     "<b>Interrupted: the old will was not invalidated. Your later date (10 "
-    "October 2031, 00:00 UTC) was not applied: the will in force needs the "
-    "paid invalidation first. When you are ready, choose it again.</b>"
+    "October 2031, 00:00 UTC) was not applied: the will in force needs an "
+    "invalidation transaction on the blockchain first (your bitcoin stay "
+    "yours, you only pay the normal network fee). When you are ready, choose "
+    "it again.</b>"
 )
 
 
@@ -145,7 +150,7 @@ def test_owner_case_through_the_wizard(make, monkeypatch):
     # wallet (flowkit's Qt-free dialog); Cancel at the invalidation.
     s.bw.heirs = Heirs(s.wallet)
     dlg = s.check(cancel_on=("invalidat",))
-    assert INVALIDATE in asked(s)
+    assert STEP in asked(s)
     assert stored(s) == DRAFT
     assert result(dlg) == ["warn", NOT_APPLIED]
     smr = will_summary(s.bw.willitems, 2, s.bw.will_settings, True, now=fk.FIXED_NOW,
@@ -153,7 +158,7 @@ def test_owner_case_through_the_wizard(make, monkeypatch):
     assert smr["state"] == "to_sign"
     assert smr["rows"][0]["strong"] == "13 October 2028, 00:00 UTC"
     dlg = s.check(cancel_on=("invalidat",))
-    assert INVALIDATE not in asked(s)
+    assert STEP not in asked(s)
     assert stored(s) == DRAFT
     assert result(dlg)[0] == "ok"
 
@@ -164,11 +169,11 @@ def test_no_draft_goes_back_to_the_will_in_force(make):
     s = make(draft=False)
     s.set_date(FIVE_YEARS)
     dlg = s.check(cancel_on=("invalidat",))
-    assert INVALIDATE in asked(s)
+    assert STEP in asked(s)
     assert stored(s) == IN_FORCE
     assert result(dlg) == ["warn", NOT_APPLIED]
     s.check(cancel_on=("invalidat",))
-    assert INVALIDATE not in asked(s)
+    assert STEP not in asked(s)
 
 
 def test_wallet_close_cancel_goes_back(make):
@@ -177,7 +182,7 @@ def test_wallet_close_cancel_goes_back(make):
     s = make()
     s.set_date(FIVE_YEARS)
     s.act("gui wallet close", s.bw.on_close, cancel_on=("invalidat",))
-    assert INVALIDATE in asked(s)
+    assert STEP in asked(s)
     assert stored(s) == DRAFT
 
 

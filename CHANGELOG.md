@@ -8442,3 +8442,341 @@ files. Catalogs: 732 entries, no fuzzy, no empty. `build_zip.py` +
 
 **Outcome:** DONE. The owner tested the ZIPs on his wallet (2026-10-13)
 and asked for every follow-up above; last ZIP OK.
+
+## 135. "What changes compared with the will in force": one box before the signature and on the wizard summary
+
+**Date:** 2026-10-13
+
+**Problem (the owner):** when a will is already in force and the owner
+changes something (a heir, the shares, the date, the will-executors, the
+fee, the message), nothing says WHAT the new will changes before he signs
+it. The Check window goes straight to the "Sign your will" password, and
+page 4 of the BASIC wizard shows only the new settings. The heirs' shares
+were shown as written (for example 50% + 30% + 50%), not what each heir
+really receives when the total is not 100.
+
+**What changed (informative only: the flow, the protocol and the stored
+data do not change; nothing new is stored):**
+
+- `bal/core/will_changes.py` (new, no Qt): the comparison. One side is the
+  will in force (the #128/#134 notion: `Will.in_force_items`, without the
+  will-executors deselected now that never received it, the #134 rule);
+  the other is the will just prepared, or what the settings will give.
+  Heirs are matched by ADDRESS (so a new name on the same address is
+  "renamed"). Rows, only for what changes:
+  - **Delivery**: old → new date, "moved earlier by … — free" or "moved
+    later by … — requires the paid invalidation of the will in force"
+    (the #134 `datetext` wording);
+  - **Heirs**: added / removed / renamed;
+  - **Real shares**: before → after real proportional share, only the
+    heirs whose share changes; a grey note when the written total is not
+    100 ("what each one really receives: the shares are recalculated in
+    proportion, the whole balance is always spent", which is what
+    `Heirs.normalize_perc` does). Not shown with fixed amounts (the real
+    split then depends on the balance);
+  - **Will-executors**: "from N to M: added …; removed …";
+  - **Miner fee**: old → new sat/vB;
+  - **Message** (OP_RETURN): changed / added / removed;
+  - identical: one row "No change: the will stays the same as the one in
+    force"; a first will (nothing in force): no box.
+  With multiverse only the first delivery is compared (the will's date).
+- `bal/engine/context.py`: `in_force_items(host)` (the will in force,
+  refreshed, `{}` on error) and `prepared_items(host, in_force)` (the will
+  as it will be once signed: the drafts first, then the copies in force
+  they leave in place; when only a will-executor is added the check
+  prepares a copy for it alone and the copies in force stay the will).
+- `bal/core/build_report.py`: `set_changes(rows, when)`; the snapshot has
+  `changes` / `changes_for` only when the box is shown.
+- `bal/gui/qt/widgets.py`: `what_changes_box(rows)`, light blue with a
+  left accent bar; the Check window's report view draws it under the
+  result line, with the sentence "Check the list: by signing, this becomes
+  your will. If something is wrong, press Cancel at the password request:
+  nothing changes." at the signature.
+- `bal/gui/qt/dialogs.py`: the Check window fills the box BEFORE the "Sign
+  your will" password (in force vs prepared), and before "Invalidate your
+  old will" of a postpone (in force vs the settings; no sentence, it is
+  not the signature). Cancel at either password changes nothing, as
+  before.
+- `bal/gui/qt/basic_wizard.py`, page 4: the box under the green summary
+  (in force vs the new settings); it replaces the #134 comparison lines
+  under the delivery. The Heirs row shows the REAL proportional shares,
+  with a grey "(recalculated in proportion)" when the total is not 100;
+  with fixed amounts the old text stays.
+- Catalogs: 18 new texts, Italian and Spanish.
+
+**Golden files changed (only added lines):** 17 files of
+`tests/golden/5e/` (`check/`: cancel_at_invalidate, cancel_at_sign,
+closing, date_earlier, exclude_down, executor_added,
+executor_already_has_it, executor_down, fee_changed, heir_added,
+heir_removed, invalidation_not_seen_yet, new_coin, owner_drafts_128,
+phase2_error, retry_after_down; `copies/`: wallet_close_fee_changed).
+Why: the Check window's report snapshot now records the new box
+(`changes`, `changes_for`) in every scenario that signs, or invalidates
+for a postpone, with a will in force. 227 lines added, 0 removed; nothing
+else in those files changed.
+
+**Tests:** `tests/test_will_changes.py` (new): each kind of change alone,
+several together (the owner's case), identical, first will, fixed amounts,
+deselected will-executors; the Check window has the box before the "Sign
+your will" password and Cancel there changes nothing (nothing sent, the
+will in force stays); a first will has no box; a will-executor added says
+"from 2 to 3: added we2.test" (not "removed"); the box before the
+postpone invalidation; wizard page 4 rows and real shares.
+`tests/test_gui_basic_wizard.py`: the page 4 comparison test now checks
+the box instead of the #134 lines.
+
+**Follow-up after the owner's ZIP test (same step, owner approved):**
+
+- **Wording, never "paid".** The invalidation sends the will's coins to a
+  new address of the SAME wallet (`Will.invalidate_will`): the bitcoin stay
+  the owner's, only the normal network fee is paid. Replaced texts:
+  "moved later by … — needs an invalidation transaction on the blockchain:
+  your bitcoin stay yours, you only pay the normal network fee" (the box,
+  the summary and the wizard's comparison), page 1's yellow note, page 1's
+  "(later — needs an invalidation transaction: you only pay the network
+  fee)", the Check result after a cancelled postpone, the List row
+  "Invalidation transaction" (was "Paid invalidation"), and the two
+  delivery-settings texts of the window ("To use the later date again…",
+  "Use … (later: …)"). The 7 old msgids are removed from the catalogs (no
+  obsolete entries left).
+- **Invalidation step.** Before invalidating, the Check window shows the
+  box "Invalidation of the old will": the amount moved, "a new address of
+  your wallet: tb1q…" (checked with `wallet.is_mine`; an address not of
+  this wallet would be said in red), the network fee in sat (with fiat
+  when Electrum has a rate) and its sat/vB, the wills it makes useless
+  ("#3 — delivery … — 3 copies at the will-executors": the versions held
+  or in force, or partially signed, that spend one of its coins; the 3
+  earliest, then "and N older versions"), and "Show the transaction",
+  which opens Electrum's transaction window on a COPY of that transaction
+  with its Sign and Broadcast buttons hidden (read-only). Under it
+  "Cancel" and "Invalidate now": the password "Invalidate your old will"
+  is asked ONLY after "Invalidate now" (owner's ZIP test: the box came
+  while Electrum's modal password window was already on top, so its
+  button could not be used). Cancel at the step or at the password, or
+  closing the window: not invalidated, the later date goes back (#134
+  option B); the box stays, with its button working (the transaction was
+  never signed). The same for every invalidation of the Check (postpone,
+  Check Alive renewal; also at wallet close, the owner is there); the
+  expired will keeps Electrum's classic transaction window; the automatic
+  rebuild is unchanged. `bal/core/invalidation_preview.py` (new, no Qt)
+  derives it from the built transaction; nothing is stored, what is
+  signed and broadcast does not change.
+- **One "will in force".** Owner's wallet: the List said #23 (29 Dec) in
+  force, the summary and the Check window said "In force now: 30 December",
+  the wizard compared with 29 Dec. Root cause: the summary took the will in
+  force from `Will.sent_still_executable`, which leaves out VALID items;
+  after the rename the rebuild made, for the will-executors that already
+  held the 29 Dec will, the very same transactions (same address, amount,
+  date: same txid), so those copies, sent and verified, became VALID items
+  of the prepared will and dropped out of that list, and the older 30 Dec
+  will was named. The one rule now everywhere (List, Future view, wizard,
+  "What changes" box, Will tab summary, Check window, PDF report): the
+  #128 rule, `will_state.is_in_force` (signed and/or sent, VALID or
+  REPLACED, not invalidated or executed, still executable), the EARLIEST
+  delivery among those items: what can execute first, so the right date for
+  the funds. `will_summary(in_force=…)` (from
+  `engine.context.in_force_delivery`, or
+  `will_versions.in_force_delivery(history)` in the report). #128/#123
+  rules unchanged.
+- **Rename said once (owner's ZIP test).** After renaming an heir (same
+  address, share and date) every Check, and the wallet opening, said
+  "Heir renamed: luigi → luigi modifica nome: preparing a new will",
+  rebuilt the very same transactions ("not needed" to sign or send) and
+  changed nothing. Root cause: `Will.update_will` writes the new heirs
+  only on the items the rebuild makes again (same txid, #122); the copy of
+  a will-executor the rebuild does not make (a deselected one: still
+  VALID and sent) kept the old name, so the check by name saw the old name
+  missing at every Check. Fix (`Will.sync_heir_names`, called first by
+  `engine.context.check_will`): a pure rename (an heir name of a VALID
+  item that the Heirs tab no longer has, and exactly one heir of the tab
+  with the same address and the same amount, the same new name for every
+  item) only changes the NAME in the items' stored heirs, and the will is
+  saved. Funds-safe: names are not in the transactions; outputs, amounts,
+  locktime, signatures, statuses and what the will-executors hold do not
+  change; the usual check then runs under the new name, so a date (or
+  anything else) that changed too is still found and rebuilt. The Check
+  says "Heir renamed: luigi → luigi new: only the name changes, the will
+  stays the same." once; the next Check is clean. A rename together with
+  another change of the same heir (share) keeps the rebuild path, with
+  "Heir renamed: …: preparing a new will."; the heirs box uses the names
+  of the Heirs tab (by address).
+
+- **Deselected leftovers are never signed (owner's ZIP test).** Will in
+  force at 3 will-executors; 2 more selected, Check, Cancel at "Sign your
+  will" (their 2 copies stayed unsigned drafts); the 2 deselected again,
+  Check: "No change" but the password was asked and those copies were
+  signed (never sent). Root cause: the Check's "to sign" counted every
+  VALID item not signed, without the #134 rule, and signed every VALID
+  item. Now (`BalBuildWillDialog._ids_to_sign`) a copy of a will-executor
+  not selected now that never received the will is not counted and not
+  signed: left as it is (unsigned, only in this wallet, no will-executor
+  holds it: it cannot execute; a later rebuild drops it as a draft, #128;
+  selected again, it is signed and sent). Signed or sent items are never
+  touched. No signing step, so no "What changes" box: the box and the
+  signing can no longer disagree.
+- **One box of the changes (owner's decision).** "What changes compared
+  with the will in force" holds every change, the rename too: the heirs
+  only renamed by the Check (written before the comparison) are a Heirs
+  row "renamed: luigi → luigi new (only the name changes)"
+  (`will_changes.with_renames`); a Check with only a rename shows the box
+  with that row and no signing step. When the box is shown, the old "What
+  changed" box is not drawn (its technical sentences stay in "Details
+  (log)"); it stays for what the new box does not cover (no will in force,
+  an expired will, errors).
+
+- **Shares recalculated in proportion, calmly (owner).** The "Attention:
+  the heirs' percentages add up to 130%…" box was shown at every Check.
+  Now the explanation stays in "Details (log)"; the Check window shows a
+  box with a calm title ("How the shares are divided", "The percentages
+  you wrote add up to 110%. The will always spends the whole balance, so
+  each heir receives a share in proportion: …") only when the shares as
+  written ({address: amount}, names not counted) differ from the will in
+  force (its earliest delivery) or there is no will in force yet;
+  otherwise one quiet grey line ("Shares recalculated in proportion:
+  alice 54.5% · bob 45.5%").
+- **Rename row wording (owner).** "renamed: luigi → luigi new (only the
+  name changes, already saved: no need to sign)" (one function,
+  `will_changes.name_only_text`); with other changes to sign, the sentence
+  ends "nothing else changes (the new names are already saved)".
+- **The will-executors box's note about deselected ones wraps fully**
+  (it was right-aligned at its preferred width and cut off).
+
+- **One way to edit an heir (owner's ZIP test).** The owner renamed
+  "erede test" with the Edit dialog and the wallet then had BOTH names at
+  the same address: the next will would have given that address a second
+  share, and the box said "renamed". Root cause: `new_heir_dialog` saved
+  the heir under the new name and never removed the old one (`set_heir`
+  only adds), while the List's inline cell editing renamed by delete +
+  add. Now: no inline editing in the Heirs List (no editable column or
+  cell; the right-click menu's "Edit <column>" became "Edit"); a double
+  click and right click > Edit open the same "Edit heir" dialog, also on
+  the BASIC wizard's heirs page; a rename removes the old name AFTER the
+  new one is saved (a refused entry never loses the heir); a name used by
+  another heir is refused ("An heir named … already exists.", for a new
+  heir and an edit); the dialog says what an edit means: "Only the name
+  changes: no need to sign." / "You are changing who receives: the will
+  must be signed again." / "The share changes: the will must be signed
+  again.". `will_changes` no longer merges several names on one address:
+  "added X (same address as Y)", never "renamed". The BASIC wizard's
+  rename row: "(only the name changes: no need to sign)" (the same
+  function, `name_only_text(saved=False)`). The manual does not describe
+  the inline editing: unchanged.
+
+- **No two heirs on one address (owner).** The "Edit heir" / "New heir"
+  dialog (List and BASIC wizard) and the command line (`heirs_add`,
+  `heirs_update`) refuse an address already used by ANOTHER heir: "This
+  address is already used by the heir {name}." (the heir's own address
+  stays allowed). Compared by `core.heirs.address_key`: spaces dropped,
+  bech32 (bc1/tb1/bcrt1, case-insensitive by BIP173) in lower case, base58
+  as written, OP_RETURN rows never compared. An import (GUI, command line)
+  is not refused: the Heirs tab and the wizard's heirs page show "{a} and
+  {b} have the same address: keep only one." and `heirs_import` returns
+  `same_address`. Old wallets with such heirs are never changed and the
+  Check is not blocked. Wallet formats and the protocol unchanged. Two
+  command-line tests gave two heirs the test wallet's one address: each
+  heir now has its own.
+
+- **Plain heir errors (owner's ZIP test).** The "Edit heir" dialog showed
+  Electrum's raw "not an address,bc1q…". One helper for the dialog and the
+  command line (`core.messages.heir_error_message`): "Not a valid address
+  for this network: {address}" and "Check that you copied all of it, with
+  no extra or missing characters."; also the OP_RETURN message (not
+  hexadecimal, too long), the heir's date (not valid, already past) and
+  the amount.
+- **The shares said once.** When the "What changes" box has the "Real
+  shares" row, its note has the total ("The percentages you wrote add up
+  to 130%: the will always spends the whole balance, so the shares are
+  recalculated in proportion.") and the separate "How the shares are
+  divided" box and the grey line are not drawn; the calm box stays for
+  when there is no such row (a first will, the fixed-amount texts).
+- **The grey line always there when needed.** When the written
+  percentages do not add up to 100 and nothing explained it in this Check
+  (the owner's rename-only Check at 130%), the grey "Shares recalculated
+  in proportion: …" line is added at the end of the Check, from the Heirs
+  tab; it is drawn in the box area, where the Heirs box would be, also
+  when the window has no Heirs box.
+
+- **Rename back (A -> B -> A) recognised (owner's ZIP test).** On his
+  wallet (104 items) the rename back was not taken for a pure rename: the
+  will was rebuilt a day earlier and the password asked. The pure-rename
+  rule (`Will.sync_heir_names`) decided for all items at once: one item it
+  could not match stopped every rename; amounts were compared as text.
+  Now it decides item by item (`_pure_rename`), on the VALID items and on
+  the will in force kept as REPLACED, compares addresses with
+  `address_key` and amounts by value ("20%" = "20.0%"), and logs why a
+  name is not a pure rename. The "Edit heir" dialog keeps the stored
+  amount and date as they were when only the name changed.
+
+- **An anticipation nobody needs is undone (owner's ZIP test).** A rebuild
+  against the will in force is dated one day earlier and stores that day
+  (#128); after Cancel and once the change was undone, every Check asked to
+  sign a will different from the will in force only by that day. Now the
+  FIRST check of a Check (`engine.context.drop_anticipation_leftover`, via
+  `check_will(undo_anticipation=True)`, never the check after its own
+  build) drops the drafts and puts the stored date (and the heirs' date)
+  back to the will in force's when: a will is in force, the stored date is
+  exactly one day before it, all drafts carry that day, and the settings
+  (Heirs tab, will-executors selected now, fee) differ from the will in
+  force only by that day. The will in force is then brought back (#128),
+  nothing to sign. Signed or sent items are never touched; any other date
+  or change is kept and asked to sign. This also covers the "fee put back"
+  case that #128 left out of scope (`test_owner_case` updated). The log
+  says each "not a pure rename" reason once per name and Check.
+- Golden `check/owner_drafts_128`: the fee-put-back Check now keeps the
+  will in force (no draft at 02-26, no password).
+
+**Golden files changed by the follow-up (on top of the 17 above):**
+`check/cancel_at_invalidate`, `check/invalidation_not_seen_yet` (the new
+"moved later" / "Interrupted" wording); `check/cancel_at_sign`,
+`check/phase2_error` ("Your will now" adds "Until you sign and send it, the
+will sent before stays in force: delivery on 23 September 2032": the copies
+of that will are still VALID, so the old rule did not see them; now true).
+
+**Golden files changed by the invalidation step:** `check/cancel_at_invalidate`
+(the owner now cancels at the step: "button: Invalidate now" instead of
+the password; the box stays after the Cancel, so `invalidation` is in the
+snapshot), `check/check_alive_renew`, `check/check_alive_renew_approved`,
+`check/date_later_advanced`, `check/date_later_sent`,
+`check/invalidation_not_seen_yet`, `copies/prepare_check_alive_renew`
+(the new step: the event "invalidation-buttons" and the question
+"button: Invalidate now" before the password). Nothing else in them.
+
+**Golden files changed by the calm shares note:**
+`check/percentages_not_100`, `copies/cli_invalid_heir_in_wallet` (first
+wills with percentages not adding up to 100: the "Attention" line leaves
+the warnings box; the snapshot has `amounts_note` with the calm text,
+shown as a box). 24 golden files differ from HEAD in this step.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+suite (normal order, after the invalidation step): 2184 passed (Electrum
+4.8.2). After the last two fixes (deselected leftovers, one box), owner's
+request: only the affected tests (`test_deselected_leftovers`,
+`test_heir_rename_once`, `test_in_force_one_rule`, `test_will_changes`,
+`test_build_report`, `test_verify_in_dialog`, `test_invalidation_preview`,
+`test_check_button`, `test_cancelled_postpone`, the GUI flow tests: all
+passed) and all golden tests (247 passed, none changed by these two
+fixes, except the 2 of the calm shares note; 24 golden files changed in this step, listed above). Catalogs: 790
+entries (732 before): 65 new msgids, all translated in Italian and Spanish
+("{} sat" and "{} sat/vB" the same on purpose), none fuzzy, the 7
+replaced msgids removed, no obsolete entry added. Test ZIP
+`safe21-heartbeat_0.7.0-TEST-135-what-changes.zip` (sha256
+`55a42f1f42e017fdd2953536cda27f5f5e49fe85d0c2f1beb4f22887b72b9725`):
+external load and smoke test OK on 4.8.2.
+Before the commit, whole suite in both orders: the first run had 1
+failure, `test_gui_engine_host` (it expected `check_will` called without
+the new `undo_anticipation` flag); the test was updated and
+`test_check_will_passes_undo_anticipation` added. Second run: 2210 passed
+in the normal order and 2210 passed in the reverse order (Electrum
+4.8.2), ruff clean.
+
+**Outcome:** owner's ZIP test OK (2026-10-14), on a test wallet:
+- the single "What changes" box with the rename row;
+- no signing for deselected executors' leftovers;
+- "Show the transaction" opens in front;
+- the edit hints and the right-click → Edit;
+- rename A→B→A gives one heir and no signing;
+- a duplicate name or address is refused;
+- the invalid address message is translated;
+- the shares are explained once, with the quiet grey line;
+- the anticipation leftover drafts are dropped;
+- the wizard rename row.

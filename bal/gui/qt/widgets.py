@@ -2138,6 +2138,61 @@ SECONDARY_BUTTON_STYLE = (
 )
 
 
+#: The look of the "What changes" box (#135, owner's mockup): light blue,
+#: with a blue bar on the left.
+WHAT_CHANGES_STYLE = (
+    "QFrame#balWhatChanges{background:#F4F8FD; border:1px solid #BCD3EE;"
+    " border-left:5px solid #2F6FD0; border-radius:6px;}"
+    "QFrame#balWhatChanges QLabel{background:transparent; color:#1F2328;}"
+)
+
+
+def what_changes_box(rows, title=None, footer=None):
+    """The "What changes compared with the will in force" box (#135).
+
+    ``rows``: ``bal.core.will_changes.change_rows`` (``[(label, value,
+    note)]``, rich text values). One line per kind of change; the note in
+    grey under its value. Used by the Check window (before the signature)
+    and the BASIC wizard's summary page, so both look the same.
+
+    ``title`` (#135 follow-up): another title (plain text), for the
+    "Invalidation of the old will" box, which has the same look; ``footer``:
+    a widget put under the rows, on the right (its "Show the transaction"
+    button).
+    """
+    box = QFrame()
+    box.setObjectName("balWhatChanges")
+    box.setStyleSheet(WHAT_CHANGES_STYLE)
+    column = QVBoxLayout(box)
+    column.setContentsMargins(12, 8, 12, 10)
+    column.setSpacing(4)
+    title = QLabel("<b>{}</b>".format(
+        html.escape(title or _("What changes compared with the will in force"))))
+    title.setStyleSheet("color:#174A8C;")
+    column.addWidget(title)
+    grid = QGridLayout()
+    grid.setHorizontalSpacing(14)
+    grid.setVerticalSpacing(5)
+    for r, (label, value, note) in enumerate(rows):
+        # An empty label continues the row above (one line per will).
+        key = QLabel("• " + html.escape(label) if label else "")
+        key.setStyleSheet("color:#4A5560;")
+        text = value + ("<br><span style='color:#6A737D'>{}</span>".format(
+            html.escape(note)) if note else "")
+        val = QLabel(text)
+        val.setTextFormat(Qt.TextFormat.RichText)
+        val.setWordWrap(True)
+        val.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        val.setMinimumWidth(200)
+        grid.addWidget(key, r, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(val, r, 1)
+    grid.setColumnStretch(1, 1)
+    column.addLayout(grid)
+    if footer is not None:
+        column.addWidget(footer, 0, Qt.AlignmentFlag.AlignRight)
+    return box
+
+
 class WillSummaryWidget(QFrame):
     """The will summary box at the top of the Will tab (CHANGELOG #84a).
 
@@ -2374,6 +2429,12 @@ class BuildReportView(QWidget):
         # #134: opens the will-executor window (deselected ones); set by
         # the dialog.
         self.on_open_executors = None
+        # #135 follow-up: opens Electrum's transaction window on the
+        # invalidation about to be signed (read-only); set by the dialog.
+        self.on_show_invalidation = None
+        # #135 follow-up: an amount in fiat ("12.34 EUR"), "" without a
+        # rate; set by the dialog (Electrum's formatter).
+        self.format_fiat = None
         self.box = QVBoxLayout(self)
         self.box.setContentsMargins(0, 0, 0, 0)
         self.box.setSpacing(10)
@@ -2500,7 +2561,13 @@ class BuildReportView(QWidget):
                 grid.addWidget(actions[r], r, 2, Qt.AlignmentFlag.AlignRight)
         column.addLayout(grid)
         if footer is not None:
-            column.addWidget(footer, 0, Qt.AlignmentFlag.AlignRight)
+            if isinstance(footer, QPushButton):
+                column.addWidget(footer, 0, Qt.AlignmentFlag.AlignRight)
+            else:
+                # #135 (owner): a footer with a wrapped text gets the whole
+                # width. Right-aligned, it got only its preferred width and
+                # the height of fewer lines, so the text was cut off.
+                column.addWidget(footer)
         return frame
 
     def _deselected_footer(self, count, other=None):
@@ -2513,6 +2580,8 @@ class BuildReportView(QWidget):
         line = QLabel(deselected_text(count))
         line.setWordWrap(True)
         line.setStyleSheet("color:#555555;")
+        # The height follows the wrapped lines at the real width (#135).
+        line.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         column.addWidget(line)
         row = QHBoxLayout()
         row.addStretch(1)
@@ -2531,6 +2600,65 @@ class BuildReportView(QWidget):
         button.setStyleSheet("QPushButton{padding:1px 10px;}")
         button.clicked.connect(slot)
         return button
+
+    def _fiat(self, satoshi):
+        """`` (12.34 EUR)`` when Electrum has a rate, else ""."""
+        if not self.format_fiat:
+            return ""
+        try:
+            text = self.format_fiat(satoshi)
+        except Exception as e:
+            _logger.debug(f"fiat format failed: {e!r}")
+            return ""
+        return " ({})".format(text) if text else ""
+
+    def invalidation_rows(self, inv):
+        """The rows of the "Invalidation of the old will" box (#135 follow-up).
+
+        ``inv``: ``bal.core.invalidation_preview.invalidation_facts``. The
+        amount moved and that it goes to a new address of THIS wallet (the
+        bitcoin stay the owner's), the network fee and its rate, and the
+        wills it makes useless. ``[(label, value_html, note)]``.
+        """
+        from ...core import datetext
+        from ...core.invalidation_preview import short_address
+
+        rows = [(_("Amount moved"), "<b>{}</b>".format(html.escape(
+            self._amount(inv.get("amount", 0)))), None)]
+        address = html.escape(short_address(inv.get("address")))
+        if inv.get("mine") is False:
+            # Never expected (Will.invalidate_will pays a change address of
+            # this wallet), but said plainly if it ever happens.
+            rows.append((_("Destination"), "<span style='color:#c62828'><b>{}</b></span>".format(
+                _("an address that is NOT of this wallet: {}").format(address)), None))
+        else:
+            rows.append((_("Destination"), _("a new address of your wallet: {}").format(
+                "<b>{}</b>".format(address)),
+                _("your bitcoin stay yours: they come back to this wallet")))
+        fee = int(inv.get("fee", 0))
+        rows.append((_("Network fee"), "<b>{}</b>{} · {}".format(
+            html.escape(_("{} sat").format(fee)), html.escape(self._fiat(fee)),
+            html.escape(_("{} sat/vB").format(inv.get("rate")))), None))
+        wills = inv.get("wills") or []
+        # Owner (#135): the list can be long (7 versions in his wallet): the
+        # 3 earliest deliveries (they execute first; ``ended_wills`` sorts
+        # them), then "and N older versions".
+        shown, rest = wills[:3], len(wills) - 3
+        for i, (number, locktime, copies) in enumerate(shown):
+            name = "#{}".format(number) if number else _("the will")
+            when = datetext.utc_text(locktime) if locktime else "-"
+            held = (_("1 copy at the will-executors") if copies == 1
+                    else _("{} copies at the will-executors").format(copies))
+            rows.append((_("Wills it makes useless") if i == 0 else "",
+                         "<b>{}</b> — {} — {}".format(
+                             html.escape(name),
+                             html.escape(_("delivery {}").format(when)),
+                             html.escape(held)), None))
+        if rest > 0:
+            rows.append(("", html.escape(
+                _("and 1 older version") if rest == 1
+                else _("and {} older versions").format(rest)), None))
+        return rows
 
     def _amount(self, satoshi):
         """``satoshi`` in the wallet's unit, or in sat without a formatter."""
@@ -2557,18 +2685,62 @@ class BuildReportView(QWidget):
         self.box.addWidget(self._steps_bar(snapshot["steps"]))
         if snapshot.get("result"):
             self.box.addWidget(self._result_line(*snapshot["result"]))
+        if snapshot.get("changes"):
+            # #135: what the new will changes, before the signature (or the
+            # paid invalidation of a postpone).
+            self.box.addWidget(what_changes_box(snapshot["changes"]))
+            if snapshot.get("changes_for") == "sign":
+                # #135: a rename is already saved, Cancel does not undo it.
+                hint = QLabel(_(
+                    "Check the list: by signing, this becomes your will. If "
+                    "something is wrong, press Cancel at the password "
+                    "request: nothing else changes (the new names are already "
+                    "saved).") if snapshot.get("changes_renamed") else _(
+                    "Check the list: by signing, this becomes your will. If "
+                    "something is wrong, press Cancel at the password "
+                    "request: nothing changes."))
+                hint.setWordWrap(True)
+                hint.setStyleSheet("color:#6A737D;")
+                self.box.addWidget(hint)
+        if snapshot.get("invalidation"):
+            # #135 follow-up: what the invalidation does, before its
+            # password (owner: see what is invalidated before signing).
+            footer = None
+            if self.on_show_invalidation:
+                footer = self._small_button(
+                    _("Show the transaction"),
+                    lambda _c=False: self.on_show_invalidation())
+            self.box.addWidget(what_changes_box(
+                self.invalidation_rows(snapshot["invalidation"]),
+                title=_("Invalidation of the old will"), footer=footer))
         boxes = snapshot.get("boxes") or {}
+        # #135 (owner): ONE box of the changes. When "What changes compared
+        # with the will in force" is shown, the old "What changed" box is
+        # not (its technical sentences stay in "Details (log)"); it stays
+        # for what the new box does not cover (no will in force, an expired
+        # will, errors).
         titles = (
-            ("changes", _("What changed"), "#777777"),
+            ("changes", _("What changed"), "#777777")
+            if not snapshot.get("changes") else None,
             ("warnings", _("Attention"), "#b26a00"),
             ("problems", _("What went wrong"), "#c62828"),
         )
-        for key, title, accent in titles:
+        for key, title, accent in filter(None, titles):
             lines = boxes.get(key) or []
             if lines:
                 self.box.addWidget(
                     self._group(title, [(t, None, None) for t in lines], accent)
                 )
+        note = snapshot.get("amounts_note")
+        if any(row[0] == _("Real shares") for row in snapshot.get("changes") or []):
+            # #135 (owner): the "Real shares" row already says it (with the
+            # total in its note): the shares are not said twice.
+            note = None
+        if note and note[1]:
+            # #135 (owner): the shares change (or a first will): explained
+            # in a box with a calm title, not "Attention".
+            self.box.addWidget(self._group(
+                _("How the shares are divided"), [(note[0], None, None)], "#b26a00"))
         heirs = snapshot.get("heirs")
         if heirs:
             rows = [
@@ -2576,6 +2748,12 @@ class BuildReportView(QWidget):
                 for name, sats, pct in heirs
             ]
             self.box.addWidget(self._group(_("Heirs"), rows))
+        if note and not note[1]:
+            # #135: nothing changed in the shares: one quiet grey line.
+            quiet = QLabel(html.escape(note[0]))
+            quiet.setWordWrap(True)
+            quiet.setStyleSheet("color:#6A737D;")
+            self.box.addWidget(quiet)
         executors = snapshot.get("executors")
         if executors:
             rows = []

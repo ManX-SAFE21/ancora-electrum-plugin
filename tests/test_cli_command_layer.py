@@ -275,7 +275,10 @@ def test_bad_address_message_says_it_once(plugin):
     ("not an address, not an address,<address>")."""
     with pytest.raises(UserFacingException) as info:
         run(plugin, "heirs_add", "erin", "notanaddress", "10%", wallet=FakeWallet())
-    assert str(info.value) == "Not a valid address for this network: notanaddress"
+    # #135: the same two lines as the "Edit heir" dialog (one helper).
+    assert str(info.value) == (
+        "Not a valid address for this network: notanaddress\n"
+        "Check that you copied all of it, with no extra or missing characters.")
 
 
 def test_push_failure_keeps_the_reason():

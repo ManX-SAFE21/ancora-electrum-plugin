@@ -292,7 +292,7 @@ def _heirs_row(heirs_count, prepared=True):
 
 def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
                  still_active=None, warn_months=None, long_dates=False,
-                 selected=None):
+                 selected=None, in_force=None):
     """Describe the will in force for the summary box of the Will tab.
 
     Args:
@@ -319,6 +319,16 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
             received, is not "to send" (the sending skips it); the summary
             then has ``deselected`` (their number) and ``deselected_text``.
             None: no selection rule.
+        in_force: the delivery date (locktime) of THE will in force, the
+            one rule of #128 used by the Will tab's List, the Future view,
+            the wizard and the Check window (``engine.context.
+            in_force_delivery``: the earliest delivery among the items
+            signed and/or sent, VALID or REPLACED, still executable). Used
+            for "In force now" / "After signing" and the note "the will sent
+            before stays in force" (#135 follow-up: with ``still_active``
+            alone, a copy already sent that the prepared will reuses, being
+            VALID again, was left out and an older, LATER will was named as
+            the will in force). None: ``still_active`` as before.
 
     Returns:
         A dict: ``state`` (``"ok"``, ``"to_sign"``, ``"to_send"``,
@@ -336,7 +346,7 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         return _with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
                              is_basic_mode, _now(now), still_active or [],
                              warn_months, datetext.utc_text if long_dates else _day,
-                             long_dates, selected), willitems or {}, selected)
+                             long_dates, selected, in_force), willitems or {}, selected)
     except Exception:
         return None
 
@@ -366,11 +376,12 @@ def _with_deselected(summary, willitems, selected):
 
 def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
                   still_active, warn_months=None, day=_day, compare=False,
-                  selected=None):
+                  selected=None, in_force=None):
     """:func:`will_summary` without the safety net (see there).
 
     ``day`` writes a date; ``compare`` adds the "In force now" / "After
-    signing" lines (both from ``long_dates``).
+    signing" lines (both from ``long_dates``); ``in_force``: the date of the
+    will in force (see :func:`will_summary`).
     """
     valid = Will.only_valid_list(willitems)
     if not valid:
@@ -472,10 +483,10 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
 
     if unsigned:
         if compare:
-            _insert_comparison(rows, still_active, delivery)
+            _insert_comparison(rows, still_active, delivery, in_force)
         return _summary(
             "to_sign", "warn", _("Will prepared: it must be signed and sent"),
-            rows=rows, note=_previous_will_note(still_active, day, delivery),
+            rows=rows, note=_previous_will_note(still_active, day, delivery, in_force),
             action="sign_send", action_text=_("Sign and send"),
         )
     if counts["to_send"] and counts["verified"]:
@@ -492,11 +503,11 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         )
     if counts["to_send"]:
         if compare:
-            _insert_comparison(rows, still_active, delivery)
+            _insert_comparison(rows, still_active, delivery, in_force)
         return _summary(
             "to_send", "warn",
             _("Will signed: it must be sent to the will-executors"),
-            rows=rows, note=_previous_will_note(still_active, day, delivery),
+            rows=rows, note=_previous_will_note(still_active, day, delivery, in_force),
             action="send", action_text=_("Send"),
         )
     failed = counts["failed"]
@@ -525,7 +536,21 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
     return _summary("ok", "ok", _("Your will is in force"), rows=rows)
 
 
-def _insert_comparison(rows, still_active, delivery):
+def _in_force_date(still_active, in_force):
+    """The delivery date of the will in force for the comparison, or None.
+
+    ``in_force`` (the #128 rule, see :func:`will_summary`) when the caller
+    knows it; otherwise the earliest of ``still_active`` (the older rule,
+    kept for the callers without a wallet).
+    """
+    if in_force is not None:
+        return int(in_force)
+    if not still_active:
+        return None
+    return min(int(locktime) for _item, locktime, _url in still_active)
+
+
+def _insert_comparison(rows, still_active, delivery, in_force=None):
     """Add "In force now" and "After signing" under the delivery row (#134).
 
     Owner (ZIP test): with a prepared will not sent yet, the summary showed
@@ -535,12 +560,11 @@ def _insert_comparison(rows, still_active, delivery):
     the prepared one with "moved earlier by …" or "moved later by …"
     (``datetext.delivery_change``). Nothing when the dates are equal or no
     sent will is in force. The delivery row stays first (the Check window's
-    result sentence reads the first dated row).
+    result sentence reads the first dated row). ``in_force``: see
+    :func:`_in_force_date`.
     """
-    if not still_active:
-        return
-    in_force = min(int(locktime) for _item, locktime, _url in still_active)
-    if in_force == int(delivery):
+    in_force = _in_force_date(still_active, in_force)
+    if in_force is None or in_force == int(delivery):
         return
     rows.insert(1, _row(_("In force now"), strong=datetext.utc_text(in_force)))
     rows.insert(2, _row(
@@ -571,7 +595,7 @@ def _complete_send_note(counts):
     return first + " " + second
 
 
-def _previous_will_note(still_active, day=_day, current=None):
+def _previous_will_note(still_active, day=_day, current=None, in_force=None):
     """The will sent before, still in force until the new one is sent (#84b).
 
     After a Cancel at signing (or before sending) the executors still hold
@@ -580,10 +604,11 @@ def _previous_will_note(still_active, day=_day, current=None):
     when no sent will can still be executed, and (#134) when its date is the
     date of the will prepared now (``current``): then there is no different
     will to warn about (owner's real test: the sentence was false).
+    ``in_force``: the date of the will in force (:func:`_in_force_date`).
     """
-    if not still_active:
+    delivery = _in_force_date(still_active, in_force)
+    if delivery is None:
         return None
-    delivery = min(int(locktime) for _item, locktime, _url in still_active)
     if current is not None and delivery == int(current):
         return None
     return _(

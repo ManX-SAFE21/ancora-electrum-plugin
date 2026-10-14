@@ -354,6 +354,64 @@ def percent_total(heirs):
     return total
 
 
+def address_key(address):
+    """The address as two heirs are compared (#135), or None.
+
+    Spaces around are dropped; a bech32 address (``bc1``/``tb1``/``bcrt1``,
+    which is case-insensitive by its standard, BIP173) is compared in lower
+    case; a base58 address is case-sensitive and is compared as written.
+    An OP_RETURN row is a message, not a payee: None (never compared).
+    """
+    text = str(address or "").strip()
+    if not text or is_op_return_address(text):
+        return None
+    if text.lower().startswith(("bc1", "tb1", "bcrt1")):
+        return text.lower()
+    return text
+
+
+def heir_with_address(heirs, address, except_name=None):
+    """The name of ANOTHER heir paid at ``address``, or None (#135).
+
+    ``heirs``: ``{name: [address, ...]}``; ``except_name``: the heir being
+    edited (its own address is allowed). Compared with :func:`address_key`.
+    """
+    key = address_key(address)
+    if key is None:
+        return None
+    for name, value in (heirs or {}).items():
+        if name == except_name:
+            continue
+        try:
+            if address_key(value[0]) == key:
+                return name
+        except (IndexError, TypeError):
+            continue
+    return None
+
+
+def shared_addresses(heirs):
+    """``[(a, b)]``: pairs of heirs on one address (#135), sorted.
+
+    Owner: no two heirs may share an address (the second one takes a second
+    share there). Old wallets may have such pairs: they are shown, never
+    changed. Three names on one address give two pairs.
+    """
+    by_key = {}
+    for name, value in (heirs or {}).items():
+        try:
+            key = address_key(value[0])
+        except (IndexError, TypeError):
+            continue
+        if key is not None:
+            by_key.setdefault(key, []).append(str(name))
+    pairs = []
+    for names in by_key.values():
+        names = sorted(names)
+        pairs.extend((names[0], other) for other in names[1:])
+    return sorted(pairs)
+
+
 def _json_safe(value, _path="heirs"):
     """Backward-compatible alias of :func:`bal.core.util.copy_structure`.
 

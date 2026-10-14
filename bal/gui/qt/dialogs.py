@@ -27,6 +27,7 @@ the few list classes they reference are imported lazily inside the methods that
 use them (see ``lists`` imports below).
 """
 
+import copy
 import html
 import io
 import json
@@ -38,7 +39,7 @@ from urllib.parse import urlparse
 from electrum.util import MyEncoder
 from PyQt6.QtCore import QEvent
 
-from ...core import datetext
+from ...core import datetext, invalidation_preview, will_changes
 from ...core.animated_qr import (
     AnimatedQrError,
     AnimatedQrSession,
@@ -965,7 +966,15 @@ class BalBuildWillDialog(BalDialog):
         # which they can no longer be told apart (CHANGELOG #77).
         self._unsigned_executors = self._unsigned_will_executors()
         try:
-            self.bal_window.check_will()
+            try:
+                # #135: the first check of the Check may also undo an
+                # anticipation nobody needs any more (never after a build).
+                self.bal_window.check_will(undo_anticipation=True)
+            finally:
+                # #135: an heir only renamed, said once, whatever the check
+                # finds next (it may still need a new will for another
+                # reason).
+                self._report_renames()
             self.msg_set_checking(self.msg_ok())
         except WillExpiredException:
             # UNIFY INVALIDATE PROCEDURE (+ task #03):
@@ -1248,12 +1257,37 @@ class BalBuildWillDialog(BalDialog):
                 self.COLOR_WARNING,
             )
 
-        have_to_sign = False
-        for wid in Will.only_valid(self.bal_window.willitems):
-            if not self.bal_window.willitems[wid].get_status("COMPLETE"):
-                have_to_sign = True
-                break
+        have_to_sign = bool(self._ids_to_sign())
         return have_to_sign, txs
+
+    def _ids_to_sign(self):
+        """The VALID items to sign: not COMPLETE, without the leftovers of
+        deselected will-executors (#135, owner's ZIP test).
+
+        Owner: a will-executor selected, Check, Cancel at "Sign your will"
+        (its copy stays an unsigned draft), then deselected again: the
+        Check said "No change" but still asked the password and signed that
+        copy, which is never sent. The #134 rule: a copy for a will-executor
+        not selected now that never received the will (not PUSHED) is
+        "deselected", not "to sign". It is left as it is (ignored, not
+        dropped): unsigned, it exists only in this wallet and no
+        will-executor holds it, so it cannot execute; a later rebuild drops
+        it as a draft (#128), and if that will-executor is selected again it
+        is signed and sent then. A signed or sent item is never touched.
+        """
+        willitems = self.bal_window.willitems
+        selected = self._selected_willexecutors()
+        ids = []
+        for wid in Will.only_valid(willitems):
+            w = willitems[wid]
+            if w.get_status("COMPLETE"):
+                continue
+            url = (w.we or {}).get("url")
+            if (selected is not None and url and url not in selected
+                    and not w.get_status("PUSHED")):
+                continue
+            ids.append(wid)
+        return ids
 
     def _build_success_report(self):
         """Mark the build step as done and list every heir in green.
@@ -1840,6 +1874,360 @@ class BalBuildWillDialog(BalDialog):
             text += " — " + _("waiting for: {}").format(names)
         return text
 
+    def _show_what_changes(self, when):
+        """Fill and draw the "What changes" box (#135). Never raises.
+
+        ``"sign"``: the will in force against the will as it will be once
+        signed (the prepared drafts plus the copies in force they leave in
+        place: ``engine.context.prepared_items``);
+        ``"invalidate"`` (a postpone, nothing built yet): against what the
+        settings will give (heirs, date, will-executors selected now, fee).
+        The will in force is the #128 notion
+        (``engine.context.in_force_items``); with none (a first will) there
+        is no box. Informative only: the flow does not change.
+        """
+        try:
+            bw = self.bal_window
+            selected = self._selected_willexecutors()
+            in_force = engine_context.in_force_items(bw)
+            old = will_changes.side_from_items(in_force, selected)
+            if when == "sign":
+                new = will_changes.side_from_items(
+                    engine_context.prepared_items(bw, in_force), selected)
+            else:
+                settings = bw.will_settings or {}
+                new = will_changes.side_from_settings(
+                    bw.heirs or {}, settings.get("locktime"), selected or [],
+                    settings.get("baltx_fees"))
+            changes = will_changes.with_renames(
+                will_changes.will_changes(old, new), self._heir_renames())
+            # #135: a rename is already saved; the sentence about Cancel
+            # must not say it is undone.
+            self._report().set_changes(will_changes.change_rows(changes), when,
+                                       renamed=will_changes.has_renames(changes))
+            self.msg_update()
+        except Exception as e:
+            _logger.error(f"what changes not shown: {e!r}")
+
+    def _amounts_note(self, text, info):
+        """The shares recalculated in proportion (#135, owner).
+
+        Before, an "Attention" box at every Check and window (e.g. "the
+        heirs' percentages add up to 130%…"), alarming when nothing
+        changed. Now: the explanation stays in "Details (log)"; the report
+        shows it as a box (calm title) only when the shares change compared
+        with the will in force (:meth:`_shares_change`) or there is no will
+        in force yet; otherwise one quiet grey line by the heirs
+        ("Shares recalculated in proportion: alice 38.5% · …"). Never
+        raises.
+        """
+        self._log_only(self.msg_alert(text))
+        try:
+            prominent = self._shares_change()
+            if prominent and info and info.get("kind") == "percent" and not info.get("with_fixed"):
+                # A calmer explanation than the log's (owner).
+                note = _("The percentages you wrote add up to {total}. The "
+                         "will always spends the whole balance, so each heir "
+                         "receives a share in proportion: {shares}.").format(
+                    total=self._shares_line({"shares": [("", info["total"])]}).strip(),
+                    shares=self._shares_line(info))
+            elif prominent:
+                note = text
+            else:
+                note = _("Shares recalculated in proportion: {}").format(
+                    self._shares_line(info))
+            self._report().set_amounts_note(note, prominent)
+        except Exception as e:
+            _logger.error(f"amounts note not shown: {e!r}")
+
+    def _quiet_shares_line(self, report):
+        """The grey "Shares recalculated in proportion: …" when the written
+        percentages do not add up to 100 and nothing said so yet (#135).
+
+        Owner's ZIP test: a Check with only a rename, heirs at 130%, showed
+        no line at all (the amounts check did not explain it on that pass).
+        Read from the Heirs tab (``will_changes.real_shares_text``: the
+        written percentages in proportion; nothing with fixed amounts).
+        """
+        try:
+            if report.snapshot().get("amounts_note"):
+                return
+            shares = will_changes.real_shares_text(self.bal_window.heirs or {})
+            if shares and shares[1]:
+                report.set_amounts_note(
+                    _("Shares recalculated in proportion: {}").format(shares[0]), False)
+        except Exception as e:
+            _logger.error(f"shares line not shown: {e!r}")
+
+    def _shares_change(self):
+        """True when the heirs' shares as written ({address: amount}) differ
+        from the will in force's, or no will is in force (#135).
+
+        The names do not count (a rename is not a change of shares), nor
+        the will-executors or the date.
+        """
+        in_force = engine_context.in_force_items(self.bal_window)
+        # THE will in force: the copies with the earliest delivery (#128);
+        # an older will still held (a later date) is not the reference.
+        dated = [w for w in in_force.values() if w.heirs]
+        if not dated:
+            return True
+        earliest = min(int(w.tx.locktime) for w in dated)
+        first = next(w for w in dated if int(w.tx.locktime) == earliest)
+
+        def written(heirs):
+            out = {}
+            for name, heir in (heirs or {}).items():
+                if str(name).startswith('w!ll3x3c"'):
+                    continue
+                out[str(heir[0])] = str(heir[1])
+            return out
+
+        return written(first.heirs) != written(self.bal_window.heirs)
+
+    @staticmethod
+    def _shares_line(info):
+        """``alice 38.5% · bob 23.1%`` of ``Will.describe_amounts`` (one
+        decimal, none when whole, the language's decimal comma)."""
+        from ...i18n import number_separators
+        decimal, _thousands = number_separators()
+
+        def pct(x):
+            text = "{:.1f}".format(x)
+            if text.endswith(".0"):
+                text = text[:-2]
+            return text.replace(".", decimal) + "%"
+
+        return " · ".join("{} {}".format(name, pct(share))
+                          for name, share in (info or {}).get("shares") or [])
+
+    def _heir_renames(self):
+        """``[(old, new)]``: the heirs only renamed by this Check (#135).
+
+        Kept by :meth:`_report_renames` from the FIRST check of the run:
+        ``engine.context.check_will`` sets ``heir_renames`` at every call,
+        and the check after the rebuild finds nothing more to rename.
+        """
+        renames = getattr(self, "_renames_seen", None)
+        return list(renames) if isinstance(renames, list) else []
+
+    def _report_renames(self):
+        """The heirs only renamed by this Check (#135).
+
+        A log line each (the technical "Heir renamed: … only the name
+        changes" stays in "Details (log)"), and the "What changes" box with
+        its Heirs row "renamed: luigi → luigi new (only the name changes)"
+        when a will is in force: the one box of all the changes (owner).
+        A signature or a postpone later in this Check redraws the box with
+        every change (:meth:`_show_what_changes`). Never raises; no redraw
+        here (worker thread): the next status row redraws.
+        """
+        try:
+            renames = getattr(self.bal_window, "heir_renames", None)
+            renames = list(renames) if isinstance(renames, list) else []
+            if renames:
+                self._renames_seen = renames
+            for old, new in renames:
+                self._report().put("changes", ("renamed", old), _(
+                    "Heir renamed: {old} → {new}: only the name changes, the "
+                    "will stays the same.").format(old=old, new=new))
+            if renames and engine_context.in_force_items(self.bal_window):
+                rows = will_changes.change_rows(
+                    will_changes.with_renames([], renames))
+                self._report().set_changes(rows, "check")
+        except Exception as e:
+            _logger.error(f"renames not reported: {e!r}")
+
+    def _add_invalidation_buttons(self):
+        """The row "Cancel" / "Invalidate now" of the invalidation step (#135).
+
+        The run waits here for the owner (wallet close included: the owner
+        is there). "Invalidate now" asks the password and invalidates
+        (:meth:`_invalidate_now`); "Cancel", or closing the window, does not
+        invalidate (:meth:`_invalidation_cancelled`, the #134 option B).
+        """
+        cancel = QPushButton(_("Cancel"))
+        cancel.clicked.connect(lambda _c=False: self._invalidation_cancelled())
+        # Lazy import to avoid a dialogs<->lists import cycle. The look of
+        # the wizard's primary button (#134).
+        from .lists import FRAMED_BUTTON_STYLE
+
+        go = QPushButton(_("Invalidate now"))
+        go.setDefault(True)
+        go.setStyleSheet(FRAMED_BUTTON_STYLE)
+        go.clicked.connect(lambda _c=False: self._invalidate_now())
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(cancel)
+        row.addWidget(go)
+        self._invalidation_layout = row
+        self.vbox.addLayout(row)
+        go.setFocus()
+        self._fit_height(shrink=False)
+
+    def _remove_invalidation_buttons(self):
+        """Take the "Cancel" / "Invalidate now" row away (answered)."""
+        layout = getattr(self, "_invalidation_layout", None)
+        if layout is None:
+            return
+        self._invalidation_layout = None
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        self.vbox.removeItem(layout)
+
+    def _invalidate_now(self):
+        """"Invalidate now": the password, then the invalidation (#135).
+
+        The steps that followed the box before (the password "Invalidate
+        your old will", then ``invalidate_task`` on the worker thread),
+        unchanged; Cancel at the password is a cancelled invalidation.
+        """
+        tx = getattr(self, "_pending_invalidation", None)
+        self._pending_invalidation = None
+        self._remove_invalidation_buttons()
+        if self._stopping:
+            return
+        password = self.bal_window.get_wallet_password(
+            _("Invalidate your old will"), parent=self
+        )
+        if password is False:
+            self._invalidation_cancelled(tx)
+            return
+        # Going on: the box is about a transaction no longer waiting.
+        self._clear_invalidation_preview()
+        self.thread.add(
+            partial(self.invalidate_task, password, self.bal_window, tx),
+            on_success=self.on_success_invalidate,
+            on_done=self.on_accept,
+            on_error=self.on_error,
+        )
+
+    def _invalidation_cancelled(self, tx=None):
+        """The invalidation was NOT done (Cancel, at the step or at the
+        password, or the window closed): as the Cancel at the password
+        before (#134 option B, the later date goes back).
+
+        We must NOT call self.wait(3) here: this runs in the GUI thread, and
+        wait()'s time.sleep() would freeze the window (the black, undrawn
+        rectangle of an old bug). "Aborted" and a non-blocking "Close"
+        instead. The box stays, with "Show the transaction" still working:
+        the transaction was never signed (#135, owner).
+        """
+        if tx is None:
+            tx = getattr(self, "_pending_invalidation", None)
+        self._pending_invalidation = None
+        self._remove_invalidation_buttons()
+        self._invalidation_tx = tx
+        self.msg_set_invalidating(_("Aborted"))
+        self._revert_cancelled_postpone()
+        if not self._stopping:
+            self._add_close_button()
+
+    def _show_invalidation_preview(self, tx):
+        """Fill and draw the box "Invalidation of the old will" (#135 follow-up).
+
+        Owner (ZIP test): the Check asked the password "Invalidate your old
+        will" without showing what is invalidated ("Tools > Invalidate"
+        shows Electrum's transaction window first). Now the box says, from
+        the built (unsigned) ``tx`` itself: the amount moved and that it
+        goes to a new address of THIS wallet, the network fee and its rate,
+        and the wills it makes useless
+        (``bal.core.invalidation_preview``); its "Show the transaction"
+        button opens Electrum's transaction window on a copy of it
+        (:meth:`_show_invalidation_tx`). Nothing is stored; what is signed
+        and broadcast does not change. Never raises.
+        """
+        try:
+            bw = self.bal_window
+            facts = invalidation_preview.invalidation_facts(
+                tx, bw.willitems, getattr(bw, "wallet", None))
+            self._invalidation_tx = tx if facts else None
+            view = getattr(self, "report_view", None)
+            if view is not None:
+                view.format_fiat = self._format_fiat
+                view.on_show_invalidation = self._show_invalidation_tx if facts else None
+            self._report().set_invalidation(facts)
+            self.msg_update()
+        except Exception as e:
+            _logger.error(f"invalidation preview not shown: {e!r}")
+
+    def _clear_invalidation_preview(self):
+        """Remove the invalidation box once its password was answered."""
+        try:
+            self._invalidation_tx = None
+            view = getattr(self, "report_view", None)
+            if view is not None:
+                view.on_show_invalidation = None
+            self._report().set_invalidation(None)
+            self.msg_update()
+        except Exception as e:
+            _logger.error(f"invalidation preview not cleared: {e!r}")
+
+    def _show_invalidation_tx(self):
+        """Open Electrum's transaction window on the invalidation (read-only).
+
+        A COPY of the transaction about to be signed, so nothing done in
+        that window can change it; its Sign and Broadcast buttons are
+        hidden: the invalidation is signed only through the password step
+        of this window (#135 follow-up, owner: a read-only preview).
+        """
+        tx = getattr(self, "_invalidation_tx", None)
+        if tx is None:
+            return None
+        try:
+            shown = copy.deepcopy(tx)
+        except Exception:
+            # A transaction holding wallet data (a lock) cannot be deep
+            # copied: re-parse it (as task_phase2 does). Never the real one:
+            # it could be signed there.
+            try:
+                shown = Will.get_tx_from_any(str(tx))
+            except Exception as e:
+                _logger.error(f"invalidation copy failed: {e!r}")
+                return None
+        # Electrum's TxDialog needs the Electrum main window as ``parent``
+        # (it reads ``parent.config`` and ``parent.wallet``): this Check
+        # window has neither, and passing it crashed (owner's ZIP test).
+        # The TxDialog is a top-level window of its own (no Qt parent), so
+        # this window-modal Check window does not block it.
+        dialog = self.bal_window.show_transaction(tx=shown)
+        if dialog is not None:
+            # The TxDialog has no Qt parent, and this Check window is
+            # window-modal: Qt then BLOCKS every other top-level window, so
+            # the transaction window opened behind Electrum and could not
+            # be moved nor closed (owner's ZIP test). A child window of
+            # this Check window is never blocked by it: re-parent it here
+            # (Electrum keeps its main window in ``main_window``, which is
+            # what it uses for the wallet and the config), then show it
+            # again in front.
+            from PyQt6.QtCore import Qt
+            try:
+                dialog.setParent(self, Qt.WindowType.Dialog)
+                dialog.setWindowModality(Qt.WindowModality.NonModal)
+                dialog.show()
+                dialog.raise_()
+                dialog.activateWindow()
+            except Exception as e:
+                _logger.error(f"invalidation preview re-parent failed: {e!r}")
+        for name in ("sign_button", "broadcast_button"):
+            button = getattr(dialog, name, None)
+            if button is not None:
+                button.setVisible(False)
+        return dialog
+
+    def _format_fiat(self, satoshi):
+        """``satoshi`` in fiat with Electrum's formatter ("12.34 EUR"), or
+        "" without a rate or a formatter."""
+        try:
+            fiat = self.bal_window.window.format_fiat_and_units(satoshi)
+        except Exception:
+            return ""
+        return fiat if isinstance(fiat, str) else ""
+
     def _revert_cancelled_postpone(self):
         """A postpone whose invalidation was NOT done: the date goes back (#134).
 
@@ -2098,34 +2486,18 @@ class BalBuildWillDialog(BalDialog):
                 return
 
             self.msg_set_invalidating()
-            # need to sign invalidate and restart phase 1
-
-            password = self.bal_window.get_wallet_password(
-                _("Invalidate your old will"), parent=self
-            )
-            if password is False:
-                # The user cancelled the password prompt for the invalidation.
-                # We must NOT call self.wait(3) here: on_success_phase1 runs in
-                # the GUI thread, so wait()'s time.sleep() would freeze the UI
-                # for several seconds. While frozen the dialog cannot repaint
-                # the area it just resized, leaving a black, undrawn rectangle
-                # at the bottom of the "Building Will" window (the reported bug).
-                #
-                # Instead, mark the invalidation as "Aborted" and offer a
-                # non-blocking "Close" button (the same helper used by the
-                # normal finish path), so the user can read the outcome and
-                # dismiss the dialog when they want, without blocking the GUI.
-                self.msg_set_invalidating(_("Aborted"))
-                self._revert_cancelled_postpone()
-                self._add_close_button()
-                return
-            self.thread.add(
-                partial(self.invalidate_task, password, self.bal_window, tx),
-                on_success=self.on_success_invalidate,
-                on_done=self.on_accept,
-                on_error=self.on_error,
-            )
-
+            if self._postpone_invalidation:
+                # #135: a postpone: nothing is built yet, so the box compares
+                # the will in force with what the settings will give.
+                self._show_what_changes("invalidate")
+            # #135 follow-up (owner's ZIP test): what the invalidation does,
+            # in the window, with "Show the transaction" and "Invalidate
+            # now". The password is asked ONLY after "Invalidate now": while
+            # Electrum's modal password window was on top the box could not
+            # be used. Informative only: the same tx is then signed.
+            self._show_invalidation_preview(tx)
+            self._pending_invalidation = tx
+            self._add_invalidation_buttons()
             return
 
         elif self.have_to_sign:
@@ -2157,6 +2529,9 @@ class BalBuildWillDialog(BalDialog):
                             )
                         )
                     )
+                # #135: what the new will changes, drawn before the modal
+                # password window opens.
+                self._show_what_changes("sign")
                 # #84b: the Signature step is running while Electrum's
                 # password window is open (it stayed grey before).
                 self.msg_set_signing()
@@ -2575,6 +2950,10 @@ class BalBuildWillDialog(BalDialog):
 
     def closeEvent(self, event):
         self._stopping = True
+        if getattr(self, "_pending_invalidation", None) is not None:
+            # #135: closed at the invalidation step: not invalidated, the
+            # later date goes back as after a Cancel (option B).
+            self._invalidation_cancelled()
         # Stop AND join the thread, then propagate the close event (previously
         # it neither waited nor called super().closeEvent()).
         stop_thread(getattr(self, "thread", None))
@@ -2585,7 +2964,9 @@ class BalBuildWillDialog(BalDialog):
             return
         if self.have_to_sign:
             try:
-                if txs := self.bal_window.sign_transactions(password):
+                # #135: only the items to sign (no deselected leftovers).
+                if txs := self.bal_window.sign_transactions(
+                        password, txids=self._ids_to_sign()):
                     for txid, tx in txs.items():
                         # Re-parse instead of deepcopy (the signed tx can carry
                         # wallet-derived input info holding a threading.RLock,
@@ -3383,6 +3764,7 @@ class BalBuildWillDialog(BalDialog):
         try:
             report = self._report()
             bw = self.bal_window
+            self._quiet_shares_line(report)
             executors = self._merge_executors_and_send_note()
             total = len(executors)
             if report.step("send")[0] == "skip" and any(
@@ -3407,7 +3789,7 @@ class BalBuildWillDialog(BalDialog):
                 else:
                     report.set_step("verify", "err", "{}/{}".format(verified, total))
             if report.step("prepare")[0] == "ok":
-                report.set_heirs(heir_shares(bw.willitems))
+                report.set_heirs(heir_shares(bw.willitems, bw.heirs))
             summary = will_summary(
                 bw.willitems,
                 len(bw.heirs or {}),
@@ -3419,6 +3801,9 @@ class BalBuildWillDialog(BalDialog):
                 long_dates=True,
                 # #134: deselected will-executors are not "to send".
                 selected=self._selected_willexecutors(),
+                # #135: THE will in force, the one rule of the List, the
+                # Future view and the wizard (not only the REPLACED copies).
+                in_force=engine_context.in_force_delivery(bw),
             )
             failed_step = next(
                 (s for s in ("check", "prepare", "sign", "send")
@@ -3447,8 +3832,9 @@ class BalBuildWillDialog(BalDialog):
                 report.set_result("warn", "<b>{}</b>".format(html.escape(_(
                     "Interrupted: the old will was not invalidated. Your later "
                     "date ({chosen}) was not applied: the will in force needs "
-                    "the paid invalidation first. When you are ready, choose it "
-                    "again."
+                    "an invalidation transaction on the blockchain first (your "
+                    "bitcoin stay yours, you only pay the normal network fee). "
+                    "When you are ready, choose it again."
                 ).format(chosen=datetext.utc_text(self._postpone_reverted[0])))))
                 report.set_will_now(self._will_now_text(summary))
             elif "prepare" in interrupted:

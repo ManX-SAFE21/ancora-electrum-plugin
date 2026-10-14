@@ -314,6 +314,19 @@
     ],
     "warnings": []
    },
+   "changes": [
+    [
+     "Delivery",
+     "23 September 2032, 00:00 UTC → <b>22 September 2032, 00:00 UTC</b>",
+     "moved earlier by 1 day — free"
+    ],
+    [
+     "Miner fee",
+     "13 → <b>14 sat/vB</b>",
+     null
+    ]
+   ],
+   "changes_for": "sign",
    "executors": [
     [
      "https://we0.test",
@@ -373,7 +386,7 @@
      "to do"
     ]
    ],
-   "will_now": "Will prepared: it must be signed and sent — Delivery to the heirs: 22 September 2032, 00:00 UTC"
+   "will_now": "Will prepared: it must be signed and sent — Delivery to the heirs: 22 September 2032, 00:00 UTC\nUntil you sign and send it, the will sent before stays in force: delivery on 23 September 2032, 00:00 UTC."
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",

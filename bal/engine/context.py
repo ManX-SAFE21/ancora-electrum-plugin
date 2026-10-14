@@ -250,9 +250,31 @@ def init_heirs_to_locktime(host, multiverse=False):
     host.flush_wallet_db()
 
 
-def check_will(host):
+def check_will(host, undo_anticipation=False):
     """``Will.is_will_valid`` on the host's will, settings, heirs and
-    will-executors; raises the "will must be prepared again" exceptions."""
+    will-executors; raises the "will must be prepared again" exceptions.
+
+    First (#135, owner's ZIP test) an heir that was only renamed gets its
+    new name in the will items (``Will.sync_heir_names``: metadata only,
+    the transactions do not change) and the will is saved, so the rename
+    is said ONCE and no identical will is rebuilt at every Check.
+    ``host.heir_renames``: ``[(old, new)]`` of this check (not stored).
+
+    ``undo_anticipation`` (#135): also :func:`drop_anticipation_leftover`
+    first. Only the FIRST check of a Check passes it, never the check
+    after its own build (it would drop the drafts it just made).
+    """
+    renames = []
+    try:
+        renames = Will.sync_heir_names(host.willitems, host.heirs)
+        if renames:
+            _logger.info(f"heirs renamed (names only): {renames}")
+            save_willitems(host)
+    except Exception as e:
+        _logger.error(f"heir names not synchronized: {e!r}")
+    host.heir_renames = renames
+    host.anticipation_dropped = (
+        drop_anticipation_leftover(host) if undo_anticipation else None)
     return Will.is_will_valid(
         host.willitems,
         host.date_to_check,
@@ -850,6 +872,44 @@ def in_force_delivery(host):
         return None
 
 
+def in_force_items(host):
+    """The will items of the will REALLY in force, ``{wid: item}`` (#135).
+
+    ``Will.in_force_items`` (the #128 notion, ``will_state.is_in_force``:
+    signed and/or sent, not invalidated or executed, still executable on a
+    synchronized wallet); a draft never. Refreshes the invalidated items
+    first. ``{}`` when there is none or the will cannot be read (logged).
+    """
+    try:
+        refresh_invalidated_items(host)
+        willitems = host.willitems or {}
+        return Will.in_force_items(willitems, host.wallet, _wallet_synced(host))
+    except Exception as e:
+        _logger.warning(f"will in force not read: {e!r}")
+        return {}
+
+
+def prepared_items(host, in_force=None):
+    """The will as it will be once the prepared drafts are signed (#135).
+
+    ``{wid: item}``: the drafts (``will_state.draft_ids``: VALID, never
+    signed nor sent) FIRST, then the items of the will in force
+    (``in_force``, ``{wid: item}``) that are not drafts. Why both: when only
+    a will-executor is added, the check prepares a copy for that executor
+    alone and the copies already in force stay the will; comparing the
+    drafts alone would read as "the other will-executors were removed".
+    When the drafts pre-empt the will in force with an earlier date, the
+    comparison keeps only the earliest date
+    (``will_changes.side_from_items``), so the old copies drop out by
+    themselves. Drafts first so their heirs and amounts are the ones read.
+    """
+    willitems = getattr(host, "willitems", None) or {}
+    items = {wid: willitems[wid] for wid in will_state.draft_ids(willitems)}
+    for wid, item in (in_force or {}).items():
+        items.setdefault(wid, item)
+    return items
+
+
 def cancelled_postpone_date(host):
     """The delivery date to go back to after a cancelled postpone, or None.
 
@@ -903,6 +963,89 @@ def cancelled_postpone_date(host):
     if target is None or stored <= target:
         return None
     return target
+
+
+#: One day: the step of the plugin's own anticipation (a will rebuilt
+#: against the will in force is dated one day earlier, #128).
+_ANTICIPATION_STEP = 86400
+
+
+def drop_anticipation_leftover(host):
+    """Undo an anticipation nobody needs any more (#135, owner's ZIP test).
+
+    A rebuild against the will in force is dated one day earlier than it
+    (#128) and that day is stored as the delivery date. Owner: such a
+    rebuild was made by the plugin alone (an heir renamed back, under the
+    old rule), Cancel at the password left its drafts and the earlier
+    stored day; once the change was undone, every Check asked to sign a
+    will whose ONLY difference from the will in force was that day.
+
+    The rule, all of it must hold: a will is in force (#128); the stored
+    delivery date is exactly ONE day before it (the anticipation step);
+    there are drafts (VALID, never signed nor sent) and all of them carry
+    that day; and the settings (Heirs tab, will-executors selected now,
+    fee: ``will_changes.side_from_settings``, the wizard's comparison)
+    differ from the will in force ONLY by that day. Then the drafts are
+    dropped (they exist only in this wallet: free, #128) and the stored
+    date goes back to the will in force's: the Check then finds the will
+    in force again (#128 brings it back), nothing to sign.
+
+    Funds-safe: signed or sent items are never touched, the will in force
+    stays what the will-executors hold. A date the owner chose himself
+    exactly one day earlier, then cancelled, would be put back too (it
+    cannot be told apart without storing more; the will in force stays and
+    the date can be chosen again); any other date, or any other change,
+    is kept and asked to sign as before. Runs before the check, never on
+    the drafts of the build of the same Check. Returns ``(the day dropped,
+    the will in force's day)`` or None. Never raises (logged).
+    """
+    try:
+        from ..core import will_changes
+
+        willitems = host.willitems or {}
+        drafts = will_state.draft_ids(willitems)
+        if not drafts:
+            return None
+        stored = delivery.as_delivery((host.will_settings or {}).get("locktime"))
+        in_force = in_force_items(host)
+        if stored is None or not in_force:
+            return None
+        try:
+            selected = host.selected_willexecutors()
+        except Exception:
+            selected = None
+        if not isinstance(selected, (set, frozenset)):
+            selected = None
+        old = will_changes.side_from_items(in_force, selected)
+        if old is None or old.delivery is None or old.delivery - stored != _ANTICIPATION_STEP:
+            return None
+        if any(delivery.as_delivery(willitems[w].tx.locktime) != stored for w in drafts):
+            return None
+        new = will_changes.side_from_settings(
+            host.heirs or {}, stored, sorted(selected) if selected is not None
+            else list(old.executors), (host.will_settings or {}).get("baltx_fees"))
+        changes = will_changes.will_changes(old, new)
+        if not changes or [c.kind for c in changes] != [will_changes.DELIVERY]:
+            return None
+        for wid in drafts:
+            del willitems[wid]
+        _logger.info(
+            "anticipation leftover: {} unsigned drafts dated {} dropped, the "
+            "delivery date goes back to the will in force: {}".format(
+                len(drafts), utc_day_text(stored), utc_day_text(old.delivery)))
+        store = getattr(host, "store_will_setting", None)
+        if store is not None:
+            store("locktime", old.delivery)
+        else:
+            set_will_setting(host, "locktime", old.delivery)
+        # The heirs carry the will's date too (multiverse off): the check
+        # gave them the earlier day before this ran; give them the will in
+        # force's again, as the check itself does.
+        init_heirs_to_locktime(host, _multiverse(host))
+        return stored, old.delivery
+    except Exception as e:
+        _logger.error(f"anticipation leftover not checked: {e!r}")
+        return None
 
 
 def revert_cancelled_postpone(host):

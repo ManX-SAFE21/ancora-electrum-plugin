@@ -105,9 +105,20 @@ def test_each_step_calls_the_engine(method, function, args):
     win = _window(willitems={})
     with patch.object(context, function, return_value="engine") as fn:
         out = getattr(BalWindow, method)(win, *args)
-    fn.assert_called_once_with(win, *args)
+    # #135: check_will passes its ``undo_anticipation`` flag on (False
+    # unless the first check of a Check asks for it).
+    extra = {"undo_anticipation": False} if method == "check_will" else {}
+    fn.assert_called_once_with(win, *args, **extra)
     if method in ("check_alive_info", "check_will"):
         assert out == "engine"
+
+
+def test_check_will_passes_undo_anticipation():
+    """``check_will(undo_anticipation=True)`` reaches the engine (#135)."""
+    win = _window(willitems={})
+    with patch.object(context, "check_will", return_value="engine") as fn:
+        BalWindow.check_will(win, undo_anticipation=True)
+    fn.assert_called_once_with(win, undo_anticipation=True)
 
 
 def test_load_willitems_shows_the_will():

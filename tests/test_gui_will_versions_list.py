@@ -174,7 +174,7 @@ def test_versions_and_the_paid_invalidation(make):
     assert "miner fee 21 sat/vb" in texts[0]
     assert "sent and verified 3 of 3" in texts[0]
     assert texts[0].endswith("· in force")
-    assert texts[1].startswith("paid invalidation · miner fee ")
+    assert texts[1].startswith("invalidation transaction · miner fee ")
     assert top[1][1] in texts[1]                       # the full txid
     assert texts[1].endswith("· mempool")
     assert [t.split(" ·")[0] for t in texts[2:]] == ["#3", "#2", "#1"]

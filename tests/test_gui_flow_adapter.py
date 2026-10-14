@@ -180,7 +180,12 @@ def test_each_note_writes_its_own_row(code):
         row = "<font color='#cfa808'>&#9888;</font> <b>{}</b>".format(text)
     assert d.labels[1:] == [row]
     assert d.history[2:] == [row]
-    assert _report(d)[1] == {box: [text]}
+    if code == "amounts_explained":
+        # #135 (owner): not an "Attention" box: the report's shares note.
+        assert _report(d)[1] == {}
+        assert d._report().snapshot()["amounts_note"][0]
+    else:
+        assert _report(d)[1] == {box: [text]}
 
 
 def test_each_pass_gets_its_own_row():
