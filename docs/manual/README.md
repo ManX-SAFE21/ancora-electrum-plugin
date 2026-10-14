@@ -331,9 +331,22 @@ Here you enter the following parameters:
   is refused with a warning and is never shown or logged. The camera button
   at the end of the field reads the address from a QR code (a `bitcoin:` QR
   code with an amount is accepted: only the address is kept).
-- **Amount:** how much you want to send to this heir (as a **percentage** or a
-  **fixed value**). The plugin always makes sure that 100 % of the inheritance
-  is given to the heirs (see *Sizing inheritance transactions*).
+- **Amount:** how much you want to send to this heir. Choose how with the two
+  buttons next to the field:
+  - **% Percentage** (selected for a new heir): type only the number (e.g.
+    `30`); the field shows the `%` itself. It is a share of the wallet
+    balance: the heirs' percentages share, in proportion, what is left after
+    the fees and the fixed amounts (two heirs at 30 and no others get half
+    each).
+  - **Fixed amount:** an exact amount in the wallet's unit (e.g. mBTC, shown
+    in the field), paid first. If no heir has a percentage, what is left over
+    is shared among the heirs with a fixed amount, in proportion.
+
+  A grey line under the field explains the chosen mode. Typing `%` in the
+  Fixed amount mode switches to Percentage. When you edit an heir, the button
+  of its stored mode is already selected. The plugin always makes sure that
+  100 % of the inheritance is given to the heirs (see *Sizing inheritance
+  transactions*).
 - **Notes** (optional): private notes for you, e.g. how to reach this heir.
   They are kept only in this wallet (at most 1000 characters), never sent to
   the will-executors or written on the blockchain, and not printed in the

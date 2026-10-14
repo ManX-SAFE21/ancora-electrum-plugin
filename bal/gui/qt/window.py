@@ -19,7 +19,14 @@ from datetime import datetime, timedelta, timezone
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFontMetrics
-from PyQt6.QtWidgets import QMessageBox, QPlainTextEdit, QStyle
+from PyQt6.QtWidgets import (
+    QButtonGroup,
+    QHBoxLayout,
+    QMessageBox,
+    QPlainTextEdit,
+    QStyle,
+    QWidget,
+)
 
 from ...core import datetext, delivery, heir_notes
 from ...core.checkalive import (
@@ -943,6 +950,14 @@ class BalWindow:
         self.update_will_summary()
 
     def new_heir_dialog(self, heir_key=None):
+        """The "New heir" window, or "Edit: <name>" for ``heir_key``.
+
+        Also used by the BASIC wizard and the Heirs list. #139 (owner): the
+        amount has two buttons, "% Percentage" and "Fixed amount", its unit
+        at the right and a grey line saying what the mode means; a new heir
+        starts on Percentage, an edit preselects the stored mode ("30%":
+        Percentage). The stored format ("30%" or satoshis) is unchanged.
+        """
         heir = self.heirs.get(heir_key)
         title = _("New heir")
         if heir:
@@ -960,6 +975,75 @@ class BalWindow:
         # #138: a line with Electrum's "Read QR code with camera" button.
         heir_address = _address_field(self, 32 * char_width_in_lineedit())
         heir_amount = PercAmountEdit(self.window.get_decimal_point)
+        # #139 (owner): the amount, then the two mode buttons, on one row;
+        # a grey line under it says what the mode means. No parent yet, as
+        # the other fields: the grid gives it the dialog, in the grid's
+        # order (``findChildren`` keeps the name, address, amount order).
+        amount_row = QWidget()
+        amount_layout = QHBoxLayout(amount_row)
+        amount_layout.setContentsMargins(0, 0, 0, 0)
+        percentage_button = QPushButton(_("% Percentage"))
+        fixed_button = QPushButton(_("Fixed amount"))
+        mode_buttons = QButtonGroup(amount_row)
+        mode_buttons.setExclusive(True)
+        for button in (percentage_button, fixed_button):
+            button.setCheckable(True)
+            mode_buttons.addButton(button)
+        amount_layout.addWidget(heir_amount)
+        amount_layout.addWidget(percentage_button)
+        amount_layout.addWidget(fixed_button)
+        amount_layout.addStretch(1)
+        amount_help = QLabel("")
+        amount_help.setWordWrap(True)
+        amount_help.setStyleSheet("color:#6A737D;")
+        amount_help_button = HelpButton(_(
+            "Percentage: a share of the wallet balance (e.g. 30). The heirs' "
+            "percentages are weights: together they share, in proportion, what is "
+            "left after the fees and the fixed amounts (e.g. two heirs at 30 and no "
+            "others: half each). "
+            "Fixed amount: an exact amount in the wallet's unit, paid first. "
+            "If no heir has a percentage, what is left over is shared among the "
+            "heirs with a fixed amount, in proportion: the wallet is always "
+            "emptied completely."))
+        # #138 (owner): what the address must be, in one grey line.
+        address_help = QLabel(_(
+            "One single address of the heir (e.g. bc1q…), taken from Receive in "
+            "the heir's wallet. Not an xpub/zpub."))
+        address_help.setWordWrap(True)
+        address_help.setStyleSheet("color:#6A737D;")
+
+        def _show_payee_rows(visible):
+            """Show or hide what only an address (a payee) has (#139).
+
+            The amount row, its grey line and its "?", and #138's grey
+            address line: none of them means anything for an OP_RETURN
+            message (owner's ZIP test). A widget not yet in the dialog (the
+            first call, before the grid) is only hidden, never shown: shown
+            without a parent it would open as a window of its own; the
+            dialog shows it later.
+            """
+            for widget in (amount_row, amount_help, amount_help_button, address_help):
+                if visible and widget.parentWidget() is None:
+                    continue
+                widget.setVisible(visible)
+
+        def _show_amount_mode(percentage):
+            """The buttons and the grey line follow the field's mode (#139)."""
+            percentage_button.setChecked(percentage)
+            fixed_button.setChecked(not percentage)
+            if percentage:
+                amount_help.setText(_(
+                    "A share of the wallet balance (e.g. 30). The heirs' percentages "
+                    "share, in proportion, what is left after the fixed amounts."))
+            else:
+                amount_help.setText(_(
+                    "An exact amount in {}, paid first. If no heir has a percentage, "
+                    "what is left over is shared among the heirs in proportion: the "
+                    "wallet is always emptied completely.").format(heir_amount.unit_text()))
+
+        heir_amount.mode_changed.connect(_show_amount_mode)
+        percentage_button.clicked.connect(lambda: heir_amount.set_percentage(True))
+        fixed_button.clicked.connect(lambda: heir_amount.set_percentage(False))
 
         # OP_RETURN message field (hidden by default)
         op_return_message = QLineEdit()
@@ -973,9 +1057,13 @@ class BalWindow:
             addr = str(heir[0])
             heir_address.setText(addr)
             if not is_op_return_address(addr):
-                heir_amount.setText(
+                # #139: "30%" opens on Percentage (the field shows "30"),
+                # anything else on Fixed amount.
+                heir_amount.set_amount_text(
                     str(Util.decode_amount(heir[1], self.window.get_decimal_point()))
                 )
+            else:
+                heir_amount.set_percentage(True)
             # #81: the heir's own date; the widget never writes the will's
             # delivery setting (opening this dialog used to overwrite it).
             self.heir_locktime = LockTimeWidget(
@@ -983,10 +1071,13 @@ class BalWindow:
             )
         else:
             heir_address.setText("")
+            heir_amount.set_percentage(True)  # #139: a new heir: Percentage
             self.heir_locktime = LockTimeWidget(
                 self, self.window, self.will_settings["locktime"],
                 save_to_settings=False,
             )
+
+        _show_amount_mode(heir_amount.percentage)
 
         def _update_op_return_from_message():
             msg = op_return_message.text()
@@ -1005,7 +1096,8 @@ class BalWindow:
 
         def _on_address_changed():
             """The OP_RETURN rows (a message, no amount) or the payee rows;
-            #138: the camera button only for an address."""
+            #138: the camera button only for an address; #139: the mode
+            buttons, the unit and the grey amount line go with the amount."""
             addr = heir_address.text()
             for camera in getattr(heir_address, "qr_buttons", []):
                 camera.setVisible(not is_op_return_address(addr))
@@ -1015,6 +1107,7 @@ class BalWindow:
                 if not op_return_message.isVisible():
                     op_return_message.setVisible(True)
                     heir_amount.setVisible(False)
+                    _show_payee_rows(False)
                     op_return_amount_label.setVisible(False)
                     op_return_message_label.setVisible(True)
                 op_return_message.blockSignals(True)
@@ -1023,8 +1116,15 @@ class BalWindow:
             else:
                 op_return_message.setVisible(False)
                 heir_amount.setVisible(True)
+                _show_payee_rows(True)
                 op_return_amount_label.setVisible(True)
                 op_return_message_label.setVisible(False)
+            if d.isVisible():
+                # #139 (owner's ZIP test): the window fits the rows now
+                # shown, so no empty band is left where the hidden ones
+                # were. Queued: the layout takes the new rows after this
+                # event.
+                QTimer.singleShot(0, d.adjustSize)
 
         _on_address_changed()
         heir_address.textChanged.connect(_on_address_changed)
@@ -1046,17 +1146,12 @@ class BalWindow:
         grid.addWidget(QLabel(_("Address")), 2, 0)
         grid.addWidget(heir_address, 2, 1)
         grid.addWidget(HelpButton(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
-        # #138 (owner): what the address must be, in one grey line.
-        address_help = QLabel(_(
-            "One single address of the heir (e.g. bc1q…), taken from Receive in "
-            "the heir's wallet. Not an xpub/zpub."))
-        address_help.setWordWrap(True)
-        address_help.setStyleSheet("color:#6A737D;")
         grid.addWidget(address_help, 3, 1)
 
         grid.addWidget(op_return_amount_label, 4, 0)
-        grid.addWidget(heir_amount, 4, 1)
-        grid.addWidget(HelpButton(_("Fixed or Percentage amount if end with %")), 4, 2)
+        grid.addWidget(amount_row, 4, 1)
+        grid.addWidget(amount_help_button, 4, 2)
+        grid.addWidget(amount_help, 5, 1)
 
         grid.addWidget(op_return_message_label, 4, 0)
         grid.addWidget(op_return_message, 4, 1)
@@ -1064,20 +1159,20 @@ class BalWindow:
         locktime_label = QLabel(_("Locktime"))
         enable_multiverse = self.bal_plugin.ENABLE_MULTIVERSE.get()
         if enable_multiverse:
-            grid.addWidget(locktime_label, 5, 0)
-            grid.addWidget(self.heir_locktime, 5, 1)
-            grid.addWidget(HelpButton(_("locktime")), 5, 2)
+            grid.addWidget(locktime_label, 6, 0)
+            grid.addWidget(self.heir_locktime, 6, 1)
+            grid.addWidget(HelpButton(_("locktime")), 6, 2)
 
         # #138 (owner): the owner's private notes on this heir.
         notes = QPlainTextEdit()
         notes.setFixedWidth(32 * char_width_in_lineedit())
         notes.setFixedHeight(4 * QFontMetrics(notes.font()).height() + 12)
         notes.setPlainText(heir_notes.get(self.wallet, heir_key) if heir_key else "")
-        grid.addWidget(QLabel(_("Notes")), 6, 0, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(notes, 6, 1)
+        grid.addWidget(QLabel(_("Notes")), 7, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(notes, 7, 1)
         grid.addWidget(HelpButton(_(
             "Private notes for you, kept only in this wallet; never sent to the "
-            "will-executors or written on the blockchain.")), 6, 2,
+            "will-executors or written on the blockchain.")), 7, 2,
             Qt.AlignmentFlag.AlignTop)
 
         vbox.addLayout(grid)
@@ -1093,25 +1188,36 @@ class BalWindow:
                         if not is_op_return_address(str(heir[0])) else "")
 
             def _update_hint():
+                """The #135 hint; the amount as it would be saved (#139:
+                the number plus "%" in Percentage, as ``original`` has it)."""
                 hint.setText(edit_hint(original, (
                     heir_name.text(), heir_address.text(),
                     "" if is_op_return_address(heir_address.text())
-                    else heir_amount.text())))
+                    else heir_amount.amount_text())))
 
             for field in (heir_name, heir_address, heir_amount):
                 field.textChanged.connect(_update_hint)
+            heir_amount.mode_changed.connect(_update_hint)
             _update_hint()
         buttons = [CancelButton(d), OkButton(d)]
         if not heir:
             buttons.append(new_heir_button)
         vbox.addLayout(Buttons(*buttons))
         while d.exec():
+            if not heir_name.text().strip():
+                # #139 (owner's ZIP test): an empty name reached the wallet
+                # file and failed there with a raw error; the window stays
+                # open and nothing is stored. The name is not stripped when
+                # saved: existing names keep matching.
+                self.show_error(_("Write a name for the heir."))
+                continue
             raw_address = heir_address.text()
             if is_op_return_address(raw_address):
                 amount = "0"
             else:
                 try:
-                    amount = Util.encode_amount(heir_amount.text(),
+                    # #139: "30%" in Percentage, as before the buttons.
+                    amount = Util.encode_amount(heir_amount.amount_text(),
                                                 self.window.get_decimal_point())
                 except Exception:
                     # #135: a plain sentence, not a raw exception text.
@@ -1128,7 +1234,7 @@ class BalWindow:
             if heir_key is not None and original is not None and edit_hint(
                     original, (heir[0], heir_address.text(),
                                "" if is_op_return_address(raw_address)
-                               else heir_amount.text())) in (
+                               else heir_amount.amount_text())) in (
                     "", _("Only the name changes: no need to sign.")):
                 # #135 (owner's ZIP test, A -> B -> A): only the name was
                 # touched: keep the stored amount and date exactly as they

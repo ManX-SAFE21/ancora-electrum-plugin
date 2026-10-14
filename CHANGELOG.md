@@ -9028,3 +9028,134 @@ two Checks clean. Two fixes from that test:
   (sha256 `185bac52b08b29d35b417ead38373f632c9c79c8adae47c47ee3ad525940e495`);
   catalogs RESULT OK, i18n tests and golden files (247) passed. The
   owner's final look at this ZIP: OK (2026-10-14).
+
+## 139. Heir window: Percentage or Fixed amount buttons
+
+**Date:** 2026-10-14
+
+**Problem (the owner):** in the New / Edit heir window (also used by the
+BASIC wizard and the Heirs list) the amount was one field with the help
+"Fixed or Percentage amount if end with %": nothing on screen said whether
+the number was a percentage or an amount, the "%" had to be typed by hand,
+and the window did not explain how percentages and fixed amounts share the
+wallet.
+
+**What changed:**
+
+- Two exclusive buttons next to the amount field: "% Percentage" and
+  "Fixed amount". A new heir starts on Percentage; editing an heir
+  preselects its stored mode ("30%": Percentage, anything else: Fixed
+  amount).
+- The field shows its unit at the right, in grey: "%" in Percentage (the
+  user types only the number; the "%" is added when saving) or the
+  wallet's base unit in Fixed amount (e.g. mBTC). The right text margin
+  keeps the text out from under the unit (`PercAmountEdit.reserve_unit_space`,
+  as #138's `reserve_button_space` for the address field). A "%" typed or
+  pasted in Fixed amount switches to Percentage and is dropped; switching
+  the mode keeps the number. The old placeholder of the empty field ("{}
+  or perc value") is gone.
+- A grey line under the field, following the mode:
+  - Percentage: "A share of the wallet balance (e.g. 30). The heirs'
+    percentages share, in proportion, what is left after the fixed
+    amounts."
+  - Fixed amount: "An exact amount in {unit}, paid first. If no heir has a
+    percentage, what is left over is shared among the heirs in proportion:
+    the wallet is always emptied completely."
+  Checked against `Heirs.prepare_lists`, `fixed_percent_lists_amount` and
+  `normalize_perc`: fixed amounts are taken first and exactly (more than
+  the balance stops the build, #76); the percentages are weights sharing
+  what is left after the fees and the fixed amounts; with no percentage
+  heir the leftover is shared among the fixed heirs in proportion to their
+  amounts; a sub-dust rounding rest goes to the fee (no change output).
+- The "?" help of the amount says the same rules in one text (it replaces
+  "Fixed or Percentage amount if end with %").
+- OP_RETURN mode: the buttons, the unit and the grey line are hidden with
+  the amount, as before; they come back for an address.
+- Unchanged: the stored format ("30%" or integer satoshis through
+  `Util.encode_amount`), the computation, the protocol, the command line.
+  The #135 edit hint compares the amount as the window saves it
+  (`PercAmountEdit.amount_text`: the number plus "%" in Percentage), so an
+  heir opened and saved untouched, or only renamed, keeps "Only the name
+  changes" and its stored amount. Old heirs open as before.
+- Manual: the [NEW HEIR] section explains the two modes.
+- After the owner's ZIP test of the OP_RETURN mode (A-D):
+  - A (an old bug, any heir): OK with an empty Name put the key "" in the
+    heirs and failed when saving with Electrum's raw `StoredDict`
+    assertion ("key='', parent={...}"); the "" heir stayed in memory, so
+    the next OK said "An heir named  already exists.". Now a name empty
+    after strip gets "Write a name for the heir." and the window stays
+    open with nothing stored. The core refuses it too
+    (`Heirs.validate_heir` raises the new `HeirNameNotValid` before
+    anything is put in the dict; `heir_error_message` and the command
+    line's `_user_facing` give the same sentence), so the GUI, the command
+    line and the imports are covered. Names are not stripped when saved:
+    an existing name with spaces still matches.
+  - B: the amount's "?" is hidden with the amount in OP_RETURN mode.
+  - C: #138's grey address line is hidden in OP_RETURN mode.
+  - D: the window fits its rows again when the mode changes
+    (`adjustSize`, queued after the layout update), so no empty band is
+    left between the address and the message rows.
+  All come back for an address.
+- Catalogs: 6 new msgids, IT and ES; the 2 replaced ones are kept as
+  obsolete entries.
+
+**Tests:** `tests/test_amount_mode.py` (new, 14 tests, real dialogs and the
+real window, three fake will-executors each with its own fee address): the
+two exclusive buttons; a new heir on Percentage; the stored mode
+preselected for "40%" and for a fixed amount (satoshis shown in BTC); the
+unit per mode (mBTC / %) and the right text margin holding it; switching
+keeps the number; a "%" typed in Fixed amount switches to Percentage;
+stored "10%" and satoshis; the grey line per mode; OP_RETURN hides the
+buttons and the grey line and an address shows them again; an OP_RETURN
+heir opens with them hidden; editing without changes keeps no hint, a
+rename keeps "Only the name changes" and the stored amount (percentage and
+fixed), a mode switch says the share changes; a new heir with a fixed
+amount, then a Check and a second Check clean. After the owner's
+OP_RETURN test: the amount's "?" and the grey address line hidden in
+OP_RETURN mode and shown again; on screen, the message row right under the
+address row (only the grid spacing) and the window shrinking and growing
+with the mode; an empty and a blank name refused with the window kept
+open, the heirs unchanged and no "" key, then a normal heir saved; the
+core (`validate_heir`, `heir_error_message`) and the command line
+(`heirs_add`) refusing an empty name and storing nothing.
+`tests/test_gui_widgets.py` (a typed "50%" now shows "50" in Percentage)
+and `tests/test_heir_notes_and_address.py` (the new "?" text; the first
+three "?" compared as a set, the amount's is now made first) updated.
+
+**Verification:** ruff clean; the new tests (10 passed); the affected
+tests (610 passed); golden files and catalog tests (271 passed; golden
+files unchanged); catalogs 802 entries, RESULT OK. Test ZIP
+`safe21-heartbeat_0.7.0-TEST-139-amount-mode.zip` (sha256
+`65508c15f0f1c34f667b08fd700c2f3b0e5c143d0d39dcf6bd80b6b086ddefa9`):
+external load and smoke test OK on 4.8.2. After the A-D fixes: ruff
+clean; the new tests (14 passed); the affected tests, now also every file
+naming `validate_heir`, `heir_error_message`, `set_heir` or the heirs
+command line (1024 passed); golden files, catalog tests and the new tests
+(285 passed; golden files unchanged); catalogs 803 entries, RESULT OK;
+offscreen screenshots of the address and OP_RETURN modes checked. ZIP
+rebuilt with the same name (sha256
+`ddb533682347607f0222af46362009cbd08a26303d1d43fe6c772e03138e6e60`),
+external load and smoke test OK on 4.8.2. Whole suite in both orders,
+after the owner's test of this ZIP: 2249 passed each time; ruff clean;
+golden files unchanged.
+
+**Outcome:** owner's ZIP test OK for points 1-10 (2026-10-14): the two
+buttons and Percentage for a new heir; "30" saved as 30%; the unit and
+the grey line in Fixed amount; the stored mode preselected on edit;
+switching keeps the number and says the share changes; a "%" typed in
+Fixed amount switches to Percentage; an heir opened and saved untouched
+needs no signature (Check clean, "not needed"); the new "?" text;
+OP_RETURN hides and shows them again; after a restart two Checks clean.
+On the owner's MAINNET test wallet two percentages changed by hand were
+put back to the values of the will in force: the next Check dropped the
+unsigned draft and found the will in force (4 of 4 will-executors), the
+second Check clean.
+The owner's OP_RETURN test found A-D (an empty name failing with a raw
+error; the amount's "?" and the grey address line still shown; an empty
+band above the message), fixed here (see What changed).
+The owner's test of the rebuilt ZIP (sha256
+`ddb533682347607f0222af46362009cbd08a26303d1d43fe6c772e03138e6e60`), 2026-10-15:
+an empty name says "Write a name for the heir." twice and stores nothing;
+a named heir saved and still there after a restart; OP_RETURN mode
+without the amount's "?", the grey address line and the gap; all back
+for an address; two Checks clean. OK.

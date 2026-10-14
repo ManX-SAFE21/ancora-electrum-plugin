@@ -212,8 +212,11 @@ def test_perc_amount_edit_numbify_percent():
     edit.blockSignals(False)
     edit.numbify()
     assert edit.is_perc is True
-    # After numbify: "50%" -> strip % -> add back -> "50%"
-    assert edit.text() == "50%"
+    # #139: a typed "%" switches to the Percentage mode and is dropped from
+    # the text (the unit "%" is painted); the stored form keeps it.
+    assert edit.percentage is True
+    assert edit.text() == "50"
+    assert edit.amount_text() == "50%"
 
 
 def test_perc_amount_edit_numbify_no_percent():
