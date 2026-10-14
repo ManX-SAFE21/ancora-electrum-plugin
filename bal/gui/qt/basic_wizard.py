@@ -51,7 +51,14 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QValidator
 
 from ... import i18n
-from ...core import datetext, delivery, will_changes, will_state, wizard_date
+from ...core import (
+    datetext,
+    delivery,
+    heir_notes,
+    will_changes,
+    will_state,
+    wizard_date,
+)
 from ...core.future import delivery_form_text, time_left_text
 from ...core.heirs import is_op_return_address, percent_total
 from ...core.summary import selected_urls
@@ -321,19 +328,21 @@ class WizardSnapshot:
     * the delivery settings of :data:`SNAPSHOT_SETTING_KEYS`;
     * the ``selected`` flag of every will-executor (by URL);
     * #137: the will-executors the user deselected on purpose
-      (``bal_willexecutors_user_deselected``, every network).
+      (``bal_willexecutors_user_deselected``, every network);
+    * #138: the owner's private notes on the heirs (``heir_notes``).
 
     :meth:`restore` puts them back exactly (Cancel, the close button). New
     will-executors downloaded meanwhile stay in the list, not selected (they
     were not selected when the wizard opened).
     """
 
-    def __init__(self, heirs, settings, selected, user_deselected=None):
+    def __init__(self, heirs, settings, selected, user_deselected=None, notes=None):
         """Keep the parts (see the class)."""
         self.heirs = heirs
         self.settings = settings
         self.selected = selected
         self.user_deselected = user_deselected
+        self.notes = notes
 
     @classmethod
     def take(cls, bal_window):
@@ -348,7 +357,9 @@ class WizardSnapshot:
         Willexecutors.user_deselected(bal_window.bal_plugin)
         setting = getattr(bal_window.bal_plugin, "WILLEXECUTORS_USER_DESELECTED", None)
         user = copy_structure(setting.get()) if setting is not None else None
-        return cls(heirs, settings, selected, user)
+        wallet = getattr(bal_window, "wallet", None)
+        notes = heir_notes.all_notes(wallet) if wallet is not None else None
+        return cls(heirs, settings, selected, user, notes)
 
     def restore(self, bal_window):
         """Put the heirs, the settings and the selection back (see class).
@@ -367,7 +378,8 @@ class WizardSnapshot:
         for name, step in (("heirs", self._restore_heirs),
                            ("settings", self._restore_settings),
                            ("willexecutors", self._restore_selection),
-                           ("user deselections", self._restore_user_deselected)):
+                           ("user deselections", self._restore_user_deselected),
+                           ("heir notes", self._restore_notes)):
             try:
                 if step(bal_window):
                     written.append(name)
@@ -381,6 +393,13 @@ class WizardSnapshot:
             except Exception as e:
                 _logger.debug(f"wizard cancel: {widget_name} not refreshed: {e!r}")
         return written
+
+    def _restore_notes(self, bal_window):
+        """The heirs' notes as they were (#138); True when written."""
+        wallet = getattr(bal_window, "wallet", None)
+        if wallet is None or self.notes is None:
+            return False
+        return heir_notes.restore(wallet, self.notes)
 
     def _restore_user_deselected(self, bal_window):
         """The user's deselections as they were (#137); True when written."""

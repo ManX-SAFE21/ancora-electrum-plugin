@@ -505,11 +505,21 @@ def heir_error_message(e):
     """
     from .heirs import (
         AmountNotValid,
+        ExtendedPrivateKeyNotAddress,
+        ExtendedPublicKeyNotAddress,
         HeirExpiredException,
         LocktimeNotValid,
         NotAnAddress,
     )
 
+    # #138 (owner): an extended key instead of an address. The key itself
+    # is never repeated (a private one must not be shown anywhere).
+    if isinstance(e, ExtendedPrivateKeyNotAddress):
+        return _("This is a PRIVATE key: never paste it anywhere. Use one "
+                 "address from Receive.")
+    if isinstance(e, ExtendedPublicKeyNotAddress):
+        return _("This is an extended public key (xpub/zpub), not an address: "
+                 "in the heir's wallet open Receive and copy one address.")
     text = str(e)
     if isinstance(e, NotAnAddress):
         prefix = "not an address,"

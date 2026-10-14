@@ -278,7 +278,7 @@ Recorded on 2026-09-26 from the owner's answers.
   | fee | commissione (as Electrum) |
   | broadcast | trasmetti il piano |
   | sign / signed | firma / firmato (as Electrum) |
-  | wallet | portafogli (as Electrum) |
+  | wallet | portafoglio (one wallet, always; owner, 2026-10-14) / portafogli (plural only) |
 
 - **D2 — Who translates.** The developer drafts `it_IT/bal.po`; the owner reviews and corrects it (for example in Poedit). For later languages: Weblate (supports Gitea and `.po`) or Crowdin, as Electrum does.
 - **D3 — Branch and commits.** The developer creates `feature/i18n`, and commits and pushes on it, each time only after the owner's explicit OK (ZIP-FIRST).
