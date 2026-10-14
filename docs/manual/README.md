@@ -325,9 +325,20 @@ Here you enter the following parameters:
 
 - **Name:** name of the heir, with any details you prefer.
 - **Address:** the Bitcoin wallet address where the inheritance will be sent.
+  It is **one single address** (e.g. `bc1q…`), taken from *Receive* in the
+  heir's wallet. An extended public key (`xpub`, `zpub`…) is not an address
+  and is refused with an explanation; an extended **private** key (`xprv`…)
+  is refused with a warning and is never shown or logged. The camera button
+  at the end of the field reads the address from a QR code (a `bitcoin:` QR
+  code with an amount is accepted: only the address is kept).
 - **Amount:** how much you want to send to this heir (as a **percentage** or a
   **fixed value**). The plugin always makes sure that 100 % of the inheritance
   is given to the heirs (see *Sizing inheritance transactions*).
+- **Notes** (optional): private notes for you, e.g. how to reach this heir.
+  They are kept only in this wallet (at most 1000 characters), never sent to
+  the will-executors or written on the blockchain, and not printed in the
+  will summary. In the Heirs list they appear as the tooltip of the heir's
+  name; they follow the heir when you rename or delete it.
 
 > **NB:** You can add several heirs — even 10 or more.
 

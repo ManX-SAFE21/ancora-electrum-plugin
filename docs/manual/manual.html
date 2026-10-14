@@ -250,10 +250,21 @@ Heirs</em> window appears:</p>
 <p>Here you enter the following parameters:</p>
 <ul>
 <li><strong>Name:</strong> name of the heir, with any details you prefer.</li>
-<li><strong>Address:</strong> the Bitcoin wallet address where the inheritance will be sent.</li>
+<li><strong>Address:</strong> the Bitcoin wallet address where the inheritance will be sent.
+  It is <strong>one single address</strong> (e.g. <code>bc1q…</code>), taken from <em>Receive</em> in the
+  heir's wallet. An extended public key (<code>xpub</code>, <code>zpub</code>…) is not an address
+  and is refused with an explanation; an extended <strong>private</strong> key (<code>xprv</code>…)
+  is refused with a warning and is never shown or logged. The camera button
+  at the end of the field reads the address from a QR code (a <code>bitcoin:</code> QR
+  code with an amount is accepted: only the address is kept).</li>
 <li><strong>Amount:</strong> how much you want to send to this heir (as a <strong>percentage</strong> or a
   <strong>fixed value</strong>). The plugin always makes sure that 100 % of the inheritance
   is given to the heirs (see <em>Sizing inheritance transactions</em>).</li>
+<li><strong>Notes</strong> (optional): private notes for you, e.g. how to reach this heir.
+  They are kept only in this wallet (at most 1000 characters), never sent to
+  the will-executors or written on the blockchain, and not printed in the
+  will summary. In the Heirs list they appear as the tooltip of the heir's
+  name; they follow the heir when you rename or delete it.</li>
 </ul>
 <blockquote>
 <p><strong>NB:</strong> You can add several heirs — even 10 or more.</p>

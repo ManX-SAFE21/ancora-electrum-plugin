@@ -38,7 +38,7 @@ from electrum.util import (
     write_json_file,
 )
 
-from ..core import checkalive, delivery
+from ..core import checkalive, delivery, heir_notes
 from ..core import heirs as heirs_mod
 from ..core import will as will_mod
 from ..core.checkalive import (
@@ -1931,6 +1931,8 @@ class BalController(BalSettingsController):
             else:
                 not_found.append(name)
         self.heirs.save()
+        # #138: the notes of the deleted heirs go with them.
+        heir_notes.delete(self.wallet, deleted)
         self.wallet.save_db()
         return {"deleted": deleted, "not_found": not_found}
 
@@ -1970,6 +1972,8 @@ class BalController(BalSettingsController):
                 skipped[name] = str(_user_facing(e))
         self.heirs.update(valid)
         self.heirs.save()
+        # #138: no note of an heir that is no longer there.
+        heir_notes.clean(self.wallet, list(self.heirs.keys()))
         self.wallet.save_db()
         return {
             "imported": len(valid),

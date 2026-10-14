@@ -18,9 +18,10 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtGui import QFontMetrics
+from PyQt6.QtWidgets import QMessageBox, QPlainTextEdit, QStyle
 
-from ...core import datetext, delivery
+from ...core import datetext, delivery, heir_notes
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
@@ -154,6 +155,88 @@ def _stopped_by_hold(window):
     else:
         window.show_message(_(CHOOSE_DATE_FIRST))
     return True
+
+
+def _address_field(window, width):
+    """The heir's address field with Electrum's camera button (#138).
+
+    A ``ButtonsLineEdit`` with "Read QR code with camera"; what is read
+    goes through ``electrum.bip21.parse_bip21_URI`` and only the address is
+    kept ("bitcoin:bc1q…?amount=…" → "bc1q…"). A QR with no bitcoin
+    address shows a plain message (``window.show_error``); no camera or no
+    zbar: Electrum's own message. A plain ``QLineEdit`` when Electrum's
+    helpers are missing. ``field.qr_buttons``: the camera button(s), hidden
+    in the OP_RETURN mode.
+    """
+    try:
+        from electrum.gui.qt.util import ButtonsLineEdit
+        from PyQt6.QtWidgets import QPushButton as _Button
+    except Exception:
+        field = QLineEdit()
+        field.setFixedWidth(width)
+        field.qr_buttons = []
+        return field
+    field = ButtonsLineEdit()
+    field.setFixedWidth(width)
+    field.qr_buttons = []
+    try:
+        field.add_qr_input_from_camera_button(
+            config=window.window.config,
+            show_error=window.show_error,
+            setText=lambda data: field.setText(qr_address(data, window.show_error)
+                                               or field.text()),
+        )
+        field.qr_buttons = field.findChildren(_Button)
+    except Exception as e:
+        _logger.error(f"camera button not added: {e!r}")
+    reserve_button_space(field)
+    return field
+
+
+def reserve_button_space(field):
+    """Keep the text of ``field`` out from under its camera button (#138).
+
+    Owner's ZIP test (Windows, Italian): the camera icon sat ON the end of
+    the address. Electrum's ``OverlayControlMixin`` only floats the buttons
+    over the line edit and never reserves room for them (none of our style
+    sheets touches this field), so the right text margin is set here: the
+    width of the visible buttons plus the frame, or 0 when they are hidden
+    (OP_RETURN mode). Called again whenever the buttons are shown or hidden.
+    Returns the right margin set, in pixels.
+    """
+    buttons = [b for b in getattr(field, "qr_buttons", []) if not b.isHidden()]
+    right = 0
+    if buttons:
+        overlay = getattr(field, "overlay_widget", None)
+        if overlay is not None:
+            overlay.adjustSize()
+            width = overlay.sizeHint().width()
+        else:
+            width = sum(b.sizeHint().width() for b in buttons)
+        # Electrum puts the overlay one frame width inside the right edge;
+        # the extra 2 px keep the last character from touching the icon.
+        frame = field.style().pixelMetric(QStyle.PixelMetric.PM_DefaultFrameWidth)
+        right = width + frame + 2
+    margins = field.textMargins()
+    field.setTextMargins(margins.left(), margins.top(), right, margins.bottom())
+    return right
+
+
+def qr_address(data, show_error=None):
+    """The bitcoin address in a scanned QR (#138), or None.
+
+    A plain address or a BIP21 "bitcoin:" URI (``parse_bip21_URI``: the
+    amount and the other fields are dropped). Anything else: None, and
+    ``show_error`` (when given) says why in plain words.
+    """
+    try:
+        from electrum.bip21 import parse_bip21_URI
+        address = parse_bip21_URI(str(data or "").strip()).get("address")
+    except Exception:
+        address = None
+    if not address and show_error is not None:
+        show_error(_("This QR code does not contain a bitcoin address."))
+    return address or None
 
 
 def edit_hint(original, current):
@@ -387,6 +470,15 @@ class BalWindow:
         the fields show the stored values.
         """
         _logger.info("********************init_____will____________**********")
+        try:
+            # #138: no note of an heir that is no longer there. The heirs
+            # as STORED in the wallet (self.heirs may not be loaded yet: an
+            # empty list here would wipe every note).
+            stored = self.wallet.db.get("heirs", None)
+            if isinstance(stored, dict):
+                heir_notes.clean(self.wallet, list(stored.keys()))
+        except Exception as e:
+            _logger.error(f"heir notes not checked: {e!r}")
         try:
             # #137: seed the user's deselections once, from the list as it
             # is when the wallet opens (owner decision A).
@@ -865,8 +957,8 @@ class BalWindow:
 
         heir_name = QLineEdit()
         heir_name.setFixedWidth(32 * char_width_in_lineedit())
-        heir_address = QLineEdit()
-        heir_address.setFixedWidth(32 * char_width_in_lineedit())
+        # #138: a line with Electrum's "Read QR code with camera" button.
+        heir_address = _address_field(self, 32 * char_width_in_lineedit())
         heir_amount = PercAmountEdit(self.window.get_decimal_point)
 
         # OP_RETURN message field (hidden by default)
@@ -912,7 +1004,13 @@ class BalWindow:
                     op_return_message.setText("")
 
         def _on_address_changed():
+            """The OP_RETURN rows (a message, no amount) or the payee rows;
+            #138: the camera button only for an address."""
             addr = heir_address.text()
+            for camera in getattr(heir_address, "qr_buttons", []):
+                camera.setVisible(not is_op_return_address(addr))
+            # The text margin follows the button (owner's ZIP test).
+            reserve_button_space(heir_address)
             if is_op_return_address(addr):
                 if not op_return_message.isVisible():
                     op_return_message.setVisible(True)
@@ -948,20 +1046,39 @@ class BalWindow:
         grid.addWidget(QLabel(_("Address")), 2, 0)
         grid.addWidget(heir_address, 2, 1)
         grid.addWidget(HelpButton(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
+        # #138 (owner): what the address must be, in one grey line.
+        address_help = QLabel(_(
+            "One single address of the heir (e.g. bc1q…), taken from Receive in "
+            "the heir's wallet. Not an xpub/zpub."))
+        address_help.setWordWrap(True)
+        address_help.setStyleSheet("color:#6A737D;")
+        grid.addWidget(address_help, 3, 1)
 
-        grid.addWidget(op_return_amount_label, 3, 0)
-        grid.addWidget(heir_amount, 3, 1)
-        grid.addWidget(HelpButton(_("Fixed or Percentage amount if end with %")), 3, 2)
+        grid.addWidget(op_return_amount_label, 4, 0)
+        grid.addWidget(heir_amount, 4, 1)
+        grid.addWidget(HelpButton(_("Fixed or Percentage amount if end with %")), 4, 2)
 
-        grid.addWidget(op_return_message_label, 3, 0)
-        grid.addWidget(op_return_message, 3, 1)
+        grid.addWidget(op_return_message_label, 4, 0)
+        grid.addWidget(op_return_message, 4, 1)
 
         locktime_label = QLabel(_("Locktime"))
         enable_multiverse = self.bal_plugin.ENABLE_MULTIVERSE.get()
         if enable_multiverse:
-            grid.addWidget(locktime_label, 4, 0)
-            grid.addWidget(self.heir_locktime, 4, 1)
-            grid.addWidget(HelpButton(_("locktime")), 4, 2)
+            grid.addWidget(locktime_label, 5, 0)
+            grid.addWidget(self.heir_locktime, 5, 1)
+            grid.addWidget(HelpButton(_("locktime")), 5, 2)
+
+        # #138 (owner): the owner's private notes on this heir.
+        notes = QPlainTextEdit()
+        notes.setFixedWidth(32 * char_width_in_lineedit())
+        notes.setFixedHeight(4 * QFontMetrics(notes.font()).height() + 12)
+        notes.setPlainText(heir_notes.get(self.wallet, heir_key) if heir_key else "")
+        grid.addWidget(QLabel(_("Notes")), 6, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(notes, 6, 1)
+        grid.addWidget(HelpButton(_(
+            "Private notes for you, kept only in this wallet; never sent to the "
+            "will-executors or written on the blockchain.")), 6, 2,
+            Qt.AlignmentFlag.AlignTop)
 
         vbox.addLayout(grid)
         # #135 (owner): what an edit means for the will, live.
@@ -1019,6 +1136,11 @@ class BalWindow:
                 old_value = self.heirs.get(heir_key)
                 heir[2], heir[3] = old_value[1], old_value[2]
             new_name = heir[0]
+            note = notes.toPlainText()
+            if heir_notes.too_long(note):
+                self.show_error(_("The notes are too long: at most {} characters.").format(
+                    heir_notes.MAX_LENGTH))
+                continue
             if new_name != heir_key and new_name in self.heirs:
                 # #135: never overwrite another heir (a new one, or a
                 # rename to a name already in the list).
@@ -1044,6 +1166,9 @@ class BalWindow:
                 # saved, so a refused entry never loses the heir; before,
                 # it was never removed and a second heir took a share.
                 self.delete_heirs([heir_key])
+            # #138: the note, under the heir's (new) name; empty removes it.
+            heir_notes.set_note(self.wallet, new_name, note)
+            self.heir_list_widget.update()
             if self.add_another_heir:
                 self.new_heir_dialog()
             break
@@ -1061,6 +1186,7 @@ class BalWindow:
         return True
 
     def delete_heirs(self, heirs):
+        """Delete the heirs ``heirs`` and their notes (#138)."""
         for heir in heirs:
             try:
                 del self.heirs[heir]
@@ -1068,15 +1194,23 @@ class BalWindow:
                 _logger.debug(f"error deleting heir: {heir} {e}")
                 pass
         self.heirs.save()
+        heir_notes.delete(self.wallet, heirs)
         self.heir_list_widget.update()
         return True
 
     def import_heirs(self):
+        """Import heirs from a file (the notes of the heirs still there are
+        kept; the notes of heirs no longer there are dropped, #138)."""
+        def after_import():
+            """Clean the notes, then show the list."""
+            heir_notes.clean(self.wallet, list(self.heirs.keys()))
+            self.heir_list_widget.update()
+
         import_meta_gui(
             self.window,
             _("heirs"),
             self.heirs.import_file,
-            self.heir_list_widget.update,
+            after_import,
         )
 
     def export_heirs(self):

@@ -131,6 +131,9 @@ _register_will_dict("will", dict)
 # The wallet's own delivery settings since CHANGELOG #123 (flat values; the
 # key name is also bal.core.delivery.WALLET_KEY).
 _register_will_dict("will_settings", lambda x: x)
+# CHANGELOG #138: the owner's private notes on the heirs ({name: text}),
+# never sent anywhere (bal.core.heir_notes).
+_register_will_dict("heir_notes", lambda x: x)
 
 
 class BalConfig:

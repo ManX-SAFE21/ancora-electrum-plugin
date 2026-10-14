@@ -104,6 +104,40 @@ def reduce_outputs(in_amount, out_amount, fee, outputs):
             output.value = math.floor((in_amount - fee) / out_amount * output.value)
 
 
+#: The first four characters of the extended keys (BIP32 and SLIP-132:
+#: single-sig and multisig, mainnet and testnet).
+_XPUB_PREFIXES = ("xpub", "ypub", "zpub", "Ypub", "Zpub",
+                  "tpub", "upub", "vpub", "Upub", "Vpub")
+_XPRV_PREFIXES = ("xprv", "yprv", "zprv", "Yprv", "Zprv",
+                  "tprv", "uprv", "vprv", "Uprv", "Vprv")
+
+
+def extended_key_kind(text):
+    """"public", "private" or None: is ``text`` an extended key (#138)?
+
+    Electrum's ``bip32.is_xpub`` / ``is_xprv`` first (they check the
+    whole key, on the current network); then the well-known prefixes of
+    BIP32 / SLIP-132 on a key-sized base58 text, so a mainnet key pasted in
+    a testnet wallet (or a key with a typo) is still recognised. Only used
+    to word the refusal: the text is refused as an address either way.
+    """
+    text = str(text or "").strip()
+    try:
+        from electrum import bip32
+        if bip32.is_xprv(text):
+            return "private"
+        if bip32.is_xpub(text):
+            return "public"
+    except Exception:
+        pass
+    if len(text) >= 100 and text.isalnum():
+        if text.startswith(_XPRV_PREFIXES):
+            return "private"
+        if text.startswith(_XPUB_PREFIXES):
+            return "public"
+    return None
+
+
 def is_op_return_address(address: str) -> bool:
     return str(address).startswith(OP_RETURN_PREFIX)
 
@@ -980,11 +1014,26 @@ class Heirs(dict, Logger):
 
     @staticmethod
     def validate_address(address):
+        """``address`` when it is one bitcoin address of this network (or
+        an ``OP_RETURN:`` message row); raises :class:`NotAnAddress`.
+
+        #138 (owner): an extended key pasted instead of an address gets its
+        own exception: :class:`ExtendedPublicKeyNotAddress` (xpub, zpub...:
+        "copy one address from Receive") or
+        :class:`ExtendedPrivateKeyNotAddress` (xprv...: a strong warning).
+        Neither carries the text: a private key is never put in a message
+        or a log line.
+        """
         if is_op_return_address(address):
             data_hex = address[len(OP_RETURN_PREFIX):]
             validate_op_return_hex(data_hex)
             return address
         if not bitcoin.is_address(address, net=constants.net):
+            kind = extended_key_kind(address)
+            if kind == "private":
+                raise ExtendedPrivateKeyNotAddress("extended private key")
+            if kind == "public":
+                raise ExtendedPublicKeyNotAddress("extended public key")
             raise NotAnAddress(f"not an address,{address}")
         return address
 
@@ -1040,6 +1089,16 @@ class Heirs(dict, Logger):
 
 class NotAnAddress(ValueError):
     pass
+
+
+class ExtendedPublicKeyNotAddress(NotAnAddress):
+    """An extended PUBLIC key (xpub, zpub...) given as an heir's address
+    (#138). Its text is never kept in the exception."""
+
+
+class ExtendedPrivateKeyNotAddress(NotAnAddress):
+    """An extended PRIVATE key (xprv, zprv...) given as an heir's address
+    (#138). Its text is never kept in the exception, a message or a log."""
 
 
 class AmountNotValid(ValueError):

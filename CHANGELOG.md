@@ -8927,3 +8927,104 @@ follow-up"), on which this step is based. The fixed file passes.
 - Cancel keeps his earlier choice;
 - a second user deselection is respected;
 - two Checks are clean.
+
+## 138. Heir window: private notes, a clear address field, a QR button
+
+**Date:** 2026-10-14
+
+**Problem (the owner):** the New / Edit heir window had no place for the
+owner's own notes on an heir (how to reach them, where the address comes
+from). The Address field did not say what it wants, and an extended key
+pasted there (an xpub, or worse an xprv) got only "not an address". There
+was no way to read the heir's address from a QR code.
+
+**What changed:**
+
+- Notes (new, optional): a "Notes" box with its "?" help ("Private notes
+  for you, kept only in this wallet; never sent to the will-executors or
+  written on the blockchain."), at most 1000 characters (longer: "The
+  notes are too long: at most {} characters." and the window stays open).
+  - New wallet key `heir_notes` (`{heir name: text}`), registered like
+    `will_settings` (`bal.core.heir_notes`, Qt-free). A user choice, not
+    derived state. The `heirs` format (`[address, amount, locktime]`), the
+    `will` / `will_settings` keys and the protocol are unchanged.
+  - The notes follow the heir: rename (window), delete (window, Heirs
+    list, command line `heirs_delete`), import (GUI and command line: the
+    notes of the heirs still there are kept, the others dropped), the
+    BASIC wizard's Cancel (the notes are put back with the heirs). When
+    the wallet opens, a note whose heir is no longer stored is dropped: no
+    orphans.
+  - Shown as the tooltip of the heir's name in the Heirs list. Not in the
+    will summary, the PDF, the export file or anything sent to the
+    will-executors.
+- Address field:
+  - a grey line under it: "One single address of the heir (e.g. bc1q…),
+    taken from Receive in the heir's wallet. Not an xpub/zpub.";
+  - an extended public key (xpub, ypub, zpub, tpub, vpub...): "This is an
+    extended public key (xpub/zpub), not an address: in the heir's wallet
+    open Receive and copy one address.";
+  - an extended private key (xprv, zprv...): "This is a PRIVATE key: never
+    paste it anywhere. Use one address from Receive." The key is never put
+    in the exception, the message or a log line (new
+    `ExtendedPublicKeyNotAddress` / `ExtendedPrivateKeyNotAddress`, both
+    `NotAnAddress`, through `heir_error_message`; the command line gives
+    the same messages).
+  - a camera button (Electrum's `add_qr_input_from_camera_button`): a
+    `bitcoin:` QR code is read with `electrum.bip21.parse_bip21_URI` and
+    only the address is kept (an amount in the code is ignored); a code
+    without an address: "This QR code does not contain a bitcoin
+    address.". Hidden in OP_RETURN mode, whose behaviour is unchanged
+    (#139).
+  - the text never runs under the camera button
+    (`reserve_button_space`): Electrum's `OverlayControlMixin` only
+    floats the button over the line and reserves no room (none of our
+    style sheets touches this field), so the right text margin is set to
+    the button width plus the frame, and back to 0 in OP_RETURN mode.
+- The four existing "?" helps are unchanged.
+- Manual: the [NEW HEIR] section explains the single address / xpub /
+  xprv, the QR button and the notes.
+- Catalogs: 7 new msgids, IT and ES.
+
+**Tests:** `tests/test_heir_notes_and_address.py` (new, 11 tests, real
+dialogs and the real window; 12 after the icon fix): a note saved, shown as tooltip, renamed,
+deleted; the help text and the 1000-character cap; GUI import keeps and
+drops; the BASIC wizard's Cancel restores the notes; an old wallet without
+`heir_notes` opens; command line delete and import clean the notes; a new
+heir with notes, then a Check and a second Check clean (three fake
+will-executors, each with its own fee address); the xpub / zpub / xprv
+messages (public BIP32 / BIP84 test vectors) and no xprv in the log; the
+command line refusing an xprv without echo; the QR text with a plain
+address, a URI with an amount and an invalid code; the camera button
+shown, hidden in OP_RETURN mode; the right text margin at least the
+button width with the button shown, 0 in OP_RETURN mode, back again for an
+address (12 tests).
+
+**Verification:** ruff clean; the affected tests (853 passed) and the
+golden files (247 passed, unchanged); catalogs 799 entries, RESULT OK.
+Test ZIP `safe21-heartbeat_0.7.0-TEST-138-heir-window.zip` (first sha256
+`75de70c68d664d311415396b5ed90d3769f7c2c1c95c8500617c4d567c482ec8`):
+external load and smoke test OK on 4.8.2. After the icon fix: ruff
+clean; the affected tests (267 passed); golden files 247 passed,
+unchanged; catalogs RESULT OK; ZIP rebuilt with the same name (sha256
+`8fcf757a9f9aec2bb3b0ec30a6cefd30b56b68d23e341a77d37254fa4b3881f4`),
+external load and smoke test OK on 4.8.2. Whole suite in both orders,
+after the owner's final look (final ZIP below): 2235 passed each time;
+ruff clean; golden files unchanged.
+
+**Outcome:** owner's ZIP test OK for points 1-9 (2026-10-14): notes
+saved, shown as tooltip, renamed, deleted; the 1000-character cap; the
+xpub and PRIVATE-key messages; the grey line; the QR button; the camera
+hidden in OP_RETURN mode; the wizard's Cancel; the notes after a restart;
+two Checks clean. Two fixes from that test:
+- the camera icon sat on the end of the address text (Windows, Italian):
+  the field now reserves the button's room (see above);
+- Italian: "nel portafogli dell'erede" became "nel portafoglio
+  dell'erede" (the grey line and the xpub message); Spanish checked, no
+  change.
+- Italian (owner decision): one wallet is always "portafoglio". 32
+  existing IT entries changed the singular "portafogli" (il, del, nel,
+  questo, tuo, altro...) to "portafoglio"; the plural "tutti i portafogli"
+  is kept; PLAN_I18N.md glossary updated. ZIP rebuilt with the same name
+  (sha256 `185bac52b08b29d35b417ead38373f632c9c79c8adae47c47ee3ad525940e495`);
+  catalogs RESULT OK, i18n tests and golden files (247) passed. The
+  owner's final look at this ZIP: OK (2026-10-14).

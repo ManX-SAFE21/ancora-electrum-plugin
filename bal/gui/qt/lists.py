@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 
-from ...core import datetext, will_state, will_versions
+from ...core import datetext, heir_notes, will_state, will_versions
 from ...core.heirs import shared_addresses
 from ...core.messages import protected_executor_message
 from ...core.report import executor_fee
@@ -280,6 +280,10 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
             )
 
             items = [QStandardItem(x) for x in labels]
+            # #138: the owner's private note, as the name's tooltip.
+            note = heir_notes.get(self.bal_window.wallet, key)
+            if note:
+                items[self.Columns.NAME].setToolTip(note)
             # #135: not editable in place (see __init__).
             for item in items:
                 item.setEditable(False)
