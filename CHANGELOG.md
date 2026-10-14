@@ -8780,3 +8780,69 @@ in the normal order and 2210 passed in the reverse order (Electrum
 - the shares are explained once, with the quiet grey line;
 - the anticipation leftover drafts are dropped;
 - the wizard rename row.
+
+## 136. Will tab List: compact transaction rows, one line each
+
+**Date:** 2026-10-14
+
+**Problem (the owner):** in the Will tab's List, the transaction rows under
+an open version ran off the right edge of the window: the delivery as
+"2032-12-27T01:00:00+00:00" in bold, the full 64-character txid, the
+will-executor URL with its full fee address on a second line, and the fee
+with its fiat value ("0.15627 mBTC (13.01 USD)"). With many will-executors
+the two-line rows were messy and harder to select.
+
+**What changed (look only: no stored data, protocol or command-line
+output changes):**
+
+- `bal/gui/qt/lists.py`, transaction rows (`PreviewList._variant_row`),
+  ONE line each, columns Locktime / Txid / Will-Executor / Fee address /
+  Executor fee / Status:
+  - the delivery in the short form of the one date style, as the version
+    rows ("27 dic 2032, ore 01:00 UTC"), not bold;
+  - the txid shortened in the middle, 8 + 8 characters
+    ("9c0c1353…7f94553b");
+  - the will-executor: its host only ("we.bitcoin-after.life");
+  - the fee address in a new column "Fee address" ("Indirizzo
+    commissione"), shortened the same way;
+  - the will-executor's fee in the wallet's unit only (no fiat).
+  Each cell's tooltip has the full value (the delivery in the long form
+  and as the exact timestamp; the full txid; the full URL; the full
+  address; the fee with its fiat value). The right-click menu of a
+  transaction row has "Copy" > each column, which copies the FULL values
+  (`ROLE_CLIPBOARD_DATA`), never the shortened text; "copy id" copies the
+  full txid as before. The search box still looks in the full values. The
+  List has no sorting (unchanged); opening a transaction still shows all.
+  The two-line cell helper (`_TallCell`, #129) is gone. Each column ends
+  14 px after its widest text (`_GapDelegate`: Electrum's item delegate,
+  wider by the gap; the owner found the one-line columns too close), so
+  the columns breathe and Status still fits at 1150 px.
+- The invalidation transaction row: its txid shortened the same way; the
+  full txid in the tooltip and in the search; "copy id" copies it whole.
+- The version rows already used the short date style (#134): unchanged.
+- Catalogs: one new text, "Fee address" (IT "Indirizzo commissione", ES
+  "Dirección de la comisión").
+
+**Tests:** `tests/test_gui_will_versions_list.py` (real `PreviewList`):
+the row shows the short date (not bold), the shortened txid, the host, the
+shortened fee address and the fee without fiat, with no line break in any
+cell; every transaction row is one text line high, at 1150 px the Status
+column is in view and each column is at least 14 px wider than its widest
+text; the tooltips and "Copy" give the full values;
+the invalidation row's txid is short, whole in the tooltip and the search;
+the transaction-row menu has "Copy" before "copy id".
+
+**Verification:** `ruff check bal/ tests/` clean. First part: the whole
+suite 2212 passed in both orders. One-line follow-up (owner: no whole
+suite): the affected tests (`test_gui_will_versions_list`,
+`test_gui_will_flows`, `test_gui_future_view`, `test_protected_executor`,
+`test_translations`, `test_i18n`, `test_will_terms`,
+`test_inheritance_report`: 264 passed; after the column spacing, the List
+tests again: 236 passed) and the golden files (247 passed, unchanged). Catalogs 791 entries, RESULT OK. Test ZIP
+`safe21-heartbeat_0.7.0-TEST-136-compact-list.zip` (sha256
+`cdc10539d498ace91700e4379aece2ce66c1709f2dcc0fa015a7eaad43d09bc0`):
+external load and smoke test OK on 4.8.2.
+
+**Outcome:** the owner checked the test ZIP in Electrum: OK (2026-10-14).
+For a look-only follow-up he did not want the whole suite run again
+before the commit.

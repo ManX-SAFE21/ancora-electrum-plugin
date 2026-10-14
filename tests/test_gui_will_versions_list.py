@@ -41,7 +41,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import flowkit as fk
 from electrum.simple_config import SimpleConfig
-from PyQt6.QtCore import QModelIndex
+from PyQt6.QtCore import QModelIndex, Qt
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -119,7 +119,18 @@ def _version_index(lst, number):
 
 
 def _cells(lst, idx):
-    """The texts of the row of ``idx``, column by column."""
+    """The FULL values of the row of ``idx``, column by column: what
+    "Copy" copies (#136: some cells show them shortened), else the text."""
+    out = []
+    for c in range(len(lst.Columns)):
+        cell = idx.sibling(idx.row(), c)
+        full = cell.data(lst.ROLE_CLIPBOARD_DATA)
+        out.append(full if full is not None else cell.data())
+    return out
+
+
+def _shown(lst, idx):
+    """The texts the row of ``idx`` shows, column by column."""
     return [idx.sibling(idx.row(), c).data() for c in range(len(lst.Columns))]
 
 
@@ -157,9 +168,9 @@ def test_only_the_version_in_force_has_in_force_rows(make):
     m = lst.model()
     for r in range(3):
         old_cells = _cells(lst, m.index(r + 1, 0, older))
-        assert old_cells[4] == will_status_text(s.bw.willitems[old_cells[1]])
-        assert not old_cells[4].startswith("In force")
-        assert _cells(lst, m.index(r + 1, 0, current))[4] == "In force, verified"
+        assert old_cells[5] == will_status_text(s.bw.willitems[old_cells[1]])
+        assert not old_cells[5].startswith("In force")
+        assert _cells(lst, m.index(r + 1, 0, current))[5] == "In force, verified"
 
 
 def test_versions_and_the_paid_invalidation(make):
@@ -263,37 +274,69 @@ def test_columns_of_a_transaction_row(make):
     lst = _list(s)
     assert [lst.model().headerData(c, lst.header().orientation())
             for c in range(len(lst.Columns))] == [
-        "Locktime", "Txid", "Will-Executor", "Executor fee", "Status"]
+        "Locktime", "Txid", "Will-Executor", "Fee address", "Executor fee", "Status"]
     version = lst.model().index(0, 0)
     # The sub-header row first, then one row per will-executor.
     assert lst.model().rowCount(version) == 4
     assert _cells(lst, lst.model().index(0, 0, version)) == [
-        "Locktime", "Txid", "Will-Executor", "Executor fee", "Status"]
+        "Locktime", "Txid", "Will-Executor", "Fee address", "Executor fee", "Status"]
     for r, url in enumerate(URLS):
         child = lst.model().index(r + 1, 0, version)
-        locktime, txid, executor, fee, status = _cells(lst, child)
+        locktime, txid, executor, address, fee, status = _cells(lst, child)
         item = s.bw.willitems[txid]
-        assert len(txid) == 64                          # never shortened
-        assert locktime.startswith("2027-02-27T22:00")
-        assert executor == url + "\n" + fk.WE_ADDR[r]   # URL, then its address
-        assert fee == "1000 sat"
+        assert len(txid) == 64                          # Copy: the full txid
+        assert locktime.startswith("2027-02-27T22:00")  # Copy: the exact time
+        assert executor == url                          # Copy: the full URL
+        assert address == fk.WE_ADDR[r]                 # Copy: the full address
+        # #136: the wallet's unit only (the config's formatter, no fiat);
+        # the window's formatter (with fiat in Electrum) is the tooltip.
+        assert fee == "0.01 mBTC"
+        assert child.sibling(child.row(), 4).data(Qt.ItemDataRole.ToolTipRole) == "1000 sat"
         assert status == will_status_text(item) == "In force, verified"
+        # #136 (owner): what the row SHOWS is compact and on ONE line; the
+        # full values are in the tooltips; the date is not bold; no fiat.
+        shown = _shown(lst, child)
+        assert not any("\n" in str(text) for text in shown)
+        assert shown[0] == "27 Feb 2027, 22:00 UTC"
+        assert shown[1] == txid[:8] + "…" + txid[-8:]
+        assert shown[2] == url.split("://")[1]          # the host only
+        assert shown[3] == fk.WE_ADDR[r][:8] + "…" + fk.WE_ADDR[r][-8:]
+        assert shown[4] == "0.01 mBTC" and "USD" not in shown[4]
+        for c, full in ((1, txid), (2, url), (3, fk.WE_ADDR[r])):
+            assert child.sibling(child.row(), c).data(Qt.ItemDataRole.ToolTipRole) == full
+        tip = child.sibling(child.row(), 0).data(Qt.ItemDataRole.ToolTipRole)
+        assert tip.startswith("27 February 2027, 22:00 UTC") and locktime in tip
+        font = child.sibling(child.row(), 0).data(Qt.ItemDataRole.FontRole)
+        assert font is None or not font.bold()
 
 
-def test_two_line_executor_cell_is_tall_enough(make):
-    """Fix 4 (owner): the URL and the fee address below it are both
-    readable: the row is at least two text lines high."""
+def test_transaction_rows_are_one_line(make):
+    """#136 (owner): every transaction row is ONE text line (the fee
+    address has its own column), and at 1150 px every column, Status
+    included, is in view."""
     s = make()
     s.check()
     lst = _list(s)
-    s.host.resize(1400, 500)
+    s.host.resize(1150, 500)
+    lay = QVBoxLayout(s.host)
+    lay.addWidget(lst)
     s.host.show()
     version = lst.model().index(0, 0)
     lst.expand(version)                    # closed at first since #131
     _APP.processEvents()
-    child = lst.model().index(1, 2, version)
     line = QFontMetrics(QApplication.font()).height()
-    assert lst.visualRect(child).height() >= 2 * line + 10
+    for r in range(1, 4):
+        child = lst.model().index(r, 0, version)
+        assert lst.visualRect(child).height() < 2 * line
+    status = lst.model().index(1, len(lst.Columns) - 1, version)
+    rect = lst.visualRect(status)
+    assert rect.left() < lst.viewport().width()
+    # Follow-up (owner): some space after each column's widest text.
+    metrics = QFontMetrics(lst.font())
+    for column in range(1, len(lst.Columns) - 1):
+        widest = max(metrics.horizontalAdvance(
+            lst.model().index(r, column, version).data() or "") for r in range(1, 4))
+        assert lst.header().sectionSize(column) >= widest + 14
     s.host.close()
 
 
@@ -332,7 +375,7 @@ def test_the_backup_transaction_says_so(make):
     backup = lst.model().index(4, 0, version)
     cells = _cells(lst, backup)
     assert cells[2] == "No will-executor (backup transaction)"
-    assert cells[3] == ""
+    assert cells[3] == "" and cells[4] == ""
     assert "None" not in cells
 
 
@@ -403,7 +446,7 @@ def test_current_row_survives_update(make):
     s.check()
     lst = _list(s)
     child = lst.model().index(2, 0, lst.model().index(0, 0))
-    txid = child.sibling(child.row(), 1).data()
+    txid = child.sibling(child.row(), 1).data(lst.ROLE_CLIPBOARD_DATA)
     lst.setCurrentIndex(child)
     lst.update()
     current = lst.selectionModel().currentIndex()
@@ -416,7 +459,7 @@ def test_double_click_and_menu_on_a_transaction_row(make):
     lst = _list(s)
     version = lst.model().index(0, 0)
     child = lst.model().index(3, 3, version)     # any column of the row
-    txid = child.sibling(child.row(), 1).data()
+    txid = child.sibling(child.row(), 1).data(lst.ROLE_CLIPBOARD_DATA)
     opened = []
     with patch.object(s.bw, "show_transaction", lambda tx=None, **kw: opened.append(tx)):
         lst.on_double_click(child)
@@ -424,11 +467,12 @@ def test_double_click_and_menu_on_a_transaction_row(make):
     # show_transaction redraws the list: take the row again.
     version = lst.model().index(0, 0)
     child = lst.model().index(3, 3, version)
-    assert child.sibling(child.row(), 1).data() == txid
+    assert child.sibling(child.row(), 1).data(lst.ROLE_CLIPBOARD_DATA) == txid
     menu = lst.build_menu(child)
     actions = {a.text(): a for a in menu.actions() if a.text()}
-    assert list(actions) == ["details", "sign", "broadcast", "check ", "copy id",
-                             "copy", "merge from txn", "delete"]
+    # #136: "Copy" > each column (full values) before "copy id".
+    assert list(actions) == ["details", "sign", "broadcast", "check ", "Copy",
+                             "copy id", "copy", "merge from txn", "delete"]
     assert actions["details"].isEnabled()
     assert not actions["sign"].isEnabled()                    # already signed
     assert actions["broadcast"].isEnabled()
@@ -493,11 +537,11 @@ def test_draft_on_top_unnumbered_and_deletable(make):
         cells = _cells(lst, m.index(r + 1, 0, in_force))
         item = s.bw.willitems[cells[1]]
         assert item.get_status("REPLACED")
-        assert cells[4] == "In force, verified"
+        assert cells[5] == "In force, verified"
         colour = m.itemFromIndex(m.index(r + 1, 4, in_force)).background().color().name()
         assert colour == "#8afa6c"
         draft_cells = _cells(lst, m.index(r + 1, 0, m.index(0, 0)))
-        assert draft_cells[4] == "Draft"
+        assert draft_cells[5] == "Draft"
     draft_row = m.index(1, 0, m.index(0, 0))
     menu = lst.build_menu(draft_row)   # kept: its actions die with it
     actions = {a.text(): a for a in menu.actions() if a.text()}
@@ -524,7 +568,8 @@ def test_search_looks_in_versions_and_transactions(make):
                  if not lst.isRowHidden(c, version)]
         # The sub-header stays above the transaction shown.
         assert not lst.isRowHidden(0, version)
-        assert [t.split("\n")[0] for t in shown] == ["https://we1.test"]
+        # #136: the cell shows the host only (the full URL is in Copy).
+        assert shown == ["we1.test"]
     lst.filter("#2 ")
     assert [lst.isRowHidden(r, QModelIndex()) for r in range(m.rowCount())] == [False, True]
     # A matching version shows all its transactions.
@@ -589,3 +634,43 @@ def test_settings_without_the_hide_options(user_type):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_copy_gives_the_full_values(make):
+    """#136 (owner): right click > Copy > a column copies the FULL value,
+    never the shortened text the cell shows."""
+    from unittest.mock import patch as _patch
+
+    s = make()
+    s.check()
+    lst = _list(s)
+    version = lst.model().index(0, 0)
+    child = lst.model().index(1, 0, version)
+    txid, executor, address = _cells(lst, child)[1:4]
+    menu = lst.build_menu(child)
+    copy = next(a for a in menu.actions() if a.text() == "Copy").menu()
+    columns = {a.text(): a for a in copy.actions()}
+    copied = []
+    with _patch.object(lst, "place_text_on_clipboard",
+                       lambda text, title=None: copied.append(text)):
+        columns["Txid"].trigger()
+        columns["Will-Executor"].trigger()
+        columns["Fee address"].trigger()
+        columns["Locktime"].trigger()
+    assert copied[0] == txid and len(txid) == 64
+    assert copied[1] == executor and executor.startswith("https://")
+    assert copied[2] == address and "…" not in address
+    assert copied[3].startswith("2027-02-27T22:00")
+
+
+def test_invalidation_row_txid_is_short_and_whole_in_the_tooltip(make):
+    """#136: the invalidation row shows its txid shortened, the tooltip
+    has it whole (and the search finds it)."""
+    s = _history_with_invalidation(make)
+    lst = _list(s)
+    first = lst.model().index(1, 0)
+    txid = first.data(lst.ROLE_KEY)
+    paint = first.data(lst.ROLE_CUSTOM_PAINT)
+    assert txid[:8] + "…" + txid[-8:] in paint.sub and txid not in paint.sub
+    assert txid in first.data(Qt.ItemDataRole.ToolTipRole)
+    assert txid in first.data(lst.ROLE_SEARCH)
