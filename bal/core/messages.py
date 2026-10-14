@@ -508,10 +508,14 @@ def heir_error_message(e):
         ExtendedPrivateKeyNotAddress,
         ExtendedPublicKeyNotAddress,
         HeirExpiredException,
+        HeirNameNotValid,
         LocktimeNotValid,
         NotAnAddress,
     )
 
+    # #139 (owner's ZIP test): an empty name.
+    if isinstance(e, HeirNameNotValid):
+        return _("Write a name for the heir.")
     # #138 (owner): an extended key instead of an address. The key itself
     # is never repeated (a private one must not be shown anywhere).
     if isinstance(e, ExtendedPrivateKeyNotAddress):

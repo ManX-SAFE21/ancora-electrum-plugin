@@ -1059,6 +1059,17 @@ class Heirs(dict, Logger):
 
     @staticmethod
     def validate_heir(k, v, timestamp_to_check=False):
+        """Validate the heir ``k`` -> ``v`` (address, amount, locktime).
+
+        Returns ``(address, amount, locktime)`` as they are stored.
+        #139 (owner's ZIP test): a name empty after strip is refused with
+        ``HeirNameNotValid`` before anything is put in the heirs dict
+        (Electrum's ``StoredDict`` asserts on the key "" when saving). The
+        name itself is never changed: an existing name with spaces still
+        matches.
+        """
+        if not str(k if k is not None else "").strip():
+            raise HeirNameNotValid("")
         address = Heirs.validate_address(v[HEIR_ADDRESS])
         if is_op_return_address(v[HEIR_ADDRESS]):
             amount = "0"
@@ -1103,6 +1114,10 @@ class ExtendedPrivateKeyNotAddress(NotAnAddress):
 
 class AmountNotValid(ValueError):
     pass
+
+
+class HeirNameNotValid(ValueError):
+    """An heir name empty after strip (#139, owner's ZIP test)."""
 
 
 class LocktimeNotValid(ValueError):

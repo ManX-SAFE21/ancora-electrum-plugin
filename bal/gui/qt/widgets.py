@@ -1878,21 +1878,118 @@ class WillSettingsWidget(QWidget):
 
 
 class PercAmountEdit(BTCAmountEdit):
+    """The heir's amount: a percentage or a fixed amount (#139, owner).
+
+    The mode is chosen with the two buttons of the heir window
+    (``set_percentage``); the field never holds a "%": the user types only
+    the number. A "%" typed (or pasted) anyway switches the field to the
+    Percentage mode and is dropped (``mode_changed`` tells the buttons).
+    The unit is painted at the right ("%" or the wallet's base unit, e.g.
+    mBTC) and the right text margin keeps the text out from under it
+    (``reserve_unit_space``). ``amount_text`` / ``set_amount_text`` give and
+    take the text as stored before #139 ("30%" or "0.3"), so the stored
+    format, ``Util.encode_amount`` and the edit hint are unchanged.
+
+    The field starts in the Fixed mode; the heir window chooses the mode.
+    """
+
+    #: The mode changed: True for Percentage, False for Fixed amount.
+    mode_changed = pyqtSignal(bool)
+
+    #: Pixels between the unit and the right edge of the text area, as
+    #: Electrum's ``AmountEdit.paintEvent`` paints it (``adjust(.., -10, ..)``).
+    UNIT_RIGHT_PAD = 10
+    #: Extra pixels between the last character of the text and the unit.
+    UNIT_GAP = 4
+
     def __init__(self, decimal_point, is_int=False, parent=None, *, max_amount=None):
+        """The field in the Fixed mode, with the room for its unit reserved."""
         super().__init__(decimal_point, is_int, parent, max_amount=max_amount)
+        self.percentage = False
+        self.is_perc = False
+        self.reserve_unit_space()
 
     def numbify(self):
-        # The text sanitisation lives in bal.core.input_rules.
+        """Keep digits and the decimal point; a typed "%" means Percentage.
+
+        The text sanitisation lives in ``bal.core.input_rules``; here the
+        "%" is taken out of the text and turned into the mode (#139).
+        """
         text = self.text().strip()
         if text == "!":
             self.shortcut.emit()
             return
         pos = self.cursorPosition()
-        s, self.is_perc = normalize_perc_amount_text(text, DECIMAL_POINT)
-
+        s, typed_perc = normalize_perc_amount_text(text, DECIMAL_POINT)
+        if typed_perc:
+            s = s.replace("%", "")
         self.setText(s)
         self.setModified(self.hasFocus())
-        self.setCursorPosition(pos)
+        self.setCursorPosition(min(pos, len(s)))
+        if typed_perc:
+            self.set_percentage(True)
+        self.is_perc = self.percentage
+
+    def set_percentage(self, percentage):
+        """Switch to the Percentage (True) or the Fixed amount (False) mode.
+
+        The number typed stays; the unit and its reserved room follow.
+        ``mode_changed`` is emitted only when the mode really changes.
+        """
+        percentage = bool(percentage)
+        changed = percentage != self.percentage
+        self.percentage = percentage
+        self.is_perc = percentage
+        self.reserve_unit_space()
+        self.update()
+        if changed:
+            self.mode_changed.emit(percentage)
+
+    def unit_text(self):
+        """The unit shown at the right: "%" or the wallet's base unit.
+
+        "" when the base unit cannot be read (a plain number given as
+        ``decimal_point`` instead of the window's getter).
+        """
+        if self.percentage:
+            return "%"
+        try:
+            return self.base_unit() if self.base_unit else ""
+        except Exception:
+            return ""
+
+    def reserve_unit_space(self):
+        """Keep the text out from under the unit; return the right margin.
+
+        Like #138's ``reserve_button_space`` for the address field: the
+        unit is painted over the line edit, so the right text margin is set
+        to its width plus the padding ``paintEvent`` leaves and a small gap.
+        """
+        unit = self.unit_text()
+        right = 0
+        if unit:
+            right = (self.fontMetrics().horizontalAdvance(unit)
+                     + self.UNIT_RIGHT_PAD + self.UNIT_GAP)
+        margins = self.textMargins()
+        self.setTextMargins(margins.left(), margins.top(), right, margins.bottom())
+        return right
+
+    def amount_text(self):
+        """The text as stored before #139: "30%" in Percentage, else "30".
+
+        Empty when nothing is typed (never a lone "%").
+        """
+        text = self.text().strip()
+        if self.percentage and text:
+            return text + "%"
+        return text
+
+    def set_amount_text(self, text):
+        """Show a stored amount text ("30%" or "0.3") and choose its mode."""
+        text = str(text or "").strip()
+        percentage = text.endswith("%")
+        self.set_percentage(percentage)
+        self.setText(text[:-1] if percentage else text)
 
     def _get_amount_from_text(self, text: str) -> Union[None, Decimal, int]:
         return parse_perc_amount(text, DECIMAL_POINT)
@@ -1904,22 +2001,27 @@ class PercAmountEdit(BTCAmountEdit):
         return out
 
     def paintEvent(self, event):
+        """The line edit, then its unit at the right, in grey (#139).
+
+        Always painted (the pre-#139 "{} or perc value" placeholder of the
+        empty field is gone: the buttons and the grey line say it now).
+        """
         QLineEdit.paintEvent(self, event)
-        if self.base_unit:
+        unit = self.unit_text()
+        if unit:
             panel = QStyleOptionFrame()
             self.initStyleOption(panel)
             text_rect = self.style().subElementRect(
                 QStyle.SubElement.SE_LineEditContents, panel, self
             )
-            text_rect.adjust(2, 0, -10, 0)
+            text_rect.adjust(2, 0, -self.UNIT_RIGHT_PAD, 0)
             painter = QPainter(self)
             painter.setPen(ColorScheme.GRAY.as_color())
-            if len(self.text()) == 0:
-                painter.drawText(
-                    text_rect,
-                    int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
-                    _("{} or perc value").format(self.base_unit()),
-                )
+            painter.drawText(
+                text_rect,
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+                unit,
+            )
 
 
 

@@ -113,7 +113,7 @@ def _user_facing(e):
     if isinstance(e, heirs_mod.HeirAmountIsDustException):
         return UserFacingException(str(e))
     if isinstance(e, (heirs_mod.NotAnAddress, heirs_mod.AmountNotValid,
-                      heirs_mod.LocktimeNotValid)):
+                      heirs_mod.LocktimeNotValid, heirs_mod.HeirNameNotValid)):
         # #135: the same plain sentence as the "Edit heir" dialog (one
         # helper; CHANGELOG #104: never "not an address, not an address").
         return UserFacingException(heir_error_message(e))

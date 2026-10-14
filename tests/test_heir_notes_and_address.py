@@ -52,6 +52,15 @@ ZPUB = ("zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSd
 XPUB_MESSAGE = ("This is an extended public key (xpub/zpub), not an address: in the "
                 "heir's wallet open Receive and copy one address.")
 XPRV_MESSAGE = "This is a PRIVATE key: never paste it anywhere. Use one address from Receive."
+# #139: the amount's "?" text (it replaced "Fixed or Percentage amount if
+# end with %").
+AMOUNT_HELP = (
+    "Percentage: a share of the wallet balance (e.g. 30). The heirs' percentages "
+    "are weights: together they share, in proportion, what is left after the fees "
+    "and the fixed amounts (e.g. two heirs at 30 and no others: half each). "
+    "Fixed amount: an exact amount in the wallet's unit, paid first. "
+    "If no heir has a percentage, what is left over is shared among the heirs "
+    "with a fixed amount, in proportion: the wallet is always emptied completely.")
 
 
 @pytest.fixture
@@ -147,8 +156,9 @@ def test_note_saved_renamed_deleted(make, monkeypatch):
 
 
 def test_note_help_and_length_cap(make, monkeypatch):
-    """The "?" texts (the four of before and the notes' one) and the grey
-    address line are there; a note over the cap is refused."""
+    """The "?" texts (the four of before and the notes' one; #139: the
+    amount's is new) and the grey address line are there; a note over the
+    cap is refused."""
     s, rbw = make()
     seen = {}
     dialog(monkeypatch, note="x" * (heir_notes.MAX_LENGTH + 1), seen=seen)
@@ -168,9 +178,11 @@ def test_note_help_and_length_cap(make, monkeypatch):
     monkeypatch.setattr(window_mod, "HelpButton", spy)
     dialog(monkeypatch, note="ok")
     rbw.new_heir_dialog("bob")
-    assert helps[:3] == ["Unique name or description about heir",
-                         "Bitcoin address or OP_RETURN: prefix + hex data",
-                         "Fixed or Percentage amount if end with %"]
+    # #139: the amount's "?" is made before the others (the OP_RETURN
+    # toggle hides it), so the first three are compared as a set.
+    assert sorted(helps[:3]) == sorted(["Unique name or description about heir",
+                                        "Bitcoin address or OP_RETURN: prefix + hex data",
+                                        AMOUNT_HELP])
     assert helps[-1] == ("Private notes for you, kept only in this wallet; never sent "
                          "to the will-executors or written on the blockchain.")
 
