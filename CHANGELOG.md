@@ -8846,3 +8846,10 @@ external load and smoke test OK on 4.8.2.
 **Outcome:** the owner checked the test ZIP in Electrum: OK (2026-10-14).
 For a look-only follow-up he did not want the whole suite run again
 before the commit.
+
+**Follow-up (test only, after the merge):** the whole suite, run for
+#137, found `tests/test_status_column.py::test_no_server_column_any_more`
+still expecting the five columns before #136. It now expects
+`FEE_ADDRESS` too. No plugin code changed. Lesson (owner OK,
+2026-10-14): a look-only step also runs every test file that names the
+touched class (here `PreviewList`).

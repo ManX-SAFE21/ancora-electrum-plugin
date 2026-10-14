@@ -143,9 +143,11 @@ def test_tooltip_shows_the_executor_and_the_history():
 
 def test_no_server_column_any_more():
     """No "Server" column (#83). CHANGELOG #129 added the will-executor's
-    fee ("FEE") before the Status column."""
+    fee ("FEE") before the Status column; #136 gave the fee address its
+    own column ("FEE_ADDRESS"), so each transaction row is one line."""
     names = [c.name for c in PreviewList.Columns]
-    assert names == ["LOCKTIME", "TXID", "WILLEXECUTOR", "FEE", "STATUS"]
+    assert names == ["LOCKTIME", "TXID", "WILLEXECUTOR", "FEE_ADDRESS", "FEE",
+                     "STATUS"]
 
 
 def test_saved_history_is_unchanged():
