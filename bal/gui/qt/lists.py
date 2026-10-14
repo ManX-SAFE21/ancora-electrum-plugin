@@ -15,7 +15,9 @@ and ``dialogs``.
 """
 
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
+from electrum.gui.qt.my_treeview import ElectrumItemDelegate
 from PyQt6.QtCore import QItemSelectionModel, QRect
 from PyQt6.QtGui import QFont, QFontMetrics
 from PyQt6.QtWidgets import (
@@ -541,6 +543,15 @@ class _VersionHeader(QHeaderView):
 _VERSION_ROW_BG = "#f2f2f2"
 
 
+def _long_delivery_text(locktime):
+    """The long form of the one date style: "13 October 2028, 00:00 UTC"
+    (the tooltip of a transaction row's delivery, #136)."""
+    try:
+        return datetext.utc_text(int(locktime))
+    except Exception:
+        return str(BalTimestamp(locktime))
+
+
 def _delivery_text(locktime):
     """The delivery date of a version row: "13 Oct 2028, 00:00 UTC".
 
@@ -555,26 +566,41 @@ def _delivery_text(locktime):
         return str(BalTimestamp(locktime))
 
 
-class _TallCell:
-    """Gives a two-line cell the height of its two lines (#129, owner).
+#: The space after the text of each column of the Will tab List (#136,
+#: owner: the one-line transaction rows were too close together).
+_COLUMN_GAP = 14
 
-    The Will-Executor cell holds the URL and, below it, the fee address;
-    Qt's default row height left the two lines touching. Electrum's item
-    delegate asks the object in ``MyTreeView.ROLE_CUSTOM_PAINT`` for the
-    size; the text itself is still drawn by the delegate.
-    """
 
-    def paint(self, painter, rect):
-        """Nothing to add: the delegate draws the text."""
+class _GapDelegate(ElectrumItemDelegate):
+    """Electrum's item delegate, with :data:`_COLUMN_GAP` more width per
+    column (#136). The columns size to their contents (``ResizeToContents``),
+    so each one ends that much after its widest text; the stretched last
+    column (Status) takes the rest. The height and the drawing are
+    Electrum's: every row stays one line."""
 
-    def sizeHint(self, default_size):  # noqa: N802 - Electrum's name
-        """At least two text lines plus a margin."""
-        line = QFontMetrics(QApplication.font()).height()
-        return QSize(default_size.width(), max(default_size.height(), 2 * line + 10))
+    def sizeHint(self, option, idx):  # noqa: N802 - Qt's name
+        """The default size, wider by the gap."""
+        size = super().sizeHint(option, idx)
+        size.setWidth(size.width() + _COLUMN_GAP)
+        return size
 
-    def show_tooltip(self, evt):
-        """No own tooltip."""
-        return False
+
+def _host_of(url):
+    """``we.bitcoin-after.life`` of ``https://we.bitcoin-after.life/…``
+    (#136: the Will-Executor cell); the text itself when it is no URL."""
+    text = str(url or "")
+    host = urlparse(text).hostname if "://" in text else None
+    return host or text
+
+
+def _short_middle(text, head=8, tail=8):
+    """``9c0c1353…7f94553b``: the first ``head`` and last ``tail``
+    characters of a long id or address, "…" between (#136, owner: the
+    List's rows ran off the right edge). Short texts are kept whole."""
+    text = str(text or "")
+    if len(text) <= head + tail + 1:
+        return text
+    return "{}…{}".format(text[:head], text[-tail:])
 
 
 def _executor_fee(item):
@@ -634,6 +660,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         LOCKTIME = enum.auto()
         TXID = enum.auto()
         WILLEXECUTOR = enum.auto()
+        # #136 (owner): the fee address in a column of its own, so every
+        # transaction row is ONE line.
+        FEE_ADDRESS = enum.auto()
         FEE = enum.auto()
         STATUS = enum.auto()
 
@@ -644,6 +673,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         Columns.LOCKTIME: N_("Locktime"),
         Columns.TXID: N_("Txid"),
         Columns.WILLEXECUTOR: N_("Will-Executor"),
+        Columns.FEE_ADDRESS: N_("Fee address"),
         Columns.FEE: N_("Executor fee"),
         Columns.STATUS: N_("Status"),
     }
@@ -703,6 +733,8 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         self.hidden_versions = 0
 
         self.setModel(QStandardItemModel(self))
+        # #136: some space between the columns (see _GapDelegate).
+        self.setItemDelegate(_GapDelegate(self))
         # The header names the version level (owner, after the ZIP test).
         self.setHeader(_VersionHeader(self))
         self.header().setResizeContentsPrecision(0)
@@ -877,6 +909,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         )
 
         menu.addSeparator()
+        # #136: "Copy" > each column, with the FULL values (the cells show
+        # some of them shortened).
+        self.add_copy_menu(menu, idx)
         menu.addAction(
             _("copy id"),
             lambda: self.copy_txids(selected_keys),
@@ -1027,6 +1062,15 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         except Exception:
             return "{} sat".format(sats)
 
+    def _format_unit(self, sats):
+        """``sats`` in the wallet's unit only, no fiat ("0.15627 mBTC"):
+        the Fee cell of a transaction row (#136, owner); the fiat value
+        goes in its tooltip (:meth:`_format_sats`)."""
+        try:
+            return self.bal_window.window.config.format_amount_and_units(sats)
+        except Exception:
+            return self._format_sats(sats)
+
     def _heirs_text(self, version):
         """``"alice 60%, bob 40%"``: each heir with the amount as set."""
         parts = []
@@ -1100,12 +1144,13 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         return text + " · " + more
 
     def _spanned_row(self, kind, key, head, sub, state="", colour="#555555",
-                     background=_VERSION_ROW_BG, number=""):
+                     background=_VERSION_ROW_BG, number="", tooltip=None):
         """A row that spans every column, drawn by :class:`_RowPaint`.
 
         The first cell carries the kind, the key, the search text and the
         tooltip; its own text stays empty (the painter draws it), so the
-        Locktime column is not widened by it.
+        Locktime column is not widened by it. ``tooltip`` (#136): another
+        tooltip than the row's texts (the full values of shortened ones).
         """
         items = [QStandardItem("") for _c in self.Columns]
         first = items[0]
@@ -1114,8 +1159,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         first.setData(_RowPaint(head, sub, state, colour, number),
                       MyTreeView.ROLE_CUSTOM_PAINT)
         whole = " · ".join(t for t in (number, head, sub, state) if t)
-        first.setData(whole.lower(), self.ROLE_SEARCH)
-        first.setToolTip(whole)
+        # The search looks in the full values too (#136).
+        first.setData((tooltip or whole).lower(), self.ROLE_SEARCH)
+        first.setToolTip(tooltip or whole)
         for item in items:
             item.setEditable(False)
             if background:
@@ -1125,30 +1171,59 @@ class PreviewList(MyTreeView, MessageBoxMixin):
     def _variant_row(self, txid, item, in_force=False):
         """The row of one transaction (a will-executor's copy or the backup).
 
-        In columns, as the owner asked: the locktime as before (bold), the
-        FULL txid, the will-executor URL with its fee address below it (or
-        "no will-executor" for the backup), its fee, and the status of
-        #83, the whole row in the colour of its status. ``in_force``: the
-        item is in force (``will_state``), so a REPLACED flag left by a
-        later draft does not make it read "Replaced" (owner, #129).
+        In columns, as the owner asked: the delivery, the txid, the
+        will-executor URL with its fee address below it (or "no
+        will-executor" for the backup), its fee, and the status of #83, the
+        whole row in the colour of its status. ``in_force``: the item is in
+        force (``will_state``), so a REPLACED flag left by a later draft
+        does not make it read "Replaced" (owner, #129).
+
+        #136 (owner: the row ran off the right edge): the delivery in the
+        short date style of the version rows, not bold; the txid and the
+        fee address shortened in the middle ("9c0c1353…7f94553b"); the fee
+        in the wallet's unit only. Each full value is in the cell's
+        tooltip and is what "Copy" copies (``ROLE_CLIPBOARD_DATA``); the
+        search looks in the full values.
         """
         we = getattr(item, "we", None)
+        executor_full = None
+        address = ""
         if we:
-            executor = we.get("url") or ""
+            # #136 (owner): the host only ("we.bitcoin-after.life"), the
+            # full URL in the tooltip and in Copy; the fee address in its
+            # own column: one line per row.
+            executor_full = we.get("url") or ""
+            executor = _host_of(executor_full)
             address = we.get("address") or ""
-            if address:
-                executor = executor + "\n" + address
         else:
             # A backup transaction (the option "No will-executor"); it used
             # to show the string "None".
             text = _("no will-executor (backup transaction)")
             executor = text[:1].upper() + text[1:]
         fee = _executor_fee(item)
+        locktime_raw = str(BalTimestamp(item.tx.locktime))
         labels = [""] * len(self.Columns)
-        labels[self.Columns.LOCKTIME] = str(BalTimestamp(item.tx.locktime))
-        labels[self.Columns.TXID] = txid
+        labels[self.Columns.LOCKTIME] = _delivery_text(item.tx.locktime)
+        labels[self.Columns.TXID] = _short_middle(txid)
         labels[self.Columns.WILLEXECUTOR] = executor
-        labels[self.Columns.FEE] = self._format_sats(fee) if fee is not None else ""
+        labels[self.Columns.FEE_ADDRESS] = _short_middle(address)
+        labels[self.Columns.FEE] = self._format_unit(fee) if fee is not None else ""
+        # The full values (#136): tooltip, Copy and search.
+        full = {
+            self.Columns.LOCKTIME: locktime_raw,
+            self.Columns.TXID: txid,
+            self.Columns.WILLEXECUTOR: executor_full or executor,
+            self.Columns.FEE_ADDRESS: address,
+            self.Columns.FEE: labels[self.Columns.FEE],
+        }
+        tips = {
+            self.Columns.LOCKTIME: "{}\n{}".format(
+                _long_delivery_text(item.tx.locktime), locktime_raw),
+            self.Columns.TXID: txid,
+            self.Columns.WILLEXECUTOR: executor_full or executor,
+            self.Columns.FEE_ADDRESS: address,
+            self.Columns.FEE: self._format_sats(fee) if fee is not None else "",
+        }
         # CHANGELOG #83: what this row is for the will today, coherent with
         # its colour (where its will-executor stands); the executor and the
         # whole history are in the tooltip.
@@ -1158,22 +1233,24 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         for cell in items:
             cell.setEditable(False)
             cell.setBackground(colour)
-        # Group C / C6: the Locktime column in bold, so the delivery time
-        # stands out at a glance.
-        bold_font = items[self.Columns.LOCKTIME].font()
-        bold_font.setBold(True)
-        items[self.Columns.LOCKTIME].setFont(bold_font)
+        # #136 (owner): the delivery no longer in bold (the same weight as
+        # the other cells); each shortened value whole in its tooltip and
+        # in "Copy".
+        for column, value in full.items():
+            items[column].setData(value, MyTreeView.ROLE_CLIPBOARD_DATA)
+            if tips[column]:
+                items[column].setToolTip(tips[column])
         try:
             items[self.Columns.STATUS].setToolTip(will_status_tooltip(item))
         except Exception as tip_err:
             _logger.debug(f"status tooltip error: {tip_err}")
-        if "\n" in executor:
-            items[self.Columns.WILLEXECUTOR].setData(
-                _TallCell(), MyTreeView.ROLE_CUSTOM_PAINT)
         first = items[0]
         first.setData("variant", self.ROLE_KIND)
         first.setData(txid, self.ROLE_KEY)
-        first.setData(" ".join(labels).lower(), self.ROLE_SEARCH)
+        search = list(labels)
+        for column, value in full.items():
+            search[column] = value
+        first.setData(" ".join(search).lower(), self.ROLE_SEARCH)
         return items
 
     def _subheader_row(self):
@@ -1226,12 +1303,16 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         sub = []
         if inv.fee is not None:
             sub.append("{} {}".format(_("Miner fee"), self._format_sats(inv.fee)))
-        sub.append(inv.txid)
+        # #136: the txid shortened like the transaction rows; whole in the
+        # tooltip ("copy id" copies it whole).
+        head = _("Invalidation transaction")
+        tip = " · ".join([head] + sub + [inv.txid, state])
+        sub.append(_short_middle(inv.txid))
         return self._spanned_row(
             # #135 follow-up (owner): never "paid"; the bitcoin went back to
             # the same wallet, only the network fee was paid.
-            "invalidation", inv.txid, _("Invalidation transaction"), " · ".join(sub),
-            state, version_state_colour("invalidated"),
+            "invalidation", inv.txid, head, " · ".join(sub),
+            state, version_state_colour("invalidated"), tooltip=tip,
         )
 
     def _will_items(self):
