@@ -9542,3 +9542,33 @@ E/F/K) and then moves the stored date. Prepare treated it as an error.
 - a Check that rebuilt the will, then Sign and send: verified 4 of 4;
 - a second Check was clean;
 - the plugin log has no "save_db failed" line, only the new INFO line.
+
+## 144. "Bitcoin address" with a capital B in the QR message
+
+**Date:** 2026-10-15
+
+**Problem:** the message shown when the camera of the heir window reads a
+QR code with no address said "This QR code does not contain a bitcoin
+address." (Italian "indirizzo bitcoin", Spanish "dirección bitcoin"). Every
+other text of the plugin writes "Bitcoin address" / "indirizzo Bitcoin" /
+"dirección Bitcoin".
+
+**What changed:**
+- `bal/gui/qt/window.py`: "This QR code does not contain a Bitcoin
+  address."
+- Catalogs refreshed: Italian "Questo codice QR non contiene un indirizzo
+  Bitcoin.", Spanish "Este código QR no contiene una dirección Bitcoin.".
+- The refresh also marks as obsolete the old Prepare popup text
+  "Error:{}\n {}", no longer in the code since #142 (that step added no
+  msgid and did not refresh the catalogs).
+- Text only: no logic changed.
+
+**Tests:** `tests/test_heir_notes_and_address.py` reads the new text.
+
+**Verification (text-only step):**
+- ruff clean.
+- Catalog check: 1 new msgid translated in IT and ES, 2 expected removals,
+  the template equals a fresh extraction; `test_translations` and
+  `test_i18n` pass.
+- Affected tests, goldens and divergence list: 166 passed; `tests/golden`
+  unchanged.
