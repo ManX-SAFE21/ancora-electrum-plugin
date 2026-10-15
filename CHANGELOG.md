@@ -9737,3 +9737,49 @@ as if divinaly did not hold it.
 divinaly: first Check "received, no answer to the check (15 s)", the
 will in force, Sending 5/5; second Check 5/5 received and verified;
 whole suite in both orders: 2326 passed each time.
+
+## 148. The bal_* commands no longer change a wallet whose plugin window is open
+
+**Date:** 2026-10-16
+
+**Found in the analysis of 2026-10-15** (probe with the window harness and
+three fake will-executors): each `bal_*` command builds a new controller
+that reads the heirs and the will from the wallet file, while the plugin
+window of an open wallet keeps its own copies and writes them back later.
+An heir added from Electrum's Console vanished at the next heir edit in
+the window; a will prepared from the Console was thrown away at wallet
+close, where the close Check (on by default) rebuilt, signed and sent a
+will built from the OLD heirs. The delivery date and fee were safe (one
+dict shared with the window).
+
+**What changed** (`bal/cli/commands.py`, the one entry point of every
+command, `_call`):
+- While the wallet's plugin window is open, the commands that change its
+  heirs or its will (`_WALLET_WRITES`: add, update, delete and import
+  heirs; prepare, rebuild, sign, broadcast, check with the executors,
+  export, import/merge) stop with "This wallet is open in the Safe21
+  Heartbeat window: make this change there, or close the wallet and use
+  the command line." Nothing is changed.
+- The will-executor list belongs to the plugin, not to one wallet: its
+  changes (`_EXECUTOR_WRITES`: add, update, select, delete, ping,
+  download, import) stop while any plugin window is open.
+- Everything else runs as before: the commands that only read, the
+  delivery date and fee (`delivery_*`), the plugin settings, and every
+  command once the wallet is closed (the window stays listed with
+  `disable_plugin` set) or without the GUI (daemon).
+- The messages stay in English, like the whole command line (`babel.cfg`
+  ignores `bal/cli`): no catalog change.
+
+**Tests:** `tests/test_cli_window_guard.py` (new, 25 tests, three fake
+will-executors): every wallet change refused with the wallet unchanged;
+every will-executor change refused, also for another wallet's window; the
+owner's case (an heir added in the Console); the reads and the fee still
+allowed and changing nothing; after the wallet closes and without the GUI
+every command runs; every command classified (a new command must join a
+list).
+
+**Verification:** ruff clean; owner's ZIP test in Electrum's Console with
+the wallet open: `bal_heirs_list()` and `bal_will_status()` answered,
+`bal_heirs_delete(...)` and `bal_willexecutors_ping()` refused with their
+messages, Heirs and Will tabs unchanged; whole suite in both orders: 2351
+passed each time.
