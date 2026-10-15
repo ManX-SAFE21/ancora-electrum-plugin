@@ -108,13 +108,20 @@ def dialog(monkeypatch, name=None, address=None, note=None, seen=None, amount=No
         if amount is not None:
             edits[2].setText(amount)
         if note is not None:
-            self.findChildren(QPlainTextEdit)[0].setPlainText(note)
+            notes_box(self).setPlainText(note)
         if seen is not None:
             seen["texts"] = [w.text() for w in self.findChildren(QLabel)]
-            seen["note"] = self.findChildren(QPlainTextEdit)[0].toPlainText()
+            seen["note"] = notes_box(self).toPlainText()
         return True
 
     monkeypatch.setattr(window_mod.BalDialog, "exec", fake_exec)
+
+
+def notes_box(d):
+    """The Notes box of the heir dialog ``d`` (#140: the message field is
+    a multi-line box too, so the type alone is not enough)."""
+    from bal.gui.qt.widgets import MessageEdit
+    return [w for w in d.findChildren(QPlainTextEdit) if not isinstance(w, MessageEdit)][0]
 
 
 def stored_notes(s):
@@ -179,10 +186,12 @@ def test_note_help_and_length_cap(make, monkeypatch):
     dialog(monkeypatch, note="ok")
     rbw.new_heir_dialog("bob")
     # #139: the amount's "?" is made before the others (the OP_RETURN
-    # toggle hides it), so the first three are compared as a set.
-    assert sorted(helps[:3]) == sorted(["Unique name or description about heir",
+    # toggle hides it); #140: the message's "?" too. The first four are
+    # compared as a set.
+    from bal.gui.qt.widgets import message_help_text
+    assert sorted(helps[:4]) == sorted(["Unique name or description about heir",
                                         "Bitcoin address or OP_RETURN: prefix + hex data",
-                                        AMOUNT_HELP])
+                                        AMOUNT_HELP, message_help_text()])
     assert helps[-1] == ("Private notes for you, kept only in this wallet; never sent "
                          "to the will-executors or written on the blockchain.")
 

@@ -44,6 +44,7 @@ This module is imported lazily by ``dialogs`` (it imports ``dialogs`` and
 ``lists``, which import ``dialogs`` at load time).
 """
 
+import html
 import time
 from typing import TYPE_CHECKING
 
@@ -60,7 +61,12 @@ from ...core import (
     wizard_date,
 )
 from ...core.future import delivery_form_text, time_left_text
-from ...core.heirs import is_op_return_address, percent_total
+from ...core.heirs import (
+    is_op_return_address,
+    message_names,
+    message_text,
+    percent_total,
+)
 from ...core.summary import selected_urls
 from ...core.util import Util, copy_structure
 from ...engine import context as engine_context
@@ -87,6 +93,7 @@ from .lists import (
     FRAMED_BUTTON_STYLE,
     HeirListWidget,
     WillExecutorWidget,
+    extra_messages_text,
     same_address_text,
 )
 from .widgets import LockTimeWidget, what_changes_box
@@ -267,6 +274,15 @@ def executor_fee_text(bal_window, willexecutors):
         note = _("you will pay only one of these: the one of the will-executor "
                  "that sends the will on the delivery day.")
     return "{}<br><span style='color:#6A737D'>{}</span>".format(value, note)
+
+
+def _is_message(value):
+    """True for a stored OP_RETURN message row (#140); False for anything
+    else, an unreadable row included."""
+    try:
+        return is_op_return_address(str(value[0]))
+    except (IndexError, KeyError, TypeError):
+        return False
 
 
 def heirs_text(bal_window, heirs):
@@ -960,6 +976,8 @@ class HeirsPage(_StepPage):
         model.rowsRemoved.connect(self.refresh)
         row = QHBoxLayout()
         for text, slot in ((N_("+ Add heir"), self.add_heir),
+                           # #140 (owner): the will message, one per will.
+                           (N_("✉ A message in the will"), self.add_message),
                            (N_("Import"), self.import_from_file),
                            (N_("Export"), self.export_to_file)):
             button = QPushButton(_(text))
@@ -979,11 +997,15 @@ class HeirsPage(_StepPage):
             wrap=True))
 
     def refresh(self, *_args):
-        """The total line and the Next button (no heirs: disabled)."""
+        """The total line and the Next button (no heirs: disabled).
+
+        #140 (owner): the message is not an heir: with only a message, Next
+        stays disabled and "Add at least one heir." stays shown.
+        """
         if not hasattr(self, "next_button"):
             return
         heirs = self.bal_window.heirs or {}
-        count = len(heirs)
+        count = len(heirs) - len(message_names(heirs))
         self.next_button.setEnabled(count > 0)
         self.error_label.setVisible(count == 0)
         total = percent_total(heirs) if count else None
@@ -999,13 +1021,22 @@ class HeirsPage(_StepPage):
                          "this total: the whole balance is spent.").format(number)
         self.total_label.setText(text)
         self.total_label.setVisible(bool(text))
-        same = same_address_text(heirs)
+        # #140: an old wallet with more than one message is told so.
+        same = "\n".join(t for t in (same_address_text(heirs),
+                                      extra_messages_text(heirs)) if t)
         self.same_address_label.setText(same)
         self.same_address_label.setVisible(bool(same))
 
     def add_heir(self):
         """"+ Add heir": today's New heir window, then the list again."""
         self.bal_window.new_heir_dialog()
+        self.heir_list_widget.update()
+        self.refresh()
+
+    def add_message(self):
+        """"✉ A message in the will" (#140): the message window, then the
+        list again."""
+        self.bal_window.message_dialog()
         self.heir_list_widget.update()
         self.refresh()
 
@@ -1138,8 +1169,12 @@ class SummaryPage(_StepPage):
         wes = Willexecutors.get_willexecutors(bw.bal_plugin)
         count = len(_selected(wes))
         rows = [(_("Delivery to the heirs"), when),
-                (_("Heirs"), self._heirs_value(bw)),
-                (_("Will-executors"), selected_text(count))]
+                (_("Heirs"), self._heirs_value(bw))]
+        message = self._message_value(bw)
+        if message:
+            # #140 (owner): the message has a row of its own.
+            rows.append((_("Message"), message))
+        rows.append((_("Will-executors"), selected_text(count)))
         fee = executor_fee_text(bw, wes)
         if fee:
             rows.append((_("Will-executors' fee"), fee))
@@ -1180,9 +1215,11 @@ class SummaryPage(_StepPage):
         pays), e.g. "alice 38.5% · bob 23.1% · carol 38.5%", with the grey
         "(recalculated in proportion)" when the written total is not 100.
         With a fixed amount the real shares depend on the balance: today's
-        text (``heirs_text``), never an invented share.
+        text (``heirs_text``), never an invented share. #140: the messages
+        are not heirs: they have their own row (:meth:`_message_value`).
         """
-        heirs = bw.heirs or {}
+        heirs = {name: value for name, value in (bw.heirs or {}).items()
+                 if not _is_message(value)}
         real = will_changes.real_shares_text(heirs)
         if real is None:
             return heirs_text(bw, heirs)
@@ -1191,6 +1228,15 @@ class SummaryPage(_StepPage):
             text += " <span style='color:#6A737D'>{}</span>".format(
                 _("(recalculated in proportion)"))
         return text
+
+    @staticmethod
+    def _message_value(bw):
+        """The "Message" value (#140): the text in quotes, or "" with no
+        message. Escaped: the label is rich text and the text is the
+        owner's own. More than one (an old wallet): joined by " / "."""
+        heirs = bw.heirs or {}
+        texts = [message_text(heirs[name][0]) for name in message_names(heirs)]
+        return " / ".join("“{}”".format(html.escape(t)) for t in texts)
 
     @staticmethod
     def _changes_rows(bw, wes):

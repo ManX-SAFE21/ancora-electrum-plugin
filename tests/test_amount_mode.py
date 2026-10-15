@@ -48,7 +48,7 @@ import flowkit as fk
 from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QToolButton
 
 from bal.core.heirs import Heirs
-from bal.gui.qt.widgets import PercAmountEdit
+from bal.gui.qt.widgets import MessageEdit, PercAmountEdit
 
 _APP = QApplication.instance() or QApplication(sys.argv)
 
@@ -325,21 +325,23 @@ def test_op_return_hides_buttons_unit_and_line(make, monkeypatch):
 
 
 def test_op_return_heir_opens_with_the_amount_hidden(make, monkeypatch):
-    """Editing an OP_RETURN heir: the amount row and grey line hidden from
-    the start (they never open as windows of their own)."""
+    """Editing an OP_RETURN heir: #140 (owner's ZIP test) opens the
+    message window, which has no amount field at all."""
+    from bal.gui.qt import window as window_mod
+    from bal.gui.qt.widgets import MessageEdit
     s, rbw = make()
     rbw.heirs["note"] = ["OP_RETURN:68656c6c6f", "0", rbw.heirs["bob"][2]]
     seen = {}
 
-    def steps(p):
-        line = p.label(PERCENTAGE_LINE)
-        seen["shown"] = [w.isVisibleTo(p.d) for w in (p.field, p.percentage, line)]
-        seen["windows"] = [w for w in (p.field.parentWidget(), line)
-                           if w.isWindow()]
+    def fake_exec(self):
+        """Look at the window, then Cancel."""
+        seen["amount"] = self.findChildren(PercAmountEdit)
+        seen["message"] = [w.text() for w in self.findChildren(MessageEdit)]
+        return False
 
-    script(monkeypatch, steps, accept=False)
+    monkeypatch.setattr(window_mod.BalDialog, "exec", fake_exec)
     rbw.new_heir_dialog("note")
-    assert seen == {"shown": [False] * 3, "windows": []}
+    assert seen == {"amount": [], "message": ["hello"]}
 
 
 # ---------------------------------------------------------------- edit hint
@@ -428,32 +430,38 @@ def test_op_return_hides_the_amount_help_and_the_address_line(make, monkeypatch)
 
 def test_op_return_message_right_under_the_address(make, monkeypatch):
     """D: shown on screen, the OP_RETURN message row sits right under the
-    address row (only the grid spacing between them) and the window
-    shrinks to its rows; back to an address it grows again."""
+    address row (only the grid spacing between them) and the window fits
+    its rows in both modes (no empty band). #140 adds the counter and the
+    warning under the message, so the OP_RETURN window is no longer
+    always shorter: it is compared with the height its rows need."""
     s, rbw = make()
     seen = {}
+
+    def fits(d):
+        """The window is as tall as its rows need (no empty band)."""
+        return abs(d.height() - d.sizeHint().height()) <= 2
 
     def steps(p):
         p.d.show()
         _APP.processEvents()
-        address_height = p.d.height()
         p.edits[1].setText(OP_RETURN)
         for _ in range(3):
             _APP.processEvents()
-        message = p.edits[3]
+        # #140: the message field is a two/three-line box (MessageEdit).
+        message = p.d.findChildren(MessageEdit)[0]
         assert message.isVisible()
         seen["gap"] = message.geometry().top() - p.edits[1].geometry().bottom()
-        seen["shrunk"] = p.d.height() < address_height
+        seen["fits_message"] = fits(p.d)
         p.edits[1].setText(fk.HEIR_ADDR["carol"])
         for _ in range(3):
             _APP.processEvents()
-        seen["grown"] = p.d.height() >= address_height
+        seen["fits_address"] = fits(p.d)
         p.d.hide()
 
     script(monkeypatch, steps, accept=False)
     rbw.new_heir_dialog()
     assert 0 < seen["gap"] <= 12
-    assert seen["shrunk"] and seen["grown"]
+    assert seen["fits_message"] and seen["fits_address"]
 
 
 def script_until_cancel(monkeypatch, names, seen):

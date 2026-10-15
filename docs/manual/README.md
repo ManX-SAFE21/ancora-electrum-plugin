@@ -119,9 +119,11 @@ question; a bar on top shows where you are (*1 When, 2 Heirs,
    shows its renewal here. At the bottom left, *Mode: Basic · Advanced*
    switches to ADVANCED (with the phrase "at My Risk") and the wizard goes
    on with the ADVANCED pages.
-2. **Who receives the bitcoin?** The heirs list with *+ Add heir*, *Import*
-   and *Export*, the total of the shares and the reminder that 100% of the
-   wallet balance is spent. At least one heir is needed.
+2. **Who receives the bitcoin?** The heirs list with *+ Add heir*,
+   *✉ A message in the will* (see *A message in the will*), *Import* and
+   *Export*, the total of the shares and the reminder that 100% of the
+   wallet balance is spent. At least one heir is needed (a message is not
+   an heir).
 3. **Who keeps the will?** The will-executors list is downloaded and pinged
    at once, and only the will-executors that answer are selected. A
    will-executor you deselected yourself (in the will-executor list) stays
@@ -134,7 +136,8 @@ question; a bar on top shows where you are (*1 When, 2 Heirs,
    will-executor*) is shown below.
 4. **Check and create.** The delivery (UTC and your time zone, and, while
    a will is in force, *In force now → After signing* with how much
-   earlier or later), the heirs, the will-executors and their fee. *Create the will* prepares the
+   earlier or later), the heirs, the message (if any), the will-executors
+   and their fee. *Create the will* prepares the
    will, asks for the password to sign it and sends it to the
    will-executors.
 
@@ -324,7 +327,7 @@ Heirs* window appears:
 Here you enter the following parameters:
 
 - **Name:** name of the heir, with any details you prefer.
-- **Address:** the Bitcoin wallet address where the inheritance will be sent.
+- **Bitcoin address:** the Bitcoin wallet address where the inheritance will be sent.
   It is **one single address** (e.g. `bc1q…`), taken from *Receive* in the
   heir's wallet. An extended public key (`xpub`, `zpub`…) is not an address
   and is refused with an explanation; an extended **private** key (`xprv`…)
@@ -354,6 +357,39 @@ Here you enter the following parameters:
   name; they follow the heir when you rename or delete it.
 
 > **NB:** You can add several heirs — even 10 or more.
+
+## A message in the will (OP_RETURN)
+
+The **✉ A message in the will** button (page 2 of the BASIC wizard, and next
+to *New Heir* in the Heirs tab) adds a short text to the will transaction, in
+an OP_RETURN output: for example *"To Marco and Giulia: everything I have is
+yours. With love, dad"*.
+
+- Only the text is asked: at most **80 bytes**, in a box of two lines that
+  shows it all (one line of text: a line break becomes a space). A counter
+  under the box shows the bytes used (e.g. *74 / 80 bytes*); a letter with
+  an accent takes 2 bytes, an emoji 4; a longer text is cut.
+- The plugin names it **OP_RETURN message** in the Heirs list (with ✉ in
+  front and no amount; the whole text in the tooltip). The name is only for
+  you: it is not written in the transaction. A message made before keeps its
+  name. A double click (or *Edit*) on it opens the same ✉ window.
+- **One message per will.** Pressing the button again opens the same
+  message. A second message is refused everywhere (the windows, the command
+  line, an import), because a transaction with two OP_RETURN outputs is not
+  relayed by nodes older than Bitcoin Core 30. A wallet that already has
+  more than one is not changed: a note asks you to delete the others.
+- **It is public.** The message is written on the blockchain at the
+  delivery, with the will transaction, and stays there forever: anyone can
+  read it with a block explorer (e.g. mempool.space). The will-executors can
+  read it before the delivery. Do not write private data.
+- A new text means signing the will again. The message is not an heir: with
+  only a message the wizard still asks for at least one heir.
+- The wizard's summary shows it in a row of its own, *What changes* shows it
+  added, changed or removed, and the PDF report has a *Message in the will*
+  section.
+- In ADVANCED you can still type `OP_RETURN:` in the Address field of *New
+  Heir*: the same counter, warning and one-message rule apply; with no name,
+  the message gets the automatic one.
 
 ---
 
@@ -685,7 +721,8 @@ who receives your bitcoin, how much and when: keep it in a safe place.
   with the time left, the delivery form, the Check Alive, the will‑executors, the miner fee);
   the timeline of the Future view with its ruler of the years; the
   **heirs** with their real share, the amount and the **full address**
-  under each name, then the total; the **will‑executors** (the list, a small
+  under each name, then the total; the **message in the will**, if there
+  is one (its text and when it becomes public); the **will‑executors** (the list, a small
   square in the colour of each one's state); **how it works**.
 - **Next page — technical details**: the locktime and the miner fee; for
   each will‑executor its fee and the full id (txid) of its transaction;

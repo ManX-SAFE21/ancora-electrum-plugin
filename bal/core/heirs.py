@@ -446,6 +446,132 @@ def shared_addresses(heirs):
     return sorted(pairs)
 
 
+#: The most a will message carries: 80 bytes of UTF-8 text (#140), the
+#: limit of ``validate_op_return_hex`` and of the standard OP_RETURN output.
+MESSAGE_MAX_BYTES = 80
+
+
+def message_names(heirs):
+    """The sorted names of the OP_RETURN message rows of ``heirs`` (#140).
+
+    ``heirs``: ``{name: [address, ...]}``. Owner: one message per will; an
+    old wallet may still have more (shown, never changed by itself).
+    """
+    names = []
+    for name, value in (heirs or {}).items():
+        try:
+            if is_op_return_address(str(value[HEIR_ADDRESS])):
+                names.append(str(name))
+        except (IndexError, TypeError):
+            continue
+    return sorted(names)
+
+
+def message_text(address):
+    """The text of an ``OP_RETURN:<hex>`` address (#140); "" when unreadable."""
+    try:
+        return bytes.fromhex(str(address)[len(OP_RETURN_PREFIX):]).decode(
+            "utf-8", errors="replace")
+    except ValueError:
+        return ""
+
+
+def message_address(text):
+    """The stored address of the message ``text``: ``OP_RETURN:<hex>`` (#140)."""
+    return OP_RETURN_PREFIX + str(text).encode("utf-8").hex()
+
+
+def message_size(text):
+    """How many bytes ``text`` takes in the transaction (UTF-8, #140).
+
+    Owner: the counter counts bytes, not letters: "è" is 2, an emoji 4.
+    """
+    return len(str(text).encode("utf-8"))
+
+
+def fit_message(text, limit=MESSAGE_MAX_BYTES):
+    """``text`` cut to at most ``limit`` UTF-8 bytes, never inside a
+    character (#140: the field never holds more than fits)."""
+    text = str(text)
+    if message_size(text) <= limit:
+        return text
+    return text.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
+
+
+def other_message(heirs, address, except_name=None):
+    """The name of ANOTHER message row when ``address`` is a message, or
+    None (#140, owner: one message per will).
+
+    ``except_name``: the row being edited (it may change its own text).
+    WHY: two OP_RETURN rows give two OP_RETURN outputs in one transaction,
+    which nodes before Bitcoin Core 30 do not relay.
+    """
+    if not is_op_return_address(str(address)):
+        return None
+    for name in message_names(heirs):
+        if name != except_name:
+            return name
+    return None
+
+
+def check_one_message(heirs, name, address):
+    """Raise :class:`SecondMessageNotAllowed` when the row ``name`` at
+    ``address`` would be a second message in ``heirs`` (#140).
+
+    A row that is already a message may always change its text: an edit
+    never adds a message (an old wallet with two keeps working).
+    """
+    try:
+        if is_op_return_address(str((heirs or {})[name][HEIR_ADDRESS])):
+            return
+    except (KeyError, IndexError, TypeError):
+        pass
+    other = other_message(heirs, address, except_name=name)
+    if other is not None:
+        raise SecondMessageNotAllowed(other)
+
+
+def automatic_message_name(heirs, base):
+    """The name the plugin gives a new message (#140, owner).
+
+    ``base``: the translated "OP_RETURN message" (a plain name, no symbol:
+    the ✉ is only drawn by the lists). When a payee already has that name,
+    "base 2", "base 3"... so an heir is never overwritten.
+    """
+    heirs = heirs or {}
+    if base not in heirs:
+        return base
+    number = 2
+    while "{} {}".format(base, number) in heirs:
+        number += 1
+    return "{} {}".format(base, number)
+
+
+def keep_one_message(heirs, incoming):
+    """``(kept, skipped)`` of an import of ``incoming`` into ``heirs`` (#140).
+
+    ``incoming``: ``{name: value}`` already validated, in file order; it is
+    merged with ``dict.update`` (a name of the file replaces the same name).
+    A message of the file is kept only while the heirs have no other
+    message afterwards; the next ones are skipped (their names returned).
+    """
+    remaining = [n for n in message_names(heirs) if n not in incoming]
+    count = len(remaining)
+    kept, skipped = {}, []
+    for name, value in incoming.items():
+        try:
+            is_message = is_op_return_address(str(value[HEIR_ADDRESS]))
+        except (IndexError, TypeError):
+            is_message = False
+        if is_message:
+            if count >= 1:
+                skipped.append(name)
+                continue
+            count += 1
+        kept[name] = value
+    return kept, skipped
+
+
 def _json_safe(value, _path="heirs"):
     """Backward-compatible alias of :func:`bal.core.util.copy_structure`.
 
@@ -483,10 +609,18 @@ class Heirs(dict, Logger):
         self.db.put("heirs", _json_safe(dict(self)))
 
     def import_file(self, path):
+        """Import the heirs of the JSON file ``path`` (merged by name).
+
+        #140 (owner): one message per will; a message of the file when the
+        heirs already have one is not imported. Returns the names of those
+        skipped messages (the GUI says so).
+        """
         data = read_json_file(path)
         data = Heirs._validate(data)
+        data, skipped = keep_one_message(self, data)
         self.update(data)
         self.save()
+        return skipped
 
     def export_file(self, path):
         write_json_file(path, self)
@@ -1118,6 +1252,13 @@ class AmountNotValid(ValueError):
 
 class HeirNameNotValid(ValueError):
     """An heir name empty after strip (#139, owner's ZIP test)."""
+
+
+class SecondMessageNotAllowed(ValueError):
+    """A second OP_RETURN message in the will (#140, owner: one only).
+
+    ``args[0]``: the name of the message already there.
+    """
 
 
 class LocktimeNotValid(ValueError):

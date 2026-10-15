@@ -113,7 +113,8 @@ def _user_facing(e):
     if isinstance(e, heirs_mod.HeirAmountIsDustException):
         return UserFacingException(str(e))
     if isinstance(e, (heirs_mod.NotAnAddress, heirs_mod.AmountNotValid,
-                      heirs_mod.LocktimeNotValid, heirs_mod.HeirNameNotValid)):
+                      heirs_mod.LocktimeNotValid, heirs_mod.HeirNameNotValid,
+                      heirs_mod.SecondMessageNotAllowed)):
         # #135: the same plain sentence as the "Edit heir" dialog (one
         # helper; CHANGELOG #104: never "not an address, not an address").
         return UserFacingException(heir_error_message(e))
@@ -1885,13 +1886,23 @@ class BalController(BalSettingsController):
 
     def heirs_add(self, name, address, amount, locktime=None):
         """Add (or replace) the heir ``name``; ``locktime`` only with
-        multiverse on (see :meth:`_check_heir_locktime`)."""
+        multiverse on (see :meth:`_check_heir_locktime`). #140: never a
+        second message (:meth:`_check_one_message`)."""
         self._check_heir_locktime(locktime)
         self._check_address_free(address, name)
+        self._check_one_message(address, name)
         value = self._build_heir_entry(name, address, amount, locktime)
         self.heirs[name] = value
         self.wallet.save_db()
         return {"name": name, "value": list(value)}
+
+    def _check_one_message(self, address, name):
+        """Refuse a second OP_RETURN message (#140, owner: one per will);
+        ``name``'s own message may change its text."""
+        try:
+            heirs_mod.check_one_message(self.heirs, name, address)
+        except heirs_mod.SecondMessageNotAllowed as e:
+            raise UserFacingException(heir_error_message(e)) from None
 
     def _check_address_free(self, address, name):
         """Refuse an address already used by ANOTHER heir (#135, owner: no
@@ -1903,7 +1914,8 @@ class BalController(BalSettingsController):
 
     def heirs_update(self, name, address=None, amount=None, locktime=None):
         """Change only the given fields of the heir ``name``; ``locktime``
-        only with multiverse on (see :meth:`_check_heir_locktime`)."""
+        only with multiverse on (see :meth:`_check_heir_locktime`). #140:
+        never a second message (:meth:`_check_one_message`)."""
         if name not in self.heirs:
             raise UserFacingException(_("Heir not found: {}").format(name))
         self._check_heir_locktime(locktime)
@@ -1912,6 +1924,7 @@ class BalController(BalSettingsController):
         amount = amount if amount is not None else current[1]
         locktime = locktime if locktime is not None else current[2]
         self._check_address_free(address, name)
+        self._check_one_message(address, name)
         value = self._build_heir_entry(name, address, amount, locktime)
         self.heirs[name] = value
         self.wallet.save_db()
@@ -1953,7 +1966,8 @@ class BalController(BalSettingsController):
         them, ``skipped`` maps each refused entry to the reason and ``total``
         is the number of heirs afterwards. With multiverse on, a delivery date
         that is not understood or already past is refused too; with it off,
-        every heir gets the will's date anyway.
+        every heir gets the will's date anyway. #140: a message (OP_RETURN)
+        when the heirs already have one is skipped, with the reason.
         """
         data = read_json_file(path)
         if isinstance(data, dict) and isinstance(data.get("heirs"), dict):
@@ -1970,6 +1984,11 @@ class BalController(BalSettingsController):
             except Exception as e:
                 valid.pop(name, None)
                 skipped[name] = str(_user_facing(e))
+        # #140 (owner): one message per will; the next ones of the file
+        # are skipped and said so.
+        valid, extra = heirs_mod.keep_one_message(self.heirs, valid)
+        for name in extra:
+            skipped[name] = heir_error_message(heirs_mod.SecondMessageNotAllowed(name))
         self.heirs.update(valid)
         self.heirs.save()
         # #138: no note of an heir that is no longer there.

@@ -25,6 +25,9 @@ from datetime import timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from PyQt6.QtGui import QFontMetrics
+from PyQt6.QtWidgets import QPlainTextEdit
+
 from ...core import delivery
 from ...core.checkalive import (
     CHECK_ALIVE_DEFAULT_DAYS,
@@ -33,7 +36,13 @@ from ...core.checkalive import (
     normalize_check_alive,
     resolve_relative_check_alive_date,
 )
-from ...core.heirs import get_op_return_hex, is_op_return_address
+from ...core.heirs import (
+    MESSAGE_MAX_BYTES,
+    fit_message,
+    get_op_return_hex,
+    is_op_return_address,
+    message_size,
+)
 from ...core.input_rules import (
     LockTimeEditor,
     normalize_locktime_raw_text,
@@ -2023,6 +2032,103 @@ class PercAmountEdit(BTCAmountEdit):
                 unit,
             )
 
+
+def message_help_text():
+    """The "?" of the will message (#140, owner): what it is, when and
+    where it can be read, the byte count and two examples."""
+    # Owner's ZIP test: one sentence per line, easier to read.
+    return _(
+        "A short text written in the will transaction (OP_RETURN), at most "
+        "80 bytes.\n"
+        "It is written on the blockchain only at the delivery, when the will "
+        "transaction is broadcast;\n"
+        "from then on anyone can read it with a block explorer (e.g. "
+        "mempool.space).\n"
+        "A letter with an accent takes 2 bytes, an emoji 4.\n"
+        "Only one message per will.\n"
+        "Examples:\n"
+        "\u201cHappy birthday, my love. No ring: eternal words and bitcoin. "
+        "Yours, M.\u201d\n"
+        "\u201cTo Marco and Giulia: everything I have is yours. With love, "
+        "dad\u201d")
+
+
+def message_warning_text():
+    """The fixed warning of the will message (#140, owner)."""
+    return _(
+        "The message will be public forever on the blockchain, and the "
+        "will-executors can read it before the delivery. Do not write "
+        "private data.")
+
+
+#: The message warning: the yellow note of the BASIC wizard (NOTE_STYLE).
+MESSAGE_WARNING_STYLE = ("QLabel{background:#FFF7E6; border:1px solid #F0D9A8;"
+                         " border-radius:6px; padding:8px; color:#6B4A00;}")
+
+
+class MessageEdit(QPlainTextEdit):
+    """The text of the will message (#140, owner).
+
+    Never more than ``MESSAGE_MAX_BYTES`` (80) bytes of UTF-8: a longer
+    typed or pasted text is cut (``fit_message``), never inside a
+    character. ``counter``: a grey ``QLabel`` "74 / 80 bytes", kept up to
+    date; the dialog places it (no parent here).
+
+    Owner's ZIP test: one line did not show the whole message, so the text
+    wraps on ``lines`` lines (no scroll bar). The message is one line of
+    text in the transaction: Enter is left to the dialog (OK) and a pasted
+    line break becomes a space. ``text`` / ``setText`` work as in a
+    ``QLineEdit``, so the dialogs read it the same way.
+    """
+
+    def __init__(self, parent=None, lines=2):
+        """An empty field ``lines`` lines high, and its counter."""
+        super().__init__(parent)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setTabChangesFocus(True)
+        spacing = QFontMetrics(self.font()).lineSpacing()
+        margin = int(self.document().documentMargin())
+        self.setFixedHeight(lines * spacing + 2 * margin + 2 * self.frameWidth() + 2)
+        self.counter = QLabel("")
+        self.counter.setStyleSheet("color:#6A737D;")
+        self.textChanged.connect(self._on_text_changed)
+        self._on_text_changed()
+
+    def text(self):
+        """The message, as ``QLineEdit.text``."""
+        return self.toPlainText()
+
+    def setText(self, text):  # noqa: N802 - the QLineEdit name
+        """Replace the message, as ``QLineEdit.setText``."""
+        self.setPlainText(str(text))
+
+    def keyPressEvent(self, event):  # noqa: N802 - Qt name
+        """Enter / Return: no line break, the dialog gets the key (OK)."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            event.ignore()
+            return
+        super().keyPressEvent(event)
+
+    def _on_text_changed(self):
+        """Line breaks to spaces, cut over the limit, then the bytes used.
+
+        WHY setPlainText inside the slot: it emits ``textChanged`` again with
+        the clean text (under the limit), so every listener, this counter
+        included, ends on the text really kept.
+        """
+        text = self.toPlainText()
+        clean = fit_message(text.replace("\r", " ").replace("\n", " "))
+        if clean != text:
+            position = self.textCursor().position()
+            self.setPlainText(clean)
+            cursor = self.textCursor()
+            cursor.setPosition(min(position, self.document().characterCount() - 1))
+            self.setTextCursor(cursor)
+            return
+        self.counter.setText(_("{} / {} bytes").format(
+            message_size(text), MESSAGE_MAX_BYTES))
 
 
 class BalLineEdit(QLineEdit):

@@ -511,8 +511,12 @@ def heir_error_message(e):
         HeirNameNotValid,
         LocktimeNotValid,
         NotAnAddress,
+        SecondMessageNotAllowed,
     )
 
+    # #140 (owner): one message per will.
+    if isinstance(e, SecondMessageNotAllowed):
+        return _("There is already a message in the will: edit that one.")
     # #139 (owner's ZIP test): an empty name.
     if isinstance(e, HeirNameNotValid):
         return _("Write a name for the heir.")
