@@ -259,7 +259,7 @@ def qr_address(data, show_error=None):
     except Exception:
         address = None
     if not address and show_error is not None:
-        show_error(_("This QR code does not contain a bitcoin address."))
+        show_error(_("This QR code does not contain a Bitcoin address."))
     return address or None
 
 

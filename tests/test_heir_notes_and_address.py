@@ -325,7 +325,7 @@ def test_qr_plain_address_uri_and_invalid():
     assert errors == []
     assert qr_address("bitcoin:notanaddress", errors.append) is None
     assert qr_address("hello", errors.append) is None
-    assert errors == ["This QR code does not contain a bitcoin address."] * 2
+    assert errors == ["This QR code does not contain a Bitcoin address."] * 2
 
 
 def test_camera_button_on_the_address_field(make, monkeypatch):
