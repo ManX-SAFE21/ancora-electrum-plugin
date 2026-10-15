@@ -571,6 +571,20 @@ bitcointalk.org forum or on the official BAL website).
    sent.
 5. **S** — server status. A **green dot** = server online.
 
+**When the fee address changes.** A will‑executor may give a new fee address
+from time to time: many derive their addresses from an xpub and give one per
+internet address (IP) of the user, so the address changes when your IP changes.
+The will‑executor still accepts every address it gave you. So:
+
+- a copy of the will that the will‑executor **already received** stays valid:
+  the Check keeps it and asks for no signature; the new address is used only
+  when that copy has to change anyway (heirs, date, miner fee, new coins);
+- a copy it **has not received yet** is redone with the new address and must be
+  signed again. The Check says why, for example: *"we.bitcoin-after.life has a
+  new Bitcoin address to receive its fee. Its copy of the will is not yet
+  confirmed as received: it must be redone with the new address and signed
+  again."* The old copy is marked **Replaced** and is not sent.
+
 **Right‑click** on a server line opens four sub‑commands:
 
 ![Figure 8 — Will‑executor right‑click menu](./images/fig8.png)

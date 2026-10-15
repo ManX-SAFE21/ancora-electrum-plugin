@@ -15,6 +15,7 @@ Must never import Qt (``bal/core`` rule).
 """
 
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from electrum.logging import get_logger
 
@@ -30,9 +31,30 @@ from .will import (
     Will,
     WillexecutorChangeException,
     WillExecutorNotPresent,
+    WillExecutorTermsChanged,
 )
 
 _logger = get_logger(__name__)
+
+
+def executor_terms_message(url, change):
+    """Why a will-executor's copy is redone: a new fee address or fee (#141).
+
+    Texts approved by the owner (2026-10-15). ``url``: the will-executor;
+    ``change``: ``"address"`` or ``"fee"`` (``Will.terms_change``). Only for
+    a copy the will-executor has not received: one it received stays valid.
+    """
+    host = urlparse(url).hostname or url
+    if change == "fee":
+        return _(
+            "{} has a new fee. Its copy of the will is not yet confirmed as "
+            "received: it must be redone with the new fee and signed again."
+        ).format(host)
+    return _(
+        "{} has a new Bitcoin address to receive its fee. Its copy of the "
+        "will is not yet confirmed as received: it must be redone with the "
+        "new address and signed again."
+    ).format(host)
 
 
 def no_valid_transaction(e):
@@ -69,6 +91,8 @@ def will_change_message(e):
             ).format(old_fee, now_fee)
         except Exception:
             return _("The miner fee rate changed: a new will must be prepared.")
+    if isinstance(e, WillExecutorTermsChanged):
+        return executor_terms_message(str(e), e.change)
     if isinstance(e, WillExecutorNotPresent):
         return _(
             'Will-executor "{}" is not covered by the current will: '
