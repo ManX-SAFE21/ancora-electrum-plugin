@@ -336,6 +336,12 @@ def test_auto_rebuild_anticipation_never_crosses_the_check_alive():
             wallet = FakeWallet([make_funding_input()])
             plugin.NO_WILLEXECUTOR.set(True)
             c = _make_controller(plugin, wallet)
+            # CHANGELOG #146: a new ADVANCED wallet starts in the period
+            # form; this test needs the fixed date it writes below.
+            c.will_settings["form"] = "fixed"
+            for key in ("period_months", "period_start"):
+                if key in c.will_settings:
+                    del c.will_settings[key]
             c.will_settings["locktime"] = delivery
             c.will_settings["threshold"] = "-1d"
             c.prepare_will()

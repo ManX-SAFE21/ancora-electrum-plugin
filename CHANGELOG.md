@@ -9641,3 +9641,57 @@ other text of the plugin writes "Bitcoin address" / "indirizzo Bitcoin" /
   owner step by step (QR size, address font and wrap, columns, BTC, column
   title).
 - Whole suite in both orders: 2299 passed each time.
+
+## 146. ADVANCED starts with a renewable period of 2 years and a Check Alive of 1 year
+
+**Date:** 2026-10-15
+
+**Decision (owner, after the Check Alive study):** BASIC has no Check Alive
+and keeps a fixed date. In ADVANCED the default is the period form of 24
+months, renewed by a Check Alive one year before the delivery: one renewal
+(one miner fee) a year, 12 months to renew, heirs wait 12 to 24 months.
+The Check Alive stays in days ("-365d"), the form BAL understands.
+
+**What changed:**
+- **A brand-new wallet** (no heirs, no will, nothing to migrate,
+  `bal/core/delivery.py`): the Check Alive is `NEW_WALLET_THRESHOLD`
+  ("-365d") instead of "-180d"; opened in ADVANCED without multiverse it
+  starts in the period form of 24 months (`period_values`, the same date
+  as the fixed default). In BASIC it stays a fixed date. Wallets that
+  already had plugin data keep their migrated Check Alive (still "-180d"
+  when nothing else is found).
+- **The form follows the mode** (`bal/engine/context.py`, `follow_mode`,
+  `initial_months`): switching to ADVANCED turns a fixed date into the
+  period form (N = the whole months to the stored date, so the date stays
+  about the same); switching to BASIC turns a period back into the fixed
+  date. Only while the form is not locked: a will in force never changes.
+  The same rule from the plugin Settings dialog (`common.switch_user_type`,
+  every open wallet) and from the wizard's mode selector, so the order of
+  the owner's steps does not matter. "Fixed date" can still be chosen.
+- **Fix found in the owner's ZIP test** (`bal/gui/qt/window.py`): on a
+  wallet never checked, `update_all` stopped on the missing
+  `date_to_check`, so switching to ADVANCED left the Will tab in BASIC
+  ("error while updating window" in the log) until a restart.
+- **Will tab toolbar in ADVANCED** (owner): the fee sits next to the
+  delivery date, the Check Alive has the second row to itself, and its
+  sentence ("before the delivery (≈ 12 months) → date") is never cut any
+  more (it read "prima della c 2027-10-16").
+- The Check Alive "?" says "Default for a new wallet: 365 days (one
+  year)". Catalogs: 1 msgid replaced (IT/ES).
+
+**Tests:**
+- `tests/test_advanced_period_default.py` (new, 13 tests, three fake
+  will-executors): the new wallet in BASIC and in ADVANCED, multiverse,
+  plugin data, the engine passing the mode; the wizard switch (period
+  preselected, wrong phrase, a will in force, multiverse); the Settings
+  switch on a wallet never checked (fails without the `update_all` fix)
+  and with a will in force; the toolbar rows; a whole flow: built for the
+  24-month date, no renewal for a year, then the renewal offered.
+- Updated to the one-year default: `test_core_delivery_check_alive.py`,
+  `test_core_delivery_settings.py`, `test_per_wallet_settings_flow.py`;
+  `test_cli_autorebuild.py` chooses the fixed form it needs;
+  `test_check_button.py` reads the new rows.
+
+**Verification:** ruff clean; catalog check OK; owner's ZIP test (8
+checks, then the toolbar rows) OK; whole suite in both orders: 2312
+passed each time.

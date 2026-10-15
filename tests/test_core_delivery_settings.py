@@ -648,7 +648,7 @@ def test_no_usable_source_gives_the_default():
 
 def test_new_wallet_never_inherits_the_shared_value():
     """No heirs and no will: the default, never the frozen shared value.
-    The Check Alive bridge is a plugin-wide habit and is still taken."""
+    The Check Alive is the one-year default of #146, not the old habit."""
     glob = {"locktime": "1054d", "baltx_fees": 13, "threshold": "-90d"}
     out = dv.migration_values([], glob, {"locktime": "5y"}, False, NOW)
     assert out == {
@@ -656,7 +656,7 @@ def test_new_wallet_never_inherits_the_shared_value():
         "form": "fixed",
         "locktime": ts(2028, 10, 11),
         "baltx_fees": 20,
-        "threshold": "-90d",
+        "threshold": "-365d",
         "migrated_from": "default",
         "migrated_at": NOW,
     }

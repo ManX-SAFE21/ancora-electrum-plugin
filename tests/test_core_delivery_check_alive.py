@@ -201,11 +201,12 @@ def test_converted_against_the_will_in_force():
 
 def test_a_minus_nd_value_still_comes_first():
     """A "-Nd" value of any old dict wins over a form to convert (the order
-    the migration had before), and is read without plugin data too."""
+    the migration had before). A brand-new wallet (no plugin data) takes
+    the one-year default of #146 instead."""
     fixed = {"threshold": OWNER - 30 * DAY}
     assert bridge(fixed, {"threshold": "-90d"}, items=[signed(OWNER)]) == "-90d"
     assert bridge({"threshold": "30d"}, {"threshold": "-90d"}) == "-90d"
-    assert bridge({"threshold": "-90d"}, plugin_data=False) == "-90d"
+    assert bridge({"threshold": "-90d"}, plugin_data=False) == "-365d"
 
 
 def test_the_order_of_the_old_dicts():
@@ -225,11 +226,11 @@ def test_the_order_of_the_old_dicts():
 
 def test_a_wallet_without_plugin_data_does_not_convert():
     """A wallet created after the update inherits neither the old delivery
-    date nor a Check Alive tied to it: "-180d" before its own default
+    date nor a Check Alive tied to it: "-365d" (#146) before its own default
     delivery (a fixed date in the past would stop its ADVANCED Check)."""
     old = {"locktime": SOON, "baltx_fees": 13, "threshold": NOW - 30 * DAY}
     out = dv.migration_values([], old, None, False, NOW)
-    assert (out["migrated_from"], out["threshold"]) == ("default", "-180d")
+    assert (out["migrated_from"], out["threshold"]) == ("default", "-365d")
     # With plugin data the same past date is kept (#80).
     assert bridge(old) == "-{}d".format(round((SOON - (NOW - 30 * DAY)) / DAY))
 
@@ -430,7 +431,7 @@ def test_the_creation_date_reaches_the_rule(monkeypatch):
     host, stored = fake_host()
     assert context.ensure_will_settings(host, {"x": object()}, now=NOW) is True
     assert seen["creation_date"] == 1_790_000_000
-    assert stored["threshold"] == "-180d" and host.will_settings is stored
+    assert stored["threshold"] == "-365d" and host.will_settings is stored
 
 
 def test_an_unknown_creation_time_counts_from_today(monkeypatch):

@@ -795,9 +795,9 @@ class ThresholdTimeWidget(QWidget):
         "delivery date.<br>"
         "If you do not renew, nothing changes: at the delivery date the "
         "transactions are delivered to your heirs.<br><br>"
-        "Default: 180 days (about six months). The date next to the field is "
-        "the resulting Check Alive date; it turns red when it is already "
-        "past.<br>"
+        "Default for a new wallet: 365 days (one year). The date next to the "
+        "field is the resulting Check Alive date; it turns red when it is "
+        "already past.<br>"
     )
     label_text = "🚨"
     tooltip_text = N_("Check Alive: days before the delivery date")
@@ -869,7 +869,8 @@ class ThresholdTimeWidget(QWidget):
             return CHECK_ALIVE_DEFAULT_DAYS
 
     def _update_hint(self):
-        """Show "before the delivery (≈ 6 months) →" next to the spin box."""
+        """Show "before the delivery (≈ 6 months) →" next to the spin box,
+        always whole (its minimum width follows the text)."""
         days = self.spin.value()
         months = round(days / 30.44)
         if months >= 2:
@@ -879,6 +880,9 @@ class ThresholdTimeWidget(QWidget):
         else:
             extra = ""
         self.hint.setText(_("before the delivery") + extra + " →")
+        # #146 (owner's ZIP test): never squeezed in a narrow toolbar, where
+        # it was cut to "before the d"; the row gives way instead.
+        self.hint.setMinimumWidth(self.hint.sizeHint().width())
 
     def _on_spin_changed(self, _days):
         self._update_hint()
@@ -1108,18 +1112,9 @@ class DeliveryFormWidget(QWidget):
             return False
 
     def _initial_months(self):
-        """N for the box: the stored period, else the whole months from today
-        to the stored date (1..240), else the default (24)."""
-        settings = self._settings()
-        n = delivery.as_months(settings.get("period_months"))
-        if n is not None:
-            return n
-        locktime = delivery.as_delivery(settings.get("locktime"))
-        if locktime is not None:
-            n = delivery.months_between(time_now(), locktime)
-            if delivery.PERIOD_MIN <= n <= delivery.PERIOD_MAX:
-                return n
-        return delivery.DEFAULT_MONTHS
+        """N for the box: ``context.initial_months`` (the stored period, else
+        the whole months from today to the stored date, else 24)."""
+        return engine_context.initial_months(self._settings(), time_now())
 
     def refresh(self):
         """Show the stored mode, form, period and lock (signals blocked)."""
@@ -1192,20 +1187,21 @@ class DeliveryFormWidget(QWidget):
     def _on_mode(self, index):
         """The mode selector: the shared switch with its "at My Risk" gate.
 
-        BASIC (chosen, or put back after a wrong phrase) also sets the form
-        back to fixed when it is not locked (owner decision 7); a locked
-        period form keeps working in BASIC.
+        Then the form follows the mode (``context.follow_mode``), only when
+        it is not locked: BASIC (chosen, or put back after a wrong phrase)
+        sets it back to fixed (owner decision 7; a locked period form keeps
+        working in BASIC); ADVANCED (owner, #146) preselects the period of
+        :meth:`_initial_months` months, so the date stays about the same.
+        "Fixed date" can still be chosen.
         """
         if not switch_user_type(self.bal_window.bal_plugin, index == 1, parent=self):
             self.mode_combo.blockSignals(True)
             self.mode_combo.setCurrentIndex(0)
             self.mode_combo.blockSignals(False)
-        if self._basic() and delivery.is_period(self._settings()) and not (
-            engine_context.form_locked(self.bal_window)
-        ):
-            self._write(form=delivery.FORM_FIXED)
-        else:
-            self._after_write()
+        # The form follows the mode (``context.follow_mode``; the shared
+        # switch already did it for the windows the Qt plugin knows).
+        engine_context.follow_mode(self.bal_window, months=self._initial_months())
+        self._after_write()
         widget = self.settings_widget
         if widget is not None:
             try:
@@ -1581,8 +1577,9 @@ class WillSettingsWidget(QWidget):
           below);
         * ADVANCED, which also shows the Raw/Date selector and the Check Alive
           with its sentence, uses two rows next to the two big buttons:
-          delivery time, then Check Alive | fee. On one row the Will tab
-          needed a window about 1500 px wide.
+          delivery time | fee, then Check Alive (#146; it was delivery
+          time, then Check Alive | fee). On one row the Will tab needed a
+          window about 1500 px wide.
 
         CHANGELOG #130 (owner): in BASIC the toolbars of the Will and Heirs
         tabs show neither the delivery date nor the fee (they are changed
@@ -1623,9 +1620,13 @@ class WillSettingsWidget(QWidget):
                 # delivery field (kept in BASIC) would leave a gap after
                 # the date.
                 locktime.setMinimumWidth(0)
+                # #146 (owner): the fee next to the delivery date, so the
+                # Check Alive and its sentence ("before the delivery
+                # (≈ 12 months) → date") have the second row to themselves
+                # (it was cut to "before the d").
                 lines = (
-                    (locktime,),
-                    (self.widgets["threshold"], self.widgets["baltx_fees"]),
+                    (locktime, self.widgets["baltx_fees"]),
+                    (self.widgets["threshold"],),
                 )
             else:
                 # BASIC: every field is hidden (#130); they stay in the

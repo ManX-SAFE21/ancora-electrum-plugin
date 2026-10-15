@@ -96,6 +96,11 @@ PERIOD_MAX = 240
 #: The Check Alive bridge kept until #128: "180 days before the delivery",
 #: the default of ``BalPlugin.default_will_settings_relative`` (#80).
 DEFAULT_THRESHOLD = "-180d"
+#: The Check Alive of a brand-new wallet (owner, #146): one year before the
+#: delivery. Inert in BASIC (a fixed date); in ADVANCED, with the period of
+#: :data:`DEFAULT_MONTHS`, one renewal (one miner fee) a year. The
+#: migrated values keep :data:`DEFAULT_THRESHOLD`.
+NEW_WALLET_THRESHOLD = "-365d"
 #: Legacy keys removed at migration: ``tx_fees`` is folded into
 #: ``baltx_fees``; the two ``real_*`` keys were display caches.
 LEGACY_DROP = ("tx_fees", "real_threshold", "real_locktime")
@@ -820,6 +825,7 @@ def migration_values(
     now,
     creation_date=None,
     multiverse=False,
+    advanced=False,
 ):
     """The settings to write into a wallet whose dict is not current.
 
@@ -831,8 +837,9 @@ def migration_values(
     ``now``: the caller's clock. ``creation_date``: the creation time of the
     stored will (``Will.get_creation_time``), or None; only an old positive
     Check Alive reads it (see :func:`convert_check_alive`). ``multiverse``:
-    the plugin's multiverse setting (each heir carries its own date); only
-    the note reads it (see :func:`note_for`).
+    the plugin's multiverse setting (each heir carries its own date); the
+    note reads it (see :func:`note_for`). ``advanced``: the plugin is in
+    ADVANCED mode.
 
     The delivery date, the first source that gives one:
 
@@ -864,6 +871,12 @@ def migration_values(
     :func:`note_for` (with the question and the later wish it may add).
     Everything passes :func:`validate_values` (``ValueError`` otherwise:
     the caller fails closed). Returns a new dict; nothing is written here.
+
+    A brand-new wallet (no plugin data, the default date; owner, #146):
+    the Check Alive :data:`NEW_WALLET_THRESHOLD` (one year), and in
+    ADVANCED mode without multiverse the period form of
+    :data:`DEFAULT_MONTHS` months from today (the same date as the default,
+    :func:`period_values`). In BASIC it stays a fixed date: no Check Alive.
     """
     items = list(items)
     sources = _old_sources(global_raw, legacy_raw)
@@ -912,6 +925,12 @@ def migration_values(
         # decision 1); the period form is chosen later in the wizard.
         "form": FORM_FIXED,
     }
+    if not has_plugin_data and source == SOURCE_DEFAULT:
+        out["threshold"] = NEW_WALLET_THRESHOLD
+        if advanced and not multiverse:
+            out.update(period_values(now, DEFAULT_MONTHS))
+            out["form"] = FORM_PERIOD
+            out["period_months"] = DEFAULT_MONTHS
     old_raw = _old_raw_locktime(old_raws)
     if old_raw is not None:
         out["legacy_locktime"] = old_raw

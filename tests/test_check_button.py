@@ -7,7 +7,7 @@ your will"), the same look as the Wizard, and sits right after it:
     Wizard | Check | Calendar | Delivery time | Check Alive | fee
 
 To make room for it, ADVANCED mode lays the toolbar fields on two rows
-(delivery time, then Check Alive | fee); BASIC keeps its one row. A
+(delivery time | fee, then Check Alive: #146); BASIC keeps its one row. A
 BASIC <-> ADVANCED switch rearranges the existing toolbars without a
 restart. CHANGELOG #130 (owner): in BASIC the toolbars hide the delivery
 date and the fee; the calendar is a big button of the Will tab (and a
@@ -247,8 +247,8 @@ def test_will_tab_big_calendar_button_and_tools_entry():
 def test_advanced_uses_two_rows_packed_to_the_left():
     row = _settings_row(["advanced"])
     w = row.widgets
-    assert _lines(row) == [[w["locktime"]],
-                           [w["threshold"], w["baltx_fees"]]]
+    assert _lines(row) == [[w["locktime"], w["baltx_fees"]],
+                           [w["threshold"]]]
     assert w["locktime"].minimumWidth() == 0
 
 
@@ -258,11 +258,11 @@ def test_mode_switch_rearranges_the_existing_toolbar():
     w = row.widgets
     mode[0] = "advanced"
     row.apply_user_type_visibility()
-    assert _lines(row) == [[w["locktime"]],
-                           [w["threshold"], w["baltx_fees"]]]
+    assert _lines(row) == [[w["locktime"], w["baltx_fees"]],
+                           [w["threshold"]]]
     assert not w["locktime"].isHidden()       # #130: shown again at once
     row.apply_user_type_visibility()          # every refresh: nothing moves
-    assert len(_lines(row)[0]) == 1
+    assert len(_lines(row)[0]) == 2
     mode[0] = "basic"
     row.apply_user_type_visibility()
     assert _lines(row)[1] == [] and len(_lines(row)[0]) == 3
