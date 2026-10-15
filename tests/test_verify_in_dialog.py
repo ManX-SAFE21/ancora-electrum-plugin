@@ -99,8 +99,10 @@ def test_verify_shows_progress_then_records_the_answers():
     # The answers are recorded exactly as the Check button recorded them.
     a, b = d.bal_window.willitems["a"], d.bal_window.willitems["b"]
     assert a.get_status("CHECKED") and a.get_status("PUSHED")
-    assert b.get_status("CHECK_FAIL") and not b.get_status("PUSHED")
-    assert d._report().executors() == {WE0: ("verified", None), WE1: ("timeout", 20)}
+    # #147: no answer in time is not "not received": still sent.
+    assert b.get_status("PUSHED") and not b.get_status("CHECK_FAIL")
+    assert d._report().executors() == {
+        WE0: ("verified", None), WE1: ("no_check_answer", 20)}
     log = " ".join(d.labels)
     assert "checked {} - a".format(WE0) in log and "Timeout - no answer" in log
     d._finish_report()

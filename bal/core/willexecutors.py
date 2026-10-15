@@ -61,15 +61,37 @@ PUSH_GLOBAL_DEADLINE = NETWORK_DEADLINE
 # Check (searchtx) timeouts.  Used when the user presses "Check" to verify that
 # each will-executor still holds the transaction.  Like the broadcast path, the
 # old defaults (10s x 10 retries + 30s sleeps ~= 140s per server) froze the
-# "checking transaction" dialog on a single dead server.  Fail fast with one
-# quick retry, and cap the whole batch with a global deadline.
-CHECK_TIMEOUT = 8
-CHECK_MAX_RETRIES = 1
+# "checking transaction" dialog on a single dead server.  Cap the whole batch
+# with a global deadline.  #147: ONE attempt of 15 s instead of two of 8 s: a
+# slow server (divinaly answered in 5 s and more) was cut at 8 s and the
+# retry started the slow query again, so it never answered in time.
+CHECK_TIMEOUT = 15
+CHECK_MAX_RETRIES = 0
 CHECK_RETRY_SLEEP = 1
 # Derived from the single shared NETWORK_DEADLINE constant above.
 CHECK_GLOBAL_DEADLINE = NETWORK_DEADLINE
 
 _logger = get_logger(__name__)
+
+
+class _NoAnswer:
+    """The type of :data:`NO_ANSWER` (a single, named sentinel)."""
+
+    def __repr__(self):
+        """``NO_ANSWER`` in the logs."""
+        return "NO_ANSWER"
+
+    def __bool__(self):
+        """False: like the ``None`` it replaces, it is not an answer."""
+        return False
+
+
+#: #147: what a check gives when the will-executor did not answer in time
+#: (every attempt timed out, or the global deadline elapsed). It is NOT "the
+#: executor does not hold the will": ``WillItem.set_check_willexecutor``
+#: leaves the item as it was (still sent, to be verified) instead of marking
+#: it not received.
+NO_ANSWER = _NoAnswer()
 
 
 # --------------------------------------------------------------------------- #
@@ -140,6 +162,7 @@ class Willexecutors:
     PUSH_GLOBAL_DEADLINE = PUSH_GLOBAL_DEADLINE
     CHECK_TIMEOUT = CHECK_TIMEOUT
     CHECK_MAX_RETRIES = CHECK_MAX_RETRIES
+    NO_ANSWER = NO_ANSWER
     CHECK_RETRY_SLEEP = CHECK_RETRY_SLEEP
     CHECK_GLOBAL_DEADLINE = CHECK_GLOBAL_DEADLINE
 
@@ -997,12 +1020,24 @@ class Willexecutors:
     def check_transaction(txid, url, *, timeout=CHECK_TIMEOUT,
                           max_retries=CHECK_MAX_RETRIES,
                           retry_sleep=CHECK_RETRY_SLEEP):
+        """Ask the will-executor at ``url`` for the transaction ``txid``.
+
+        Returns its answer (a dict, ``{"tx": ...}`` when it holds it), or
+        ``None`` for an answer that is not a dict. #147: when every attempt
+        timed out it returns :data:`NO_ANSWER`, so a slow will-executor is
+        not taken for one that does not hold the will. Other errors are
+        raised, as before.
+        """
         _logger.debug(f"{url}:{txid}")
         try:
             w = Willexecutors.send_request(
                 "post", url + "/searchtx", data=txid.encode("ascii"),
                 timeout=timeout, max_retries=max_retries, retry_sleep=retry_sleep,
             )
+            if w is None:
+                # send_request gives None only when every attempt timed out.
+                _logger.info(f"no answer in time from {url} for {txid}")
+                return NO_ANSWER
             if not isinstance(w, dict):
                 _logger.warning(
                     f"unexpected check_transaction response type "

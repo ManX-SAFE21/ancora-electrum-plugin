@@ -2868,6 +2868,18 @@ class WillItem(Logger):
                     self.set_anticipate(iw)
 
     def set_check_willexecutor(self,resp):
+        """Record the will-executor's answer ``resp`` to the check (searchtx).
+
+        It holds exactly our transaction: PUSHED and CHECKED. Any other
+        answer, or ``None`` (no usable answer): CHECK_FAIL and no longer
+        PUSHED, so the copy is sent again. #147: ``Willexecutors.NO_ANSWER``
+        (it did not answer in time) changes nothing: the copy stays sent and
+        to be verified, and the next check asks again. Returns True for an
+        answer, False otherwise.
+        """
+        if resp is Willexecutors.NO_ANSWER:
+            _logger.info(f"no answer to the check for {self._id}: left as it was")
+            return False
         try:
             if resp :
                 if "tx" in resp and resp["tx"] == str(self.tx):

@@ -48,6 +48,8 @@ BOXES = ("changes", "warnings", "problems")
 EXECUTOR_STATES = (
     "waiting", "received", "verifying", "verified", "failed", "timeout",
     "to_sign", "to_send", "to_verify", "deselected",
+    # #147: sent and received, but no answer to the check in time.
+    "no_check_answer",
 )
 
 
@@ -187,12 +189,15 @@ class BuildReport:
         """Final states ``{url: state}`` from the will items.
 
         A live "timeout" is kept over a final "failed" (it says more), and an
-        executor only seen live keeps its live state.
+        executor only seen live keeps its live state. #147: so is a live
+        "no_check_answer" over the final "to_verify" (sent, not verified).
         """
         with self._lock:
             for url, state in states.items():
                 live = self._executors.get(url)
                 if live and live[0] == "timeout" and state == "failed":
+                    continue
+                if live and live[0] == "no_check_answer" and state == "to_verify":
                     continue
                 self._executors[url] = (state, None)
 
