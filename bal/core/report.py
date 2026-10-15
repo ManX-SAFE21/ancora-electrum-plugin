@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 from ..i18n import N_, _, number_separators
 from . import future as core_future
 from . import will_versions
-from .heirs import HEIR_ADDRESS, is_op_return_address
+from .heirs import HEIR_ADDRESS, is_op_return_address, message_text
 from .summary import executor_states, will_summary
 from .will import Will
 
@@ -173,6 +173,8 @@ class WillReport:
     miner_fee: Optional[str] = None
     heirs: List[ReportHeir] = field(default_factory=list)
     instalments: List[ReportInstalment] = field(default_factory=list)
+    # #140 (owner): the message(s) written in the will in force (OP_RETURN).
+    messages: List[str] = field(default_factory=list)
     first_txs: List[ReportTx] = field(default_factory=list)
     older: List[ReportTx] = field(default_factory=list)
 
@@ -226,6 +228,28 @@ def _addresses(items):
             if address and not is_op_return_address(address):
                 out.setdefault(str(name), address)
     return out
+
+
+def _messages(items):
+    """The texts of the OP_RETURN messages of the will ``items`` (#140).
+
+    Read from the first item that has any: every will-executor copy
+    carries the same message. Sorted; empty with no message.
+    """
+    for item in items:
+        texts = []
+        for name, heir in (getattr(item, "heirs", None) or {}).items():
+            if str(name).startswith(_EXECUTOR_HEIR):
+                continue
+            try:
+                address = str(list(heir)[HEIR_ADDRESS])
+            except (TypeError, IndexError):
+                continue
+            if is_op_return_address(address):
+                texts.append(message_text(address))
+        if texts:
+            return sorted(texts)
+    return []
 
 
 def _heirs(deliveries, addresses):
@@ -309,6 +333,7 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
                 (_tx(will[wid]) for wid in levels[0] if wid in will), key=_tx_order)
         report.heirs = _heirs(
             future.deliveries, _addresses(will[w] for w in version.items if w in will))
+        report.messages = _messages(will[w] for w in version.items if w in will)
     in_force = set(version.items) if version is not None else set()
     report.older = sorted(
         (_tx(item) for item, _lt, _url in (still_active or [])

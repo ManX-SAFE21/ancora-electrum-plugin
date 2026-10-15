@@ -25,6 +25,7 @@ over their total: ``Heirs.normalize_perc`` spends the whole balance), never
 invented when fixed amounts are mixed in.
 """
 
+import html
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -483,15 +484,17 @@ def change_rows(changes, wizard=False, new_in_network=()):
                          "recalculated in proportion.").format(_pct(c.new))
             rows.append((_("Real shares"), value, note))
         elif c.kind == MESSAGE:
+            # #140: the texts are the owner's own, shown as rich text:
+            # escaped, so a "<" or "&" is shown as written.
+            old_text = _quoted(html.escape(" / ".join(c.old or [])))
+            new_text = _quoted(html.escape(" / ".join(c.new or [])))
             if c.old and c.new:
                 value = _("changed: {old} → {new}").format(
-                    old=_quoted(" / ".join(c.old)),
-                    new="<b>{}</b>".format(_quoted(" / ".join(c.new))))
+                    old=old_text, new="<b>{}</b>".format(new_text))
             elif c.new:
-                value = _("added: {}").format(
-                    "<b>{}</b>".format(_quoted(" / ".join(c.new))))
+                value = _("added: {}").format("<b>{}</b>".format(new_text))
             else:
-                value = _("removed: {}").format(_quoted(" / ".join(c.old)))
+                value = _("removed: {}").format(old_text)
             rows.append((_("Message"), value, None))
         elif c.kind == EXECUTORS:
             value = _("from {old} to {new}").format(old=c.old, new="<b>{}</b>".format(c.new)) \

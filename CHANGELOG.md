@@ -9159,3 +9159,140 @@ an empty name says "Write a name for the heir." twice and stores nothing;
 a named heir saved and still there after a restart; OP_RETURN mode
 without the amount's "?", the grey address line and the gap; all back
 for an address; two Checks clean. OK.
+
+## 140. The will message: a button, 80 bytes, one per will
+
+**Date:** 2026-10-15
+
+**Problem (the owner):** a message in the will (an OP_RETURN output) could
+only be written by typing `OP_RETURN:` in the Address field of the New heir
+window.
+- Its name had to be invented.
+- Nothing counted the 80 bytes, and nothing said the message becomes public.
+- Two messages gave two OP_RETURN outputs in one transaction, which nodes
+  before Bitcoin Core 30 do not relay.
+- The wizard's summary showed only "name (OP_RETURN)", and the PDF report
+  did not show the message at all.
+
+**What changed:**
+
+- **A "✉ A message in the will" button.** It is on page 2 of the BASIC
+  wizard and next to "👤 New Heir" in the Heirs tab (owner's choice A: in
+  Advanced too).
+  - The window asks only the text, in a box of two lines that shows all of
+    it (one line of text: a line break becomes a space, Enter is left to
+    the dialog).
+  - The plugin names a new message "OP_RETURN message" (msgid; Italian
+    "Messaggio OP_RETURN"). The stored name is plain: the ✉ is drawn only
+    in the list.
+  - If a payee already has that name, the message is "... 2" (owner's
+    choice B).
+  - A grey line says the name is only for the owner and is not written in
+    the transaction. A message made before keeps its name.
+  - Pressing the button again opens the same message. A double click or
+    Edit on a message in the Heirs list opens this window too, not the heir
+    window with the hexadecimal address (owner's ZIP test).
+- **80 bytes.**
+  - The counter "74 / 80 bytes" counts bytes, not letters: "è" is 2, an
+    emoji 4.
+  - A longer text is cut, never inside a character (`fit_message`,
+    `message_size`).
+  - The same counter is used in the Advanced `OP_RETURN:` mode (three lines
+    there).
+- **A fixed warning** (the wizard's yellow note): "The message will be
+  public forever on the blockchain, and the will-executors can read it
+  before the delivery. Do not write private data."
+- **A "?" of its own**, one sentence per line (owner's ZIP test): what the
+  message is, when it is written, where to read it (a block explorer), the
+  byte count, one message per will, and the owner's two examples.
+- **One message per will.** A second message is refused with "There is
+  already a message in the will: edit that one."
+  - It is refused in the windows, by the command line (`heirs_add`,
+    `heirs_update`) and in the imports (GUI and command line: the next
+    messages of the file are skipped and said so).
+  - A message being edited may always change its text
+    (`check_one_message`, `keep_one_message`, new `SecondMessageNotAllowed`).
+  - An old wallet with two or more messages is not changed: a note in the
+    Heirs tab and on wizard page 2 asks to delete the others.
+- **The message is not an heir.** With only a message, the wizard's Next
+  stays off and "Add at least one heir." stays shown.
+- **Heirs list.**
+  - The message is shown as "✉ name", with no "0.00000000" amount and its
+    whole text as the tooltip.
+  - The menu now uses the stored name (key role) for Edit/Delete, not the
+    shown text.
+- **Wizard page 4.**
+  - The message leaves the "Heirs" row and gets a "Message" row with the
+    text in quotes.
+  - In the "What changes" box the message texts are now escaped (rich
+    text).
+- **Edit hint.** A new text says "The message changes: the will must be
+  signed again."
+- **PDF report.** A "MESSAGE IN THE WILL" section under the heirs, with the
+  text in quotes and when it becomes public (`WillReport.messages`).
+- **"Bitcoin address" (owner).** The Heirs list column and the heir
+  window's label used to say "Address", which could be read as a home
+  address. Italian "Indirizzo Bitcoin", Spanish "Dirección Bitcoin". The
+  New Heir button gets "👤" (owner).
+- **Unchanged:**
+  - the stored format of a message (`OP_RETURN:<hex>`, amount "0");
+  - the transaction (one OP_RETURN output);
+  - the protocol and the wallet keys.
+- **Manual and catalogs.**
+  - Manual: a new section, "A message in the will (OP_RETURN)"; the wizard
+    pages, the PDF report and the "Bitcoin address" field.
+  - IT/ES catalogs: 16 new msgids.
+
+**Tests:**
+- `tests/test_will_message.py` (new, 21 tests). It uses real dialogs and
+  the real window, with three fake will-executors, each with its own fee
+  address. It covers:
+  - bytes, the cut and the owner's examples (74 and 65 bytes);
+  - the automatic name, the one-message rule and the import rule;
+  - the counter, the two-line box and the "?" lines;
+  - a new message, then a Check and a second Check clean, with every new
+    will transaction carrying exactly ONE OP_RETURN output with the text;
+  - the button opening the same message, an empty text and a taken name;
+  - an old wallet with two messages, and the double click;
+  - the Advanced mode (counter, warning, "?", automatic name, second
+    message refused);
+  - the list (✉, no amount, tooltip, Delete by name, "Bitcoin address",
+    the two buttons);
+  - the wizard (button, Next off with only a message, page 4 row, escaped
+    "What changes" box);
+  - the command line and the GUI import;
+  - the PDF.
+- Updated:
+  - `tests/test_amount_mode.py`: the message window has no amount; the
+    window fits its rows (the warning makes it no longer shorter);
+  - `tests/test_heir_notes_and_address.py`: the message "?" is made first,
+    and the notes box is found among two multi-line boxes.
+
+**Verification:**
+- ruff clean.
+- Affected tests: 648 passed.
+- Catalogs: RESULT OK; i18n tests passed.
+- Test ZIP `safe21-heartbeat_0.7.0-TEST-140-will-message.zip`: external load
+  and smoke test OK on 4.8.2.
+- Whole suite in both orders: 2270 passed each time; golden files unchanged.
+
+**Outcome:** the owner's ZIP test (2026-10-15), points 1-8: OK.
+
+Fixes from that test:
+- the message box on two lines;
+- a double click or Edit on a message opens the ✉ window;
+- the tooltip in the list;
+- the "?" one sentence per line;
+- "Indirizzo Bitcoin" (capital B, as elsewhere in the Italian catalog);
+- "👤 Nuovo erede".
+
+The owner retested them: OK.
+
+His point 7 (a Check asking to sign with "No change") was not caused by the
+message:
+- `we.bitcoin-after.life` answered with a new fee address (will-executors
+  derive it from an xpub and change it about monthly), so its copy had to
+  be rebuilt;
+- that copy had never been verified ("3 of 4");
+- the misleading "No change" box and the address rotation are the next
+  step (#141).

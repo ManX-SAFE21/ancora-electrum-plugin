@@ -36,7 +36,16 @@ from ...core.checkalive import (
     resolve_date_to_check,
     resolve_guard_threshold,
 )
-from ...core.heirs import AmountNotValid, heir_with_address
+from ...core.heirs import (
+    AmountNotValid,
+    SecondMessageNotAllowed,
+    automatic_message_name,
+    check_one_message,
+    heir_with_address,
+    message_address,
+    message_names,
+    message_text,
+)
 from ...core.messages import (
     check_alive_message,
     heir_error_message,
@@ -116,7 +125,15 @@ from .dialogs import (
 from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
 from .lists import HeirListWidget, PreviewList
-from .widgets import LockTimeWidget, PercAmountEdit, WillSummaryWidget
+from .widgets import (
+    MESSAGE_WARNING_STYLE,
+    LockTimeWidget,
+    MessageEdit,
+    PercAmountEdit,
+    WillSummaryWidget,
+    message_help_text,
+    message_warning_text,
+)
 
 # The setting fields of the toolbars, refreshed together (CHANGELOG #123).
 _SETTING_FIELDS = ("locktime", "threshold", "baltx_fees")
@@ -252,10 +269,15 @@ def edit_hint(original, current):
     ``original`` / ``current``: ``(name, address, amount text)``. A new
     address: who receives changes, a new will must be signed; a new amount:
     the share changes, the same; only the name: nothing to sign (the Check
-    saves a pure rename by itself, ``Will.sync_heir_names``).
+    saves a pure rename by itself, ``Will.sync_heir_names``). #140: a new
+    text of a message (both addresses ``OP_RETURN:``): the message changes.
     """
     name0, address0, amount0 = (str(x).strip() for x in original)
     name1, address1, amount1 = (str(x).strip() for x in current)
+    if (address1 != address0 and is_op_return_address(address0)
+            and is_op_return_address(address1)):
+        # #140: a new text of the same message, not a new payee.
+        return _("The message changes: the will must be signed again.")
     if address1 != address0:
         return _("You are changing who receives: the will must be signed again.")
     if amount1 != amount0:
@@ -957,8 +979,17 @@ class BalWindow:
         at the right and a grey line saying what the mode means; a new heir
         starts on Percentage, an edit preselects the stored mode ("30%":
         Percentage). The stored format ("30%" or satoshis) is unchanged.
+        #140 (owner): in the OP_RETURN mode the message has an 80-byte
+        counter, a fixed warning and its own "?"; a new message with no name
+        gets "OP_RETURN message"; a second message is refused. An existing
+        message opens :meth:`message_dialog` instead.
         """
         heir = self.heirs.get(heir_key)
+        if heir is not None and is_op_return_address(str(heir[0])):
+            # #140 (owner's ZIP test): a message (double click, Edit) opens
+            # the same window as the "✉" button, not the heir's one with
+            # the hexadecimal address.
+            return self.message_dialog(heir_key)
         title = _("New heir")
         if heir:
             title = _("Edit: {}").format(heir_key)
@@ -1045,12 +1076,31 @@ class BalWindow:
         percentage_button.clicked.connect(lambda: heir_amount.set_percentage(True))
         fixed_button.clicked.connect(lambda: heir_amount.set_percentage(False))
 
-        # OP_RETURN message field (hidden by default)
-        op_return_message = QLineEdit()
+        # OP_RETURN message field (hidden by default). #140 (owner): at most
+        # 80 bytes with a counter, a fixed warning and a "?" of its own.
+        op_return_message = MessageEdit(lines=3)
         op_return_message.setFixedWidth(32 * char_width_in_lineedit())
         op_return_message.setVisible(False)
         op_return_amount_label = QLabel(_("Amount"))
         op_return_message_label = QLabel(_("OP_RETURN Message"))
+        message_help_button = HelpButton(message_help_text())
+        message_info = QWidget()
+        message_info_layout = QVBoxLayout(message_info)
+        message_info_layout.setContentsMargins(0, 0, 0, 0)
+        message_info_layout.addWidget(op_return_message.counter)
+        message_warning = QLabel(message_warning_text())
+        message_warning.setWordWrap(True)
+        message_warning.setStyleSheet(MESSAGE_WARNING_STYLE)
+        message_info_layout.addWidget(message_warning)
+
+        def _show_message_rows(visible):
+            """Show or hide the "?", the counter and the warning of the
+            message (#140); as ``_show_payee_rows``, a widget not yet in the
+            dialog is never shown (it would open as a window of its own)."""
+            for widget in (message_help_button, message_info):
+                if visible and widget.parentWidget() is None:
+                    continue
+                widget.setVisible(visible)
 
         if heir:
             heir_name.setText(str(heir_key))
@@ -1103,6 +1153,7 @@ class BalWindow:
                 camera.setVisible(not is_op_return_address(addr))
             # The text margin follows the button (owner's ZIP test).
             reserve_button_space(heir_address)
+            _show_message_rows(is_op_return_address(addr))
             if is_op_return_address(addr):
                 if not op_return_message.isVisible():
                     op_return_message.setVisible(True)
@@ -1143,7 +1194,8 @@ class BalWindow:
         grid.addWidget(heir_name, 1, 1)
         grid.addWidget(HelpButton(_("Unique name or description about heir")), 1, 2)
 
-        grid.addWidget(QLabel(_("Address")), 2, 0)
+        # #140 (owner): "Bitcoin address", never mistaken for a home address.
+        grid.addWidget(QLabel(_("Bitcoin address")), 2, 0)
         grid.addWidget(heir_address, 2, 1)
         grid.addWidget(HelpButton(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
         grid.addWidget(address_help, 3, 1)
@@ -1153,8 +1205,13 @@ class BalWindow:
         grid.addWidget(amount_help_button, 4, 2)
         grid.addWidget(amount_help, 5, 1)
 
-        grid.addWidget(op_return_message_label, 4, 0)
+        grid.addWidget(op_return_message_label, 4, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(op_return_message, 4, 1)
+        # #140: in the cells of the amount's "?" and grey line, hidden in
+        # the OP_RETURN mode (and these hidden in the payee mode).
+        grid.addWidget(message_help_button, 4, 2, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(message_info, 5, 1)
+        _show_message_rows(is_op_return_address(heir_address.text()))
 
         locktime_label = QLabel(_("Locktime"))
         enable_multiverse = self.bal_plugin.ENABLE_MULTIVERSE.get()
@@ -1204,6 +1261,11 @@ class BalWindow:
             buttons.append(new_heir_button)
         vbox.addLayout(Buttons(*buttons))
         while d.exec():
+            if (not heir_name.text().strip() and heir_key is None
+                    and is_op_return_address(heir_address.text())):
+                # #140 (owner): a new message gets its name by itself.
+                heir_name.setText(automatic_message_name(
+                    self.heirs, _("OP_RETURN message")))
             if not heir_name.text().strip():
                 # #139 (owner's ZIP test): an empty name reached the wallet
                 # file and failed there with a raw error; the window stays
@@ -1252,6 +1314,13 @@ class BalWindow:
                 # rename to a name already in the list).
                 self.show_error(_("An heir named {} already exists.").format(new_name))
                 continue
+            try:
+                # #140 (owner): one message per will; a message being edited
+                # may change its text.
+                check_one_message(self.heirs, heir_key, raw_address)
+            except SecondMessageNotAllowed as e:
+                self.show_error(heir_error_message(e))
+                continue
             other = heir_with_address(self.heirs, raw_address, except_name=heir_key)
             if other is not None:
                 # #135 (owner): no two heirs on one address (the second
@@ -1278,6 +1347,81 @@ class BalWindow:
             if self.add_another_heir:
                 self.new_heir_dialog()
             break
+
+    def message_dialog(self, key=None):
+        """The "✉ A message in the will" window (#140, owner).
+
+        One message per will: it opens the message already there (the
+        first, by name, in an old wallet with more) or a new one. It asks
+        only the text: the plugin names a new message "OP_RETURN message"
+        (translated, a plain name; ``automatic_message_name`` when a payee
+        has it) and stores ``OP_RETURN:<hex>`` with no amount, as the
+        Advanced "New heir" window does. An existing message keeps its name.
+        ``key``: the message to open (a double click in the Heirs list);
+        default: the first one. Returns True when the message was saved.
+        """
+        if key is None or key not in self.heirs:
+            names = message_names(self.heirs)
+            key = names[0] if names else None
+        heir = self.heirs.get(key) if key is not None else None
+        d = BalDialog(self.window, self.bal_plugin,
+                      self.bal_plugin.get_window_title(_("A message in the will")))
+        vbox = QVBoxLayout(d)
+        grid = QGridLayout()
+        # Owner's ZIP test: the whole message (80 bytes) on two lines.
+        field = MessageEdit(lines=2)
+        field.setFixedWidth(48 * char_width_in_lineedit())
+        if heir is not None:
+            field.setText(message_text(heir[0]))
+        grid.addWidget(QLabel(_("Message")), 0, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(field, 0, 1)
+        grid.addWidget(HelpButton(message_help_text()), 0, 2, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(field.counter, 1, 1)
+        vbox.addLayout(grid)
+        warning = QLabel(message_warning_text())
+        warning.setWordWrap(True)
+        warning.setStyleSheet(MESSAGE_WARNING_STYLE)
+        vbox.addWidget(warning)
+        name = key if key is not None else automatic_message_name(
+            self.heirs, _("OP_RETURN message"))
+        # Owner: the window says what the name is for.
+        name_line = QLabel(_(
+            "In the heirs list it is called \"{}\": the name is only for you, "
+            "it is not written in the transaction.").format(name))
+        name_line.setWordWrap(True)
+        name_line.setStyleSheet("color:#6A737D;")
+        vbox.addWidget(name_line)
+        hint = QLabel("")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#6A737D;")
+        vbox.addWidget(hint)
+        if heir is not None:
+            def _update_hint():
+                """The #135 hint: a new text must be signed again."""
+                hint.setText(edit_hint((key, heir[0], ""),
+                                       (key, message_address(field.text()), "")))
+
+            field.textChanged.connect(_update_hint)
+            _update_hint()
+        vbox.addLayout(Buttons(CancelButton(d), OkButton(d)))
+        while d.exec():
+            text = field.text()
+            if not text.strip():
+                self.show_error(_("Write the message."))
+                continue
+            address = message_address(text)
+            if heir is not None and address == str(heir[0]):
+                return False  # nothing changed: nothing to sign
+            locktime = heir[2] if heir is not None else self.will_settings["locktime"]
+            try:
+                check_one_message(self.heirs, name, address)
+                self.set_heir([name, address, "0", str(locktime)])
+            except Exception as e:
+                self.show_error(heir_error_message(e))
+                continue
+            self.heir_list_widget.update()
+            return True
+        return False
 
     def set_heir(self, heir):
         heir = list(heir)
@@ -1306,16 +1450,27 @@ class BalWindow:
 
     def import_heirs(self):
         """Import heirs from a file (the notes of the heirs still there are
-        kept; the notes of heirs no longer there are dropped, #138)."""
+        kept; the notes of heirs no longer there are dropped, #138). #140:
+        a second message of the file is not imported, and said so."""
+        skipped = []
+
+        def importer(path):
+            """``Heirs.import_file``, keeping the skipped messages."""
+            skipped[:] = self.heirs.import_file(path) or []
+
         def after_import():
-            """Clean the notes, then show the list."""
+            """Clean the notes, then show the list (and the skipped ones)."""
             heir_notes.clean(self.wallet, list(self.heirs.keys()))
             self.heir_list_widget.update()
+            if skipped:
+                self.show_message(_(
+                    "Not imported: {}. There is already a message in the will: "
+                    "only one is allowed.").format(", ".join(skipped)))
 
         import_meta_gui(
             self.window,
             _("heirs"),
-            self.heirs.import_file,
+            importer,
             after_import,
         )
 

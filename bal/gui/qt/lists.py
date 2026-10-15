@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtWidgets import QLineEdit as _QLineEdit
 
 from ...core import datetext, heir_notes, will_state, will_versions
-from ...core.heirs import shared_addresses
+from ...core.heirs import message_names, message_text, shared_addresses
 from ...core.messages import protected_executor_message
 from ...core.report import executor_fee
 from ...core.summary import executor_states
@@ -166,6 +166,19 @@ def same_address_text(heirs):
         for a, b in shared_addresses(heirs or {}))
 
 
+def extra_messages_text(heirs):
+    """The note for an old wallet with more than one message (#140), or "".
+
+    Owner: one message per will. Such wallets are only told, never changed
+    by the plugin (the owner deletes the ones not wanted).
+    """
+    count = len(message_names(heirs or {}))
+    if count < 2:
+        return ""
+    return _("There are {} messages in the will: only one is allowed. Delete "
+             "the others (right click, Delete).").format(count)
+
+
 class HeirListWidget(MyTreeView, MessageBoxMixin):
     class Columns(MyTreeView.BaseColumnsEnum):
         NAME = enum.auto()
@@ -174,7 +187,8 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
 
     headers = {
         Columns.NAME: N_("Name"),
-        Columns.ADDRESS: N_("Address"),
+        # #140 (owner): "Bitcoin address", never mistaken for a home address.
+        Columns.ADDRESS: N_("Bitcoin address"),
         Columns.AMOUNT: N_("Amount"),
     }
     filter_columns = [Columns.NAME, Columns.ADDRESS]
@@ -233,7 +247,10 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         column = idx.column() or self.Columns.NAME
         selected_keys = []
         for s_idx in self.selected_in_column(self.Columns.NAME):
-            sel_key = self.model().itemFromIndex(s_idx).data(0)
+            # #140: the stored name from the key role, not the shown text
+            # (a message is shown as "✉ name").
+            item = self.model().itemFromIndex(s_idx)
+            sel_key = item.data(self.ROLE_HEIR_KEY + self.Columns.NAME) or item.data(0)
             selected_keys.append(sel_key)
         if selected_keys and idx.isValid():
             column_title = self.model().horizontalHeaderItem(column).text()
@@ -265,6 +282,8 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
             labels = [""] * len(self.Columns)
             labels[self.Columns.NAME] = key
             if is_op_return_address(heir[0]):
+                # #140 (owner): the ✉ only on screen; the stored name is plain.
+                labels[self.Columns.NAME] = "✉ " + key
                 data_hex = heir[0][len(OP_RETURN_PREFIX):]
                 try:
                     decoded = bytes.fromhex(data_hex).decode("utf-8", errors="replace")
@@ -275,15 +294,23 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
                     labels[self.Columns.ADDRESS] = "OP_RETURN"
             else:
                 labels[self.Columns.ADDRESS] = heir[0]
-            labels[self.Columns.AMOUNT] = Util.decode_amount(
-                heir[1], self.decimal_point
-            )
+            # #140: a message receives nothing: no "0.00000000" amount.
+            if is_op_return_address(heir[0]):
+                labels[self.Columns.AMOUNT] = ""
+            else:
+                labels[self.Columns.AMOUNT] = Util.decode_amount(
+                    heir[1], self.decimal_point
+                )
 
             items = [QStandardItem(x) for x in labels]
             # #138: the owner's private note, as the name's tooltip.
             note = heir_notes.get(self.bal_window.wallet, key)
             if note:
                 items[self.Columns.NAME].setToolTip(note)
+            if is_op_return_address(heir[0]):
+                # #140 (owner's ZIP test): the column shows 40 characters;
+                # the whole message in the tooltip.
+                items[self.Columns.ADDRESS].setToolTip(message_text(heir[0]))
             # #135: not editable in place (see __init__).
             for item in items:
                 item.setEditable(False)
@@ -323,11 +350,16 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
     def create_toolbar(self, config):
         toolbar, menu = self.create_toolbar_with_menu("")
         menu.addAction(_("&New Heir"), self.bal_window.new_heir_dialog)
+        menu.addAction(_("✉ A message in the will"), self.bal_window.message_dialog)
         menu.addAction(_("Import"), self.bal_window.import_heirs)
         menu.addAction(_("Export"), lambda: self.bal_window.export_heirs())
 
-        new_heir_button = QPushButton(_("New Heir"))
+        # #140 (owner): one person, as the "✉" of the message button.
+        new_heir_button = QPushButton(_("👤 New Heir"))
         new_heir_button.clicked.connect(self.bal_window.new_heir_dialog)
+        # #140 (owner, choice A): the message button in Advanced too.
+        message_button = QPushButton(_("✉ A message in the will"))
+        message_button.clicked.connect(lambda: self.bal_window.message_dialog())
 
         widget = QWidget(self)
         layout = QHBoxLayout(widget)
@@ -335,6 +367,7 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
 
         layout.addWidget(self.will_settings_widget)
         layout.addWidget(new_heir_button)
+        layout.addWidget(message_button)
 
         toolbar.insertWidget(2, widget)
 
@@ -354,11 +387,15 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         Owner: no two heirs may share an address; an old wallet may have
         such heirs: they are only shown ("a and b have the same address:
         keep only one."), never changed, and the Check is not blocked.
+        #140: also :func:`extra_messages_text`.
         """
         label = getattr(self, "same_address_label", None)
         if label is None:
             return
-        text = same_address_text(self.bal_window.heirs)
+        # #140: and the note of an old wallet with more than one message.
+        heirs = self.bal_window.heirs
+        text = "\n".join(t for t in (same_address_text(heirs),
+                                      extra_messages_text(heirs)) if t)
         label.setText(text)
         label.setVisible(bool(text))
 

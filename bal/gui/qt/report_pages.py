@@ -414,6 +414,21 @@ def _heir_blocks(report, format_amount):
     return blocks
 
 
+def _message_block(report):
+    """The will message (#140, owner): each text in quotes and a grey line
+    saying when it becomes public."""
+    b = _Block()
+    y = 2
+    for text in report.messages:
+        y += b.text(0, y, PAGE_W, "“{}”".format(text), report_font(10, italic=True))
+        y += 2
+    b.text(0, y + 2, PAGE_W, _(
+        "Written on the blockchain at the delivery, with the will transaction: "
+        "from then on it is public. The will-executors can read it before."),
+        report_font(8), GREY)
+    return b
+
+
 def _instalment_blocks(report):
     """Multiverse: one row per instalment (number, UTC date, the share of
     each heir on that date, how many will-executors verified it)."""
@@ -666,6 +681,10 @@ def layout_report(report, format_amount):
     for block in _heir_blocks(report, format_amount):
         flow.add(block, space=0)
     flow.y += 10
+    if report.messages:
+        flow.heading(_("MESSAGE IN THE WILL"))
+        flow.add(_message_block(report))
+        flow.y += 8
     if report.multiverse:
         flow.heading(_("DELIVERIES"))
         for block in _instalment_blocks(report):
