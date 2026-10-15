@@ -230,11 +230,20 @@ def switch_user_type(plugin, advanced, parent=None):
     confirmation. Then the open windows follow at once: the per-mode editor
     default of the toolbars (``_apply_editor_default_on_toolbars``, only on
     a real change) and ``update_all``, when the plugin has them (the Qt
-    ``Plugin``; a test plugin may not). One function for the Settings dialog
+    ``Plugin``; a test plugin may not). Before them, the delivery form of
+    every open wallet follows the mode (``context.follow_mode``, #146). One function for the Settings dialog
     and the wizard (#127), so both behave the same.
     """
     confirmed = (not advanced) or confirm_advanced_mode(parent)
     plugin.USER_TYPE.set("advanced" if (advanced and confirmed) else "basic")
+    # #146 (owner): the delivery form of every open wallet follows the mode
+    # (period in ADVANCED, fixed in BASIC; never with a will in force), from
+    # the Settings dialog as from the wizard. Before ``update_all``, so the
+    # toolbars show the new form at once.
+    from ...engine import context as engine_context
+
+    for window in list(getattr(plugin, "bal_windows", {}).values()):
+        engine_context.follow_mode(window)
     for name in ("_apply_editor_default_on_toolbars", "update_all"):
         refresh = getattr(plugin, name, None)
         if callable(refresh):

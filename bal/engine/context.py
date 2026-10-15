@@ -497,6 +497,7 @@ def ensure_will_settings(host, willitems=None, now=None):
                 now,
                 creation_date=_creation_time(host, willitems),
                 multiverse=bool(host.bal_plugin.ENABLE_MULTIVERSE.get()),
+                advanced=_advanced(host),
             )
             # The heirs first: when they cannot be written, nothing is
             # stored and the next load migrates again.
@@ -1090,6 +1091,18 @@ def _multiverse(host):
         return False
 
 
+def _advanced(host):
+    """True when the plugin is in ADVANCED mode; False when it cannot be read.
+
+    Read by the migration of a brand-new wallet (#146): in ADVANCED its
+    delivery starts in the period form. BASIC is the safe answer.
+    """
+    try:
+        return not host.bal_plugin.is_basic_mode()
+    except Exception:
+        return False
+
+
 def set_delivery(host, form=None, date=None, months=None, now=None):
     """The one validated write of the delivery form (#127).
 
@@ -1173,6 +1186,64 @@ def set_delivery(host, form=None, date=None, months=None, now=None):
         "locktime": d.get("locktime"),
         "applied": applied,
     }
+
+
+def initial_months(settings, now):
+    """N for the period form: the stored period, else the whole months from
+    ``now`` to the stored date (1..240), else the default (24).
+
+    The one rule of the wizard's month box and of :func:`follow_mode`, so
+    a switch to the period form keeps the date about the same.
+    """
+    settings = settings or {}
+    n = delivery.as_months(settings.get("period_months"))
+    if n is not None:
+        return n
+    locktime = delivery.as_delivery(settings.get("locktime"))
+    if locktime is not None:
+        n = delivery.months_between(now, locktime)
+        if delivery.PERIOD_MIN <= n <= delivery.PERIOD_MAX:
+            return n
+    return delivery.DEFAULT_MONTHS
+
+
+def follow_mode(host, months=None, now=None):
+    """The delivery form follows the plugin mode (owner, #127 and #146).
+
+    Only while the form is not locked (no will in force,
+    :func:`form_locked`):
+
+    * BASIC: a period form goes back to the fixed date (the date stays);
+    * ADVANCED, multiverse off: a fixed date becomes the period form of
+      ``months`` (default :func:`initial_months`, so the date stays about
+      the same); the Check Alive can then renew the will.
+
+    The same rule for every place that switches the mode (the plugin
+    Settings dialog and the wizard), so the order of the owner's steps does
+    not matter. Writes through :func:`set_delivery`. Returns the form
+    written, or None when nothing changed. Never raises: a refusal is
+    logged and nothing is written.
+    """
+    try:
+        d = host.will_settings
+        period = delivery.is_period(d)
+        advanced = _advanced(host)
+        if period == advanced or form_locked(host):
+            return None
+        if not advanced:
+            set_delivery(host, form=delivery.FORM_FIXED, now=now)
+            return delivery.FORM_FIXED
+        if _multiverse(host):
+            return None
+        if now is None:
+            now = time.time()
+        if months is None:
+            months = initial_months(d, now)
+        set_delivery(host, form=delivery.FORM_PERIOD, months=months, now=now)
+        return delivery.FORM_PERIOD
+    except Exception as e:
+        _logger.warning(f"delivery form not changed with the mode: {e!r}")
+        return None
 
 
 def apply_delivery_policy(host, now=None):

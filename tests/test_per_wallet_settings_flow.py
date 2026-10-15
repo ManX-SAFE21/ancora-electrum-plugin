@@ -788,7 +788,7 @@ def test_two_wallets_keep_their_own_dates_and_a_new_wallet_gets_the_default(make
     assert (db["locktime"], db["migrated_from"]) == (fk.ts(2029, 9, 3), "global")
     assert dc["locktime"] == fk.ts(2028, 10, 15)
     assert (dc["migrated_from"], dc["baltx_fees"], dc["threshold"]) == (
-        "default", 20, "-180d")
+        "default", 20, "-365d")
     assert "legacy_locktime" not in dc and "note_kind" not in dc
     for s in (b, c):
         s.activate()

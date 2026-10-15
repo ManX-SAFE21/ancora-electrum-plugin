@@ -3666,8 +3666,13 @@ class BalWindow:
             all_utxos = Util.get_available_utxos(
                 self.wallet,
                 self.bal_plugin.HISTORY_LABEL.get(),
+                # #146: a wallet never checked has no ``date_to_check`` yet
+                # (it is set by the Check); the refresh must still reach
+                # the toolbars below (owner's ZIP test: switching to
+                # ADVANCED left the Will tab in BASIC).
                 Will.get_min_locktime(
-                    self.willitems, default_value=self.date_to_check
+                    self.willitems,
+                    default_value=getattr(self, "date_to_check", None),
                 ),
             )
             utxos_list = Will.utxos_strs(all_utxos)
