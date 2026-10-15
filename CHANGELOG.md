@@ -9296,3 +9296,123 @@ message:
 - that copy had never been verified ("3 of 4");
 - the misleading "No change" box and the address rotation are the next
   step (#141).
+
+## 141. A will-executor's new fee address: a received copy stays valid
+
+**Date:** 2026-10-15
+
+**Problem (the owner's ZIP test of #140, point 7):** a Check asked to sign
+again, and the "What changes" box said "No change".
+- `we.bitcoin-after.life` had answered `/info` with another fee address.
+- The plugin keeps a copy only when the URL, fee address and fee are the
+  same as now (`Util.cmp_willexecutor`).
+- So a copy was rebuilt and signed again after every change of address, even
+  when the will-executor had already received it.
+
+**What the will-executors do (bal-server read on the BAL Gitea, 2026-10-15,
+current `main` and tag v0.2.2):**
+- with an xpub, `/info` gives one address per user IP, so the address
+  changes when the user's IP changes;
+- at the push the server accepts a transaction that pays ANY address it ever
+  derived, with at least its fixed fee;
+- bal-pusher broadcasts the stored transaction as it is and does not check
+  again.
+
+**What changed:**
+
+- **A received copy stays valid** (`Will.received`: VALID and PUSHED, i.e.
+  the push was accepted or the verification found it).
+  - In `check_willexecutors_and_heirs`, a received copy whose will-executor
+    now gives another fee address or fee counts as present
+    (`Will.terms_change`).
+  - Nothing is signed or sent for it, and the next Check is clean.
+- **A rebuild keeps the received copies** when nothing else changed for
+  them (`engine.build._transactions`).
+  - Those will-executors are built with the payment data of their received
+    copy (`Will.received_terms`, new `pinned` argument of
+    `Heirs.get_transactions` / `buildTransactions`).
+  - This is kept only when it gives the same coins and outputs as the
+    received copy (`Will.same_payments`).
+  - Otherwise (heirs, miner fee, new coins) the build runs again with the
+    will-executor's new data.
+- **A copy not received yet is redone, and the Check says why.**
+  - New exception `WillExecutorTermsChanged` (a `WillExecutorNotPresent`,
+    with `change` "address" or "fee").
+  - New sentence `messages.executor_terms_message`. The owner's text:
+    "we.bitcoin-after.life has a new Bitcoin address to receive its fee. Its
+    copy of the will is not yet confirmed as received: it must be redone
+    with the new address and signed again." There is a variant for a new
+    fee.
+- **The old copy that is not received is no longer sent** (owner: "un punto
+  importante").
+  - `Will.replace_unreceived_copies` (called by `update_will`) marks it
+    REPLACED when all of these hold:
+    - a new copy for the same will-executor;
+    - same coins and same date;
+    - another fee address or fee;
+    - the old copy never received.
+  - Before, both stayed VALID (same date: `check_anticipate` sees the same
+    heirs) and the old copy, with the old address, was sent too.
+  - A received copy is never touched.
+- **The "What changes" box** no longer says "No change" in that case.
+  - It has a new row "Will-executor fee" (`EXECUTOR_TERMS`, from the copies'
+    payment data, `WillSide.terms`).
+  - For a copy not received, the row gives the sentence above. For a
+    received copy that changes anyway, it reads "... has a new Bitcoin
+    address to receive its fee: the new copy uses it."
+  - A REPLACED copy is left out of the comparison.
+- **Unchanged:** the protocol, the wallet keys, `Util.cmp_willexecutor`.
+- **Manual and catalogs.**
+  - Manual: "When the fee address changes" in the will-executor list
+    section.
+  - IT/ES catalogs: 5 new msgids. Italian: the owner's sentence.
+
+**Tests:**
+- `tests/test_executor_fee_address.py` (new, 10 tests). It uses three fake
+  will-executors, each with its own fee address, and covers:
+  - a received copy after a new address and after a new fee: no password,
+    nothing sent, two clean Checks;
+  - a copy not received with a new address:
+    - only that copy is redone, with the new address;
+    - the old copy is REPLACED and not sent;
+    - the sentence is in the Check and in the box;
+    - the next Check is clean;
+  - a received copy kept with its old address while another is redone;
+  - an heir added: the received copy is rebuilt with the new address;
+  - `terms_change`, the messages and the box rows.
+- Golden file updated: `tests/golden/5e/copies/executor_fee_raised_after_sent.json`.
+  - The scenario: will-executor we1 raises its fee over the maximum after it
+    received the will.
+  - Before: "not covered by the current will", a rebuild, "Will-Executor
+    excluded: Skipped".
+  - Now: the Check is OK with nothing to do. we1 accepted the copy with the
+    old fee and broadcasts it as it is, so the copy stays valid (the rule
+    of this step).
+- `tests/test_5e_divergences.py`: D13 (an executor valid by address but
+  unusable for the build) read that golden file.
+  - It is now "not reproduced": the scenario no longer reaches the build.
+  - `test_d13` asserts the new outcome.
+
+**Verification:**
+- ruff clean.
+- Affected tests: 172 passed; the new file: 10 passed.
+- Catalogs: RESULT OK; i18n tests passed.
+- Test ZIP `safe21-heartbeat_0.7.0-TEST-141-fee-address.zip`: external load
+  and smoke test OK on 4.8.2.
+- Whole suite in both orders: 2280 passed each time.
+
+**Outcome:** the owner's ZIP test (2026-10-15) on his wallet: OK.
+- Points 1-3: a received copy whose will-executor gets a new address is
+  kept, with no signature and nothing sent.
+- The log showed the rule for copies that change anyway: after an heir
+  change, the copy of `we.bitcoin-after.life` was rebuilt with its new
+  address.
+- Point 4 (a copy not received) is covered by the tests: on the real
+  wallet the will-executor's real address was back (Ping) before Prepare.
+
+Found in that test (next step #142, known divergence D14): Prepare in the
+WILL tab does not move the stored delivery date to the anticipated will.
+- Then its own check showed "Error: <heir> / Please, check your heirs,
+  locktime and threshold!".
+- The next Check took it for a postpone and offered a paid invalidation.
+  The owner set the date by hand instead.

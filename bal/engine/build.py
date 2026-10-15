@@ -110,13 +110,7 @@ def build_will(host, *, with_creation_date):
         # current mode (the Check Alive in ADVANCED, "now" in BASIC). The
         # available-UTXO view restores coins that a newer, wallet-local will
         # tx (stored in the history with a later locktime) nominally spent.
-        txs = host.heirs.get_transactions(
-            host.bal_plugin,
-            host.wallet,
-            host.will_settings["baltx_fees"],
-            context.available_utxos(host),
-            host.date_to_check,
-        )
+        txs = _transactions(host)
         _logger.info(f"txs built: {txs}")
         creation_time = time.time()
         if not txs:
@@ -155,6 +149,54 @@ def build_will(host, *, with_creation_date):
         _logger.info(f"Exception build_will: {e}")
         raise
     return host.willitems
+
+
+def _transactions(host):
+    """Build the will's transactions for ``build_will`` (step 4).
+
+    CHANGELOG #141: a will-executor gives a new fee address when the
+    user's IP changes (bal-server keeps one per IP), but it accepts every
+    address it ever gave, and it broadcasts the copy it holds as it is. So
+    a will-executor that received its copy keeps its old payment data
+    (``Will.received_terms``) when that gives the same transaction again
+    (``Will.same_payments``): nothing to sign or send for it. When the
+    copy changes anyway (heirs, fee rate, new coins), it is built again
+    with the will-executor's new data.
+    """
+    utxos = context.available_utxos(host)
+
+    def build(pinned):
+        """The transactions with the payment data ``pinned``."""
+        return host.heirs.get_transactions(
+            host.bal_plugin,
+            host.wallet,
+            host.will_settings["baltx_fees"],
+            utxos,
+            host.date_to_check,
+            pinned=pinned,
+        )
+
+    pinned = Will.received_terms(host.willitems, host.willexecutors)
+    txs = build(pinned)
+    if not pinned or not txs:
+        return txs
+    kept = {
+        url: data for url, data in pinned.items()
+        if all(
+            Will.same_payments(tx, host.willitems, url)
+            for tx in txs.values()
+            if (getattr(tx, "willexecutor", None) or {}).get("url") == url
+        )
+    }
+    if kept != pinned:
+        _logger.info(
+            "will-executor copies changed anyway, built with the new "
+            f"payment data: {sorted(set(pinned) - set(kept))}"
+        )
+        txs = build(kept)
+    if kept:
+        _logger.info(f"received copies kept with their payment data: {sorted(kept)}")
+    return txs
 
 
 def label_rebuilt(host, *, scope, on_error=None):

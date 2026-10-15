@@ -49,6 +49,7 @@ HEIRS = "heirs"
 SHARES = "shares"
 MESSAGE = "message"
 EXECUTORS = "executors"
+EXECUTOR_TERMS = "executor_terms"
 FEE = "fee"
 NONE = "none"
 
@@ -76,6 +77,9 @@ class WillSide:
     # #135: every heir name at each address ({address: [names]}): two names
     # on one address are two heirs paid there, never one heir renamed.
     all_names: Dict[str, List[str]] = field(default_factory=dict)
+    # #141: the payment data of each will-executor's copy ({url: (fee
+    # address, fee, received)}); empty when not known (the settings).
+    terms: Dict[str, tuple] = field(default_factory=dict)
 
 
 @dataclass
@@ -221,8 +225,34 @@ def side_from_items(items, selected=None):
             side.fee = None
     states = executor_states(first_items, selected)
     side.executors = sorted(u for u, st in states.items() if st != "deselected")
+    side.terms = _terms(first_items)
     return side
 
+
+def _terms(items):
+    """``{url: (fee address, fee, received)}`` of the copies ``items`` (#141).
+
+    ``received``: every copy for that will-executor was received
+    (``Will.received``). A copy REPLACED by another one for the same
+    will-executor is left out: the prepared will holds the old copies in
+    force next to the drafts that redo them
+    (``engine.context.prepared_items``). A will-executor whose remaining
+    copies disagree is left out.
+    """
+    from .will import Will
+
+    by_url = {}
+    for w in items.values():
+        url = (w.we or {}).get("url")
+        if url:
+            by_url.setdefault(url, []).append(w)
+    terms = {}
+    for url, copies in by_url.items():
+        current = [w for w in copies if not w.get_status("REPLACED")] or copies
+        data = {(w.we.get("address"), w.we.get("base_fee")) for w in current}
+        if len(data) == 1:
+            terms[url] = data.pop() + (all(Will.received(w) for w in current),)
+    return terms
 
 def side_from_settings(heirs, locktime, executors, fee):
     """The :class:`WillSide` the settings would give (the wizard, #135).
@@ -277,6 +307,16 @@ def will_changes(old, new):
     if gained or lost:
         out.append(Change(EXECUTORS, len(old.executors), len(new.executors),
                           added=gained, removed=lost))
+    terms = []
+    for url in new.executors:
+        if url in old.executors and url in old.terms and url in new.terms:
+            was, now = old.terms[url], new.terms[url]
+            if was[0] != now[0]:
+                terms.append((url, "address", was[2]))
+            elif was[1] != now[1]:
+                terms.append((url, "fee", was[2]))
+    if terms:
+        out.append(Change(EXECUTOR_TERMS, added=terms))
     if (old.fee is not None and new.fee is not None
             and int(old.fee) != int(new.fee)):
         out.append(Change(FEE, old.fee, new.fee))
@@ -507,6 +547,22 @@ def change_rows(changes, wizard=False, new_in_network=()):
             detail = "; ".join(parts)
             value = "{}: {}".format(value, detail) if value and detail else (value or detail)
             rows.append((_("Will-executors"), value, None))
+        elif c.kind == EXECUTOR_TERMS:
+            # #141: a new fee address (it changes with the user's IP) or
+            # fee. A copy not received is redone (the owner's sentence); a
+            # received one only when it changes anyway.
+            from .messages import executor_terms_message
+
+            for url, change, received in c.added:
+                if not received:
+                    value = executor_terms_message(url, change)
+                elif change == "fee":
+                    value = _("{} has a new fee: the new copy uses it.").format(
+                        _host(url))
+                else:
+                    value = _("{} has a new Bitcoin address to receive its "
+                              "fee: the new copy uses it.").format(_host(url))
+                rows.append((_("Will-executor fee"), value, None))
         elif c.kind == FEE:
             rows.append((_("Miner fee"), "{} → <b>{} sat/vB</b>".format(
                 _fee(c.old), _fee(c.new)), None))

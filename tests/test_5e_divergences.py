@@ -81,9 +81,12 @@ DIVERGENCES = {
          "needs a Check Alive one day from the delivery; decision D10 asks "
          "for this scenario (step 5e-10)"),
     13: ("A will-executor valid by address but unusable for the build",
-         "pinned", ["copies/executor_fee_raised_after_sent"],
-         "Check: 'Will-Executor excluded: Skipped', 'Building' stays on "
-         "'Wait'; the CLI and automatic copies are not run here"),
+         "not reproduced", ["copies/executor_fee_raised_after_sent"],
+         "#141: in this scenario we1 had received its copy, which now stays "
+         "valid (it accepted the old fee and broadcasts the copy as it is): "
+         "the Check is OK and builds nothing. Before: 'Will-Executor "
+         "excluded: Skipped' and 'Building' left on 'Wait'. That needs a "
+         "copy not received, not reproduced here"),
     14: ("The stored delivery date follows the rebuilt will (#110)",
          "pinned", ["check/new_coin", "copies/prepare_new_coin",
                     "copies/auto_new_coin", "copies/cli_new_coin"], ""),
@@ -362,9 +365,12 @@ def test_d11():
 
 
 def test_d13():
-    """An executor over the maximum fee: Check skips it and leaves 'Building' on 'Wait'."""
+    """An executor over the maximum fee after it received the will: its copy
+    stays valid (#141), the Check is OK and builds nothing."""
     c = step("copies/executor_fee_raised_after_sent", "check", 1)
-    assert "Will-Executor excluded" in rows(c) and "Building your will: Wait" in rows(c)
+    assert "Will-Executor excluded" not in rows(c)
+    assert "Building your will" not in rows(c)
+    assert c["report"]["result"][0] == "ok"
 
 
 def test_d14():

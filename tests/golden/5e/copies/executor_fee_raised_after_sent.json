@@ -232,9 +232,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>Will-executor \"https://we1.test\" is not covered by the current will: a new will must be prepared.</b>",
-   "Building your will:\t<b>Wait</b>",
-   "Will-Executor excluded:\t<font color=#ff0000><b>Skipped</b></font>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
@@ -279,13 +277,9 @@
   "questions": [],
   "report": {
    "boxes": {
-    "changes": [
-     "Will-executor \"https://we1.test\" is not covered by the current will: a new will must be prepared."
-    ],
+    "changes": [],
     "problems": [],
-    "warnings": [
-     "Will-Executor excluded: Skipped"
-    ]
+    "warnings": []
    },
    "executors": [
     [
@@ -316,8 +310,8 @@
     ],
     [
      "prepare",
-     "run",
-     ""
+     "skip",
+     "not needed"
     ],
     [
      "sign",
@@ -339,9 +333,7 @@
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>Will-executor \"https://we1.test\" is not covered by the current will: a new will must be prepared.</b>",
-   "Building your will:\t<b>Wait</b>",
-   "Will-Executor excluded:\t<font color=#ff0000><b>Skipped</b></font>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",

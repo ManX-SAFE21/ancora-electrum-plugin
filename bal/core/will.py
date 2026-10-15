@@ -658,11 +658,45 @@ class Will:
                 )
                 Will._keep_signatures(new, old)
                 signed_copies.append(oid)
+        Will.replace_unreceived_copies(old_will, new_will)
         return {
             "dropped": dropped,
             "brought_back": brought_back,
             "signed_copies": signed_copies,
         }
+
+    @staticmethod
+    def replace_unreceived_copies(old_will, new_will):
+        """Mark REPLACED the old copies the new will redoes for a new fee
+        address or fee (#141). Returns their ids.
+
+        An old VALID copy its will-executor never received
+        (:meth:`received`) is replaced by a new copy for the same
+        will-executor that spends the same coins on the same date and pays
+        another fee address or fee (:meth:`terms_change`). The rebuild keeps
+        the same date for it (``check_anticipate``: same heirs), so without
+        this both copies stayed VALID and the old one, with the old address,
+        was sent too. A received copy is never touched: the will-executor
+        holds it.
+        """
+        replaced = []
+        for oid in list(Will.only_valid(old_will)):
+            old = old_will[oid]
+            if oid in new_will or not old.we or Will.received(old):
+                continue
+            for nid, new in new_will.items():
+                if (
+                    nid != oid
+                    and new.we
+                    and new.we.get("url") == old.we.get("url")
+                    and int(new.tx.locktime) == int(old.tx.locktime)
+                    and Will.terms_change(old.we, new.we)
+                    and Will._shares_coins(new, old)
+                ):
+                    old.set_status("REPLACED", True)
+                    replaced.append(oid)
+                    break
+        return replaced
 
     @staticmethod
     def _carry_new_data(old, new):
@@ -2232,12 +2266,87 @@ class Will:
         return found[0] if len(found) == 1 else None
 
     @staticmethod
+    def received(w):
+        """True when the will-executor of ``w`` has received it (#141).
+
+        VALID with a will-executor and PUSHED: the push was accepted, or
+        the verification found it (``set_check_willexecutor``; a failed
+        verification clears PUSHED). The will-executor checked its fee
+        address and fee when it accepted the copy, and broadcasts it as it
+        is at the delivery (bal-server and bal-pusher read on 2026-10-15).
+        """
+        return bool(w.get_status("VALID") and w.we and w.get_status("PUSHED"))
+
+    @staticmethod
+    def terms_change(stored, current):
+        """What changed in a will-executor's payment data (#141).
+
+        ``stored``: the will-executor written in a will item; ``current``:
+        the same URL in the will-executor list now. Returns ``"address"``
+        (another fee address, maybe with another fee), ``"fee"`` (only the
+        fee) or None (nothing, another URL, or no data to compare).
+        """
+        try:
+            if not current or stored["url"] != current.get("url", stored["url"]):
+                return None
+            if stored["address"] != current["address"]:
+                return "address"
+            if stored["base_fee"] != current["base_fee"]:
+                return "fee"
+        except (KeyError, TypeError, AttributeError):
+            return None
+        return None
+
+    @staticmethod
+    def received_terms(will, willexecutors):
+        """The payment data to keep for each will-executor (#141).
+
+        ``{url: {"address": ..., "base_fee": ...}}`` for every will-executor
+        whose received copies (:meth:`received`) were built with another fee
+        address or fee than ``willexecutors`` gives now. A build with these
+        data gives the same transactions again when nothing else changed,
+        so the copies stay valid and nothing is signed again
+        (``engine.build.build_will`` keeps only the ones that do).
+        """
+        pins = {}
+        for w in Will.only_valid_list(will).values():
+            if not Will.received(w):
+                continue
+            url = w.we.get("url")
+            if Will.terms_change(w.we, willexecutors.get(url)):
+                pins.setdefault(url, {
+                    "address": w.we["address"], "base_fee": w.we["base_fee"]})
+        return pins
+
+    @staticmethod
+    def same_payments(new_tx, will, url):
+        """True when ``new_tx`` spends and pays the same as a received copy
+        for ``url`` in ``will``, the date apart (#141).
+
+        The date may still be moved by ``update_will`` (anticipation); the
+        inputs and outputs tell whether the build with the kept payment
+        data gave the transaction the will-executor already holds.
+        """
+        def payments(tx):
+            ins = sorted(i.prevout.to_str() for i in tx.inputs())
+            outs = sorted((o.scriptpubkey.hex(), o.value) for o in tx.outputs())
+            return ins, outs
+
+        target = payments(new_tx)
+        for w in Will.only_valid_list(will).values():
+            if Will.received(w) and w.we.get("url") == url:
+                if payments(w.tx) == target:
+                    return True
+        return False
+
+    @staticmethod
     def check_willexecutors_and_heirs(
         will, heirs, willexecutors, self_willexecutor, check_date, tx_fees
     ):
         _logger.debug("check willexecutors heirs")
         no_willexecutor = 0
         willexecutors_found = {}
+        terms_changed = {}
         heirs_found = {}
         will_only_valid = Will.only_valid_list(will)
         if len(will_only_valid) < 1:
@@ -2367,11 +2476,21 @@ class Will:
                         )
 
             if willexecutor := w.we:
-                count = willexecutors_found.get(willexecutor["url"], 0)
-                if Util.cmp_willexecutor(
-                    willexecutor, willexecutors.get(willexecutor["url"], None)
-                ):
-                    willexecutors_found[willexecutor["url"]] = count + 1
+                url = willexecutor["url"]
+                count = willexecutors_found.get(url, 0)
+                current = willexecutors.get(url, None)
+                if Util.cmp_willexecutor(willexecutor, current):
+                    willexecutors_found[url] = count + 1
+                elif changed := Will.terms_change(willexecutor, current):
+                    # CHANGELOG #141: the will-executor gives another fee
+                    # address (it changes with the user's IP) or fee. A
+                    # copy it already received stays valid: it accepted it
+                    # and broadcasts it as it is. Only a copy not received
+                    # yet is redone, and the reason is said.
+                    if Will.received(w):
+                        willexecutors_found[url] = count + 1
+                    else:
+                        terms_changed.setdefault(url, changed)
 
             else:
                 no_willexecutor += 1
@@ -2406,6 +2525,12 @@ class Will:
         for url, we in willexecutors.items():
             if Willexecutors.is_selected(we) and Willexecutors.is_valid(we):
                 if url not in willexecutors_found:
+                    if url in terms_changed:
+                        _logger.debug(
+                            f"will-executor: {url} new {terms_changed[url]}, "
+                            "its copy was not received yet"
+                        )
+                        raise WillExecutorTermsChanged(url, terms_changed[url])
                     _logger.debug(f"will-executor: {url} not fount")
                     raise WillExecutorNotPresent(url)
         _logger.info("will is coherent with heirs and will-executors")
@@ -2833,6 +2958,20 @@ class NoWillExecutorNotPresent(NotCompleteWillException):
 
 class WillExecutorNotPresent(NotCompleteWillException):
     pass
+
+
+class WillExecutorTermsChanged(WillExecutorNotPresent):
+    """A will-executor gives a new fee address or fee, and its copy of the
+    will was not received yet: the copy is redone (#141).
+
+    ``str(e)`` is the URL (as for ``WillExecutorNotPresent``); ``change`` is
+    ``"address"`` or ``"fee"`` (:meth:`Will.terms_change`).
+    """
+
+    def __init__(self, url, change):
+        """Keep the URL as the message and the kind of change."""
+        super().__init__(url)
+        self.change = change
 
 
 class NoHeirsException(WillException):

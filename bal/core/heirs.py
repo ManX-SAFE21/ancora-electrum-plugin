@@ -867,8 +867,16 @@ class Heirs(dict, Logger):
         return Util.is_perc(self[key][HEIR_AMOUNT])
 
     def buildTransactions(
-        self, bal_plugin, wallet, tx_fees=None, utxos=None, from_locktime=0
+        self, bal_plugin, wallet, tx_fees=None, utxos=None, from_locktime=0,
+        pinned=None,
     ):
+        """Build the inheritance transactions, one set per will-executor.
+
+        ``pinned`` (#141): ``{url: {"address": ..., "base_fee": ...}}``,
+        the payment data to use for those will-executors instead of the
+        ones in the list (``Will.received_terms``), so a copy they already
+        received is built again unchanged.
+        """
         # Reset the diagnostic reason at the start of every build attempt.
         #
         # WHY: when the build produced nothing, the GUI used to show a fixed
@@ -936,6 +944,9 @@ class Heirs(dict, Logger):
                     continue
                 else:
                     willexecutor["url"] = url
+                    if pinned and url in pinned:
+                        # A copy: the list itself keeps the new data.
+                        willexecutor = dict(willexecutor, **pinned[url])
             elif j == -1:
                 if not no_willexecutors:
                     continue
@@ -1053,9 +1064,16 @@ class Heirs(dict, Logger):
         return alltxs
 
     def get_transactions(
-        self, bal_plugin, wallet, tx_fees, utxos=None, from_locktime=0
+        self, bal_plugin, wallet, tx_fees, utxos=None, from_locktime=0,
+        pinned=None,
     ):
-        txs = self.buildTransactions(bal_plugin, wallet, tx_fees, utxos, from_locktime)
+        """The transactions of the will, with those for the coins left over.
+
+        ``pinned``: see :meth:`buildTransactions` (#141).
+        """
+        txs = self.buildTransactions(
+            bal_plugin, wallet, tx_fees, utxos, from_locktime, pinned=pinned
+        )
         if txs:
             temp_txs = {}
             for txid in txs:
@@ -1067,6 +1085,7 @@ class Heirs(dict, Logger):
                             tx_fees,
                             txs[txid].available_utxos,
                             txs[txid].locktime,
+                            pinned=pinned,
                         )
                     )
             txs.update(temp_txs)
