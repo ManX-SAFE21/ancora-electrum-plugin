@@ -792,7 +792,10 @@ nothing to sign, nothing to send.
 
 *Figure 9 — the WILL tab with its commands.*
 
-1. **Prepare** — prepares the inheritance and puts it on the list.
+1. **Prepare** — prepares the inheritance and puts it on the list. When the
+   new will replaces the one in force with other heirs, shares or coins, it is
+   dated one day earlier (so it is executed first); the delivery date shown at
+   the top moves with it, as with **Check**.
 2. **Sign** — sign your legacy transaction with your private key (using your
    wallet password or hardware key).
 3. **Broadcast** — sends the inheritance transaction to the online Will‑Executor

@@ -21,7 +21,7 @@
    ],
    [
     "error",
-    "Error:WillException\n Please, check your heirs, locktime and threshold!"
+    "The will contains no valid transaction: a new will must be prepared.\nPlease, check your heirs, locktime and threshold!"
    ]
   ],
   "pushed": [],
