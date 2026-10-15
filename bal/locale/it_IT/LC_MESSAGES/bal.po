@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: BAL Electrum plugin VERSION\n"
 "Report-Msgid-Bugs-To: info@bitcoin-after.life\n"
-"POT-Creation-Date: 2026-10-15 17:11+0200\n"
+"POT-Creation-Date: 2026-10-15 18:04+0200\n"
 "PO-Revision-Date: 2026-09-26 22:02+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: it_IT\n"
@@ -491,11 +491,11 @@ msgstr "non ricevuto"
 msgid "deselected: not sent"
 msgstr "deselezionato: non inviato"
 
-#: bal/gui/qt/report_pages.py:403
+#: bal/gui/qt/report_pages.py:490
 msgid "excluded (below the dust limit)"
 msgstr "escluso (sotto il limite minimo)"
 
-#: bal/gui/qt/lists.py:1242 bal/gui/qt/report_pages.py:596
+#: bal/gui/qt/lists.py:1242 bal/gui/qt/report_pages.py:695
 msgid "no will-executor (backup transaction)"
 msgstr "nessun will-executor (transazione di backup)"
 
@@ -507,26 +507,34 @@ msgstr "Transazione di invalidazione"
 msgid "The report is available only when your will is in force and verified by every will-executor. Press Check."
 msgstr "Il report è disponibile solo quando il testamento è in vigore e verificato da tutti i will-executor. Premi Controlla."
 
-#: bal/gui/qt/report_pages.py:308
+#: bal/gui/qt/report_pages.py:361
 msgid "PRIVATE - It contains no seed, no private keys and no passwords, but it says who will receive your bitcoin, how much and when. Keep it in a safe place."
 msgstr "RISERVATO - Non contiene seed, chiavi private né password, ma dice chi riceverà i tuoi bitcoin, quanto e quando. Conservalo in un posto sicuro."
 
-#: bal/gui/qt/report_pages.py:296
+#: bal/gui/qt/report_pages.py:467
+msgid "The addresses are written in groups of 4 characters to read them better: copy them without the spaces. The QR code next to each one holds the same address."
+msgstr "Gli indirizzi sono scritti a gruppi di 4 caratteri per leggerli meglio: ricopiali senza gli spazi. Il QR accanto a ciascuno contiene lo stesso indirizzo."
+
+#: bal/gui/qt/report_pages.py:473
+msgid "Name and Bitcoin address"
+msgstr "Nome e indirizzo Bitcoin"
+
+#: bal/gui/qt/report_pages.py:349
 msgid "Created on"
 msgstr "Creato il"
 
-#: bal/gui/qt/report_pages.py:299
+#: bal/gui/qt/report_pages.py:352
 msgid "Wallet"
 msgstr "Portafogli"
 
-#: bal/gui/qt/report_pages.py:301
+#: bal/gui/qt/report_pages.py:354
 msgid "Plugin"
 msgstr "Plugin"
 
 #: bal/core/summary.py:217 bal/core/summary.py:635 bal/gui/qt/dialogs.py:1130
 #: bal/gui/qt/dialogs.py:2750 bal/gui/qt/future_view.py:312
-#: bal/gui/qt/lists.py:716 bal/gui/qt/report_pages.py:332
-#: bal/gui/qt/report_pages.py:438 bal/gui/qt/theme.py:157
+#: bal/gui/qt/lists.py:716 bal/gui/qt/report_pages.py:385
+#: bal/gui/qt/report_pages.py:535 bal/gui/qt/theme.py:157
 #: bal/gui/qt/widgets.py:2990
 msgid "Will-Executor"
 msgstr "Will-Executor"
@@ -534,27 +542,26 @@ msgstr "Will-Executor"
 #: bal/core/summary.py:290 bal/core/will_changes.py:514
 #: bal/gui/qt/basic_wizard.py:107 bal/gui/qt/basic_wizard.py:1172
 #: bal/gui/qt/dialogs.py:2821 bal/gui/qt/dialogs.py:4159
-#: bal/gui/qt/report_pages.py:438 bal/gui/qt/widgets.py:2958
+#: bal/gui/qt/report_pages.py:535 bal/gui/qt/widgets.py:2958
 msgid "Heirs"
 msgstr "Eredi"
 
 #: bal/core/will_changes.py:567 bal/gui/qt/lists.py:1147
-#: bal/gui/qt/lists.py:1346 bal/gui/qt/report_pages.py:334
-#: bal/gui/qt/report_pages.py:632
+#: bal/gui/qt/lists.py:1346 bal/gui/qt/report_pages.py:387
+#: bal/gui/qt/report_pages.py:731
 msgid "Miner fee"
 msgstr "Commissione"
 
-#: bal/gui/qt/report_pages.py:392
+#: bal/gui/qt/report_pages.py:474
 msgid "Heir's share"
 msgstr "Quota"
 
-#: bal/gui/qt/lists.py:192 bal/gui/qt/report_pages.py:393
+#: bal/gui/qt/lists.py:192 bal/gui/qt/report_pages.py:479
 #: bal/gui/qt/window.py:1084
 msgid "Amount"
 msgstr "Importo"
 
-#: bal/gui/qt/lists.py:189 bal/gui/qt/report_pages.py:391
-#: bal/gui/qt/window.py:1193
+#: bal/gui/qt/lists.py:189 bal/gui/qt/window.py:1193
 msgid "Name"
 msgstr "Nome"
 
@@ -562,78 +569,74 @@ msgstr "Nome"
 msgid "Bitcoin address"
 msgstr "Indirizzo Bitcoin"
 
-#: bal/gui/qt/report_pages.py:680
+#: bal/gui/qt/report_pages.py:786
 msgid "HEIRS"
 msgstr "EREDI"
 
-#: bal/gui/qt/report_pages.py:685
+#: bal/gui/qt/report_pages.py:793
 msgid "MESSAGE IN THE WILL"
 msgstr "MESSAGGIO NEL TESTAMENTO"
 
-#: bal/gui/qt/report_pages.py:689
+#: bal/gui/qt/report_pages.py:797
 msgid "DELIVERIES"
 msgstr "CONSEGNE"
 
-#: bal/gui/qt/report_pages.py:693
+#: bal/gui/qt/report_pages.py:801
 msgid "WILL-EXECUTORS"
 msgstr "WILL-EXECUTOR"
 
-#: bal/gui/qt/report_pages.py:701 bal/gui/qt/report_pages.py:715
+#: bal/gui/qt/report_pages.py:809 bal/gui/qt/report_pages.py:823
 msgid "WILL-EXECUTORS PER DELIVERY"
 msgstr "WILL-EXECUTOR PER CONSEGNA"
 
-#: bal/gui/qt/report_pages.py:410
+#: bal/gui/qt/report_pages.py:508
 msgid "Total to the heirs"
 msgstr "Totale agli eredi"
 
-#: bal/gui/qt/report_pages.py:426
-msgid "Written on the blockchain at the delivery, with the will transaction: from then on it is public. The will-executors can read it before."
-msgstr "Scritto sulla blockchain alla consegna, con la transazione del testamento: da quel momento è pubblico. I will-executor possono leggerlo prima."
-
-#: bal/core/summary.py:219 bal/gui/qt/report_pages.py:331
-#: bal/gui/qt/report_pages.py:477
+#: bal/core/summary.py:219 bal/gui/qt/report_pages.py:384
+#: bal/gui/qt/report_pages.py:576
 msgid "none (backup transaction only)"
 msgstr "nessuno (solo transazione di backup)"
 
-#: bal/gui/qt/report_pages.py:479
+#: bal/gui/qt/report_pages.py:578
 msgid "No will-executor holds your will: you keep the signed transaction yourself (backup transaction). Nobody will broadcast it for you: after the delivery date it must be broadcast by you or by someone you gave it to."
 msgstr "Nessun will-executor custodisce il tuo testamento: la transazione firmata la conservi tu (transazione di backup). Nessuno la trasmetterà al posto tuo: dopo la data di consegna devi trasmetterla tu, o la persona a cui l'hai affidata."
 
-#: bal/gui/qt/report_pages.py:703 bal/gui/qt/report_pages.py:706
+#: bal/gui/qt/report_pages.py:811 bal/gui/qt/report_pages.py:814
 msgid "HOW IT WORKS"
 msgstr "COME FUNZIONA"
 
-#: bal/gui/qt/report_pages.py:736
+#: bal/gui/qt/report_pages.py:844
 msgid "PRIVATE — keep it in a safe place"
 msgstr "PRIVATO — conservalo in un luogo sicuro"
 
-#: bal/gui/qt/report_pages.py:522
+#: bal/gui/qt/report_pages.py:621
 msgid "As long as you renew the will before the delivery date (moving it later), your bitcoin stays yours. If you stop, from the delivery date the will-executors broadcast the transaction already signed and the heirs receive the amounts shown above."
 msgstr "Finché rinnovi il testamento prima della data di consegna (spostandola più avanti), i bitcoin restano tuoi. Se smetti, dalla data di consegna i will-executor trasmettono la transazione già firmata e gli eredi ricevono gli importi indicati sopra."
 
-#: bal/gui/qt/report_pages.py:585
+#: bal/gui/qt/report_pages.py:684
 #, python-brace-format
 msgid "Each delivery spends the change of the one before at every will-executor, so the transactions multiply: {}. Only one transaction per delivery can ever be confirmed."
 msgstr "Ogni consegna spende il resto di quella precedente presso ogni will-executor, quindi le transazioni si moltiplicano: {}. Per ogni consegna potrà essere confermata una sola transazione."
 
-#: bal/gui/qt/report_pages.py:623 bal/gui/qt/report_pages.py:624
-#: bal/gui/qt/report_pages.py:702
+#: bal/gui/qt/report_pages.py:722 bal/gui/qt/report_pages.py:723
+#: bal/gui/qt/report_pages.py:810
 msgid "TECHNICAL DETAILS"
 msgstr "DETTAGLI TECNICI"
 
-#: bal/gui/qt/report_pages.py:651
+#: bal/gui/qt/report_pages.py:750
 msgid "Only the transactions of delivery 1 are listed here. The full list is in the will file (Tools → Export)."
 msgstr "Qui sono elencate solo le transazioni della consegna 1. L'elenco completo è nel file del testamento (Tools → Esporta)."
 
-#: bal/gui/qt/report_pages.py:655
+#: bal/gui/qt/report_pages.py:754
 msgid "Wills sent before and still held by the will-executors"
 msgstr "Testamenti inviati prima e ancora custoditi dai will-executor"
 
-#: bal/gui/qt/report_pages.py:659
+#: bal/gui/qt/report_pages.py:758
 msgid "None: the will-executors hold no other will that can still be executed."
 msgstr "Nessuno: i will-executor non custodiscono altri testamenti ancora eseguibili."
 
-#: bal/gui/qt/report_pages.py:738
+#: bal/gui/qt/report_pages.py:846
 #, python-brace-format
 msgid "Page {}/{}"
 msgstr "Pagina {}/{}"
@@ -783,7 +786,7 @@ msgstr "Crea il tuo testamento"
 
 #: bal/core/summary.py:148 bal/gui/qt/basic_wizard.py:1171
 #: bal/gui/qt/future_view.py:280 bal/gui/qt/future_view.py:385
-#: bal/gui/qt/report_pages.py:321
+#: bal/gui/qt/report_pages.py:374
 msgid "Delivery to the heirs"
 msgstr "Consegna agli eredi"
 
@@ -797,7 +800,7 @@ msgstr "Controlla"
 
 #: bal/core/summary.py:447 bal/gui/qt/future_view.py:292
 #: bal/gui/qt/future_view.py:297 bal/gui/qt/future_view.py:399
-#: bal/gui/qt/report_pages.py:330 bal/gui/qt/window.py:1682
+#: bal/gui/qt/report_pages.py:383 bal/gui/qt/window.py:1682
 msgid "Check Alive"
 msgstr "Verifica se sei vivo"
 
@@ -856,7 +859,7 @@ msgid "In force, but {} will-executors did not receive it"
 msgstr "In vigore, ma {} will-executor non l'hanno ricevuto"
 
 #: bal/core/summary.py:535 bal/gui/qt/future_view.py:295
-#: bal/gui/qt/future_view.py:299 bal/gui/qt/report_pages.py:329
+#: bal/gui/qt/future_view.py:299 bal/gui/qt/report_pages.py:382
 msgid "from that day the wallet asks you to renew it"
 msgstr "da quel giorno il wallet ti chiede di rinnovarlo"
 
@@ -1323,7 +1326,7 @@ msgstr ""
 msgid "Will-executor fee too high: {}"
 msgstr "Commissione del Will-Executor troppo alta: {}"
 
-#: bal/gui/qt/future_view.py:286 bal/gui/qt/report_pages.py:324
+#: bal/gui/qt/future_view.py:286 bal/gui/qt/report_pages.py:377
 msgid "Delivery form"
 msgstr "Forma di consegna"
 
@@ -1435,7 +1438,7 @@ msgstr "Errore: {}"
 msgid "Verifying"
 msgstr "Verifica"
 
-#: bal/gui/qt/dialogs.py:1873 bal/gui/qt/report_pages.py:567
+#: bal/gui/qt/dialogs.py:1873 bal/gui/qt/report_pages.py:666
 #, python-brace-format
 msgid "(+{} more)"
 msgstr "(+ altri {})"
@@ -2128,12 +2131,12 @@ msgstr "👤 Nuovo erede"
 msgid "On the blockchain"
 msgstr "Sulla blockchain"
 
-#: bal/gui/qt/lists.py:714 bal/gui/qt/report_pages.py:630
+#: bal/gui/qt/lists.py:714 bal/gui/qt/report_pages.py:729
 #: bal/gui/qt/widgets.py:2248 bal/gui/qt/window.py:1216
 msgid "Locktime"
 msgstr "Locktime"
 
-#: bal/gui/qt/lists.py:715 bal/gui/qt/report_pages.py:605
+#: bal/gui/qt/lists.py:715 bal/gui/qt/report_pages.py:704
 msgid "Txid"
 msgstr "Txid"
 
@@ -2141,7 +2144,7 @@ msgstr "Txid"
 msgid "Fee address"
 msgstr "Indirizzo commissione"
 
-#: bal/gui/qt/lists.py:718 bal/gui/qt/report_pages.py:599
+#: bal/gui/qt/lists.py:718 bal/gui/qt/report_pages.py:698
 msgid "Executor fee"
 msgstr "Compenso"
 
@@ -2150,7 +2153,7 @@ msgstr "Compenso"
 msgid "Status"
 msgstr "Stato"
 
-#: bal/gui/qt/lists.py:551 bal/gui/qt/report_pages.py:438
+#: bal/gui/qt/lists.py:551 bal/gui/qt/report_pages.py:535
 msgid "N."
 msgstr "N."
 
@@ -2194,7 +2197,7 @@ msgstr "elimina"
 msgid "Transaction IDs"
 msgstr "ID delle transazioni"
 
-#: bal/gui/qt/lists.py:1035 bal/gui/qt/report_pages.py:645
+#: bal/gui/qt/lists.py:1035 bal/gui/qt/report_pages.py:744
 msgid "Transactions"
 msgstr "Transazioni"
 
@@ -2264,7 +2267,7 @@ msgid "not sent"
 msgstr "non inviata"
 
 #: bal/gui/qt/lists.py:1164 bal/gui/qt/lists.py:1181
-#: bal/gui/qt/report_pages.py:450 bal/gui/qt/report_pages.py:646
+#: bal/gui/qt/report_pages.py:549 bal/gui/qt/report_pages.py:745
 #, python-brace-format
 msgid "sent and verified {} of {}"
 msgstr "inviata e verificata {} su {}"
@@ -2729,29 +2732,29 @@ msgstr "Supporto:"
 msgid "Safe21 Heartbeat - {}"
 msgstr "Safe21 Heartbeat - {}"
 
-#: bal/gui/qt/report_actions.py:132
+#: bal/gui/qt/report_actions.py:146
 msgid "Save as PDF…"
 msgstr "Salva come PDF…"
 
-#: bal/gui/qt/report_actions.py:133
+#: bal/gui/qt/report_actions.py:147
 msgid "Print…"
 msgstr "Stampa…"
 
-#: bal/gui/qt/report_actions.py:183
+#: bal/gui/qt/report_actions.py:197
 #, python-brace-format
 msgid "The report could not be prepared: {}"
 msgstr "Non è stato possibile preparare il report: {}"
 
-#: bal/gui/qt/report_actions.py:187
+#: bal/gui/qt/report_actions.py:201
 msgid "Save the inheritance plan report"
 msgstr "Salva il report del piano di eredità"
 
-#: bal/gui/qt/report_actions.py:203
+#: bal/gui/qt/report_actions.py:217
 #, python-brace-format
 msgid "Could not save the report: {}"
 msgstr "Impossibile salvare il report: {}"
 
-#: bal/gui/qt/report_actions.py:205
+#: bal/gui/qt/report_actions.py:219
 #, python-brace-format
 msgid ""
 "Report saved to:\n"
@@ -2760,25 +2763,25 @@ msgstr ""
 "Report salvato in:\n"
 "{}"
 
-#: bal/gui/qt/report_actions.py:217
+#: bal/gui/qt/report_actions.py:231
 msgid "Inheritance plan report"
 msgstr "Report del piano di eredità"
 
-#: bal/gui/qt/report_actions.py:226
+#: bal/gui/qt/report_actions.py:240
 #, python-brace-format
 msgid "Printing is not available: {}"
 msgstr "La stampa non è disponibile: {}"
 
-#: bal/gui/qt/report_actions.py:234
+#: bal/gui/qt/report_actions.py:248
 msgid "Print the inheritance plan report"
 msgstr "Stampa il report del piano di eredità"
 
-#: bal/gui/qt/report_actions.py:240
+#: bal/gui/qt/report_actions.py:254
 #, python-brace-format
 msgid "The report could not be printed: {}"
 msgstr "Non è stato possibile stampare il report: {}"
 
-#: bal/gui/qt/report_pages.py:293 bal/gui/qt/report_pages.py:743
+#: bal/gui/qt/report_pages.py:345 bal/gui/qt/report_pages.py:851
 msgid "Will plan"
 msgstr "Piano ereditario"
 
@@ -2827,7 +2830,7 @@ msgstr "Firmato, da inviare"
 msgid "Draft"
 msgstr "Bozza"
 
-#: bal/gui/qt/future_view.py:385 bal/gui/qt/report_pages.py:534
+#: bal/gui/qt/future_view.py:385 bal/gui/qt/report_pages.py:633
 #, python-brace-format
 msgid "Delivery {}"
 msgstr "Consegna {}"
@@ -2938,7 +2941,7 @@ msgstr ""
 msgid "Raw"
 msgstr "Raw"
 
-#: bal/gui/qt/report_pages.py:438 bal/gui/qt/widgets.py:308
+#: bal/gui/qt/report_pages.py:535 bal/gui/qt/widgets.py:308
 msgid "Date"
 msgstr "Data"
 
@@ -2995,7 +2998,7 @@ msgstr "Data fissa"
 msgid "Period (renewable)"
 msgstr "Periodo (rinnovabile)"
 
-#: bal/gui/qt/future_view.py:316 bal/gui/qt/report_pages.py:505
+#: bal/gui/qt/future_view.py:316 bal/gui/qt/report_pages.py:604
 msgid "Will-executors keep a copy of your will and broadcast it on the delivery date."
 msgstr "I will-executor conservano una copia del tuo testamento e la trasmettono alla data di consegna."
 
@@ -4071,4 +4074,7 @@ msgstr "Ping ai Will-Executor"
 #~ msgstr ""
 #~ "Errore:{}\n"
 #~ " {}"
+
+#~ msgid "Written on the blockchain at the delivery, with the will transaction: from then on it is public. The will-executors can read it before."
+#~ msgstr "Scritto sulla blockchain alla consegna, con la transazione del testamento: da quel momento è pubblico. I will-executor possono leggerlo prima."
 

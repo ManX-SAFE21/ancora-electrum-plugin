@@ -223,7 +223,7 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats,
     ``split_date(ts)``: ``(day, time)`` of a delivery card (default: the
     ``format_date`` text cut at its first space, "27/02/2027" and "22:00
     UTC"). The Will tab passes the one date style of #134
-    (:func:`view_scene`); the PDF report keeps the defaults until #137.
+    (:func:`view_scene`) and, since #145, the PDF report too.
     ``format_amount(sats)``: an amount in the wallet's unit (tooltip only). Returns a plain dict (no Qt object):
     ``title`` / ``title_kind``, ``today`` (date and "(today)"),
     ``marker`` (the delivery or the draft on the axis, or None),

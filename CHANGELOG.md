@@ -9572,3 +9572,72 @@ other text of the plugin writes "Bitcoin address" / "indirizzo Bitcoin" /
   `test_i18n` pass.
 - Affected tests, goldens and divergence list: 166 passed; `tests/golden`
   unchanged.
+
+## 145. The PDF report on paper: dates, heir addresses with a QR code, BTC
+
+**Date:** 2026-10-15
+
+**Problem (the owner, looking at the printed report):**
+- The PDF still wrote its dates in three old styles ("2026-10-15 14:30",
+  "24/12/2032 01:00 UTC"), while the rest of the plugin uses one style since
+  #134 ("24 December 2032, 01:00 UTC").
+- The heir's address was small and thin (Courier 8, grey): on paper it
+  could fade with time. Addresses differ a lot in length (26 to 62
+  characters), and there was no QR code to read them.
+- The line between two heirs was barely visible.
+- The amounts followed the wallet's unit of that day (BTC, mBTC, bits or
+  sat): the printed plan is read by heirs and notaries, maybe years later.
+- The message section did not say where the message is in the transaction,
+  nor give the warning of the message window.
+
+**What changed (`bal/gui/qt/report_pages.py`, `report_actions.py`):**
+- **Dates** in the one style (`bal.core.datetext`): the delivery, the Check
+  Alive, the time line (as the Future view of the Will tab), the technical
+  page, the deliveries of a will in stages. The short form ("24 Dec 2032,
+  01:00 UTC") only where the long one does not fit (`date_fit`); the day
+  alone in the narrow columns of the grid. "Created on" is the local time
+  of the computer that made the report ("15 October 2026, 14:30").
+- **Heirs table:**
+  - the first column is "Name and Bitcoin address";
+  - the address under the name in a larger monospaced font (10 points),
+    black, in groups of 4 characters (`address_groups`), wrapped before
+    the share column; one sentence above the table says to copy the
+    addresses without the spaces and that the QR code holds the same
+    address;
+  - a 15 mm QR code of the address (`qr_modules`, `paint_qr`: vector
+    squares, sharp on any printer; the `qrcode` package of Electrum) right
+    of the amount, from the top of the row;
+  - the share and amount columns as wide as their values, so a usual
+    address (42 characters) stays on one line; "Amount" over the start of
+    the amounts;
+  - a visible light line between two heirs; "Total to the heirs" in the
+    block of the last heir, so it never opens a page alone.
+- **Amounts always in BTC** with 8 decimals ("0.00496444 BTC",
+  `report_actions.btc_amount`): the heirs, the total, the will-executors'
+  fees. The miner fee stays in sat/vB (a rate). The rest of the plugin
+  keeps the wallet's unit.
+- **Message:** the heading is "MESSAGE IN THE WILL (OP_RETURN)" ("OP_RETURN"
+  never translated); under the text, the warning of the message window
+  (public forever, read by the will-executors before the delivery, no
+  private data) instead of the old grey line.
+- Catalogs: 2 new msgids (IT/ES); the old grey line of the message is
+  obsolete.
+
+**Tests:**
+- `tests/test_pdf_heirs_qr.py` (new, 8 tests, three fake will-executors and
+  a 62-character Taproot address): the address groups; the grouped address
+  and a QR code for every heir, inside the page and right of the amount; a
+  usual address on one line also in BTC; the painted QR code read back
+  module by module (the three finder squares the right way up); the light
+  lines; the total with the last heir; the amounts in BTC whatever the
+  wallet's unit; the dates in the one style.
+- `tests/test_inheritance_report.py` and `tests/test_will_message.py` read
+  the new texts ("How it works" now opens page 2 of the realistic will).
+
+**Verification (look and text step, owner's previews):**
+- ruff clean; catalog check OK; affected tests 249 passed; `tests/golden`
+  unchanged.
+- PNG previews in Italian of every page, before and after, reviewed by the
+  owner step by step (QR size, address font and wrap, columns, BTC, column
+  title).
+- Whole suite in both orders: 2299 passed each time.
