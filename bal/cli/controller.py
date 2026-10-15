@@ -1416,8 +1416,9 @@ class BalController(BalSettingsController):
                 _logger.error(f"check on_each error for {wid}: {e}")
 
         def on_timeout(wid, url):
+            # #147: no answer in time leaves the item sent (not CHECK_FAIL).
             try:
-                self.willitems[wid].set_check_willexecutor(None)
+                self.willitems[wid].set_check_willexecutor(Willexecutors.NO_ANSWER)
             except Exception as e:
                 _logger.error(f"check on_timeout error for {wid}: {e}")
 

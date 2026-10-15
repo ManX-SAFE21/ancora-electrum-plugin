@@ -3228,10 +3228,11 @@ class BalWindow:
             self.waiting_dialog.update(_status_line())
 
         def on_timeout(wid, url):
-            # The global deadline elapsed before this server answered: mark the
-            # item as failed (None response) so the user can retry later.
+            # The global deadline elapsed before this server answered. #147:
+            # no answer is not "not received": the item stays sent, and the
+            # next check asks again.
             try:
-                will[wid].set_check_willexecutor(None)
+                will[wid].set_check_willexecutor(Willexecutors.NO_ANSWER)
             except Exception as e:
                 _logger.error(f"check on_timeout error for {wid}: {e}")
 

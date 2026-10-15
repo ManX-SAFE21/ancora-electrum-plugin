@@ -1655,16 +1655,21 @@ class BalBuildWillDialog(BalDialog):
                         )
                     )
                     w = self.bal_window.willitems[wid]
-                    w.set_check_willexecutor(
-                        Willexecutors.check_transaction(wid, w.we["url"])
-                    )
+                    res = Willexecutors.check_transaction(wid, w.we["url"])
+                    w.set_check_willexecutor(res)
                     # Show the CHECKED result in bold + color (green True /
                     # red False) so the outcome stands out, keeping the server
                     # URL and tx id in normal weight.
                     checked = self.bal_window.willitems[wid].get_status("CHECKED")
-                    self._report().set_executor(
-                        url, "verified" if checked else "failed"
-                    )
+                    if res is Willexecutors.NO_ANSWER:
+                        # #147: it has the will, it did not answer the check.
+                        self._report().set_executor(
+                            url, "no_check_answer", Willexecutors.CHECK_TIMEOUT
+                        )
+                    else:
+                        self._report().set_executor(
+                            url, "verified" if checked else "failed"
+                        )
                     result = self.msg_ok(checked) if checked else self.msg_error(checked)
                     row = self._log_only(
                         "{} : {}".format(
@@ -1724,6 +1729,8 @@ class BalBuildWillDialog(BalDialog):
         for wid, w in items.items():
             left.setdefault(w.we["url"], set()).add(wid)
         failed = set()  # urls that did not confirm every one of their items
+        # #147: urls that did not answer in time for an item (still sent).
+        unanswered = set()
         total = len(left)
         deadline = Willexecutors.CHECK_GLOBAL_DEADLINE
         report = self._report()
@@ -1754,6 +1761,13 @@ class BalBuildWillDialog(BalDialog):
             self.updatemessage.emit()
 
         def _answered(wid, url, res, timed_out=False):
+            """Record one answer (``res``) and show it, live.
+
+            #147: no answer in time (``Willexecutors.NO_ANSWER``, after the
+            15 s of the request or the 20 s of the whole step) leaves the
+            item sent, and the executor reads "received, no answer to the
+            check", not "not received".
+            """
             # Called from this (task) thread by check_transactions_parallel.
             w = items[wid]
             try:
@@ -1761,16 +1775,25 @@ class BalBuildWillDialog(BalDialog):
             except Exception as e:
                 _logger.error(f"verify: recording the answer for {wid} failed: {e!r}")
             ok = bool(w.get_status("CHECKED"))
-            if not ok:
+            no_answer = res is Willexecutors.NO_ANSWER
+            if no_answer:
+                unanswered.add(url)
+            elif not ok:
                 failed.add(url)
             left[url].discard(wid)
-            if timed_out:
-                report.set_executor(url, "timeout", deadline)
-            elif not left[url]:
-                report.set_executor(url, "failed" if url in failed else "verified")
+            if timed_out or not left[url]:
+                if url in failed:
+                    report.set_executor(url, "failed")
+                elif url in unanswered:
+                    report.set_executor(
+                        url, "no_check_answer",
+                        deadline if timed_out else Willexecutors.CHECK_TIMEOUT,
+                    )
+                else:
+                    report.set_executor(url, "verified")
             if ok:
                 result = self.msg_ok(_("Ok"))
-            elif timed_out:
+            elif no_answer:
                 result = self.msg_error(_("Timeout - no answer"))
             else:
                 result = self.msg_error(_("Ko"))
@@ -1786,7 +1809,7 @@ class BalBuildWillDialog(BalDialog):
             _answered(wid, url, res)
 
         def on_timeout(wid, url):
-            _answered(wid, url, None, timed_out=True)
+            _answered(wid, url, Willexecutors.NO_ANSWER, timed_out=True)
 
         def on_tick():
             if not self._stopping:
@@ -1802,7 +1825,12 @@ class BalBuildWillDialog(BalDialog):
         )
         # The final word under the step is counted over every will-executor
         # of the will in _finish_report.
-        self.msg_set_verifying(self.msg_error(_("Ko")) if failed else self.msg_ok())
+        if failed:
+            self.msg_set_verifying(self.msg_error(_("Ko")))
+        elif unanswered:
+            self.msg_set_verifying(self.msg_warning(_("Timeout - no answer")))
+        else:
+            self.msg_set_verifying(self.msg_ok())
 
     def invalidate_task(self, password, bal_window, tx):
         if self._stopping:
@@ -2713,7 +2741,8 @@ class BalBuildWillDialog(BalDialog):
             return
         others = [
             u for u, (state, _sec) in self._report().executors().items()
-            if u != url and state in ("verified", "to_verify", "received")
+            if u != url and state in ("verified", "to_verify", "received",
+                                      "no_check_answer")
         ]
         text = _('"{}" did not receive your will.').format(host)
         if others:
@@ -3782,7 +3811,10 @@ class BalBuildWillDialog(BalDialog):
             if total and verify_state != "skip":
                 if verified == total:
                     report.set_step("verify", "ok", "{}/{}".format(verified, total))
-                elif verified:
+                elif verified or any(
+                    st == "no_check_answer" for st, _sec in executors.values()
+                ):
+                    # #147: no answer is not "not received": a warning.
                     report.set_step("verify", "warn", "{}/{}".format(verified, total))
                 elif verify_state == "todo":
                     report.set_step("verify", "todo", _("to do"))
@@ -3885,7 +3917,8 @@ class BalBuildWillDialog(BalDialog):
         total = len(executors)
         received = sum(
             1 for st, _sec in executors.values()
-            if st in ("received", "verifying", "verified", "to_verify")
+            if st in ("received", "verifying", "verified", "to_verify",
+                      "no_check_answer")
         )
         failed = sum(
             1 for st, _sec in executors.values() if st in ("failed", "timeout")

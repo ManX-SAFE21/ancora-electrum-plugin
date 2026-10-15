@@ -2617,6 +2617,8 @@ class BuildReportView(QWidget):
         "verifying": ("↻", "#1565c0"),
         "verified": ("✔", "#2e7d32"),
         "to_verify": ("✔", "#2e7d32"),
+        # #147: received, but it did not answer the check in time.
+        "no_check_answer": ("⚠", "#b26a00"),
         "failed": ("✖", "#c62828"),
         "timeout": ("✖", "#c62828"),
         "to_sign": ("–", "#8a8a8a"),
@@ -2655,6 +2657,11 @@ class BuildReportView(QWidget):
             if seconds:
                 return _("no answer ({} s)").format(seconds)
             return _("no answer")
+        if state == "no_check_answer":
+            # #147: it has the will (it accepted it); only the check timed out.
+            if seconds:
+                return _("received, no answer to the check ({} s)").format(seconds)
+            return _("received, no answer to the check")
         return {
             "waiting": _("waiting…"),
             "received": _("received"),

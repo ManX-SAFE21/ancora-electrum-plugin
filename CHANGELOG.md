@@ -9695,3 +9695,45 @@ The Check Alive stays in days ("-365d"), the form BAL understands.
 **Verification:** ruff clean; catalog check OK; owner's ZIP test (8
 checks, then the toolbar rows) OK; whole suite in both orders: 2312
 passed each time.
+
+## 147. A will-executor that does not answer the check is no longer "not received"
+
+**Date:** 2026-10-15
+
+**Owner's case:** divinaly received the will (the sending answered "thx"),
+but its check (`searchtx`) answered in 5 s and more. The check gave up
+after 8 s, tried again from the start, gave up again, and the will read
+"✖ not received": the copy was marked not sent (CHECK_FAIL, no PUSHED),
+as if divinaly did not hold it.
+
+**What changed:**
+- **One attempt of 15 s** (`bal/core/willexecutors.py`):
+  `CHECK_TIMEOUT` 15 and `CHECK_MAX_RETRIES` 0 instead of 8 and 1. The
+  whole step still stops at 20 s (`NETWORK_DEADLINE`), so the window is
+  not longer.
+- **No answer is not "not received"**: when every attempt timed out,
+  `Willexecutors.check_transaction` returns `Willexecutors.NO_ANSWER`
+  (it returned `None`, read as "not held"); the global deadline gives the
+  same. `WillItem.set_check_willexecutor` leaves the copy as it was: sent,
+  to be verified, and the next Check asks again. An executor that answers
+  without our transaction is still "not received", as before. The same in
+  the Building Will dialog, the Check button and the command line.
+- **The Building Will dialog** (`bal/gui/qt/dialogs.py`,
+  `bal/gui/qt/widgets.py`, `bal/core/build_report.py`): new executor
+  state `no_check_answer`, "⚠ received, no answer to the check (15 s)"
+  in orange, counted as received in the Sending step; the Verification
+  step is a warning, not an error. Catalogs: 2 msgids added (IT/ES).
+
+**Tests:**
+- `tests/test_check_no_answer.py` (new, 14 tests, three fake
+  will-executors): one attempt of 15 s; an executor answering in 10 s
+  (before: two attempts of 8 s cut, now verified); no answer at all; an
+  answer that is not a dict; the item left sent; another transaction
+  still not received; the dialog (15 s, 20 s, the counts, the warning);
+  the Check button and the command line. 11 of them fail without the fix.
+- `tests/test_verify_in_dialog.py`: a timeout now leaves the copy sent.
+
+**Verification:** ruff clean; catalog check OK; owner's ZIP test with
+divinaly: first Check "received, no answer to the check (15 s)", the
+will in force, Sending 5/5; second Check 5/5 received and verified;
+whole suite in both orders: 2326 passed each time.
