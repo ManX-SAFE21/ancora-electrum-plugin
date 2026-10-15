@@ -9494,3 +9494,51 @@ E/F/K) and then moves the stored date. Prepare treated it as an error.
   25 December 2032;
 - Sign, then Check: no invalidation; sent and verified 4 of 4;
 - a second Check was clean.
+
+## 143. No ERROR when the Check's worker thread cleans the wallet history
+
+**Date:** 2026-10-15
+
+**Problem (the owner's logs, 2026-10-14 and 2026-10-15):**
+- At every rebuild done by the Check, the plugin log showed
+  "ERROR | save_db failed after history purge: daemon thread cannot write db".
+- Before a rebuild the plugin removes the old unsigned will transactions
+  from the wallet's local history (`Will.remove_stale_wallet_history`) and
+  then writes the wallet file.
+- The Check runs on Electrum's `TaskThread` (a QThread), which Python
+  reports as a daemon thread, and Electrum refuses to write the wallet file
+  from a daemon thread (`JsonDB.write`).
+- Nothing was lost: the change stays in the wallet's memory and Electrum
+  writes it at its next save, at the latest when the wallet is closed. But
+  a false ERROR hides the real ones.
+
+**What changed:**
+- New `Will._save_wallet_db(wallet, after)`, used by the two saves after a
+  change of the local history (the purge and the history update):
+  - on a daemon thread it does not write and logs an INFO line ("wallet file
+    not written after history purge (worker thread): the change stays in
+    memory and Electrum writes it at its next save");
+  - on the main thread it writes as before; a real failure is still an
+    ERROR.
+- **Unchanged:** building, signing, sending, dates, the protocol, the texts
+  (no new msgid).
+
+**Tests:**
+- `tests/test_history_save_thread.py` (new, 6 tests): the purge and the
+  history update on a daemon thread (no ERROR, no write, the INFO line), on
+  the main thread and on a non-daemon thread (written), a real write failure
+  (still an ERROR), and a real QThread (seen as a daemon thread, like the
+  Check's).
+- Without the fix, 4 of the 6 fail with the owner's exact ERROR.
+
+**Verification:**
+- ruff clean.
+- Affected tests: 58 passed.
+- Test ZIP `safe21-heartbeat_0.7.0-TEST-143-save-db-thread.zip`: external
+  load and smoke test OK on 4.8.2.
+- Whole suite in both orders: 2291 passed each time.
+
+**Outcome:** the owner's ZIP test (2026-10-15), on his wallet, was OK:
+- a Check that rebuilt the will, then Sign and send: verified 4 of 4;
+- a second Check was clean;
+- the plugin log has no "save_db failed" line, only the new INFO line.
