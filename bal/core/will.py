@@ -27,6 +27,7 @@ The status flags themselves (the source of truth) stay here; only the mapping
 """
 
 import math
+import threading
 from datetime import datetime, timezone
 
 from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
@@ -1649,10 +1650,7 @@ class Will:
                         pass
                 except Exception as e:
                     _logger.error(f"remove from history failed for {txid}: {e}")
-            try:
-                wallet.save_db()
-            except Exception as e:
-                _logger.error(f"save_db failed after history update: {e}")
+            Will._save_wallet_db(wallet, "history update")
         except Exception as e:
             _logger.error(f"save_valid_transactions_to_history failed: {e}")
 
@@ -1692,11 +1690,38 @@ class Will:
                 wallet.set_label(txid, None)
             except Exception as e:
                 _logger.error(f"set_label failed for {txid}: {e}")
+        Will._save_wallet_db(wallet, "history purge")
+        return removed
+
+    @staticmethod
+    def _save_wallet_db(wallet, after):
+        """Write the wallet file after a change of its local history (#143).
+
+        Electrum refuses to write the wallet file from a daemon thread
+        (``JsonDB.write``: "daemon thread cannot write db"). The Check runs
+        on a ``TaskThread`` (a QThread), which Python reports as a daemon
+        thread, so the save after the history purge logged an ERROR at every
+        rebuild done by the Check (owner's logs, 2026-10-14 and 2026-10-15).
+
+        Nothing is lost when the write is skipped: the change stays in the
+        wallet's memory (the db's pending changes) and Electrum writes it at
+        its next save, at the latest when the wallet is closed
+        (``Abstract_Wallet.stop``). If Electrum died before that, the next
+        rebuild would purge the same placeholders again. So on a daemon
+        thread the write is left to Electrum, with an INFO line. ``after``
+        names the change, for the log. Never raises.
+        """
+        if threading.current_thread().daemon:
+            _logger.info(
+                f"wallet file not written after {after} (worker thread): "
+                "the change stays in memory and Electrum writes it at its "
+                "next save"
+            )
+            return
         try:
             wallet.save_db()
         except Exception as e:
-            _logger.error(f"save_db failed after history purge: {e}")
-        return removed
+            _logger.error(f"save_db failed after {after}: {e}")
 
     @staticmethod
     def _add_transaction_to_history(wallet, tx, txid):
