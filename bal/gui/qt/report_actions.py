@@ -79,9 +79,23 @@ def _selected(bal_window):
         return None
 
 
+def btc_amount(sats):
+    """``"0.00496444 BTC"``: an amount of the PDF report, always in BTC with
+    its 8 decimals (#145)."""
+    from electrum.util import format_satoshis
+
+    return "{} BTC".format(format_satoshis(int(sats), num_zeros=8, decimal_point=8))
+
+
 def _format_amount(bal_window):
-    """The wallet's amount formatter (owner: the wallet's unit, never fiat)."""
-    return bal_window.window.config.format_amount_and_units
+    """The amount formatter of the report: always BTC (#145, owner).
+
+    It used the wallet's unit (Preferences → Units: BTC, mBTC, bits, sat).
+    Owner: the printed plan is read by heirs and notaries, maybe years
+    later, with no Electrum at hand: one unit everyone knows, whatever the
+    wallet was set to that day. Never fiat (owner, #132).
+    """
+    return btc_amount
 
 
 def build_report(bal_window):

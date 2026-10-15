@@ -54,12 +54,12 @@ from PyQt6.QtWidgets import QApplication, QPushButton, QWidget
 # The helpers of the #84b-1 tests: will items and a dialog without Qt set-up.
 from test_build_report import _dialog, _item
 
+from bal.core import datetext
 from bal.core import future as cf
 from bal.core import report as core_report
 from bal.gui.qt import report_actions
 from bal.gui.qt import report_pages as rp
 from bal.gui.qt.dialogs import BalBuildWillDialog
-from bal.gui.qt.future_view import utc_date_text
 
 _APP = QApplication.instance() or QApplication(sys.argv)
 
@@ -250,21 +250,26 @@ def test_pdf_pages_of_a_realistic_will(make):
     _check_pages(pages)
     first = rp.page_texts(pages[0])
     joined = "\n".join(first)
-    for expected in ("Will plan", "Created on: 2026-10-13 15:42", "Wallet: wallet_test",
+    for expected in ("Will plan", "Created on: 13 October 2026, 15:42", "Wallet: wallet_test",
                      "Plugin: 0.7.0 · Electrum 4.8.2", "Your will is in force",
                      "Delivery to the heirs:", "Will-Executor:",
                      "3 of 3 received and verified it", "21 sat/vB", "HEIRS",
-                     "alice", fk.HEIR_ADDR["alice"], "bob", fk.HEIR_ADDR["bob"],
+                     "alice", rp.address_groups(fk.HEIR_ADDR["alice"]),
+                     "bob", rp.address_groups(fk.HEIR_ADDR["bob"]),
                      "60 %", "40 %", "Total to the heirs", _sat(r.total_sats),
                      "WILL-EXECUTORS", "we0.test", "we1.test", "we2.test",
                      "received and verified",
                      "Will-executors keep a copy of your will and broadcast it on "
-                     "the delivery date.", "HOW IT WORKS"):
+                     "the delivery date."):
         assert expected in first, expected
+    # #145: the taller heir rows (the QR code) leave no room for "How it
+    # works" on page 1: it opens page 2, never alone on a page.
+    assert "HOW IT WORKS" in rp.page_texts(pages[1])
     # The delivery: the UTC day and time with the time left; the time line
     # shows the same date.
-    assert "27/08/2027 22:00 UTC (in 10 months and 17 days)" in first
-    assert "If the will is no longer checked or renewed, on 27/08/2027 22:00 UTC" in joined
+    assert "27 August 2027, 22:00 UTC (in 10 months and 17 days)" in first
+    assert ("If the will is no longer checked or renewed, on 27 August 2027, 22:00 UTC"
+            in "\n".join(rp.page_texts(pages[1])))
     for heir in r.heirs:
         assert _sat(heir.sats) in first
     # Nothing technical on page 1: the ids are on page 2, in full.
@@ -273,7 +278,7 @@ def test_pdf_pages_of_a_realistic_will(make):
     for tx in r.first_txs:
         assert tx.txid not in joined and tx.txid in second
     assert "Executor fee: 1000 sat" in second
-    assert "Locktime: {} · 27/08/2027 22:00 UTC".format(D) in second
+    assert "Locktime: {} · 27 August 2027, 22:00 UTC".format(D) in second
     assert "Wills sent before and still held by the will-executors" in second
     assert any(t.startswith("None: the will-executors hold no other will") for t in second)
     assert "Will plan · TECHNICAL DETAILS" in second
@@ -443,10 +448,11 @@ def test_multiverse_nine_executors_four_instalments():
         texts = rp.page_texts(page)
         if "HOW IT WORKS" in texts:
             assert page.number == 1 or "WILL-EXECUTORS PER DELIVERY" in texts
-    first = rp.page_texts(pages[0])
-    assert "DELIVERIES" in first
+    # #145: the taller heir rows push the end of the table to page 2.
+    first = rp.page_texts(pages[0]) + rp.page_texts(pages[1])
+    assert "DELIVERIES" in rp.page_texts(pages[0])
     for n, (d, p) in enumerate(zip(dates, shares, strict=True), 1):
-        assert str(n) in first and utc_date_text(d) in first
+        assert str(n) in first and datetext.utc_short(d) in first
         assert "John {0} %, Luca {0} %".format(p) in first
     assert first.count("sent and verified 9 of 9") == 4
     # The grid continues page 2 when it fits whole.

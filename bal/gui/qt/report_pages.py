@@ -6,7 +6,8 @@ A4 pages:
 * page 1, for everyone: the header (the SAFE21 logo on the left; on the
   right "Will plan", when it was made, the wallet, the versions), the
   state box in the colours of the will summary, the #131 time line with its
-  year ruler, the heirs with their full addresses and the total, the
+  year ruler, the heirs with their full addresses (in groups of 4
+  characters, with a QR code of the address, #145) and the total, the
   instalments (multiverse only), the will-executors (squares and list) and
   how it works;
 * multiverse only: a page "Will-executors per instalment" (a grid of
@@ -26,6 +27,11 @@ painter is scaled to the device (PDF, printer, image), so the result is the
 same on every printer. A row (an heir with its address, a transaction with
 its id) is never split across pages; a section title always stays with its
 first row.
+
+Dates (#145, owner): the one date style of the plugin (CHANGELOG #134,
+:mod:`bal.core.datetext`), "24 December 2032, 01:00 UTC", the short form
+only where the long one does not fit; "Created on" is the local time of the
+computer that made the report.
 
 Two steps, so the tests can read what is drawn without a PDF parser:
 :func:`layout_report` returns :class:`Page` objects (a list of
@@ -50,12 +56,13 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QApplication
 
+from ...core import datetext
 from ...core import future as core_future
 from ...core.future import ExecutorMark
 from ...core.report import _host, _percent
 from ...i18n import _
 from . import future_view as fv
-from .widgets import DELIVERY_LEVEL_COLOURS, WillSummaryWidget
+from .widgets import DELIVERY_LEVEL_COLOURS, WillSummaryWidget, message_warning_text
 
 #: The page space, in points: A4 (210 x 297 mm) less 15 mm on every side.
 MARGIN_MM = 15
@@ -80,6 +87,12 @@ NAVY = "#0A0F1C"
 TEXT = "#111111"
 GREY = "#555555"
 RULE = "#d6d6d6"
+#: The line between two heirs (#145, owner: light, but visible on paper).
+HEIR_RULE = "#bdbdbd"
+#: The side of an heir's address QR code: 15 mm (owner: smaller than the
+#: first 20 mm). A 62-character address needs 33 modules: about 0.45 mm
+#: each, still read by a phone on paper.
+QR_SIDE = 15 / 25.4 * 72.0
 
 
 @dataclass
@@ -90,8 +103,9 @@ class Item:
     ``rect``, aligned with ``align``), ``"rect"`` (``fill`` and a border in
     ``colour``, corner ``radius``; no border when ``colour`` is empty),
     ``"line"`` (from the top-left to the top-right of ``rect``, ``width``
-    thick), ``"logo"`` (the SAFE21 logo in ``rect``) or ``"timeline"``
-    (the #131 time line of ``scene``, drawn by ``future_view.paint_future``).
+    thick), ``"logo"`` (the SAFE21 logo in ``rect``), ``"timeline"``
+    (the #131 time line of ``scene``, drawn by ``future_view.paint_future``)
+    or ``"qr"`` (the QR code of ``text`` filling the square ``rect``, #145).
     """
 
     kind: str
@@ -153,6 +167,44 @@ def text_height(text, font, width, align=0):
 def text_width(text, font):
     """The width of ``text`` on one line (page points)."""
     return QFontMetricsF(font).horizontalAdvance(text)
+
+
+def date_fit(ts, font, width):
+    """A will date in the plugin's one style (#145): the long form
+    "24 December 2032, 01:00 UTC", or the short "24 Dec 2032, 01:00 UTC"
+    when the long one is wider than ``width`` in ``font``."""
+    text = datetext.utc_text(ts)
+    if text_width(text, font) > width:
+        text = datetext.utc_short(ts)
+    return text
+
+
+def address_groups(address):
+    """``address`` in groups of 4 characters ("bc1q g4w5 qq75 ...", #145).
+
+    Owner: easier to read and to copy by hand from paper; a long address
+    (up to 62 characters) can then wrap between two groups with any font.
+    The page says to copy it without the spaces; the QR code next to it
+    holds the address itself.
+    """
+    text = str(address or "")
+    return " ".join(text[i:i + 4] for i in range(0, len(text), 4))
+
+
+def qr_modules(text):
+    """The QR code of ``text``: rows of booleans (True: a dark module), no
+    border. The ``qrcode`` package ships with Electrum (the plugin's QR
+    export uses it too); imported here so the report still loads without
+    it. ``None`` when it is missing or ``text`` cannot be encoded."""
+    try:
+        import qrcode
+
+        qr = qrcode.QRCode(error_correction=qrcode.ERROR_CORRECT_M, border=0)
+        qr.add_data(str(text))
+        qr.make(fit=True)
+        return qr.get_matrix()
+    except Exception:
+        return None
 
 
 # ----------------------------------------------------------------- blocks
@@ -293,7 +345,8 @@ def _header_block(report):
     y = block.text(x, 0, w, _("Will plan"), report_font(18, bold=True), NAVY, right)
     small = report_font(8)
     lines = [
-        "{}: {}".format(_("Created on"), report.created.strftime("%Y-%m-%d %H:%M")),
+        # #145: the one date style; the local time of this computer.
+        "{}: {}".format(_("Created on"), datetext.moment_text(report.created)),
     ]
     if report.wallet_name:
         lines.append("{}: {}".format(_("Wallet"), report.wallet_name))
@@ -319,12 +372,12 @@ def _status_block(report):
     rows = []      # (label, value, colour)
     if future.delivery:
         rows.append((_("Delivery to the heirs"), "{} {}".format(
-            fv.utc_date_text(future.delivery), future.time_left),
+            datetext.utc_text(future.delivery), future.time_left),
             DELIVERY_LEVEL_COLOURS.get(future.level, TEXT)))
         rows.append((_("Delivery form"),
                      core_future.delivery_form_text(future.form, future.period_months), TEXT))
     if future.check_alive is not None:
-        value = fv.utc_date_text(future.check_alive)
+        value = datetext.utc_text(future.check_alive)
         if not future.check_alive_passed:
             value += " — " + _("from that day the wallet asks you to renew it")
         rows.append((_("Check Alive"), value, "#c62828" if future.check_alive_passed else TEXT))
@@ -382,50 +435,94 @@ def _timeline_block(scene):
 
 
 def _heir_blocks(report, format_amount):
-    """The heirs table: name, real share, amount, the full address under the
-    name; then the total."""
-    share_x, amount_x = PAGE_W - 230, PAGE_W - 130
+    """The heirs table: name, real share, amount and the QR code of the
+    address on the right; the full address under the name; then the total.
+
+    #145 (owner, on paper): the address in a larger monospaced font, black
+    (the thin grey one could fade), in groups of 4 characters (see
+    :func:`address_groups`; one sentence above the table says to copy it
+    without the spaces), wrapped before the share column; the QR code of the
+    address right of the amount, from the top of the row (a lower row); a
+    visible light line between two heirs.
+    """
+    qr_x = PAGE_W - QR_SIDE
+    # Owner (#145 preview): narrow columns, so a usual address (42
+    # characters, 11 groups) stays on one line. The share and amount
+    # columns are as wide as their widest value (amounts in the wallet's
+    # unit; a longer text, as "excluded (below the dust limit)", wraps), the
+    # headers wrap when longer; the address gets the rest.
+    value_font, total_font = report_font(10), report_font(10, bold=True)
+    amounts = [format_amount(h.sats) for h in report.heirs if h.sats is not None]
+    amount_w = min(130.0, 4 + max(
+        [text_width(a, value_font) for a in amounts]
+        + [text_width(format_amount(report.total_sats), total_font), 40.0]))
+    share_w = 10 + max([text_width(_percent(h.percent), value_font)
+                        for h in report.heirs if h.percent is not None] + [30.0])
+    amount_x = qr_x - 8 - amount_w
+    share_x = amount_x - share_w
     head = _Block()
     small = report_font(8, bold=True)
     right = Qt.AlignmentFlag.AlignRight
-    head.text(0, 0, share_x, _("Name"), small, GREY)
-    head.text(share_x, 0, 95, _("Heir's share"), small, GREY, right)
-    head.text(amount_x, 0, 130, _("Amount"), small, GREY, right)
-    head.line(0, head.height + 2, PAGE_W)
+    head.text(0, 0, PAGE_W, _(
+        "The addresses are written in groups of 4 characters to read them "
+        "better: copy them without the spaces. The QR code next to each one "
+        "holds the same address."), report_font(8, italic=True), GREY)
+    head.gap(4)
+    top = head.height
+    # Owner (#145): the column holds the name and, under it, the address.
+    head.text(0, top, share_x, _("Name and Bitcoin address"), small, GREY)
+    head.text(share_x, top, share_w, _("Heir's share"), small, GREY, right)
+    # Owner (#145 preview): over the start of the heirs' amounts (all of
+    # the same width in BTC, right-aligned), not at the right edge.
+    amounts_x = amount_x + amount_w - max(
+        [text_width(a, value_font) for a in amounts] + [0.0])
+    head.text(amounts_x, top, amount_x + amount_w - amounts_x, _("Amount"),
+              small, GREY)
+    head.line(0, head.height + 2, PAGE_W, HEIR_RULE, 0.8)
     blocks = [head]
     for heir in report.heirs:
         b = _Block()
         name_font = report_font(10, bold=True)
-        h = b.text(0, 3, share_x - 10, heir.name, name_font)
+        h = b.text(0, 5, share_x - 10, heir.name, name_font)
         share = _percent(heir.percent) if heir.percent is not None else ""
-        b.text(share_x, 3, 95, share, report_font(10), TEXT, right)
+        b.text(share_x, 5, share_w, share, report_font(10), TEXT, right)
         amount = (format_amount(heir.sats) if heir.sats is not None
                   else _("excluded (below the dust limit)"))
-        b.text(amount_x, 3, 130, amount, report_font(10), TEXT, right)
-        y = 3 + h + 1
-        y += b.text(0, y, PAGE_W, heir.address, report_font(8, mono=True), GREY)
-        b.line(0, y + 3, PAGE_W)
+        b.text(amount_x, 5, amount_w, amount, report_font(10), TEXT, right)
+        y = 5 + h + 3
+        y += b.text(0, y, share_x - 4, address_groups(heir.address),
+                    report_font(10, mono=True), TEXT)
+        if heir.address:
+            # A quiet zone of about 4 modules around the code (scanners
+            # need it): the room left of it, the gaps above and below.
+            b.items.append(Item("qr", QRectF(qr_x, 5, QR_SIDE, QR_SIDE),
+                                text=str(heir.address)))
+            y = max(y, 5 + QR_SIDE)
+        b.line(0, y + 6, PAGE_W, HEIR_RULE, 0.8)
+        b.gap(1)
         blocks.append(b)
-    total = _Block()
-    total.text(0, 2, amount_x, _("Total to the heirs"), report_font(10, bold=True))
-    total.text(amount_x, 2, 130, format_amount(report.total_sats),
+    # #145: the total is drawn in the block of the last heir, so it never
+    # opens a page alone.
+    total = blocks[-1] if len(blocks) > 1 else _Block()
+    y = total.height + 2
+    total.text(0, y, amount_x, _("Total to the heirs"), report_font(10, bold=True))
+    total.text(amount_x, y, amount_w, format_amount(report.total_sats),
                report_font(10, bold=True), TEXT, right)
-    blocks.append(total)
+    if total is not blocks[-1]:
+        blocks.append(total)
     return blocks
 
 
 def _message_block(report):
-    """The will message (#140, owner): each text in quotes and a grey line
-    saying when it becomes public."""
+    """The will message (#140, owner): each text in quotes and, under it, the
+    plugin's own warning of the message window (#145, owner: public forever,
+    read by the will-executors before the delivery, no private data)."""
     b = _Block()
     y = 2
     for text in report.messages:
         y += b.text(0, y, PAGE_W, "“{}”".format(text), report_font(10, italic=True))
         y += 2
-    b.text(0, y + 2, PAGE_W, _(
-        "Written on the blockchain at the delivery, with the will transaction: "
-        "from then on it is public. The will-executors can read it before."),
-        report_font(8), GREY)
+    b.text(0, y + 2, PAGE_W, message_warning_text(), report_font(8), GREY)
     return b
 
 
@@ -446,7 +543,9 @@ def _instalment_blocks(report):
         heirs = ", ".join(
             "{} {}".format(h.name, _percent(h.percent))
             for h in inst.heirs if h.percent is not None)
-        texts = (str(inst.number), fv.utc_date_text(inst.locktime), heirs,
+        # #145: the short form of the one date style (a narrow column; it
+        # wraps under the day when it does not fit).
+        texts = (str(inst.number), datetext.utc_short(inst.locktime), heirs,
                  _("sent and verified {} of {}").format(inst.verified, len(inst.states)))
         y = 0.0
         for (x, w), text in zip(cols, texts, strict=True):
@@ -548,9 +647,9 @@ def _grid_blocks(report):
         x = host_w + i * col_w
         y = head.text(x, 0, col_w, _instalment_label(inst.number),
                       report_font(8, bold=True), GREY, center)
-        # The UTC day only: four full dates side by side would touch.
-        head.text(x, y, col_w, fv.utc_date_text(inst.locktime)[:10], report_font(7), GREY,
-                  center)
+        # The UTC day only, short: four full dates side by side would touch.
+        head.text(x, y, col_w, datetext.utc_day(inst.locktime, short=True),
+                  report_font(7), GREY, center)
     head.line(0, head.height + 2, PAGE_W)
     blocks = [head]
     for url in urls[:MAX_GRID_ROWS]:
@@ -599,8 +698,8 @@ def _tx_block(tx, format_amount, show_fee=True):
         b.text(PAGE_W - 170, 3, 170, "{}: {}".format(_("Executor fee"), format_amount(tx.fee)),
                report_font(9), TEXT, Qt.AlignmentFlag.AlignRight)
     if not show_fee:
-        b.text(PAGE_W - 170, 3, 170, fv.utc_date_text(tx.locktime), report_font(9), TEXT,
-               Qt.AlignmentFlag.AlignRight)
+        b.text(PAGE_W - 170, 3, 170, date_fit(tx.locktime, report_font(9), 170),
+               report_font(9), TEXT, Qt.AlignmentFlag.AlignRight)
     y = 3 + h + 1
     label = _("Txid") + ": "
     lw = text_width(label, report_font(8))
@@ -627,21 +726,21 @@ def _technical(flow, report, format_amount):
     font = report_font(9)
     if report.delivery:
         y += facts.text(0, y, PAGE_W, "{}: {} · {}".format(
-            _("Locktime"), report.delivery, fv.utc_date_text(report.delivery)), font) + 2
+            _("Locktime"), report.delivery, datetext.utc_text(report.delivery)), font) + 2
     if report.miner_fee:
         y += facts.text(0, y, PAGE_W, "{}: {}".format(_("Miner fee"), report.miner_fee),
                         font) + 2
     flow.add(facts)
     if report.multiverse:
         flow.add(_subtitle("{} · {}".format(
-            _instalment_label(1), fv.utc_date_text(report.instalments[0].locktime))))
+            _instalment_label(1), datetext.utc_text(report.instalments[0].locktime))))
     for tx in report.first_txs:
         flow.add(_tx_block(tx, format_amount), space=0)
     if report.multiverse:
         for inst in report.instalments[1:]:
             b = _Block()
             b.text(0, 3, PAGE_W, " · ".join((
-                _instalment_label(inst.number), fv.utc_date_text(inst.locktime),
+                _instalment_label(inst.number), datetext.utc_text(inst.locktime),
                 "{}: {}".format(_("Transactions"), inst.tx_count),
                 _("sent and verified {} of {}").format(inst.verified, len(inst.states)),
             )), report_font(9))
@@ -671,7 +770,14 @@ def layout_report(report, format_amount):
     a fiat value). Returns the :class:`Page` list, with the small headers
     and the footers ("Page x/y") already added.
     """
-    scene = fv.future_scene(report.future, format_amount=format_amount)
+    # #145: the dates of the time line in the one style, as the Future view
+    # of the Will tab (future_view.view_scene, without its greying: the
+    # report describes the will in force only).
+    scene = fv.future_scene(
+        report.future, format_date=datetext.utc_text, format_amount=format_amount,
+        format_short=datetext.utc_short,
+        split_date=lambda ts: ("", datetext.utc_short(ts)),
+    )
     flow = _Flow()
     flow.add(_header_block(report), space=10)
     flow.add(_status_block(report), space=8)
@@ -682,7 +788,9 @@ def layout_report(report, format_amount):
         flow.add(block, space=0)
     flow.y += 10
     if report.messages:
-        flow.heading(_("MESSAGE IN THE WILL"))
+        # #145 (owner): where it is in the transaction, for a technical
+        # reader ("OP_RETURN" is a Bitcoin term, never translated).
+        flow.heading("{} (OP_RETURN)".format(_("MESSAGE IN THE WILL")))
         flow.add(_message_block(report))
         flow.y += 8
     if report.multiverse:
@@ -836,6 +944,30 @@ def paint_page(painter, page, logo=None):
                 paint_vector_logo(painter, item.rect)
         elif item.kind == "timeline":
             fv.paint_future(painter, item.rect, item.scene, item.base_font)
+        elif item.kind == "qr":
+            paint_qr(painter, item.rect, item.text)
+
+
+def paint_qr(painter, rect, text):
+    """The QR code of ``text`` in the square ``rect`` (#145): one black
+    square per dark module, drawn as vectors (sharp on any printer), with
+    no antialiasing so two modules never leave a hairline between them.
+    Nothing is drawn when the code cannot be made (see :func:`qr_modules`).
+    """
+    modules = qr_modules(text)
+    if not modules:
+        return
+    size = rect.width() / len(modules)
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(QColor("#000000")))
+    for r, row in enumerate(modules):
+        for c, dark in enumerate(row):
+            if dark:
+                painter.drawRect(QRectF(rect.x() + c * size, rect.y() + r * size,
+                                        size, size))
+    painter.restore()
 
 
 def print_pages(printer, pages, logo=None):

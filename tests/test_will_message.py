@@ -667,8 +667,8 @@ def test_gui_import_skips_a_second_message(make, monkeypatch, tmp_path):
 
 def test_pdf_has_the_message(make, monkeypatch):
     """After the Check the will in force carries the message: the report
-    data has it and the PDF shows "MESSAGE IN THE WILL", the text in
-    quotes and when it becomes public. Without a message: no section."""
+    data has it and the PDF shows "MESSAGE IN THE WILL (OP_RETURN)", the
+    text in quotes and the warning of the message window (#145). Without a message: no section."""
     from bal.core import report as core_report
     from bal.gui.qt import report_pages as rp
     s, rbw = make()
@@ -689,10 +689,13 @@ def test_pdf_has_the_message(make, monkeypatch):
     check_twice_clean(s)
     r, texts = pages()
     assert r.messages == [FAMILY]
-    assert "MESSAGE IN THE WILL" in texts
+    # #145 (owner): "OP_RETURN" in the heading, the warning of the message
+    # window under the text.
+    assert "MESSAGE IN THE WILL (OP_RETURN)" in texts
     assert "“{}”".format(FAMILY) in texts
-    assert ("Written on the blockchain at the delivery, with the will transaction: "
-            "from then on it is public. The will-executors can read it before.") in texts
+    assert ("The message will be public forever on the blockchain, and the "
+            "will-executors can read it before the delivery. Do not write "
+            "private data.") in texts
 
 
 if __name__ == "__main__":
