@@ -1792,6 +1792,45 @@ class BalWindow:
             return locktime < threshold_ts
         return self.date_to_check is not None and locktime < self.date_to_check
 
+    def _sync_prepared_date(self):
+        """Move the stored delivery date to the will Prepare just built (#142).
+
+        A rebuild that spends the coins of the will in force with other
+        heirs, amounts or coins dates the new will one day EARLIER (the
+        anticipation rule). The Check, the command line and the automatic
+        rebuild then move the stored date with it
+        (``build.sync_delivery_date``: only EARLIER, only a fixed date);
+        Prepare did not (divergence D14). Its own check right after the build
+        then found every heir at the old date ("Error: <heir> / Please, check
+        your heirs..."), and the next Check took the old date for a POSTPONE
+        and offered a paid invalidation of a will nobody had received
+        (owner's test, 2026-10-15).
+
+        When the date moved, the delivery state is read again
+        (:meth:`init_class_variables`): the heirs get the new date, so the
+        check that follows judges the will as the next Check will. Never
+        raises: an error is logged and the check that follows says what is
+        wrong.
+        """
+
+        def store(field, value):
+            """The validated write; the date fields show the new value."""
+            _logger.info(f"prepare: delivery date synced to the rebuilt will: -> {value}")
+            self.update_setting_widgets(value, field, update_all=True)
+
+        try:
+            moved = build.sync_delivery_date(
+                self,
+                store,
+                on_error=lambda e: _logger.error(
+                    f"prepare: delivery date sync failed: {e!r}"
+                ),
+            )
+            if moved is not None:
+                self.init_class_variables()
+        except Exception as e:
+            _logger.error(f"prepare: delivery state not refreshed: {e!r}")
+
     def build_inheritance_transaction(self, ignore_duplicate=True, keep_original=True):
         """The Will tab's "Prepare": check the will and rebuild it if needed.
 
@@ -1973,6 +2012,9 @@ class BalWindow:
                         replaced_before, self.willitems
                     ):
                         self.show_message(change_text)
+                # CHANGELOG #142: the stored date follows the rebuilt will,
+                # as in the Check, before the will is checked again.
+                self._sync_prepared_date()
 
                 # Track whether the rebuild produced a coherent, ready-to-sign
                 # will, so we can guide the user through the remaining manual
@@ -1987,9 +2029,11 @@ class BalWindow:
                 except WillExpiredException as e:
                     self.invalidate_will()
                 except NotCompleteWillException as e:
+                    # CHANGELOG #142 (owner): the cause in the Check's words
+                    # (bal.core.messages), not "Error:<heir name>".
                     self.show_error(
-                        _("Error:{}\n {}").format(
-                            str(e),
+                        "{}\n{}".format(
+                            will_change_message(e),
                             _("Please, check your heirs, locktime and threshold!"),
                         )
                     )

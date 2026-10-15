@@ -9416,3 +9416,81 @@ WILL tab does not move the stored delivery date to the anticipated will.
   locktime and threshold!".
 - The next Check took it for a postpone and offered a paid invalidation.
   The owner set the date by hand instead.
+
+## 142. Prepare moves the stored delivery date with the rebuilt will
+
+**Date:** 2026-10-15
+
+**Problem (the owner's ZIP test of #141, on his wallet):**
+- He changed an heir's percentage, then pressed Prepare and Sign in the WILL
+  tab, then Check.
+- The rebuild spends the coins of the will in force with other amounts, so
+  the new will is dated one day EARLIER (the anticipation rule).
+- The Check, the command line and the automatic rebuild move the stored
+  date with it (`build.sync_delivery_date`). Prepare did not (divergence
+  D14).
+- So, right after the build, Prepare's own check found every heir at the old
+  date and showed "Error: erede test / Please, check your heirs, locktime
+  and threshold!".
+- The next Check read the old stored date as a POSTPONE of a signed will and
+  offered a paid on-chain invalidation. Nobody had received that will. The
+  owner cancelled and set the date by hand.
+- In the offline world of the tests the invalidation was really broadcast.
+
+The Check builds the same will and its own check after the build fails the
+same way, but it treats that failure as "the will must be signed" (bugs
+E/F/K) and then moves the stored date. Prepare treated it as an error.
+
+**What changed:**
+
+- **Prepare moves the stored date** (`BalWindow._sync_prepared_date`) right
+  after the build:
+  - it uses the same rule as the others: the date only moves EARLIER, and
+    only when it is a fixed date;
+  - the toolbar date fields show the new date (`update_setting_widgets`);
+  - when the date moved, it then reads the delivery state again
+    (`init_class_variables`), so the heirs carry the new date.
+  - The check that follows now really finds the will coherent (it is not
+    hidden as in the Check), and Prepare says "Your will has been rebuilt
+    and now needs to be signed...".
+- **Prepare's error popup gives the cause** in the Check's words
+  (`will_change_message`) above "Please, check your heirs, locktime and
+  threshold!", instead of "Error:<heir name>" or "Error:WillException".
+- **Manual:** the Prepare command says the date moves with an anticipated
+  will, as with Check.
+- **Unchanged:** the Check, the command line, the automatic rebuild, the
+  protocol. No new msgid.
+
+**Tests:**
+- `tests/test_prepare_date_sync.py` (new, 5 tests). It uses three fake
+  will-executors, each with its own fee address, and covers:
+  - the owner's case in Advanced and in Basic: no error popup, the stored
+    date moves one day earlier, no invalidation, the will is sent, the next
+    Check is clean;
+  - new coins (the D14 scenario);
+  - a date the owner moved earlier is kept;
+  - the error popup with the cause.
+  - Without the fix, 4 of the 5 fail; the fifth is the guard.
+- Golden files updated (`tests/golden/5e/copies/`):
+  - `prepare_fee_changed` and `prepare_new_coin`: the "rebuilt, to be
+    signed" message instead of the error, and the stored date one day
+    earlier;
+  - `prepare_fixed_amount_too_big`: "The will contains no valid
+    transaction: a new will must be prepared." instead of
+    "Error:WillException".
+- `tests/test_5e_divergences.py`:
+  - D11 and D14 converged (Prepare now behaves as the Check);
+  - D9 reads the new error text.
+
+**Verification:**
+- ruff clean.
+- Affected tests: 249 passed.
+- Test ZIP `safe21-heartbeat_0.7.0-TEST-142-prepare-date.zip`: external
+  load and smoke test OK on 4.8.2.
+- Whole suite in both orders: 2285 passed each time.
+
+**Outcome:** the owner's ZIP test (2026-10-15), on his wallet, was OK:
+- after a new percentage, Prepare gave no error popup and moved the date to
+  25 December 2032;
+- Sign, then Check: no invalidation; sent and verified 4 of 4;
+- a second Check was clean.

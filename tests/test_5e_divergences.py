@@ -75,7 +75,9 @@ DIVERGENCES = {
                     "copies/cli_fee_too_high"], ""),
     11: ("After a rebuild the will needs signing (#107): Prepare shows an error",
          "pinned", ["check/fee_changed", "copies/prepare_fee_changed",
-                    "copies/prepare_new_coin", "copies/cli_fee_changed"], ""),
+                    "copies/prepare_new_coin", "copies/cli_fee_changed"],
+         "#142: converged, Prepare moves the stored date first and says the "
+         "will must be signed, no error"),
     12: ("After a rebuild the anticipated date crosses the Check Alive",
          "not reproduced", [],
          "needs a Check Alive one day from the delivery; decision D10 asks "
@@ -89,7 +91,8 @@ DIVERGENCES = {
          "copy not received, not reproduced here"),
     14: ("The stored delivery date follows the rebuilt will (#110)",
          "pinned", ["check/new_coin", "copies/prepare_new_coin",
-                    "copies/auto_new_coin", "copies/cli_new_coin"], ""),
+                    "copies/auto_new_coin", "copies/cli_new_coin"],
+         "#142: converged, Prepare moves it too"),
     15: ("History labels after a rebuild",
          "pinned", ["check/new_coin", "copies/auto_new_coin"], ""),
     16: ("Saving the will after a rebuild",
@@ -338,12 +341,14 @@ def test_d08():
 
 
 def test_d09():
-    """Nothing built: Check goes on to phase 2, Prepare shows an error, the CLI says 'nothing'."""
+    """Nothing built: Check goes on to phase 2, Prepare shows an error (in the
+    Check's words since #142), the CLI says 'nothing'."""
     c = step("check/date_in_past", "check", 1)
     assert "Skipped" in rows(c) and "Signing your will" in rows(c)
     p = step("copies/prepare_fixed_amount_too_big", "gui prepare")
     assert returned(p) == {"will items": 0}
-    assert any("Error:WillException" in t for t in popups(p, "error"))
+    assert any(t.startswith("The will contains no valid transaction")
+               for t in popups(p, "error"))
     assert returned(step("copies/cli_date_in_past", "cli auto_rebuild")) == {"result": "nothing"}
 
 
@@ -356,11 +361,14 @@ def test_d10():
 
 
 def test_d11():
-    """After a rebuild: Check and CLI fine, Prepare shows the #107 error."""
+    """After a rebuild: Check, Prepare (since #142) and CLI fine; Prepare
+    says the rebuilt will must be signed, with no error."""
     assert step("check/fee_changed", "check", 1)["report"]["result"][0] == "ok"
     for name in ("copies/prepare_fee_changed", "copies/prepare_new_coin"):
         p = step(name, "gui prepare")
-        assert any("Please, check your heirs" in t for t in popups(p, "error")), name
+        assert not popups(p, "error"), name
+        assert any("Your will has been rebuilt" in t
+                   for t in popups(p, "message")), name
     assert returned(step("copies/cli_fee_changed", "cli prepare_will"))["result"] == "rebuilt"
 
 
@@ -374,10 +382,10 @@ def test_d13():
 
 
 def test_d14():
-    """The stored date follows the rebuilt will everywhere except in Prepare."""
+    """The stored date follows the rebuilt will everywhere, Prepare too (#142)."""
     assert step("check/new_coin", "check", 1)["settings"]["locktime"] == "2032-09-22"
     p = step("copies/prepare_new_coin", "gui prepare")
-    assert p["settings"]["locktime"] == "2032-09-23"
+    assert p["settings"]["locktime"] == "2032-09-22"
     assert any(i["locktime"] == "2032-09-22" for i in p["items"])
     assert step("copies/auto_new_coin", "gui automatic")["settings"]["locktime"] == "2032-09-22"
     assert step("copies/cli_new_coin", "cli auto_rebuild")["settings"]["locktime"] == "2032-09-22"
