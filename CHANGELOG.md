@@ -9933,3 +9933,42 @@ owner's ZIP test: "Invalidate will" from the Will tab menu (History label
 present) and a Check after a postpone (asks to invalidate, then signs and
 sends the new will). The whole suite runs before the push, with #153 and
 #154.
+
+## 153. One shared broadcast of the signed invalidation
+
+**Date:** 2026-10-16
+
+**Why (owner):** second piece of the de-duplication, after #152: sending
+the signed invalidation was written twice, so a later change could be made
+in one copy and forgotten in the other.
+
+**What changed:**
+- `bal/engine/invalidate.py`: `broadcast_invalidation(wallet, network, tx)`
+  adds the wallet and network information to the signed transaction, sets
+  the History label (`INVALIDATION_LABEL`) BEFORE broadcasting and
+  broadcasts with a 120 s timeout (`BROADCAST_TIMEOUT`); it returns the
+  txid. Errors propagate to the caller.
+- The two copies use it: the Check's "Invalidate now"
+  (`BalBuildWillDialog.loop_broadcast_invalidating`, `bal/gui/qt/dialogs.py`)
+  and the automatic invalidation (`BalWindow._auto_invalidate_will`,
+  `bal/gui/qt/window.py`).
+- Signing stays with each caller (the automatic one only for a wallet
+  without a password, the Check asks for it), and so do the messages: the
+  Check still shows "Ok" or the broadcast error in its row.
+- Nothing changes for the user. The fixed 10-second pause after the
+  Check's invalidation is untouched (#154 shows it).
+- Catalogs: line numbers only.
+
+**Tests:** `tests/test_engine_invalidate_broadcast.py` (new, 8 tests): the
+steps in their old order with the 120 s timeout; no txid, no label; a
+broadcast error propagates after the label; the Check sends through the
+engine and shows "Ok", or the error, in its row; a closing Check sends
+nothing; the automatic invalidation sends through the engine; no other
+module broadcasts a transaction or pulls its network information.
+
+**Verification:** ruff clean; the 86 test files that mention invalidation
+or broadcasting: 1800 passed; ZIP built, external zip load and smoke test
+OK on 4.8.2; owner's ZIP test: a Check after a postpone, "Invalidate now"
+(History label present, the new will in force). The automatic
+invalidation is off since #149, so only the tests cover it. The whole
+suite runs before the push, with #152 and #154.
