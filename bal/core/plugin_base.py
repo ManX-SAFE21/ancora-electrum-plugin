@@ -489,6 +489,19 @@ class BalPlugin(BasePlugin):
         """
         return str(self.USER_TYPE.get()).lower() != "advanced"
 
+    def rebuild_on_close_active(self):
+        """Return True when closing the wallet must rebuild the will.
+
+        In BASIC mode it is always True (#150): the setting is not shown
+        there, and the close Check is what brings new coins into the will,
+        so a False stored earlier (or set in ADVANCED) must not switch it off
+        unseen. In ADVANCED mode the stored REBUILD_ON_CLOSE value decides;
+        it is kept as it is when the mode changes.
+        """
+        if self.is_basic_mode():
+            return True
+        return bool(self.REBUILD_ON_CLOSE.get())
+
     def warning_months(self):
         """The remaining-time thresholds ``(yellow, red)`` in months (#124).
 

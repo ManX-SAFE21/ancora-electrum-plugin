@@ -4,7 +4,8 @@ hidden and the flow it started is switched off.
 
 Covers:
   - The plugin settings dialog (BASIC and ADVANCED) has no row for it, while
-    the "Rebuild will on wallet close" row is still there.
+    the "Rebuild will on wallet close" row is still there (ADVANCED only
+    since #150).
   - "Reset to Default Setting" leaves a ``bal_auto_rebuild`` value stored by
     an older version untouched (the key is kept, never rewritten).
   - ``Plugin.GUI_AUTO_REBUILD_ENABLED`` is False, and with a stored
@@ -73,13 +74,30 @@ def _label_texts(dialog):
 
 
 def test_no_auto_rebuild_row_in_basic_and_advanced():
-    """Neither mode shows the row; the wallet-close row is still shown."""
+    """Neither mode has the row; the wallet-close row is still built."""
     for user_type in ("basic", "advanced"):
         dialog = _build_dialog(_plugin(user_type))
         texts = _label_texts(dialog)
         assert HIDDEN_LABEL not in texts, user_type
         assert KEPT_LABEL in texts, user_type
         dialog.close()
+
+
+def _kept_row_label(dialog):
+    """The "Rebuild will on wallet close" label of *dialog*."""
+    labels = [w for w in dialog.findChildren(QLabel) if w.text() == KEPT_LABEL]
+    assert len(labels) == 1
+    return labels[0]
+
+
+def test_wallet_close_row_advanced_only():
+    """#150: the wallet-close row is hidden in BASIC, shown in ADVANCED."""
+    basic = _build_dialog(_plugin("basic"))
+    assert _kept_row_label(basic).isHidden() is True
+    basic.close()
+    advanced = _build_dialog(_plugin("advanced"))
+    assert _kept_row_label(advanced).isHidden() is False
+    advanced.close()
 
 
 def test_reset_defaults_keeps_stored_auto_rebuild():
