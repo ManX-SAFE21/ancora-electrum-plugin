@@ -58,6 +58,7 @@ from ...engine.invalidate import (
     broadcast_invalidation,
     build_invalidation,
 )
+from ...engine.sign import sign_targets, sign_will_item
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -2183,14 +2184,8 @@ class BalWindow:
                         msg = _("signed: {}").format(signed) + "\n"
                     return msg + _("signing: {}").format(tosign)
 
-                if txids is not None:
-                    targets = [
-                        t for t in txids
-                        if t in willitems and willitems[t].get_status("VALID")
-                    ]
-                else:
-                    targets = Will.only_valid(willitems)
-                for txid in targets:
+                # The same choice as the command line (#154).
+                for txid in sign_targets(willitems, txids):
                     wi = willitems[txid]
                     if wi.get_status("COMPLETE"):
                         # Already signed and complete: keep as-is (the single-tx
@@ -2218,46 +2213,11 @@ class BalWindow:
         (:class:`WillTxReviewSignDialog`).
 
         Returns ``(tx, newly_signed)``: ``newly_signed`` is False when the
-        transaction was already COMPLETE (nothing was signed).
+        transaction was already COMPLETE (nothing was signed). The steps are
+        the command line's too since #154:
+        :func:`bal.engine.sign.sign_will_item`.
         """
-        wi = willitems[txid]
-        # Do NOT deepcopy: the stored tx carries wallet-derived objects
-        # (utxo / script_descriptor) that hold a threading.RLock, and
-        # copy.deepcopy raises "cannot pickle '_thread.RLock'".  Re-parse
-        # from the serialized form instead, which is exactly how the will
-        # is persisted/loaded (WillItem.to_dict -> serialize -> tx_from_any).
-        tx = Will.get_tx_from_any(str(wi.tx))
-        if wi.get_status("COMPLETE"):
-            return tx, False
-        for txin in tx.inputs():
-            prevout = txin.prevout.to_json()
-            if prevout[0] in willitems:
-                change = willitems[prevout[0]].tx.outputs()[prevout[1]]
-                txin._trusted_value_sats = change.value
-                try:
-                    txin.script_descriptor = change.script_descriptor
-                except Exception:
-                    pass
-                txin.is_mine = True
-                txin._TxInput__address = change.address
-                txin._TxInput__scriptpubkey = change.scriptpubkey
-                txin._TxInput__value_sats = change.value
-                txin._trusted_value_sats = change.value
-
-        self.wallet.sign_transaction(tx, password, ignore_warnings=True)
-        if tx.is_complete():
-            wi.set_status("COMPLETE", True)
-        # Refresh the per-item signature counts from the freshly signed
-        # partial tx: at this point the signatures are still present
-        # (before any finalization), so the will list can show the real
-        # "added/required" count (e.g. "1/2" for a multisig).
-        try:
-            have, required = tx.signature_count()
-            wi.sigs_have = int(have)
-            wi.sigs_required = int(required)
-        except Exception as e:
-            _logger.debug(f"signature_count after signing failed: {e}")
-        return tx, True
+        return sign_will_item(self.wallet, willitems, txid, password)
 
     def get_wallet_password(self, message=None, parent=None):
         parent = self.window if not parent else parent
