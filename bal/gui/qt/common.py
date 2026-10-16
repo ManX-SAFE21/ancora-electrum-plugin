@@ -299,8 +299,23 @@ def log_error(exec_info, window=None):
 
 
 
+# The file choices of the plugin's own file windows (#158): JSON first,
+# every file second, as Electrum's ``import_meta_gui``. Every export now
+# saves ".json" (:func:`export_meta_gui`); a file exported before without
+# it is found with "All files" (the plugin reads the content, never the
+# name).
+IMPORT_FILE_FILTER = "JSON (*.json);;All files (*)"
+
+
 def export_meta_gui(electrum_window, title, exporter):
+    """Choose where to save a file and export it.
+
+    #158: a *title* ending in ".json" (the will, the heirs, the
+    will-executors) also makes ".json" the ending added to a name typed
+    without one, so the saved file is recognised as JSON.
+    """
     filter_ = "All files (*)"
+    default_extension = "json" if title.endswith(".json") else None
     filename = getSaveFileName(
         parent=electrum_window,
         title=_("Select file to save your {}").format(title),
@@ -308,6 +323,7 @@ def export_meta_gui(electrum_window, title, exporter):
             BalPlugin.chainname, str(electrum_window.wallet), title
         ),
         filter=filter_,
+        default_extension=default_extension,
         config=electrum_window.config,
     )
     if not filename:

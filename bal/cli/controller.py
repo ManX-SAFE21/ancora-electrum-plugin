@@ -44,7 +44,6 @@ from ..core import will as will_mod
 from ..core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
-    resolve_date_to_check,
     resolve_guard_threshold,
 )
 from ..core.delivery import DeliveryHold
@@ -63,6 +62,8 @@ from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
 from ..engine import build, context
 from ..engine.invalidate import INVALIDATION_LABEL, build_invalidation
+from ..engine.merge import merge_summary
+from ..engine.merge import merge_will as engine_merge_will
 from ..engine.push import (
     EXCLUDED_FEE,
     FAILED,
@@ -1385,61 +1386,25 @@ class BalController(BalSettingsController):
         return willitems
 
     def merge_will(self, imported):
-        """Merge imported will items into the live will.
+        """Merge imported will items into the live will (``bal_will_merge``).
 
-        Mirrors ``BalWindow.merge_will``: operational statuses are carried over,
-        unsigned live transactions are combined/substituted, new transactions
-        are added wholesale, then a local validity check recomputes the
-        valid/invalidated/replaced statuses.
+        The GUI's rules since #158 (:func:`bal.engine.merge.merge_will`): a
+        copy becomes signed only when its transaction is really signed, the
+        signatures of a multisig add up, then the local validity check.
+        Returns ``{merged, signed, partly_signed, unsigned}``: the merged
+        copies and, among the valid ones, how many are signed, partly signed
+        (a multisig waiting for another signer) and not signed.
         """
-        if self.date_to_check is None:
-            self.date_to_check = resolve_date_to_check(
-                self.plugin.is_basic_mode(), self.will_settings
-            )
-        for wid, wi in imported.items():
-            if wid in self.willitems:
-                live = self.willitems[wid]
-                was_complete = live.get_status("COMPLETE")
-                for status in (
-                    "COMPLETE",
-                    "PUSHED",
-                    "CHECKED",
-                    "MEMPOOL",
-                    "CONFIRMED",
-                ):
-                    if wi.get_status(status):
-                        live.set_status(status, True)
-                if not was_complete:
-                    try:
-                        if live.tx.txid() == wi.tx.txid():
-                            live.tx.combine_with_other_psbt(wi.tx)
-                        else:
-                            live.tx = wi.tx
-                    except Exception:
-                        live.tx = wi.tx
-                    if live.tx.is_complete():
-                        live.set_status("COMPLETE", True)
-            else:
-                self.willitems[wid] = wi
-        Will.normalize_will(self.willitems, self.wallet)
-        self.save_willitems()
-        try:
-            Will.add_willtree(self.willitems)
-            all_utxos = self._available_utxos()
-            Will.check_invalidated(
-                self.willitems, Will.utxos_strs(all_utxos), self.wallet
-            )
-            Will.search_rai(
-                Will.get_all_inputs(self.willitems, only_valid=True),
-                all_utxos,
-                self.willitems,
-                self.wallet,
-            )
-            Will.check_signatures(self.willitems, self.wallet)
-        except Exception as e:
-            _logger.error(f"merge_will validity check failed: {e}")
-        self.save_willitems()
-        return {"merged": len(imported)}
+        ids, error = engine_merge_will(self, imported)
+        if error is not None:
+            _logger.error(f"merge_will validity check failed: {error}")
+        summary = merge_summary(self.willitems, ids)
+        return {
+            "merged": len(imported),
+            "signed": summary.signed,
+            "partly_signed": len(summary.partial),
+            "unsigned": summary.unsigned,
+        }
 
     def merge_will_from_file(self, path):
         try:

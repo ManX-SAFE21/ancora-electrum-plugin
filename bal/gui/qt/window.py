@@ -58,6 +58,8 @@ from ...engine.invalidate import (
     broadcast_invalidation,
     build_invalidation,
 )
+from ...engine.merge import merge_summary
+from ...engine.merge import merge_will as engine_merge_will
 from ...engine.push import (
     ALREADY_PRESENT,
     EXCLUDED_FEE,
@@ -70,6 +72,7 @@ from ...engine.push import (
 from ...engine.sign import sign_will, sign_will_item
 from ...engine.verify import verify_targets, verify_will
 from .common import (
+    IMPORT_FILE_FILTER,
     N_,
     OP_RETURN_PREFIX,
     AmountException,
@@ -112,6 +115,7 @@ from .common import (
     _logger,
     char_width_in_lineedit,
     export_meta_gui,
+    getOpenFileName,
     import_meta_gui,
     is_onion_url,
     is_op_return_address,
@@ -2975,89 +2979,44 @@ class BalWindow:
             raise Exception(str(e)) from e
         plugin.modem_config = amodem.config.bitrates[int(kbps)]
 
-    def merge_will(self, imported):
+    def merge_will(self, imported, show=True):
         """Merge imported will items into the live will.
 
-        Both the tools-menu "Merge" action and the details-dialog "Merge"
-        button go through this single method.
-
-        For a transaction that already exists in the live will the live
-        WillItem is kept (never replaced): only the operational statuses
-        (signed/pushed/checked/mempool/confirmed) that are True in the
-        imported item are carried over. When the live transaction is not
-        yet signed the imported transaction is merged into it (signatures
-        are combined when both are the same unsigned tx, otherwise the
-        transaction is substituted); an already-signed live transaction is
-        left untouched. Transactions that are new are added wholesale.
-
-        After the merge a local validity check recomputes the
-        valid/invalidated/replaced statuses (no server contact, no expiry
-        raise).
+        The Will tab menu "Merge", the Will Details window's "Merge" and
+        "Merge transaction" go through this method. #158: the rules and the
+        local validity check are the engine's
+        (:func:`bal.engine.merge.merge_will`, shared with the command
+        line): a copy becomes signed only when its transaction is really
+        signed (before, the file's "signed" status was trusted), the
+        signatures of a multisig add up. Then the will is refreshed and,
+        with *show*, a message says what came in
+        (:meth:`_merge_message`). Returns the merged ids.
         """
-        # The reference timestamp is normally set by init_class_variables(),
-        # which the merge flow does not run (Merge -> file import can be the
-        # very first action in a session). Fall back to "now" so the local
-        # validity check and the trailing update_all() always have it.
-        if not hasattr(self, "date_to_check") or self.date_to_check is None:
-            self.date_to_check = resolve_date_to_check(
-                self.bal_plugin.is_basic_mode(), self.will_settings
-            )
-
-        for wid, wi in imported.items():
-            if wid in self.willitems:
-                live = self.willitems[wid]
-                was_complete = live.get_status("COMPLETE")
-                for status in (
-                    "COMPLETE",
-                    "PUSHED",
-                    "CHECKED",
-                    "MEMPOOL",
-                    "CONFIRMED",
-                ):
-                    if wi.get_status(status):
-                        live.set_status(status, True)
-                if not was_complete:
-                    try:
-                        if live.tx.txid() == wi.tx.txid():
-                            live.tx.combine_with_other_psbt(wi.tx)
-                        else:
-                            live.tx = wi.tx
-                    except Exception:
-                        live.tx = wi.tx
-                    if live.tx.is_complete():
-                        live.set_status("COMPLETE", True)
-            else:
-                self.willitems[wid] = wi
-        Will.normalize_will(self.willitems, self.wallet)
-        self.save_willitems()
-        # Local validity check: recompute valid/invalidated/replaced statuses.
-        try:
-            Will.add_willtree(self.willitems)
-            bal_plugin = getattr(self, "bal_plugin", None)
-            history_label = (
-                bal_plugin.HISTORY_LABEL.get() if bal_plugin is not None else None
-            )
-            all_utxos = Util.get_available_utxos(
-                self.wallet,
-                history_label,
-                Will.get_min_locktime(
-                    self.willitems, default_value=self.date_to_check
-                ),
-            )
-            Will.check_invalidated(
-                self.willitems, Will.utxos_strs(all_utxos), self.wallet
-            )
-            Will.search_rai(
-                Will.get_all_inputs(self.willitems, only_valid=True),
-                all_utxos,
-                self.willitems,
-                self.wallet,
-            )
-            Will.check_signatures(self.willitems, self.wallet)
-        except Exception as e:
-            log_error(e, self)
-        self.save_willitems()
+        ids, error = engine_merge_will(self, imported)
+        if error is not None:
+            log_error(error, self)
         self.update_all()
+        if show:
+            self.show_message(self._merge_message(ids))
+        return ids
+
+    def _merge_message(self, ids):
+        """What a merge brought, in words (#158, owner).
+
+        Among the merged copies still valid: how many are signed, how many
+        still need signatures (a multisig: "1 of 2", another signer must
+        sign), how many are not signed yet.
+        """
+        summary = merge_summary(self.willitems, ids)
+        lines = [_("Merge done: {} transaction(s) signed, {} still to sign.").format(
+            summary.signed, len(summary.partial) + summary.unsigned)]
+        if summary.partial:
+            have, required = min(summary.partial)
+            lines.append(_(
+                "{} transaction(s) have only {} of {} signatures: another "
+                "signer must sign them."
+            ).format(len(summary.partial), have, required))
+        return "\n".join(lines)
 
     def merge_will_from_file(self, path):
         try:
@@ -3079,10 +3038,27 @@ class BalWindow:
         self.merge_will({wi._id: wi})
 
     def merge_will_ui(self):
-        def on_success():
-            self.will_list_widget.update_will(self.willitems)
+        """The Will tab menu "Merge": choose a will file and merge it.
 
-        import_meta_gui(self.window, _("will"), self.merge_will_from_file, on_success)
+        #158: the file window is opened here instead of Electrum's
+        ``import_meta_gui``, which ended with its own "Your will were
+        successfully imported" on top of the merge's message.
+        """
+        filename = getOpenFileName(
+            parent=self.window,
+            title=_("Open will file"),
+            # JSON first, then every file (owner, #158).
+            filter=IMPORT_FILE_FILTER,
+            config=self.window.config,
+        )
+        if not filename:
+            return
+        try:
+            self.merge_will_from_file(filename)
+        except FileImportFailed as e:
+            self.show_critical(str(e))
+            return
+        self.will_list_widget.update_will(self.willitems)
 
     def import_will_into_details(self):
         """Import a will file and show it in a WillDetails window.

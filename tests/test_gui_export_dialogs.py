@@ -247,7 +247,8 @@ def test_file_export_run_willitem(tmpdir):
 
     with patch.object(dialogs, "export_meta_gui", side_effect=fake_gui):
         d._export_file()
-    assert captured["title"] == "will"
+    # #158: the will file is saved as JSON ("will.json", before "will").
+    assert captured["title"] == "will.json"
     out = tmpdir.join("will.json").strpath
     captured["exporter"](out)
     data = json.load(open(out, encoding="utf-8"))
