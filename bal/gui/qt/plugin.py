@@ -546,13 +546,9 @@ class Plugin(BalPlugin, EventListener):
         # default is ON (see plugin_base.py).
         heir_auto_sign = BalCheckBox(self.AUTO_SIGN)
 
-        # Editable dates checkbox (Group C / C2). When ticked, the delivery-time
-        # and check-alive date fields become editable everywhere (toolbar /
-        # Heirs tab), not only inside the "Build your will" wizard. Bound to the
-        # persisted EDITABLE_DATES config; the default is OFF (see
-        # plugin_base.py). Changing it refreshes the open windows so the date
-        # fields immediately become editable/read-only.
-        heir_editable_dates = BalCheckBox(self.EDITABLE_DATES, on_multiverse_change)
+        # No "Panel editable Date and Fee" checkbox any more (#151): BASIC does
+        # not show the date and fee fields in the tabs (#130) and ADVANCED
+        # always lets them be edited, so the setting changed nothing.
 
         # Number of reminders spin box (Group D / D1). Sets how many reminder
         # alarms the exported .ics calendar event contains. Bound to the
@@ -633,7 +629,8 @@ class Plugin(BalPlugin, EventListener):
                       reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
                       reset_btn_11, reset_btn_12, reset_btn_auto_sign,
                       lbl_rebuild_on_close, heir_rebuild_on_close,
-                      help_rebuild_on_close, reset_btn_rebuild_on_close):
+                      help_rebuild_on_close, reset_btn_rebuild_on_close,
+                      lbl_warning):
                 w.setVisible(not basic)
 
         user_type_combo.currentIndexChanged.connect(on_user_type_change)
@@ -699,12 +696,16 @@ class Plugin(BalPlugin, EventListener):
         # Group C / C4a: warning shown at the very top of the dialog, in red and
         # bold, so the (non-technical) user is reminded not to touch these
         # settings unless they understand them. Placed above the grid via the
-        # outer vertical layout below.
-        lbl_warning = QLabel(
+        # outer vertical layout below. ADVANCED only since #151 (owner): BASIC
+        # shows only a few safe settings, so the warning would just worry.
+        # The gap below it is its own bottom margin (not a layout spacing),
+        # so a hidden warning leaves no empty space at the top.
+        lbl_warning = _hide_if_basic(QLabel(
             _("Warning: change these settings only if you know what you are doing.")
-        )
+        ))
         lbl_warning.setStyleSheet("color: red; font-weight: bold;")
         lbl_warning.setWordWrap(True)
+        lbl_warning.setContentsMargins(0, 0, 0, 12)
 
         # The grid is created WITHOUT a parent so it can be embedded inside an
         # outer QVBoxLayout together with the warning label (top) and the
@@ -731,19 +732,6 @@ class Plugin(BalPlugin, EventListener):
             self.AUTO_SIGN, heir_auto_sign, "check"
         )
         grid.addWidget(_hide_if_basic(reset_btn_auto_sign), 2, 3)
-        add_widget(
-            grid,
-            _("Panel editable Date and Fee"),
-            heir_editable_dates,
-            3,
-            _(
-                "When enabled, the delivery-time and check-alive date fields "
-                "can be edited everywhere (toolbar / Heirs tab), not only in "
-                "the will-building wizard.\n"
-                "When disabled, those dates are display-only outside the wizard."
-            ),
-        )
-        grid.addWidget(_make_reset_btn(self.EDITABLE_DATES, heir_editable_dates, "check"), 3, 3)
         # Max willexecutor fee: maximum fee (in satoshi) allowed for a single
         # will-executor. Visible to all users (BASIC and ADVANCED).
         add_widget(
@@ -761,11 +749,13 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_make_reset_btn(self.MAX_WILLEXECUTOR_FEE, heir_max_willexecutor_fee, "spin"), 4, 3)
         # User Type selector placed BEFORE the advanced-only settings so the
         # user chooses basic/advanced first, then sees the relevant options.
+        # First row of the grid since #151 (owner): the choice that decides
+        # what the rest of the dialog shows comes first, in both modes.
         add_widget(
             grid,
             _("User Type"),
             user_type_combo,
-            5,
+            0,
             _(
                 "Choose how much detail the plugin shows.\n\n"
                 "BASIC: simplified interface, safe configuration for most "
@@ -776,9 +766,9 @@ class Plugin(BalPlugin, EventListener):
                 "editable."
             ),
         )
-        grid.addWidget(_make_reset_btn(self.USER_TYPE, user_type_combo, "user_type"), 5, 3)
-        # Remaining-time colours of the delivery date (CHANGELOG #124), right
-        # below "User Type": ADVANCED only (BASIC always uses 12 and 6). No
+        grid.addWidget(_make_reset_btn(self.USER_TYPE, user_type_combo, "user_type"), 0, 3)
+        # Remaining-time colours of the delivery date (CHANGELOG #124), below
+        # the fee row (User Type moved to the top in #151): ADVANCED only (BASIC always uses 12 and 6). No
         # keyboard tracking, so typing "12" stores 12, not first 1. Red stays
         # below yellow (each box limits the other).
         heir_warn_yellow = BalSpinBox(self.WARN_YELLOW_MONTHS, minimum=2, maximum=120)
@@ -986,7 +976,6 @@ class Plugin(BalPlugin, EventListener):
             resets = [
                 (self.USER_TYPE, user_type_combo, "user_type"),
                 (self.AUTO_SIGN, heir_auto_sign, "check"),
-                (self.EDITABLE_DATES, heir_editable_dates, "check"),
                 (self.NUM_REMINDERS, heir_num_reminders, "spin"),
                 # Red before yellow: each box bounds the other (#124).
                 (self.WARN_RED_MONTHS, heir_warn_red, "spin"),
@@ -1064,9 +1053,8 @@ class Plugin(BalPlugin, EventListener):
         outer = QVBoxLayout(d)
         outer.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
         outer.addWidget(lbl_warning)
-        # Blank vertical gap below the red warning so it is not glued to the
-        # first setting row ("User Type"); requested by the user for readability.
-        outer.addSpacing(12)
+        # The blank gap below the red warning (so it is not glued to the first
+        # setting row, requested by the user) is the label's bottom margin.
         outer.addLayout(grid)
         outer.addLayout(bottom_row)
         outer.addWidget(lbl_credits)

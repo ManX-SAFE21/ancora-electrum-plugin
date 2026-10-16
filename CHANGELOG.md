@@ -9850,3 +9850,44 @@ test switches to ADVANCED to keep the close Check off.
 **Verification:** ruff clean; affected tests (95) passed; owner's ZIP test
 in BASIC: no "Rebuild..." row in the settings; whole suite in both orders
 run before the push together with #149 and #151 (see #151).
+
+## 151. Settings dialog: no "Panel editable Date and Fee", warning in ADVANCED only, User Type first
+
+**Date:** 2026-10-16
+
+**Why (owner):** the BASIC settings dialog should show only what a BASIC
+user needs. "Panel editable Date and Fee" changed nothing any more: BASIC
+does not show the date and fee fields in the tabs (#130) and ADVANCED
+always let them be edited. The red warning only worried BASIC users, who
+see a few safe settings. "User Type" decides what the rest of the dialog
+shows, so it comes first.
+
+**What changed:**
+- `bal/gui/qt/plugin.py`: the "Panel editable Date and Fee" row (label,
+  checkbox, help, reset button) is gone in both modes, and "Reset to
+  Default Setting" no longer touches it. The red warning is hidden in
+  BASIC and shown in ADVANCED (also when the mode is switched in the open
+  dialog); its gap below is now the label's own margin, so a hidden
+  warning leaves no empty space. "User Type" is the first row in both
+  modes. "Maximum Will-Executor fee" stays visible in BASIC (owner: the
+  user should always see it; the reset button restores it).
+- `bal/gui/qt/widgets.py`: `WillSettingsWidget.apply_editable_dates`
+  follows the mode only: outside the wizard the date and fee fields are
+  editable in ADVANCED and read-only in BASIC. A stored
+  `bal_editable_dates` value is kept but no longer read
+  (`bal/core/plugin_base.py` comment).
+- Catalogs: the two texts of the row became obsolete entries (`#~`) in
+  `bal.po` (IT, ES) and left `bal.pot`; nothing else changed.
+
+**Tests:** `tests/test_settings_basic_rows.py` (new, 5 tests): no row in
+either mode; the warning in ADVANCED only; "User Type" first in both
+modes; the fields follow the mode whatever value is stored (never
+rewritten); the wizard fields untouched.
+`tests/test_gui_delivery_colours.py`: "User Type" is now expected in row 0
+(it pinned row 5).
+
+**Verification:** ruff clean; affected tests passed; owner's ZIP test
+(screenshots): BASIC without the warning and the row, ADVANCED with the
+warning and without the row; whole suite in both orders, run before the
+push for #149, #150 and #151 together: 2363 passed each time (a first run
+found only the pinned row 5, fixed above).
