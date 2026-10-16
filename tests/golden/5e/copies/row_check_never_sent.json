@@ -80,7 +80,6 @@
     "label": "BitcoinAfterLife inheritance transaction - https://we0.test",
     "locktime": "2032-09-23",
     "statuses": [
-     "CHECK_FAIL",
      "VALID"
     ],
     "tx": "T1"
@@ -91,14 +90,18 @@
     "label": "BitcoinAfterLife inheritance transaction - https://we1.test",
     "locktime": "2032-09-23",
     "statuses": [
-     "CHECK_FAIL",
      "VALID"
     ],
     "tx": "T2"
    }
   ],
   "labels": {},
-  "popups": [],
+  "popups": [
+   [
+    "message",
+    "2 selected transaction(s) not sent yet: nothing to verify."
+   ]
+  ],
   "pushed": [],
   "questions": [],
   "result": {
@@ -110,21 +113,7 @@
    "threshold": "-180d"
   },
   "stored": {},
-  "verified": [
-   [
-    "https://we0.test",
-    "T1"
-   ],
-   [
-    "https://we1.test",
-    "T2"
-   ]
-  ],
-  "window_events": [
-   "waiting window: Check Transaction",
-   "waiting window text: Checking transactions 0/2 (0s / 20s)",
-   "waiting window text: Checking transactions 1/2 (0s / 20s)",
-   "waiting window text: Checking transactions 2/2 (0s / 20s)"
-  ]
+  "verified": [],
+  "window_events": []
  }
 ]

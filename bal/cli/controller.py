@@ -71,6 +71,7 @@ from ..engine.push import (
     select_push,
 )
 from ..engine.sign import sign_targets, sign_will_item
+from ..engine.verify import verify_targets, verify_will
 
 _logger = get_logger(__name__)
 
@@ -1349,33 +1350,14 @@ class BalController(BalSettingsController):
     def check_transactions(self, txids=None):
         """Ask every will-executor whether it holds our (pushed) transactions.
 
-        Returns ``{txid: {pushed, checked, check_fail}}``.
+        Returns ``{txid: {pushed, checked, check_fail}}``. #156: the choice
+        (the sent copies not verified yet) and the asking are the engine's
+        (:func:`bal.engine.verify.verify_targets` /
+        :func:`~bal.engine.verify.verify_will`), shared with the Check and
+        the right click "check".
         """
-        targets = []
-        for wid, w in self.willitems.items():
-            if not w.we:
-                continue
-            if txids is not None and wid not in txids:
-                continue
-            if Will.needs_server_check(w):
-                targets.append((wid, w.we["url"]))
-
-        def on_each(wid, url, res, exc):
-            try:
-                self.willitems[wid].set_check_willexecutor(res)
-            except Exception as e:
-                _logger.error(f"check on_each error for {wid}: {e}")
-
-        def on_timeout(wid, url):
-            # #147: no answer in time leaves the item sent (not CHECK_FAIL).
-            try:
-                self.willitems[wid].set_check_willexecutor(Willexecutors.NO_ANSWER)
-            except Exception as e:
-                _logger.error(f"check on_timeout error for {wid}: {e}")
-
-        Willexecutors.check_transactions_parallel(
-            targets, on_each=on_each, on_timeout=on_timeout
-        )
+        targets, _skipped = verify_targets(self.willitems, txids)
+        verify_will(self.willitems, targets)
 
         self.save_willitems()
         out = {}
