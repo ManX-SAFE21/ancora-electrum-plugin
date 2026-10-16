@@ -7,7 +7,9 @@ Covers:
   * the persisted ``bal_auto_rebuild`` configuration key exists and defaults
     to OFF (False), and can be enabled and read back;
   * the event wiring: ``Plugin._wallet_activity`` schedules the rebuild only
-    for the matching wallet and only when the setting is enabled;
+    for the matching wallet and only when the setting is enabled (with
+    ``GUI_AUTO_REBUILD_ENABLED`` switched on for the test object: the flow
+    is off since #149, see tests/test_auto_rebuild_hidden.py);
   * ``BalWindow.schedule_auto_rebuild`` debounces through ``QTimer`` and the
     re-entrancy / cooldown guards;
   * ``BalWindow.maybe_auto_rebuild`` reproduces the wizard's close-time flow:
@@ -308,7 +310,11 @@ def test_auto_rebuild_config_can_be_enabled():
 # --------------------------------------------------------------------------- #
 
 def test_wallet_activity_schedules_only_matching_wallet():
+    """With the flow switched on, only the matching wallet schedules."""
     plugin = Plugin.__new__(Plugin)
+    # The flow is switched off since #149; switch it on for this object to
+    # keep the wiring covered for the Phase 5e engine.
+    plugin.GUI_AUTO_REBUILD_ENABLED = True
     plugin.AUTO_REBUILD = BalConfig(FakeConfig(), CONFIG_KEY, True)
     wallet_a = FakeWallet([make_funding_input()])
     wallet_b = FakeWallet([make_funding_input()])
@@ -334,7 +340,9 @@ def test_wallet_activity_schedules_only_matching_wallet():
 
 
 def test_wallet_activity_skips_when_disabled():
+    """With the flow switched on, AUTO_REBUILD off still schedules nothing."""
     plugin = Plugin.__new__(Plugin)
+    plugin.GUI_AUTO_REBUILD_ENABLED = True
     plugin.AUTO_REBUILD = BalConfig(FakeConfig(), CONFIG_KEY, False)
     wallet_obj = FakeWallet([make_funding_input()])
 

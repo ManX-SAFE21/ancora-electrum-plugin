@@ -66,6 +66,15 @@ def _window_key(window):
 
 
 class Plugin(BalPlugin, EventListener):
+    # The "Rebuild automatically on new transactions" flow (#149) is switched
+    # off and its setting is no longer shown. That flow rebuilds from the
+    # asyncio thread through a timer and can sign and send an on-chain
+    # invalidation by itself, and the owner's rule is that an invalidation is
+    # never paid without the user. A value stored by an older version
+    # (bal_auto_rebuild = True) is kept but ignored. The code stays for the
+    # Phase 5e engine, which will make it safe; tests switch it on per object.
+    GUI_AUTO_REBUILD_ENABLED = False
+
     def __init__(self, parent, config, name):
         _logger.info("INIT BALPLUGIN")
         BalPlugin.__init__(self, parent, config, name)
@@ -81,7 +90,7 @@ class Plugin(BalPlugin, EventListener):
         self._statusbar_buttons = {}
         # Register the on_event_* handlers with Electrum's callback manager so
         # the plugin learns about new wallet transactions (used by the
-        # AUTO_REBUILD setting).
+        # AUTO_REBUILD flow, switched off by GUI_AUTO_REBUILD_ENABLED, #149).
         self.register_callbacks()
 
     @hook
@@ -390,7 +399,10 @@ class Plugin(BalPlugin, EventListener):
     def _wallet_activity(self, wallet):
         """React to wallet activity (new transaction / sync update).
 
-        When the AUTO_REBUILD setting is enabled, any change to a wallet that
+        Does nothing while ``GUI_AUTO_REBUILD_ENABLED`` is False (the default
+        since #149), whatever the stored AUTO_REBUILD value is.
+
+        When both are enabled, any change to a wallet that
         has a live BalWindow schedules the headless "auto rebuild" flow
         (``BalWindow.schedule_auto_rebuild``): it re-runs the same check the
         wizard runs at wallet close, anticipating the delivery date by one day
@@ -402,6 +414,10 @@ class Plugin(BalPlugin, EventListener):
         thread-safe state and defers all work to the BalWindow (which marshals
         itself onto the GUI thread through QTimer).
         """
+        # The switch is checked first, so a True left in the config by an
+        # older version cannot start the flow.
+        if not self.GUI_AUTO_REBUILD_ENABLED:
+            return
         if not self.AUTO_REBUILD.get():
             return
         for win in list(self.bal_windows.values()):
@@ -558,16 +574,9 @@ class Plugin(BalPlugin, EventListener):
         # ADVANCED).
         heir_rebuild_on_close = BalCheckBox(self.REBUILD_ON_CLOSE)
 
-        # "Rebuild automatically on new transactions" checkbox. Bound to the
-        # persisted AUTO_REBUILD config (default OFF). When ticked, an incoming
-        # or outgoing wallet transaction automatically re-runs the same rebuild
-        # flow the wizard runs at wallet close: the delivery date is
-        # anticipated by one day (so the new will replaces the previous one
-        # without an invalidation tx), and an on-chain invalidation is only
-        # built when the anticipated locktime would fall before the Check Alive
-        # threshold or the threshold is already in the past. Visible to all
-        # users (BASIC and ADVANCED).
-        heir_auto_rebuild = BalCheckBox(self.AUTO_REBUILD)
+        # No "Rebuild automatically on new transactions" checkbox (#149): the
+        # flow is switched off (see GUI_AUTO_REBUILD_ENABLED), so the setting
+        # is not shown and the Reset button does not touch it.
 
         # USER TYPE selector (SIMPLE / ADVANCED, global). A two-choice combo
         # (not a free-text field) bound to the USER_TYPE config:
@@ -954,30 +963,6 @@ class Plugin(BalPlugin, EventListener):
         )
         grid.addWidget(reset_btn_rebuild_on_close, 16, 3)
 
-        # "Rebuild automatically on new transactions" row (always visible,
-        # BASIC + ADVANCED), right below the "Rebuild will on wallet close"
-        # row.
-        lbl_auto_rebuild = QLabel(_("Rebuild automatically on new transactions"))
-        help_auto_rebuild = HelpButton(_(
-            "When a new transaction arrives for the wallet, automatically "
-            "rebuild the will the same way the wizard does at wallet close: "
-            "the delivery date is anticipated by one day so the new will "
-            "replaces the previous one, and the rebuilt transactions are "
-            "signed and sent to their will-executors.\n"
-            "An on-chain invalidation transaction is only built when the "
-            "anticipated delivery date would fall before the Check Alive "
-            "threshold, or when the threshold is already in the past.\n"
-            "When disabled (default), the will is only rebuilt on Check / "
-            "Prepare / wallet close."
-        ))
-        grid.addWidget(lbl_auto_rebuild, 17, 0)
-        grid.addWidget(heir_auto_rebuild, 17, 1)
-        grid.addWidget(help_auto_rebuild, 17, 2)
-        reset_btn_auto_rebuild = _make_reset_btn(
-            self.AUTO_REBUILD, heir_auto_rebuild, "check"
-        )
-        grid.addWidget(reset_btn_auto_rebuild, 17, 3)
-
         # ----------------------------------------------------------------- #
         # Group C / C4b: "Reset" button that restores the dialog settings to  #
         # their factory defaults. It only resets the settings exposed by THIS #
@@ -1011,7 +996,6 @@ class Plugin(BalPlugin, EventListener):
                 (self.SAVE_HISTORY, heir_save_history, "check"),
                 (self.HISTORY_LABEL, edit_history_label, "line"),
                 (self.REBUILD_ON_CLOSE, heir_rebuild_on_close, "check"),
-                (self.AUTO_REBUILD, heir_auto_rebuild, "check"),
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.
