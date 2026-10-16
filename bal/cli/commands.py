@@ -49,8 +49,73 @@ def _controller(plugin, wallet):
     return BalController(plugin, wallet)
 
 
+# CHANGELOG #148: the controller methods that change the wallet's heirs or
+# will (or, for a few, the will-executor list). WHY: the plugin window of an
+# open wallet keeps its own copies of the heirs and of the will and writes
+# them back later (at its next save, and at wallet close, where the close
+# Check may even rebuild, sign and send a will from its old heirs). A change
+# made by a command (Electrum's Console, or the command line while the GUI is
+# open) was then silently overwritten. The commands that only read, and the
+# delivery date and fee (one dict shared with the window), stay allowed.
+_WALLET_WRITES = frozenset({
+    "heirs_add", "heirs_update", "heirs_delete", "heirs_import",
+    "prepare_will", "auto_rebuild", "sign_transactions", "broadcast_command",
+    "export_will", "merge_will_from_file", "check_transactions",
+})
+
+# The will-executor list belongs to the plugin, not to one wallet: every open
+# plugin window keeps a copy of it and writes it back (#148).
+_EXECUTOR_WRITES = frozenset({
+    "willexecutors_add", "willexecutors_update", "willexecutors_select",
+    "willexecutors_delete", "willexecutors_ping", "willexecutors_download",
+    "willexecutors_import",
+})
+
+
+def _open_windows(plugin):
+    """The plugin windows that are open now (Qt GUI; none in a daemon).
+
+    A window stays in ``plugin.bal_windows`` after its wallet closed, with
+    ``disable_plugin`` set (``BalWindow.on_close``): it is not counted.
+    """
+    windows = getattr(plugin, "bal_windows", None) or {}
+    return [
+        w for w in list(windows.values())
+        if not getattr(w, "disable_plugin", True)
+    ]
+
+
+def _refuse_while_window_open(plugin, wallet, method):
+    """Refuse ``method`` when an open plugin window would overwrite it (#148).
+
+    A wallet change (:data:`_WALLET_WRITES`) is refused while that wallet's
+    plugin window is open; a will-executor list change
+    (:data:`_EXECUTOR_WRITES`) while any plugin window is open. Every other
+    command, and every command without the GUI, runs as before.
+    """
+    if method in _WALLET_WRITES:
+        if any(getattr(w, "wallet", None) is wallet for w in _open_windows(plugin)):
+            raise UserFacingException(_(
+                "This wallet is open in the Safe21 Heartbeat window: make this "
+                "change there, or close the wallet and use the command line."
+            ))
+    elif method in _EXECUTOR_WRITES:
+        if _open_windows(plugin):
+            raise UserFacingException(_(
+                "A wallet is open in the Safe21 Heartbeat window: change the "
+                "will-executors there, or close the wallets and use the command "
+                "line."
+            ))
+
+
 def _call(plugin, wallet, method, *args, **kwargs):
-    """Run ``method`` of the wallet's controller; domain errors become messages."""
+    """Run ``method`` of the wallet's controller; domain errors become messages.
+
+    #148: a change that an open plugin window would overwrite is refused
+    first (:func:`_refuse_while_window_open`).
+    """
+    if plugin is not None and wallet is not None:
+        _refuse_while_window_open(plugin, wallet, method)
     controller = _controller(plugin, wallet)
     try:
         return getattr(controller, method)(*args, **kwargs)
