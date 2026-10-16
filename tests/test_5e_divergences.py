@@ -109,7 +109,9 @@ DIVERGENCES = {
          "pinned", ["check/auto_sign_off", "copies/auto_auto_sign_off"],
          "the CLI autorebuild with Auto-sign off is not run here"),
     21: ("Verification after sending: only the Check dialog",
-         "pinned", ["check/new_coin", "copies/cli_new_coin"], ""),
+         "pinned", ["check/new_coin", "copies/cli_new_coin"],
+         "#156: kept on purpose (owner E3), the CLI verifies with "
+         "bal_will_check"),
     22: ("Wallet with a password",
          "pinned", ["check/cancel_at_sign", "copies/auto_new_coin_password",
                     "copies/cli_password_wallet"], ""),
@@ -156,7 +158,10 @@ DIVERGENCES = {
     37: ("The command line on an online daemon (network thread)",
          "not reproduced", [], "offline world; online probe in step 5e-04"),
     38: ("Row 'check': asks never-sent items, saves nothing",
-         "pinned", ["copies/row_check_never_sent", "copies/cli_first_will"], ""),
+         "pinned", ["copies/row_check_never_sent", "copies/cli_first_will",
+                    "copies/menus_prepare_sign_broadcast_check"],
+         "#156: converged (owner E1, E2), only sent items are asked, the "
+         "answers are saved"),
     39: ("CLI invalidation reference date with no VALID item",
          "not reproduced", [], "needs only REPLACED/INVALIDATED items; step 5e-19"),
     40: ("Nothing to invalidate",
@@ -513,9 +518,15 @@ def test_d35():
 
 
 def test_d38():
-    """Row check on a never-sent will marks it failed and saves nothing."""
+    """#156 (E1, E2): the row check skips the never-sent items and says so
+    (before, it asked them and they turned failed), and saves the answers
+    (before, it saved nothing)."""
     r = step("copies/row_check_never_sent", "gui row check")
-    assert "CHECK_FAIL" in statuses(r, "T1") and r["stored"] == {}
+    assert "CHECK_FAIL" not in statuses(r, "T1") and r["verified"] == []
+    assert popups(r, "message") == [
+        "2 selected transaction(s) not sent yet: nothing to verify."]
+    m = step("copies/menus_prepare_sign_broadcast_check", "gui row check")
+    assert "CHECKED" in m["stored"]["T1"]
     cli = step("copies/cli_first_will", "cli check_transactions")
     assert "CHECKED" in cli["stored"]["T1"]
 

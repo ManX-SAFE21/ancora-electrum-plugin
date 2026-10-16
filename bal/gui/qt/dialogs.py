@@ -83,6 +83,7 @@ from ...engine.push import (
     push_will,
     select_push,
 )
+from ...engine.verify import FAILED, NO_ANSWER, verify_targets, verify_will
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -1681,11 +1682,13 @@ class BalBuildWillDialog(BalDialog):
         Every VALID item that was sent and is not verified yet
         (``Will.needs_server_check``, the items the Check button verified)
         is looked up on its will-executor. All the executors are asked at
-        once, with the same 20 s limit as the sending
-        (``Willexecutors.check_transactions_parallel``), and each answer is
-        recorded as before (``WillItem.set_check_willexecutor``: the executor
-        must hold exactly the tx that was sent, otherwise the item is marked
-        failed and will be sent again).
+        once, with the same 20 s limit as the sending, and each answer is
+        recorded (the executor must hold exactly the tx that was sent,
+        otherwise the item is marked failed and will be sent again). #156:
+        the choice and the asking are the engine's
+        (:func:`bal.engine.verify.verify_targets` /
+        :func:`~bal.engine.verify.verify_will`), shared with the right
+        click "check" and the command line; this step keeps its display.
 
         WHY here: the verification used to run after this dialog had closed,
         in a separate "Check Transaction" window, and only for the Check
@@ -1697,11 +1700,8 @@ class BalBuildWillDialog(BalDialog):
         """
         if self._stopping:
             return
-        items = {
-            wid: w
-            for wid, w in self.bal_window.willitems.items()
-            if Will.needs_server_check(w)
-        }
+        targets, _skipped = verify_targets(self.bal_window.willitems)
+        items = {wid: self.bal_window.willitems[wid] for wid, _url in targets}
         if not items:
             # Nothing sent that is not verified yet: the step then shows what
             # the items already say (see _finish_report).
@@ -1741,22 +1741,17 @@ class BalBuildWillDialog(BalDialog):
             report.set_result("run", sentence)
             self.updatemessage.emit()
 
-        def _answered(wid, url, res, timed_out=False):
-            """Record one answer (``res``) and show it, live.
+        def _answered(wid, url, res, outcome, timed_out):
+            """Show one answer, already recorded by the engine, live.
 
-            #147: no answer in time (``Willexecutors.NO_ANSWER``, after the
-            15 s of the request or the 20 s of the whole step) leaves the
-            item sent, and the executor reads "received, no answer to the
-            check", not "not received".
+            #147: no answer in time (``NO_ANSWER``, after the 15 s of the
+            request or the 20 s of the whole step) leaves the item sent, and
+            the executor reads "received, no answer to the check", not "not
+            received".
             """
-            # Called from this (task) thread by check_transactions_parallel.
-            w = items[wid]
-            try:
-                w.set_check_willexecutor(res)
-            except Exception as e:
-                _logger.error(f"verify: recording the answer for {wid} failed: {e!r}")
-            ok = bool(w.get_status("CHECKED"))
-            no_answer = res is Willexecutors.NO_ANSWER
+            # Called from this (task) thread by verify_will.
+            no_answer = outcome == NO_ANSWER
+            ok = not no_answer and outcome != FAILED
             if no_answer:
                 unanswered.add(url)
             elif not ok:
@@ -1783,15 +1778,6 @@ class BalBuildWillDialog(BalDialog):
             )
             _progress()
 
-        def on_each(wid, url, res, exc):
-            if exc is not None:
-                _logger.info(f"verify: {url} did not answer for {wid}: {exc!r}")
-                res = None
-            _answered(wid, url, res)
-
-        def on_timeout(wid, url):
-            _answered(wid, url, Willexecutors.NO_ANSWER, timed_out=True)
-
         def on_tick():
             if not self._stopping:
                 _progress()
@@ -1800,9 +1786,9 @@ class BalBuildWillDialog(BalDialog):
         for url in left:
             report.set_executor(url, "verifying")
         _progress()
-        Willexecutors.check_transactions_parallel(
-            [(wid, w.we["url"]) for wid, w in items.items()],
-            on_each=on_each, on_timeout=on_timeout, on_tick=on_tick,
+        verify_will(
+            self.bal_window.willitems, targets,
+            on_answer=_answered, on_tick=on_tick,
         )
         # The final word under the step is counted over every will-executor
         # of the will in _finish_report.

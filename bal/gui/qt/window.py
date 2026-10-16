@@ -68,6 +68,7 @@ from ...engine.push import (
     select_push,
 )
 from ...engine.sign import sign_targets, sign_will_item
+from ...engine.verify import verify_targets, verify_will
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -3164,14 +3165,21 @@ class BalWindow:
             willitems[k] = WillItem(d, _id=k)
         return willitems
 
-    def check_transactions_task(self, will):
+    def check_transactions_task(self, will, targets=None):
+        """Ask the will-executors for the copies of *will* (the waiting window).
+
+        The right click "check" on the will list. #156: the engine chooses
+        (:func:`bal.engine.verify.verify_targets` with ``recheck``: the
+        selected copies sent at least once, never the ones not sent, owner
+        E1) and asks
+        (:func:`~bal.engine.verify.verify_will`: all at once, fast-fail
+        timeout, global deadline, #147 for no answer); this window shows the
+        count and the elapsed seconds. *targets* is the choice already made
+        by :meth:`check_transactions`.
+        """
         start = time.time()
-        # Servers are now contacted in parallel (see
-        # Willexecutors.check_transactions_parallel) with a fast-fail timeout and
-        # a global deadline, so a single slow/dead will-executor no longer
-        # freezes the "checking transaction" dialog for minutes.  The dialog
-        # shows live progress plus an elapsed-time counter (Xs / DEADLINEs).
-        targets = [(wid, w.we["url"]) for wid, w in will.items() if w.we]
+        if targets is None:
+            targets, _skipped = verify_targets(will, list(will), recheck=True)
         total = len(targets)
         deadline = Willexecutors.CHECK_GLOBAL_DEADLINE
         done = {"count": 0}
@@ -3182,52 +3190,59 @@ class BalWindow:
                 min(int(time.time() - start), deadline), deadline,
             )
 
-        def on_each(wid, url, res, exc):
-            # Reuse the original per-item logic: set_check_willexecutor handles
-            # both a real response and a None/failure (-> CHECK_FAIL).
-            try:
-                will[wid].set_check_willexecutor(res)
-            except Exception as e:
-                _logger.error(f"check on_each error for {wid}: {e}")
-            done["count"] += 1
-            self.waiting_dialog.update(_status_line())
-
-        def on_timeout(wid, url):
-            # The global deadline elapsed before this server answered. #147:
-            # no answer is not "not received": the item stays sent, and the
-            # next check asks again.
-            try:
-                will[wid].set_check_willexecutor(Willexecutors.NO_ANSWER)
-            except Exception as e:
-                _logger.error(f"check on_timeout error for {wid}: {e}")
+        def on_answer(wid, url, res, outcome, timed_out):
+            """One answer, recorded by the engine: the counter."""
+            if not timed_out:
+                done["count"] += 1
+                self.waiting_dialog.update(_status_line())
 
         def on_tick():
+            """About once a second: the elapsed seconds."""
             if getattr(self.waiting_dialog, "_stopping", False):
                 return
             self.waiting_dialog.update(_status_line())
 
         if total:
             self.waiting_dialog.update(_status_line())
-            Willexecutors.check_transactions_parallel(
-                targets, on_each=on_each, on_timeout=on_timeout, on_tick=on_tick
-            )
+            verify_will(will, targets, on_answer=on_answer, on_tick=on_tick)
 
         if time.time() - start < 3:
             time.sleep(3 - (time.time() - start))
 
     def check_transactions(self, will):
+        """The right click "check": verify the selected copies *will*.
+
+        #156, owner decisions: only the copies sent at least once are asked
+        (E1; also the one in force while a new will is only prepared; a
+        copy never sent is skipped, and a message says so, instead of
+        turning red because the will-executor rightly does not have it), and
+        the answers are saved (E2; before, they were lost at the next
+        start).
+        """
+        targets, skipped = verify_targets(will, list(will), recheck=True)
+        skipped_text = None
+        if skipped:
+            skipped_text = _(
+                "{} selected transaction(s) not sent yet: nothing to verify."
+            ).format(len(skipped))
+        if not targets:
+            self.show_message(skipped_text or _("Nothing to verify."))
+            return
+
         def on_success(result):
+            """Save the answers, refresh, then tell about the skipped ones."""
             if hasattr(self,"waiting_dialog"):
                 del self.waiting_dialog
+            self.save_willitems()
             self.update_all()
-            pass
+            if skipped_text:
+                self.show_message(skipped_text)
 
         def on_failure(exec_info):
+            """Log the error (the window shows it)."""
             log_error(exec_info, self)
-            # _logger.error(f"error checking transactions {e}")
-            # pass
 
-        task = partial(self.check_transactions_task, will)
+        task = partial(self.check_transactions_task, will, targets)
         msg = _("Check Transaction")
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False

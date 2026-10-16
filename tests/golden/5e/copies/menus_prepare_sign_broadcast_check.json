@@ -272,11 +272,15 @@
   },
   "stored": {
    "T1": [
+    "CHECKED",
     "COMPLETE",
+    "PUSHED",
     "VALID"
    ],
    "T2": [
+    "CHECKED",
     "COMPLETE",
+    "PUSHED",
     "VALID"
    ]
   },

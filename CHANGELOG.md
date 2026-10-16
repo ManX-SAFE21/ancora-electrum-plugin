@@ -10092,4 +10092,73 @@ sent and verified 2 of 2); the maximum fee restored and a Check (from 2
 to 5, verified 5 of 5). The "Will-Executor excluded" row itself (a will
 already signed for a will-executor whose fee then goes over the maximum)
 is covered by the golden file and the new tests, not by the ZIP test.
-Whole suite in both orders: to run before the push.
+Whole suite in both orders, run before the push for #155 and #156
+together (recorded in #156's commit): 2417 passed each time, goldens
+unchanged.
+
+## 156. One shared verification of the will with the will-executors
+
+**Date:** 2026-10-16
+
+**Why (owner):** fifth piece of the de-duplication, after #152-#155:
+asking the will-executors whether they hold the will was written three
+times (the Check's "Verification" step, the will list's right click
+"check", the command line's `bal_will_check`), and the right click did
+not behave like the other two. Owner decisions 2026-10-16:
+- E1: only the copies that were sent are asked. The right click asked
+  every selected row, also the ones never sent: the will-executor rightly
+  answered "I do not have it" and the row turned red ("not received").
+  Now the right click asks every selected row sent at least once (also
+  the one in force while a new will is only prepared, a verified one, one
+  a previous check found "not received"); only a row never sent (a draft,
+  or signed and not sent) is skipped, and a message says how many. The
+  Check and the command line ask, as before, the valid sent rows not
+  verified yet.
+- E2: the right click saves the answers, as the other two (before, they
+  were lost at the next start).
+- E3: the command line's sending does not verify afterwards; that is what
+  `bal_will_check` is for. Kept on purpose (divergence D21, note).
+
+**What changed:**
+- `bal/engine/verify.py` (new): `verify_targets` (which copies to ask,
+  and the chosen ones skipped) and `verify_will` (ask every will-executor
+  at once with the global deadline, record each answer: verified,
+  failed, or no answer in time, which leaves the copy sent as in #147;
+  returns each copy's outcome). A verified copy asked again that now
+  fails is no longer marked verified too (before it could be both).
+  Nothing is saved there.
+- `BalBuildWillDialog.loop_verify` (Check), `BalWindow.check_transactions`
+  / `check_transactions_task` (right click) and
+  `BalController.check_transactions` (command line) use it and keep their
+  own display.
+- New texts translated (IT, ES): "{} selected transaction(s) not sent
+  yet: nothing to verify.", "Nothing to verify.".
+
+**Tests:** `tests/test_engine_verify.py` (new, 14 tests, three fake
+will-executors): the choice for the Check / command line and for the
+right click; the skipped rows; the owner's case (the row in force
+checked while a new will is only prepared: asked, not "not sent yet");
+a row found "not received" or refused asked again; every outcome and
+its statuses; a verified copy that fails, or does not answer; no target,
+no request; the right click with nothing sent (no request, the message),
+with sent and unsent rows (asks the sent ones, saves, the message); the
+command line limited to the given ids; no other module asks the
+will-executors for the copies.
+Golden files (`tests/golden/5e/copies/`, BAL_GOLDEN_UPDATE): two
+photographs change exactly as decided: `row_check_never_sent` (no
+request, no red rows, the message) and
+`menus_prepare_sign_broadcast_check` (the row check's answers are now
+stored). The divergence register (`tests/test_5e_divergences.py`): D38
+converged; D21 noted as intended (E3).
+
+**Verification:** ruff clean; the 82 test files that mention the
+verification: 1465 passed; ZIP built, external zip load and smoke test OK
+on 4.8.2; owner's ZIP test: the right click "check" on 2 and on 3 sent
+rows (asks 2, then 3; verified); on the 5 rows of a draft (no request,
+"5 selected transaction(s) not sent yet", no red rows); on a row in force
+while a new will is only prepared (asked, stays verified; a first ZIP
+skipped it as "not sent yet" because those rows are marked replaced
+after Prepare: fixed, the right click now asks every row sent at least
+once, and the case is a permanent test); then a Check (signed, sent,
+verified 4 of 4). Whole suite in both orders, run before the push for
+#155 and #156 together: 2417 passed each time, goldens unchanged.
