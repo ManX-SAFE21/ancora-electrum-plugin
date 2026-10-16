@@ -570,8 +570,9 @@ class Plugin(BalPlugin, EventListener):
         # REBUILD_ON_CLOSE config (default ON). When ticked, closing the wallet
         # / quitting Electrum runs the "Build your will" wizard to rebuild and
         # re-validate the will. When unticked, the will is only rebuilt when
-        # the user presses Check/Prepare. Visible to all users (BASIC and
-        # ADVANCED).
+        # the user presses Check/Prepare. ADVANCED only since #150: in BASIC
+        # the row is hidden and the close Check always runs
+        # (``rebuild_on_close_active``).
         heir_rebuild_on_close = BalCheckBox(self.REBUILD_ON_CLOSE)
 
         # No "Rebuild automatically on new transactions" checkbox (#149): the
@@ -630,7 +631,9 @@ class Plugin(BalPlugin, EventListener):
                       lbl_save_history, heir_save_history, help_save_history,
                       lbl_history_label, edit_history_label, help_history_label,
                       reset_btn_6, reset_btn_7, reset_btn_8, reset_btn_9, reset_btn_10,
-                      reset_btn_11, reset_btn_12, reset_btn_auto_sign):
+                      reset_btn_11, reset_btn_12, reset_btn_auto_sign,
+                      lbl_rebuild_on_close, heir_rebuild_on_close,
+                      help_rebuild_on_close, reset_btn_rebuild_on_close):
                 w.setVisible(not basic)
 
         user_type_combo.currentIndexChanged.connect(on_user_type_change)
@@ -945,9 +948,9 @@ class Plugin(BalPlugin, EventListener):
             2,
         )
 
-        # "Rebuild will on wallet close" row (always visible, BASIC + ADVANCED).
-        # Placed below the rebroadcast button so the existing rows keep their
-        # numbers.
+        # "Rebuild will on wallet close" row, ADVANCED only (#150; in BASIC the
+        # close Check always runs). Placed below the rebroadcast button so the
+        # existing rows keep their numbers.
         lbl_rebuild_on_close = QLabel(_("Rebuild will on wallet close"))
         help_rebuild_on_close = HelpButton(_(
             "Run the 'Build your will' wizard every time the wallet is closed "
@@ -955,13 +958,13 @@ class Plugin(BalPlugin, EventListener):
             "When disabled, the will is only rebuilt when you press Check or "
             "Prepare. The last built state is still saved to the wallet."
         ))
-        grid.addWidget(lbl_rebuild_on_close, 16, 0)
-        grid.addWidget(heir_rebuild_on_close, 16, 1)
-        grid.addWidget(help_rebuild_on_close, 16, 2)
+        grid.addWidget(_hide_if_basic(lbl_rebuild_on_close), 16, 0)
+        grid.addWidget(_hide_if_basic(heir_rebuild_on_close), 16, 1)
+        grid.addWidget(_hide_if_basic(help_rebuild_on_close), 16, 2)
         reset_btn_rebuild_on_close = _make_reset_btn(
             self.REBUILD_ON_CLOSE, heir_rebuild_on_close, "check"
         )
-        grid.addWidget(reset_btn_rebuild_on_close, 16, 3)
+        grid.addWidget(_hide_if_basic(reset_btn_rebuild_on_close), 16, 3)
 
         # ----------------------------------------------------------------- #
         # Group C / C4b: "Reset" button that restores the dialog settings to  #

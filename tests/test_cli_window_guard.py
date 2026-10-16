@@ -176,6 +176,8 @@ def test_an_executor_change_is_refused_for_another_wallets_window(sess):
 
 def test_after_the_wallet_closes_every_command_runs(sess):
     s = sess
+    # No close Check here: since #150 only ADVANCED mode can switch it off.
+    s.plugin.USER_TYPE.set("advanced")
     s.plugin.REBUILD_ON_CLOSE.set(False)
     s.close_wallet()
     assert s.bw.disable_plugin            # still listed, no longer open

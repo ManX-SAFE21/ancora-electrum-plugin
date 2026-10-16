@@ -9818,3 +9818,35 @@ switch the flow on for their plugin object.
 **Verification:** ruff clean; affected tests (217) passed; owner's ZIP
 test: the row is gone, the other rows unchanged; whole suite in both
 orders run together with #150 (see #150).
+
+## 150. "Rebuild will on wallet close" is ADVANCED only; in BASIC it is always on
+
+**Date:** 2026-10-16
+
+**Why (owner):** with the automatic rebuild switched off (#149), the close
+Check is what brings new coins into the will. A BASIC user who switched it
+off could leave new coins out of the will without noticing.
+
+**What changed:**
+- `bal/core/plugin_base.py`: new `BalPlugin.rebuild_on_close_active()`:
+  always True in BASIC mode (also for a missing or unknown mode), the
+  stored `bal_rebuild_on_close` value in ADVANCED. The stored value is
+  never rewritten, so ADVANCED finds it as it was.
+- `bal/gui/qt/window.py`: `BalWindow.on_close` runs the close wizard
+  through `rebuild_on_close_active()` (the delivery hold of #123 still
+  skips it).
+- `bal/gui/qt/plugin.py`: the settings row (label, checkbox, help, reset
+  button) is hidden in BASIC and shown in ADVANCED, also when the mode is
+  switched in the open dialog.
+- Texts unchanged; the catalogs only follow the new line numbers.
+
+**Tests:** `tests/test_rebuild_on_close_setting.py`: the fake plugin uses
+the real `BalPlugin` methods; new: in BASIC the wizard runs with the
+setting on and off; `rebuild_on_close_active` per mode, the stored value
+untouched. `tests/test_auto_rebuild_hidden.py`: the row is hidden in BASIC
+and shown in ADVANCED. `tests/test_cli_window_guard.py`: the closed-wallet
+test switches to ADVANCED to keep the close Check off.
+
+**Verification:** ruff clean; affected tests (95) passed; owner's ZIP test
+in BASIC: no "Rebuild..." row in the settings; whole suite in both orders
+run before the push together with #149 and #151 (see #151).

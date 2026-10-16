@@ -2646,7 +2646,8 @@ class BalWindow:
 
     def on_close(self):
         """The wallet closes: check the will (setting "Rebuild will on wallet
-        close"), save it and remove the plugin's tabs and menu.
+        close", always on in BASIC mode since #150), save it and remove the
+        plugin's tabs and menu.
 
         CHANGELOG #123 (rule I6): with the "which date?" question pending or
         the settings unavailable, the check is skipped with one log line:
@@ -2664,6 +2665,7 @@ class BalWindow:
         # 1) Business logic: build/save the will on close (unchanged behaviour).
         # REBUILD_ON_CLOSE gates the "Build your will" wizard only: the will is
         # still persisted so a manual Build/Check from the session is not lost.
+        # In BASIC mode the wizard always runs (#150, rebuild_on_close_active).
         # CHANGELOG #84b-2: ``closing=True`` makes the dialog say that the
         # wallet is closing and why it is working; it also verifies with the
         # will-executors what it sent, like the Check button.
@@ -2671,7 +2673,7 @@ class BalWindow:
             hold = _hold_code(self)
             if hold is not None:
                 _logger.info(f"wallet close: delivery hold ({hold}), will not checked")
-            if self.bal_plugin.REBUILD_ON_CLOSE.get() and hold is None:
+            if self.bal_plugin.rebuild_on_close_active() and hold is None:
                 close_window = BalBuildWillDialog(self, closing=True)
                 close_window.build_will_task()
             self.save_willitems()

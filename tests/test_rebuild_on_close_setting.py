@@ -7,8 +7,11 @@ Covers:
     defaults to ON (True), and can be turned off and read back;
   * ``BalWindow.on_close()`` runs the "Build your will" wizard
     (``BalBuildWillDialog.build_will_task()``) when the setting is ON;
-  * ``BalWindow.on_close()`` SKIPS the wizard when the setting is OFF, but
-    still calls ``save_willitems()`` so the last built state is persisted.
+  * ``BalWindow.on_close()`` SKIPS the wizard when the setting is OFF in
+    ADVANCED mode, but still calls ``save_willitems()`` so the last built
+    state is persisted;
+  * #150: in BASIC mode the wizard ALWAYS runs, even with the setting OFF
+    (``BalPlugin.rebuild_on_close_active``).
 
 The on_close tests drive the real ``BalWindow.on_close`` method with a
 light-weight fake controller and a recording stub for ``BalBuildWillDialog``,
@@ -28,7 +31,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import bal.gui.qt.window as window_mod  # noqa: E402
-from bal.core.plugin_base import BalConfig  # noqa: E402
+from bal.core.plugin_base import BalConfig, BalPlugin  # noqa: E402
 
 CONFIG_KEY = "bal_rebuild_on_close"
 
@@ -87,13 +90,27 @@ class _NoOp:
         pass
 
 
-def _make_fake_window(rebuild_on_close):
+def _make_fake_plugin(rebuild_on_close, user_type):
+    """A fake plugin with the two settings and the real BalPlugin methods
+    ``is_basic_mode`` / ``rebuild_on_close_active`` bound to it."""
+    cfg = FakeConfig()
+    plugin = types.SimpleNamespace(
+        REBUILD_ON_CLOSE=BalConfig(cfg, CONFIG_KEY, True),
+        USER_TYPE=BalConfig(cfg, "bal_user_type", "basic"),
+    )
+    plugin.REBUILD_ON_CLOSE.set(rebuild_on_close)
+    plugin.USER_TYPE.set(user_type)
+    plugin.is_basic_mode = types.MethodType(BalPlugin.is_basic_mode, plugin)
+    plugin.rebuild_on_close_active = types.MethodType(
+        BalPlugin.rebuild_on_close_active, plugin)
+    return plugin
+
+
+def _make_fake_window(rebuild_on_close, user_type="advanced"):
     """Return a fake controller with the attributes on_close() touches."""
     fake = types.SimpleNamespace()
     fake.disable_plugin = False
-    fake.bal_plugin = types.SimpleNamespace(
-        REBUILD_ON_CLOSE=BalConfig(FakeConfig(), CONFIG_KEY, rebuild_on_close)
-    )
+    fake.bal_plugin = _make_fake_plugin(rebuild_on_close, user_type)
     fake.willitems = {}
     fake.will = {}
     fake.saved = []
@@ -153,7 +170,8 @@ def test_on_close_runs_wizard_when_enabled():
 
 
 def test_on_close_skips_wizard_when_disabled():
-    """With REBUILD_ON_CLOSE OFF, on_close() skips the wizard but saves."""
+    """With REBUILD_ON_CLOSE OFF in ADVANCED, on_close() skips the wizard but
+    saves."""
     fake = _make_fake_window(False)
     _call_on_close(fake)
     assert len(FakeBuildWillDialog.instances) == 0, "wizard must NOT be opened"
@@ -161,9 +179,34 @@ def test_on_close_skips_wizard_when_disabled():
     assert fake.saved == ["save"], "save_willitems must still run"
 
 
+def test_on_close_basic_always_runs_wizard():
+    """#150: in BASIC mode the wizard runs whatever the stored value."""
+    for stored in (True, False):
+        fake = _make_fake_window(stored, user_type="basic")
+        _call_on_close(fake)
+        assert len(FakeBuildWillDialog.instances) == 1, stored
+        assert fake._wizard_ran is True, stored
+        assert fake.saved == ["save"], stored
+
+
+def test_rebuild_on_close_active_by_mode():
+    """#150: always True in BASIC (and for an unknown mode), the stored
+    value in ADVANCED; the stored value itself is never rewritten."""
+    for user_type, stored, expected in (
+        ("basic", True, True), ("basic", False, True),
+        ("", False, True), ("advanced", True, True),
+        ("advanced", False, False),
+    ):
+        plugin = _make_fake_plugin(stored, user_type)
+        assert plugin.rebuild_on_close_active() is expected, (user_type, stored)
+        assert plugin.REBUILD_ON_CLOSE.get() is stored
+
+
 if __name__ == "__main__":
     test_rebuild_on_close_config_defaults_on()
     test_rebuild_on_close_config_can_be_disabled()
     test_on_close_runs_wizard_when_enabled()
     test_on_close_skips_wizard_when_disabled()
+    test_on_close_basic_always_runs_wizard()
+    test_rebuild_on_close_active_by_mode()
     print("OK: all tests passed")
