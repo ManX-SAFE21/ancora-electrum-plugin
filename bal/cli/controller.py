@@ -62,6 +62,7 @@ from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
 from ..engine import build, context
 from ..engine.invalidate import INVALIDATION_LABEL, build_invalidation
+from ..engine.sign import sign_targets, sign_will_item
 
 _logger = get_logger(__name__)
 
@@ -1230,50 +1231,21 @@ class BalController(BalSettingsController):
         ``UserFacingException`` when the wallet is encrypted and no password is
         given, and while a delivery hold applies (#123, rule I6: signing the
         prepared will would answer the "which date?" question by itself).
+        The choice of the transactions and the signing of each one are the
+        GUI's too since #154 (:mod:`bal.engine.sign`).
         """
         self._refuse_when_held()
         willitems = self.willitems
         if password is None and self.wallet.has_keystore_encryption():
             raise UserFacingException(_("Password required to sign transactions"))
 
-        if txids is not None:
-            targets = [
-                t for t in txids if t in willitems and willitems[t].get_status("VALID")
-            ]
-        else:
-            targets = Will.only_valid(willitems)
-
         txs = {}
-        for txid in targets:
-            wi = willitems[txid]
-            tx = Will.get_tx_from_any(str(wi.tx))
-            if wi.get_status("COMPLETE"):
-                txs[txid] = tx
-                continue
-            for txin in tx.inputs():
-                prevout = txin.prevout.to_json()
-                if prevout[0] in willitems:
-                    change = willitems[prevout[0]].tx.outputs()[prevout[1]]
-                    txin._trusted_value_sats = change.value
-                    try:
-                        txin.script_descriptor = change.script_descriptor
-                    except Exception:
-                        pass
-                    txin.is_mine = True
-                    txin._TxInput__address = change.address
-                    txin._TxInput__scriptpubkey = change.scriptpubkey
-                    txin._TxInput__value_sats = change.value
-
-            self.wallet.sign_transaction(tx, password, ignore_warnings=True)
-            if tx.is_complete():
-                wi.set_status("COMPLETE", True)
-            try:
-                have, required = tx.signature_count()
-                wi.sigs_have = int(have)
-                wi.sigs_required = int(required)
-            except Exception as e:
-                _logger.debug(f"signature_count after signing failed: {e}")
-            wi.tx = Will.get_tx_from_any(str(tx))
+        for txid in sign_targets(willitems, txids):
+            tx, newly_signed = sign_will_item(self.wallet, willitems, txid, password)
+            if newly_signed:
+                # The command line stores the signed tx at once (the GUI
+                # leaves it to its caller).
+                willitems[txid].tx = Will.get_tx_from_any(str(tx))
             txs[txid] = tx
 
         try:

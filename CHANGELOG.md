@@ -9972,3 +9972,57 @@ OK on 4.8.2; owner's ZIP test: a Check after a postpone, "Invalidate now"
 (History label present, the new will in force). The automatic
 invalidation is off since #149, so only the tests cover it. The whole
 suite runs before the push, with #152 and #154.
+
+## 154. One shared signing of the will transactions
+
+**Date:** 2026-10-16
+
+**Why (owner):** third piece of the de-duplication, after #152 and #153:
+the steps that sign a will transaction were written twice (GUI and
+command line), so a later change could be made in one copy and forgotten
+in the other.
+
+**What changed:**
+- `bal/engine/sign.py` (new):
+  - `sign_targets(willitems, txids=None)`: the transactions to sign, i.e.
+    every valid one, or the valid ones among the txids asked for, in their
+    order;
+  - `sign_will_item(wallet, willitems, txid, password)`: signs one will
+    transaction. A COMPLETE item is not signed. An input that spends a
+    change of the same will gets that output's value, descriptor, address
+    and script; the wallet signs (warnings ignored); COMPLETE and the
+    signature count ("1/2" for a multisig) are set. It returns
+    `(tx, newly_signed)` and does not replace the stored tx.
+- The GUI (`BalWindow._prepare_and_sign_tx`, kept as the name its callers
+  use, and `BalWindow.sign_transactions`) and the command line
+  (`BalController.sign_transactions`, `bal_will_sign`) use them. Each
+  keeps what it did around the signing: the GUI shows "signing: ..." and
+  its callers store and save; the command line stores the signed tx,
+  checks the signatures and saves the will and the History.
+- The GUI copy wrote the input's value twice; once is enough (Electrum's
+  `script_descriptor` setter does not touch it).
+- Nothing changes for the user. Signing an invalidation stays with its two
+  callers (#153).
+- Catalogs: line numbers only.
+
+**Tests:** `tests/test_engine_sign.py` (new, 10 tests): the choice of the
+transactions; a COMPLETE item not signed; the inputs from the same will
+prepared and the tx signed with the password; COMPLETE and the count; no
+count, no crash; a wallet error propagates; the GUI and the command line
+sign through the engine, and the command line still stores, checks and
+saves; no GUI or command-line module prepares the inputs or signs by
+itself (the two invalidation signings excepted).
+
+**Verification:** ruff clean; the 95 test files that mention signing:
+1888 passed; ZIP built, external zip load and smoke test OK on 4.8.2;
+owner's ZIP test: an heir added, Prepare, Sign (the 5 items "signed, to
+send"), Broadcast and Check (in force, 5 of 5 after a retry: one
+will-executor answered 502 Bad Gateway, then "already present"); the heir
+removed and a Check (asks the password, signs, sends: in force 5 of 5,
+anticipated by one day, no invalidation). Whole suite in both orders,
+run before the push for #152, #153 and #154 together: 2391 passed each
+time, goldens unchanged.
+
+Noted for later: `bal/core` fills inputs from a change output the same
+way where the will is built and loaded (`heirs.py`,
+`Will.add_info_from_will`, `Will.new_input`); not a signing, not touched.
