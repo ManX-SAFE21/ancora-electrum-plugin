@@ -9891,3 +9891,45 @@ rewritten); the wizard fields untouched.
 warning and without the row; whole suite in both orders, run before the
 push for #149, #150 and #151 together: 2363 passed each time (a first run
 found only the pinned row 5, fixed above).
+
+## 152. One shared build of the invalidation transaction
+
+**Date:** 2026-10-16
+
+**Why (owner):** the same steps were copied in several places, so a later
+change could be made in one copy and forgotten in the others. First piece
+of the de-duplication: the build of the invalidation transaction.
+
+**What changed:**
+- `bal/engine/invalidate.py` (new): `build_invalidation(host, will=None)`
+  calls `Will.invalidate_will` with the will's fee rate (`baltx_fees`,
+  default 1), the History label setting and the earliest locktime of the
+  will, with `date_to_check` as the fallback. Nothing is signed, labelled
+  or broadcast there.
+- The six copies use it: the Will tab's "Invalidate will" and the Will
+  Details window, the automatic invalidation (`bal/gui/qt/window.py`), the
+  command line's `bal_will_invalidate` (`bal/cli/controller.py`), the
+  Check for a postponed will and for a will expired only against its
+  Check Alive (`bal/gui/qt/dialogs.py`) and the Check Alive renewal
+  (`bal/engine/check.py`). The Will tab now reads the values when the task
+  runs on the worker thread, not just before; they are the same values.
+- The History label "Safe21 Heartbeat invalidation" is written through the
+  `INVALIDATION_LABEL` constant (`bal/core/will_versions.py`) in all four
+  places that set it.
+- Nothing changes for the user: same fee, same date, same label. Signing
+  and broadcasting are unchanged (next step, #153).
+- Catalogs: line numbers only.
+
+**Tests:** `tests/test_engine_invalidate.py` (new, 10 tests): the values
+passed to the core; the default fee and no reference date; an imported
+will; nothing to invalidate and errors; the command line, the Will tab and
+the automatic invalidation build through the engine and use the label
+(the automatic one labels before broadcasting); no other module calls
+`Will.invalidate_will` or writes the label text by hand.
+
+**Verification:** ruff clean; the 70 test files that mention invalidation:
+1443 passed; ZIP built, external zip load and smoke test OK on 4.8.2;
+owner's ZIP test: "Invalidate will" from the Will tab menu (History label
+present) and a Check after a postpone (asks to invalidate, then signs and
+sends the new will). The whole suite runs before the push, with #153 and
+#154.

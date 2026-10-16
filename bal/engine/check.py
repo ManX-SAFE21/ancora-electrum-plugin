@@ -33,6 +33,7 @@ from ..core.messages import amounts_message, past_date_message
 # raises; bal.core.heirs has another class with the same name.
 from ..core.will import AmountException, NoHeirsException, Will
 from . import context
+from .invalidate import build_invalidation
 from .ui import Step
 
 _logger = get_logger(__name__)
@@ -215,17 +216,7 @@ def check_variables(host, run, ui):
             return Phase1Result("invalidate_classic")
         tx = None
         if info and info.get("renewable") and info.get("has_will"):
-            fee_per_byte = host.will_settings.get("baltx_fees", 1)
-            tx = Will.invalidate_will(
-                host.willitems,
-                host.wallet,
-                fee_per_byte,
-                history_label=host.bal_plugin.HISTORY_LABEL.get(),
-                will_locktime=Will.get_min_locktime(
-                    host.willitems,
-                    default_value=host.date_to_check,
-                ),
-            )
+            tx = build_invalidation(host)
         if tx:
             ui.step(Step.VARIABLES, "check_alive_passed")
             return Phase1Result("check_alive_renew", tx=tx)

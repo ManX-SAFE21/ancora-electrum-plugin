@@ -53,6 +53,7 @@ from ...core.messages import (
 )
 from ...core.summary import busy_summary, selected_urls, will_summary
 from ...engine import build, context
+from ...engine.invalidate import INVALIDATION_LABEL, build_invalidation
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -2127,7 +2128,9 @@ class BalWindow:
 
         The Will tab's "Invalidate will", the Will Details window and the
         Check (expired or postponed will). CHANGELOG #123: refused while a
-        hold of the delivery settings applies (rule I6).
+        hold of the delivery settings applies (rule I6). The transaction is
+        built by :func:`bal.engine.invalidate.build_invalidation` (#152), the
+        same build as the Check and the command line.
         """
         if _stopped_by_hold(self):
             return
@@ -2146,7 +2149,7 @@ class BalWindow:
                     )
                 )
                 # Label shown in Electrum's History tab for invalidate txs.
-                self.wallet.set_label(result.txid(), "Safe21 Heartbeat invalidation")
+                self.wallet.set_label(result.txid(), INVALIDATION_LABEL)
                 self.show_transaction(result)
             else:
                 self.show_message(_("No transactions to invalidate"))
@@ -2154,18 +2157,9 @@ class BalWindow:
         def on_failure(exec_info):
             log_error(exec_info, self)
 
-        willitems = will if will is not None else self.willitems
-        fee_per_byte = self.will_settings.get("baltx_fees", 1)
-        task = partial(
-            Will.invalidate_will,
-            willitems,
-            self.wallet,
-            fee_per_byte,
-            history_label=self.bal_plugin.HISTORY_LABEL.get(),
-            will_locktime=Will.get_min_locktime(
-                willitems, default_value=self.date_to_check
-            ),
-        )
+        # The values are read by the shared build (#152) on the worker
+        # thread, when the task runs.
+        task = partial(build_invalidation, self, will)
         msg = _("Calculating Transactions")
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
@@ -2528,20 +2522,11 @@ class BalWindow:
         (label set before broadcast, tx info pulled from wallet/network,
         broadcast timeout 120s) without any dialog.  An encrypted wallet cannot
         sign headlessly, so we stop with a logged warning and leave the
-        invalidation to the user's manual flow.
+        invalidation to the user's manual flow. The unsigned transaction
+        comes from :func:`bal.engine.invalidate.build_invalidation` (#152).
         """
-        willitems = will if will is not None else self.willitems
         try:
-            tx = Will.invalidate_will(
-                willitems,
-                self.wallet,
-                self.will_settings.get("baltx_fees", 1),
-                history_label=self.bal_plugin.HISTORY_LABEL.get(),
-                will_locktime=Will.get_min_locktime(
-                    willitems,
-                    default_value=getattr(self, "date_to_check", None),
-                ),
-            )
+            tx = build_invalidation(self, will)
         except Exception as e:
             _logger.error("auto invalidate: could not build tx: {}".format(e))
             return None
@@ -2568,7 +2553,7 @@ class BalWindow:
             if txid:
                 # Label BEFORE broadcasting so the History tab shows it the
                 # moment the tx appears (matches the wizard behaviour).
-                self.wallet.set_label(txid, "Safe21 Heartbeat invalidation")
+                self.wallet.set_label(txid, INVALIDATION_LABEL)
             network.run_from_another_thread(
                 network.broadcast_transaction(tx, timeout=120), timeout=120
             )
