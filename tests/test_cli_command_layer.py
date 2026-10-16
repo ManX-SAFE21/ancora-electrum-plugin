@@ -304,7 +304,7 @@ def _push_with(plugin, answers):
 
     targets = {url: {"url": url, "txs": "00", "txsids": []} for url in answers}
 
-    def fake_parallel(willexecutors, on_each):
+    def fake_parallel(willexecutors, on_each, **kw):
         for url, we in willexecutors.items():
             answer = answers[url]
             if answer is True:
@@ -315,8 +315,12 @@ def _push_with(plugin, answers):
 
     controller = BalController(plugin, FakeWallet())
     controller.willitems = {"x": object()}  # only checked for being non-empty
+    # #155 (D2): only a valid current record receives the will; these fake
+    # servers are valid, the test is about the reasons of the failures.
     with mock.patch.object(
         Willexecutors, "get_willexecutor_transactions", return_value=targets
+    ), mock.patch.object(
+        Willexecutors, "is_valid", return_value=True
     ), mock.patch.object(
         Willexecutors, "push_transactions_parallel", side_effect=fake_parallel
     ), mock.patch.object(BalController, "save_willitems"):

@@ -10026,3 +10026,70 @@ time, goldens unchanged.
 Noted for later: `bal/core` fills inputs from a change output the same
 way where the will is built and loaded (`heirs.py`,
 `Will.add_info_from_will`, `Will.new_input`); not a signing, not touched.
+
+## 155. One shared sending of the will to the will-executors
+
+**Date:** 2026-10-16
+
+**Why (owner):** fourth piece of the de-duplication, after #152-#154:
+sending the will was written three times (the Will tab menu, the Check,
+the command line), and the three copies did not behave the same. Owner
+decisions 2026-10-16 (D1-D3, all as recommended):
+- D1: a will-executor that does not answer before the 20 s deadline:
+  its transactions are "not received" (PUSH_FAIL) and a warning says so,
+  everywhere. Before, the menu said "All transactions are broadcasted"
+  and the command line did not mark them.
+- D2: the same rule everywhere for who receives the will: the selected
+  will-executors whose current record is valid (a valid address, a fee
+  between the dust limit and the maximum fee). The others are excluded
+  and the reason is shown. Before, only the Check checked it, silently.
+- D3: an error while checking an "already present" copy is logged, the
+  copy counts as not verified and the next check goes on, everywhere.
+  Before, only the command line went on.
+
+**What changed:**
+- `bal/engine/push.py` (new): `select_push` (who receives the will, and
+  who is excluded and why) and `push_will` (send once in parallel with
+  the global deadline, mark PUSHED / PUSH_FAIL, check the "already
+  present" copies; returns a `PushResult` with each will-executor's
+  outcome). Nothing is saved there.
+- `BalWindow.push_transactions_to_willexecutors` (menu),
+  `BalBuildWillDialog.loop_push` (Check) and
+  `BalController.push_transactions_to_willexecutors` (command line) use
+  it and keep their own display: the waiting window (now also "no answer
+  in time" and "excluded: ..."), the Check's counter, rows and report
+  (now also a "Will-Executor excluded" warning row with the reason), the
+  command line's JSON (`_failed` now also names an exclusion).
+- New texts translated (IT, ES): "fee above the maximum", "not a valid
+  will-executor", "excluded: fee above the maximum", "excluded: not a
+  valid will-executor", "no answer in time".
+
+**Tests:** `tests/test_engine_push.py` (new, 12 tests, three fake
+will-executors): the choice and the exclusions with their reasons;
+received / refused / silent at the deadline / never answered; the reason
+from the exception; the "already present" checks going on after an error;
+a closing window stopping them; the menu, the command line and the Check
+reporting an exclusion; no other module sends the will.
+Golden files (`tests/golden/5e/copies/`, BAL_GOLDEN_UPDATE): three
+photographs change exactly as decided: `menu_broadcast_executor_down`
+(PUSH_FAIL, "no answer in time", the warning instead of "All transactions
+are broadcasted"), `cli_executor_down` (PUSH_FAIL stored),
+`executor_fee_raised_after_sent` (the CLI no longer sends to the
+will-executor over the maximum fee, `_failed` names it). The divergence
+register (`tests/test_5e_divergences.py`): D32 and D33 converged, D34's
+error path covered by the new tests.
+`tests/test_cli_command_layer.py`: its fake parallel push accepts the
+new timeout callback and its fake servers count as valid (the test is
+about the failure reasons).
+
+**Verification:** ruff clean; the 102 test files that mention sending:
+1958 passed; ZIP built, external zip load and smoke test OK on 4.8.2;
+owner's ZIP test: an heir added and a Check (prepared, signed, sent and
+verified 5 of 5; a second Check clean); the maximum fee lowered to 15500
+and a Check (the three will-executors over it are already removed at the
+Prepare step, "from 5 to 2", so nothing is left to exclude at sending;
+sent and verified 2 of 2); the maximum fee restored and a Check (from 2
+to 5, verified 5 of 5). The "Will-Executor excluded" row itself (a will
+already signed for a will-executor whose fee then goes over the maximum)
+is covered by the golden file and the new tests, not by the ZIP test.
+Whole suite in both orders: to run before the push.

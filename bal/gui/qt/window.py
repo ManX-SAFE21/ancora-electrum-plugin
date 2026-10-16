@@ -58,6 +58,15 @@ from ...engine.invalidate import (
     broadcast_invalidation,
     build_invalidation,
 )
+from ...engine.push import (
+    ALREADY_PRESENT,
+    EXCLUDED_FEE,
+    FAILED,
+    RECEIVED,
+    TIMEOUT,
+    push_will,
+    select_push,
+)
 from ...engine.sign import sign_targets, sign_will_item
 from .common import (
     N_,
@@ -2760,6 +2769,18 @@ class BalWindow:
         self.waiting_dialog.exe()
 
     def push_transactions_to_willexecutors(self, force=False, will=None, txids=None):
+        """Send the will to its will-executors, in the waiting window.
+
+        The task of :meth:`broadcast_transactions`. Returns True when a
+        will-executor did not get the will (refused, no answer in time, or
+        excluded), so the caller shows "Some transaction was not
+        broadcasted" instead of "All transactions are broadcasted".
+
+        The sending is the Check's and the command line's too since #155
+        (:mod:`bal.engine.push`, owner decisions D1-D3): before, a
+        will-executor that did not answer in time was not noticed here, and
+        one over the maximum fee still got the will.
+        """
         willitems = will if will is not None else self.willitems
         if txids is not None:
             willitems = {
@@ -2767,86 +2788,86 @@ class BalWindow:
             }
         # Read the CURRENT executor list from the config, so an executor the
         # user deselected after building the will is not contacted anymore.
-        willexecutors = Willexecutors.get_willexecutor_transactions(
+        selected, excluded = select_push(
             willitems,
-            force=force,
-            current_willexecutors=Willexecutors.get_willexecutors(
+            Willexecutors.get_willexecutors(
                 self.bal_plugin, update=False, task=False
             ),
+            force=force,
+            max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
+            dust=self.wallet.dust_threshold(),
         )
+        # The same first text as before (the record's own "Waiting...").
+        statuses = {url: _("Waiting...") for url in selected}
+        for url, reason in excluded.items():
+            statuses[url] = (
+                _("excluded: fee above the maximum")
+                if reason == EXCLUDED_FEE
+                else _("excluded: not a valid will-executor")
+            )
+        texts = {
+            RECEIVED: _("Success"),
+            ALREADY_PRESENT: _("checking..."),
+            FAILED: _("Failed"),
+            TIMEOUT: _("no answer in time"),
+        }
 
-        def getMsg(willexecutors):
+        def getMsg():
+            """The waiting window's text: one line per will-executor."""
             msg = _("Broadcasting Transactions to Will-Executors:") + "\n"
-            for url in willexecutors:
-                msg += f"{url}:\t{willexecutors[url]['broadcast_status']}\n"
+            for url, status in statuses.items():
+                msg += f"{url}:\t{status}\n"
             return msg
 
-        # Initialise statuses + show the list immediately.
-        for url in willexecutors:
-            willexecutors[url].setdefault("broadcast_status", _("waiting..."))
-        try:
-            self.waiting_dialog.update(getMsg(willexecutors))
-        except Exception:
-            pass
-
-        error = {"flag": False}
-        already_present = []
-
-        def on_each(url, willexecutor, ok, exc):
-            # Runs from a worker thread.  We only do book-keeping + a thread-safe
-            # signal-based UI update here; the heavier "already present" check
-            # path (which itself does network I/O) is handled below in the main
-            # task thread to keep the original sequential behaviour for it.
-            if isinstance(exc, Willexecutors.AlreadyPresentException):
-                already_present.append(url)
-                willexecutor["broadcast_status"] = _("checking...")
-            elif ok:
-                for wid in willexecutor.get("txsids", []):
-                    willitems[wid].set_status("PUSHED", True)
-                willexecutor["broadcast_status"] = _("Success")
-            else:
-                for wid in willexecutor.get("txsids", []):
-                    willitems[wid].set_status("PUSH_FAIL", True)
-                error["flag"] = True
-                willexecutor["broadcast_status"] = _("Failed")
-            willexecutor.pop("txs", None)
+        def show(text):
+            """Update the waiting window; never breaks the sending."""
             try:
-                self.waiting_dialog.update(getMsg(willexecutors))
+                self.waiting_dialog.update(text)
             except Exception:
                 pass
 
+        # Show the list immediately.
+        show(getMsg())
+
+        def on_result(url, record, outcome, exc):
+            # Runs from a worker thread: book-keeping and a signal-based
+            # update of the waiting window only.
+            statuses[url] = texts[outcome]
+            show(getMsg())
+
+        def on_check_start(url, wid):
+            """An "already present" copy is being checked."""
+            show(
+                _("checking {} - {} : {}").format(
+                    willitems[wid].we["url"], wid, _("Waiting")
+                )
+            )
+
+        def on_check_done(url, wid, answer):
+            """Its answer is stored."""
+            show(
+                _("checked {} - {} : {}").format(
+                    willitems[wid].we["url"],
+                    wid,
+                    willitems[wid].get_status("CHECKED"),
+                )
+            )
+
+        # Unchanged: without a waiting window (the automatic rebuild) this
+        # raises, so that copy never sends (D25 in tests/test_5e_divergences).
         if self.waiting_dialog._stopping:
             return
-        # Push to all servers in parallel (each server keeps its own retry
-        # behaviour, but a slow/dead server no longer blocks the others).
-        Willexecutors.push_transactions_parallel(willexecutors, on_each=on_each)
-
-        # Handle the "already present" servers: verify each stored tx.  This
-        # keeps the exact original check logic, just executed after the parallel
-        # push has identified which servers need it.
-        for url in already_present:
-            willexecutor = willexecutors[url]
-            for wid in willexecutor.get("txsids", []):
-                if self.waiting_dialog._stopping:
-                    return
-                self.waiting_dialog.update(
-                    _("checking {} - {} : {}").format(
-                        willitems[wid].we["url"], wid, _("Waiting")
-                    )
-                )
-                w = willitems[wid]
-                w.set_check_willexecutor(
-                    Willexecutors.check_transaction(wid, w.we["url"])
-                )
-                self.waiting_dialog.update(
-                    _("checked {} - {} : {}").format(
-                        willitems[wid].we["url"],
-                        wid,
-                        willitems[wid].get_status("CHECKED"),
-                    )
-                )
-
-        if error["flag"]:
+        result = push_will(
+            willitems,
+            selected,
+            on_result=on_result,
+            should_stop=lambda: self.waiting_dialog._stopping,
+            on_check_start=on_check_start,
+            on_check_done=on_check_done,
+        )
+        if result.stopped:
+            return
+        if result.any_failed or excluded:
             return True
 
     def export_json_file(self, path, will=None):

@@ -138,13 +138,17 @@ DIVERGENCES = {
          "not reproduced", [], "single-signature test wallet: nothing to see"),
     32: ("Which will-executors receive the will",
          "pinned", ["copies/executor_fee_raised_after_sent"],
-         "the Check skips the executor over the maximum fee, the CLI sends to it"),
+         "#155: converged (owner D2), the CLI skips the executor over the "
+         "maximum fee too, and says so"),
     33: ("A will-executor that does not answer",
          "pinned", ["check/executor_down", "copies/menu_broadcast_executor_down",
-                    "copies/cli_executor_down"], ""),
+                    "copies/cli_executor_down"],
+         "#155: converged (owner D1), PUSH_FAIL and a warning in all three"),
     34: ("Checking 'already present' answers",
          "partly", ["check/executor_already_has_it"],
-         "the error path (an exception while checking) is not reproduced"),
+         "#155: the error path (an exception while checking) is the same "
+         "for all copies (owner D3: logged, not verified, the next check "
+         "goes on), tested in tests/test_engine_push.py, not photographed"),
     35: ("Saving after sending",
          "pinned", ["copies/menus_prepare_sign_broadcast_check", "copies/cli_first_will"], ""),
     36: ("Sending again what was already sent (force)",
@@ -472,21 +476,26 @@ def test_d30():
 
 
 def test_d32():
-    """An executor over the maximum fee still gets the will from the CLI."""
+    """#155 (D2): an executor over the maximum fee is excluded by the CLI
+    too (before, the CLI still sent it the will), with the reason."""
     cli = step("copies/executor_fee_raised_after_sent", "cli broadcast_command")
-    assert ["https://we1.test", "T2"] in cli["pushed"]
+    assert ["https://we1.test", "T2"] not in cli["pushed"]
+    assert returned(cli)["_failed"] == {
+        "https://we1.test": "excluded: fee above the maximum"}
 
 
 def test_d33():
-    """An executor that does not answer: three copies, three outcomes."""
+    """#155 (D1): an executor that does not answer, the same outcome in the
+    three copies: PUSH_FAIL and a warning (before, the menu said every
+    transaction was sent and the CLI did not mark them)."""
     c = step("check/executor_down", "check", 1)
     assert "PUSH_FAIL" in statuses(c, "T4")
     m = step("copies/menu_broadcast_executor_down", "gui menu broadcast")
-    assert popups(m, "message") == ["All transactions are broadcasted to respective Will-Executors"]
-    assert "PUSH_FAIL" not in statuses(m, "T2")
+    assert popups(m, "warning") == ["Some transaction was not broadcasted"]
+    assert "PUSH_FAIL" in statuses(m, "T2")
     cli = step("copies/cli_executor_down", "cli broadcast_command")
     assert returned(cli)["_failed"] == {"https://we1.test": "no answer in time"}
-    assert cli["stored"]["T2"] == ["COMPLETE", "VALID"]
+    assert "PUSH_FAIL" in cli["stored"]["T2"]
 
 
 def test_d34():
