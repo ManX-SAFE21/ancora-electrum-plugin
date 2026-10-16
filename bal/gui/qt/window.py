@@ -53,7 +53,11 @@ from ...core.messages import (
 )
 from ...core.summary import busy_summary, selected_urls, will_summary
 from ...engine import build, context
-from ...engine.invalidate import INVALIDATION_LABEL, build_invalidation
+from ...engine.invalidate import (
+    INVALIDATION_LABEL,
+    broadcast_invalidation,
+    build_invalidation,
+)
 from .common import (
     N_,
     OP_RETURN_PREFIX,
@@ -2518,12 +2522,13 @@ class BalWindow:
     def _auto_invalidate_will(self, will=None):
         """Build, sign and broadcast the on-chain invalidation tx, headlessly.
 
-        Reuses the exact recipe of the wizard's ``loop_broadcast_invalidating``
-        (label set before broadcast, tx info pulled from wallet/network,
-        broadcast timeout 120s) without any dialog.  An encrypted wallet cannot
-        sign headlessly, so we stop with a logged warning and leave the
-        invalidation to the user's manual flow. The unsigned transaction
-        comes from :func:`bal.engine.invalidate.build_invalidation` (#152).
+        Sends it with the Check's own steps (label set before broadcast, tx
+        info pulled from wallet/network, broadcast timeout 120s), without any
+        dialog: :func:`bal.engine.invalidate.broadcast_invalidation` (#153).
+        An encrypted wallet cannot sign headlessly, so we stop with a logged
+        warning and leave the invalidation to the user's manual flow. The
+        unsigned transaction comes from
+        :func:`bal.engine.invalidate.build_invalidation` (#152).
         """
         try:
             tx = build_invalidation(self, will)
@@ -2547,16 +2552,8 @@ class BalWindow:
             tx = self.wallet.sign_transaction(tx, None, ignore_warnings=True)
             if not tx or not tx.is_complete():
                 raise Exception("invalidation tx not complete")
-            tx.add_info_from_wallet(self.wallet)
-            network.run_from_another_thread(tx.add_info_from_network(network))
-            txid = tx.txid()
-            if txid:
-                # Label BEFORE broadcasting so the History tab shows it the
-                # moment the tx appears (matches the wizard behaviour).
-                self.wallet.set_label(txid, INVALIDATION_LABEL)
-            network.run_from_another_thread(
-                network.broadcast_transaction(tx, timeout=120), timeout=120
-            )
+            # The label is set before broadcasting, as in the Check (#153).
+            txid = broadcast_invalidation(self.wallet, network, tx)
             _logger.info("auto invalidate: broadcast invalidation {}".format(txid))
             return tx
         except Exception as e:

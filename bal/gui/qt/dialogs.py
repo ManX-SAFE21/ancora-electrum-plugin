@@ -74,7 +74,7 @@ from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
-from ...engine.invalidate import INVALIDATION_LABEL, build_invalidation
+from ...engine.invalidate import broadcast_invalidation, build_invalidation
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -1434,39 +1434,22 @@ class BalBuildWillDialog(BalDialog):
         self.msg_del_row(wait_row)
 
     def loop_broadcast_invalidating(self, tx):
+        """Send the signed invalidation *tx* and show the result in its row.
+
+        The steps (wallet and network information, the History label set
+        BEFORE broadcasting, the 120 s broadcast; task #21: the txid comes
+        from *tx*, never from the broadcast's return value) are shared with
+        the automatic invalidation since #153:
+        :func:`bal.engine.invalidate.broadcast_invalidation`. A broadcast
+        error is shown in the "Invalidating old will" row, as before.
+        """
         if self._stopping:
             return
         self.msg_set_invalidating(_("Broadcasting"))
         try:
-            tx.add_info_from_wallet(self.bal_window.wallet)
-            self.network.run_from_another_thread(tx.add_info_from_network(self.network))
-
-            # IMPORTANT (task #21 fix): get the txid from the transaction
-            # object, NOT from broadcast_transaction()'s return value.
-            # Network.broadcast_transaction is declared "-> None" and ALWAYS
-            # returns None (it only raises on failure). The previous code stored
-            # that None into `txid` and put set_label() in the `else: # txid`
-            # branch, which was therefore NEVER reached - that is why the
-            # "Safe21 Heartbeat invalidation" history label kept missing on this
-            # automatic ("postpone") path. The transaction is already signed and
-            # complete here, so tx.txid() is the correct, stable id - exactly
-            # what the working Tools -> Invalidate path uses
-            # (BalWalletWindow.invalidate_will -> result.txid()).
-            txid = tx.txid()
-
-            # Set the history label BEFORE broadcasting. set_label only writes to
-            # the local wallet metadata (no network needed), so doing it first
-            # guarantees the label exists the moment the transaction shows up in
-            # the History tab, regardless of how fast the broadcast/notification
-            # arrives.
-            if txid:
-                self.bal_window.wallet.set_label(txid, INVALIDATION_LABEL)
-            else:
+            txid = broadcast_invalidation(self.bal_window.wallet, self.network, tx)
+            if not txid:
                 _logger.debug(f"invalidate tx has no txid: {tx}")
-
-            self.network.run_from_another_thread(
-                self.network.broadcast_transaction(tx, timeout=120), timeout=120
-            )
             self.msg_set_invalidating(self.msg_ok())
 
         except TxBroadcastError as e:
