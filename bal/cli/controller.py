@@ -61,6 +61,7 @@ from ..core.util import Util
 from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
 from ..engine import build, context
+from ..engine.invalidate import INVALIDATION_LABEL, build_invalidation
 
 _logger = get_logger(__name__)
 
@@ -739,23 +740,16 @@ class BalController(BalSettingsController):
 
         Returns the raw ``PartialTransaction`` (or ``None`` when there is
         nothing to invalidate); the caller decides how to show/sign it.
-        Refused while a delivery hold applies (#123, rule I6).
+        Refused while a delivery hold applies (#123, rule I6). Built by
+        :func:`bal.engine.invalidate.build_invalidation`, as in the GUI
+        (#152).
         """
         self._refuse_when_held()
-        willitems = will if will is not None else self.willitems
-        fee_per_byte = self.will_settings.get("baltx_fees", 1)
-        tx = Will.invalidate_will(
-            willitems,
-            self.wallet,
-            fee_per_byte,
-            history_label=self.plugin.HISTORY_LABEL.get(),
-            will_locktime=Will.get_min_locktime(
-                willitems, default_value=self.date_to_check
-            ),
-        )
+        # The shared build of the GUI and the command line (#152).
+        tx = build_invalidation(self, will)
         if tx is not None:
             try:
-                self.wallet.set_label(tx.txid(), "Safe21 Heartbeat invalidation")
+                self.wallet.set_label(tx.txid(), INVALIDATION_LABEL)
             except Exception as e:
                 _logger.debug(f"invalidate_will set_label failed: {e}")
         return tx

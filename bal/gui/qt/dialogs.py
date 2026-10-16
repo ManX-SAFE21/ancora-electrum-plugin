@@ -74,6 +74,7 @@ from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
+from ...engine.invalidate import INVALIDATION_LABEL, build_invalidation
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -1006,15 +1007,7 @@ class BalBuildWillDialog(BalDialog):
                 _logger.debug("expired against the Check Alive only: postpone")
                 self._postpone_invalidation = True
                 self.msg_set_checking(_("Postponed: invalidating old will"))
-                fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
-                return None, Will.invalidate_will(
-                    self.bal_window.willitems, self.bal_window.wallet, fee_per_byte,
-                    history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
-                    will_locktime=Will.get_min_locktime(
-                        self.bal_window.willitems,
-                        default_value=self.bal_window.date_to_check,
-                    ),
-                )
+                return None, build_invalidation(self.bal_window)
             _logger.debug("expired")
             self.msg_set_checking(_("Expired"))
             return "invalidate_classic", None
@@ -1029,15 +1022,8 @@ class BalBuildWillDialog(BalDialog):
             _logger.debug(f"postponed {e}")
             self._postpone_invalidation = True
             self.msg_set_checking(_("Postponed: invalidating old will"))
-            fee_per_byte = self.bal_window.will_settings.get("baltx_fees", 1)
-            return None, Will.invalidate_will(
-                self.bal_window.willitems, self.bal_window.wallet, fee_per_byte,
-                history_label=self.bal_window.bal_plugin.HISTORY_LABEL.get(),
-                will_locktime=Will.get_min_locktime(
-                    self.bal_window.willitems,
-                    default_value=self.bal_window.date_to_check,
-                ),
-            )
+            # The shared build (#152), as the Will tab's "Invalidate will".
+            return None, build_invalidation(self.bal_window)
         except NoHeirsException:
             _logger.debug("no heirs")
             self.msg_set_checking(_("No Heirs"))
@@ -1474,7 +1460,7 @@ class BalBuildWillDialog(BalDialog):
             # the History tab, regardless of how fast the broadcast/notification
             # arrives.
             if txid:
-                self.bal_window.wallet.set_label(txid, "Safe21 Heartbeat invalidation")
+                self.bal_window.wallet.set_label(txid, INVALIDATION_LABEL)
             else:
                 _logger.debug(f"invalidate tx has no txid: {tx}")
 

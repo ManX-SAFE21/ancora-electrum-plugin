@@ -77,8 +77,8 @@ from .will import Will
 _EXECUTOR_HEIR = 'w!ll3x3c"'
 
 # The history label the plugin writes on its invalidation transactions
-# (``window.py``, ``dialogs.py``, ``cli/controller.py``). Stored data, never
-# translated.
+# (``window.py``, ``dialogs.py``, ``cli/controller.py``, all through
+# ``bal.engine.invalidate`` since #152). Stored data, never translated.
 INVALIDATION_LABEL = "Safe21 Heartbeat invalidation"
 
 VERSION_DRAFT = "draft"
