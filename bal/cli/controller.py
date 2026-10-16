@@ -57,6 +57,7 @@ from ..core.messages import (
     will_change_message,
 )
 from ..core.plugin_base import BalConfig, BalPlugin
+from ..core.summary import selected_urls
 from ..core.util import Util
 from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
@@ -70,7 +71,7 @@ from ..engine.push import (
     push_will,
     select_push,
 )
-from ..engine.sign import sign_targets, sign_will_item
+from ..engine.sign import sign_will, to_sign
 from ..engine.verify import verify_targets, verify_will
 
 _logger = get_logger(__name__)
@@ -1162,10 +1163,8 @@ class BalController(BalSettingsController):
         will-executor received it; ``push`` has the details) or ``not_sent``
         (none did; ``push["_failed"]`` says why).
         """
-        unsigned = [
-            wid for wid in Will.only_valid(self.willitems)
-            if not self.willitems[wid].get_status("COMPLETE")
-        ]
+        # #157: "sign all" skips the deselected will-executors' leftovers.
+        unsigned = to_sign(self.willitems, selected=selected_urls(self.willexecutors))
         signed = 0
         if unsigned:
             if self.wallet.has_keystore_encryption():
@@ -1240,30 +1239,25 @@ class BalController(BalSettingsController):
         ``UserFacingException`` when the wallet is encrypted and no password is
         given, and while a delivery hold applies (#123, rule I6: signing the
         prepared will would answer the "which date?" question by itself).
-        The choice of the transactions and the signing of each one are the
-        GUI's too since #154 (:mod:`bal.engine.sign`).
+        The signing is the GUI's too since #157
+        (:func:`bal.engine.sign.sign_will`): without *txids* ("sign all")
+        the copies of deselected will-executors are skipped (owner); when a
+        signing fails, the ones signed before are saved, then the error is
+        raised.
         """
         self._refuse_when_held()
         willitems = self.willitems
         if password is None and self.wallet.has_keystore_encryption():
             raise UserFacingException(_("Password required to sign transactions"))
 
-        txs = {}
-        for txid in sign_targets(willitems, txids):
-            tx, newly_signed = sign_will_item(self.wallet, willitems, txid, password)
-            if newly_signed:
-                # The command line stores the signed tx at once (the GUI
-                # leaves it to its caller).
-                willitems[txid].tx = Will.get_tx_from_any(str(tx))
-            txs[txid] = tx
-
-        try:
-            Will.check_signatures(willitems, self.wallet)
-        except Exception as e:
-            _logger.error(f"check_signatures after signing failed: {e}")
+        selected = selected_urls(self.willexecutors) if txids is None else None
+        result = sign_will(self.wallet, willitems, password, txids,
+                           selected=selected)
         self.save_willitems()
         self._save_to_history()
-        return txs
+        if result.error is not None:
+            raise result.error
+        return result.txs
 
     def push_transactions_to_willexecutors(self, force=False, txids=None):
         """Push the valid+signed will transactions to their will-executors.

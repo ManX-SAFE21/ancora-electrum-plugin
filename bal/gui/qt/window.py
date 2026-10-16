@@ -67,7 +67,7 @@ from ...engine.push import (
     push_will,
     select_push,
 )
-from ...engine.sign import sign_targets, sign_will_item
+from ...engine.sign import sign_will, sign_will_item
 from ...engine.verify import verify_targets, verify_will
 from .common import (
     N_,
@@ -2182,38 +2182,36 @@ class BalWindow:
         self.waiting_dialog.exe()
 
     def sign_transactions(self, password, will=None, txids=None):
+        """Sign the will *will* (default: the live one); the waiting window.
+
+        #157: the signing is the engine's
+        (:func:`bal.engine.sign.sign_will`, shared with the Check, the
+        automatic rebuild, the command line and the review of an imported
+        will): each signed copy is stored in its item at once, and an error
+        stops with the ones signed before kept. Signing "all" (*txids*
+        ``None``) of the live will skips the copies of deselected
+        will-executors (owner, #157); chosen *txids* are signed as chosen.
+        This window shows "signed: ... / signing: ..." (before, a local
+        ``_`` hid the translation function and the text never showed).
+        Returns the :class:`~bal.engine.sign.SignResult`; nothing is saved.
+        """
+        willitems = will if will is not None else self.willitems
+        selected = None
+        if will is None and txids is None:
+            selected = self.selected_willexecutors()
+
+        def on_progress(last_signed, signing):
+            """Show the transaction being signed (and the one before)."""
+            msg = ""
+            if last_signed:
+                msg = _("signed: {}").format(last_signed) + "\n"
             try:
-                willitems = will if will is not None else self.willitems
-                txs = {}
-                signed = None
-                tosign = None
-
-                def get_message():
-                    msg = ""
-                    if signed:
-                        msg = _("signed: {}").format(signed) + "\n"
-                    return msg + _("signing: {}").format(tosign)
-
-                # The same choice as the command line (#154).
-                for txid in sign_targets(willitems, txids):
-                    wi = willitems[txid]
-                    if wi.get_status("COMPLETE"):
-                        # Already signed and complete: keep as-is (the single-tx
-                        # helper short-circuits without touching the wallet).
-                        tx, _ = self._prepare_and_sign_tx(willitems, txid, password)
-                        txs[txid] = tx
-                        continue
-                    tosign = txid
-                    try:
-                        self.waiting_dialog.update(get_message())
-                    except Exception:
-                        pass
-                    tx, _signed = self._prepare_and_sign_tx(willitems, txid, password)
-                    signed = tosign
-                    txs[txid] = tx
+                self.waiting_dialog.update(msg + _("signing: {}").format(signing))
             except Exception:
-                return None
-            return txs
+                pass
+
+        return sign_will(self.wallet, willitems, password, txids,
+                         selected=selected, on_progress=on_progress)
 
     def _prepare_and_sign_tx(self, willitems, txid, password):
         """Prepare one will transaction and sign it.
@@ -2225,7 +2223,8 @@ class BalWindow:
         Returns ``(tx, newly_signed)``: ``newly_signed`` is False when the
         transaction was already COMPLETE (nothing was signed). The steps are
         the command line's too since #154:
-        :func:`bal.engine.sign.sign_will_item`.
+        :func:`bal.engine.sign.sign_will_item`, which since #157 also stores
+        the signed copy in the item.
         """
         return sign_will_item(self.wallet, willitems, txid, password)
 
@@ -2576,14 +2575,12 @@ class BalWindow:
                     "unsigned (sign manually)"
                 )
             else:
-                txs = self.sign_transactions(None)
-                if txs:
-                    for txid, tx in txs.items():
-                        # Store the signed tx back, like
-                        # ask_password_and_sign_transactions.on_success does
-                        # (re-parse instead of deepcopy: the signed tx may carry
-                        # wallet-derived input info holding a threading.RLock).
-                        self.willitems[txid].tx = Will.get_tx_from_any(str(tx))
+                # #157: the engine stores each signed copy in its item.
+                result = self.sign_transactions(None)
+                if result.error is not None:
+                    _logger.error(
+                        "auto rebuild: signing stopped at {}: {}".format(
+                            result.failed, result.error))
         except Exception as e:
             _logger.error("auto rebuild: signing failed: {}".format(e))
         try:
@@ -2673,19 +2670,14 @@ class BalWindow:
         if _stopped_by_hold(self):
             return
         external = will is not None
-        willitems = will if external else self.willitems
 
-        def on_success(txs):
-            """Put the signed transactions into the will items, then check
-            the signatures and run ``callback``. For the live will also:
-            save the whole will with the anchor (#123), redraw the Will tab
-            and update the History."""
-            if txs:
-                for txid, tx in txs.items():
-                    # Re-parse instead of deepcopy: the signed tx may carry
-                    # wallet-derived input info holding a threading.RLock, which
-                    # copy.deepcopy cannot pickle (see sign_transactions above).
-                    willitems[txid].tx = Will.get_tx_from_any(str(tx))
+        def on_success(result):
+            """The signed copies are already in the will items (#157). For
+            the live will: save the whole will with the anchor (#123),
+            redraw the Will tab and update the History. Then say why a
+            signing failed, if one did, and run ``callback`` when some
+            transaction was reached."""
+            if result.txs or result.error:
                 if not external:
                     # #123 (FS-1 of the review): save EVERY item, as the
                     # Check's signing does (dialogs.py, task_phase2). Writing
@@ -2694,10 +2686,6 @@ class BalWindow:
                     # the wallet; the next load took it for the will in
                     # force and moved the delivery date back to it.
                     self.save_willitems()
-                try:
-                    Will.check_signatures(willitems, self.wallet)
-                except Exception as e:
-                    _logger.error(f"check_signatures after signing failed: {e}")
                 if not external:
                     try:
                         self.will_list_widget.update()
@@ -2707,16 +2695,27 @@ class BalWindow:
                 # incomplete "New" txs, remove the now-complete ones).
                 if not external:
                     self._save_will_to_history()
-                if callback:
-                    try:
-                        callback()
-                    except Exception as e:
-                        raise e
+            if result.error is not None:
+                # #157: before, an error was swallowed and nothing was said.
+                self.show_error(
+                    _("Could not sign the transaction: {}").format(result.error))
+            # As before: only when some transaction was reached ("Sign and
+            # send" then sends the ones really signed).
+            if callback and result.txs:
+                try:
+                    callback()
+                except Exception as e:
+                    raise e
 
         def on_failure(exec_info):
+            """Log the error (the window shows it)."""
             log_error(exec_info, self)
 
         password = self.get_wallet_password()
+        if password is False:
+            # The password window was cancelled: nothing to sign (#157:
+            # before, the signing ran with no password and failed silently).
+            return
         task = partial(self.sign_transactions, password, will=will, txids=txids)
         msg = _("Signing transactions...")
         self.waiting_dialog = BalWaitingDialog(

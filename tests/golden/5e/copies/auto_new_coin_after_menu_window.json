@@ -408,6 +408,8 @@
   },
   "verified": [],
   "window_events": [
+   "waiting window text: signing: T3",
+   "waiting window text: signed: T3\nsigning: T4",
    "history-refresh",
    "waiting window text: Broadcasting Transactions to Will-Executors:\nhttps://we0.test: Waiting...\nhttps://we1.test: Waiting..."
   ]
