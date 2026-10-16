@@ -9783,3 +9783,38 @@ the wallet open: `bal_heirs_list()` and `bal_will_status()` answered,
 `bal_heirs_delete(...)` and `bal_willexecutors_ping()` refused with their
 messages, Heirs and Will tabs unchanged; whole suite in both orders: 2351
 passed each time.
+
+## 149. The "Rebuild automatically on new transactions" setting is hidden and switched off
+
+**Date:** 2026-10-16
+
+**Why:** the analysis of 2026-10-15 found that this flow rebuilds from
+Electrum's network thread through a timer and can sign and send an
+on-chain invalidation by itself, while the owner's rule is that an
+invalidation (a paid fee) is never made without the user. The flow did
+not start in practice, but the setting offered it. "Rebuild will on
+wallet close" (on by default) already brings new coins into the will.
+
+**What changed** (`bal/gui/qt/plugin.py`):
+- The plugin settings dialog no longer shows the row (label, checkbox,
+  help and reset button), in BASIC and ADVANCED; "Reset to Default
+  Setting" no longer touches it.
+- New class switch `Plugin.GUI_AUTO_REBUILD_ENABLED = False`, checked
+  first in `_wallet_activity`: wallet activity never schedules the
+  automatic rebuild, even with `bal_auto_rebuild = True` stored by an
+  older version. The key is kept, never rewritten.
+- The flow (`BalWindow.schedule_auto_rebuild`, `maybe_auto_rebuild`) and
+  the command-line `bal_will_autorebuild` are unchanged: the Phase 5e
+  engine will make the flow safe.
+- Catalogs: the two texts of the row became obsolete entries (`#~`) in
+  `bal.po` (IT, ES) and left `bal.pot`; nothing else changed.
+
+**Tests:** `tests/test_auto_rebuild_hidden.py` (new, 4 tests): no row in
+BASIC and ADVANCED while the wallet-close row stays; Reset keeps a stored
+value; the switch is off; a stored True schedules nothing for any open
+window. `tests/test_auto_rebuild_on_new_tx.py`: the two wiring tests
+switch the flow on for their plugin object.
+
+**Verification:** ruff clean; affected tests (217) passed; owner's ZIP
+test: the row is gone, the other rows unchanged; whole suite in both
+orders run together with #150 (see #150).

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: BAL Electrum plugin VERSION\n"
 "Report-Msgid-Bugs-To: info@bitcoin-after.life\n"
-"POT-Creation-Date: 2026-10-15 21:39+0200\n"
+"POT-Creation-Date: 2026-10-16 06:25+0200\n"
 "PO-Revision-Date: 2026-09-26 22:02+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: it_IT\n"
@@ -2320,7 +2320,7 @@ msgstr ""
 "Ricrea il testamento se è cambiato qualcosa, lo invia ai Will-Executor e verifica che lo abbiano.\n"
 "Se '{}' è disattivata, indica come firmarlo e inviarlo."
 
-#: bal/gui/qt/lists.py:1642 bal/gui/qt/plugin.py:708
+#: bal/gui/qt/lists.py:1642 bal/gui/qt/plugin.py:717
 msgid "Auto-sign on Check"
 msgstr "Firma automatica al Controllo"
 
@@ -2476,19 +2476,19 @@ msgstr "Nessun Will-Executor corrisponde al filtro selezionato"
 msgid "No will-executor is selected"
 msgstr "Nessun Will-Executor selezionato"
 
-#: bal/gui/qt/plugin.py:141
+#: bal/gui/qt/plugin.py:150
 msgid "Electrum Plugins"
 msgstr "Plugin Electrum"
 
-#: bal/gui/qt/plugin.py:442 bal/gui/qt/plugin.py:480
+#: bal/gui/qt/plugin.py:458 bal/gui/qt/plugin.py:496
 msgid "Settings"
 msgstr "Impostazioni"
 
-#: bal/gui/qt/plugin.py:583 bal/gui/qt/widgets.py:1064
+#: bal/gui/qt/plugin.py:592 bal/gui/qt/widgets.py:1064
 msgid "BASIC"
 msgstr "BASE"
 
-#: bal/gui/qt/plugin.py:583 bal/gui/qt/widgets.py:1064
+#: bal/gui/qt/plugin.py:592 bal/gui/qt/widgets.py:1064
 msgid "ADVANCED"
 msgstr "AVANZATO"
 
@@ -2500,19 +2500,19 @@ msgstr "Attiva la modalità AVANZATA"
 msgid "Type 'at My Risk' to enable ADVANCED mode"
 msgstr "Scrivi 'at My Risk' per attivare la modalità AVANZATA"
 
-#: bal/gui/qt/plugin.py:662 bal/gui/qt/plugin.py:808
+#: bal/gui/qt/plugin.py:671 bal/gui/qt/plugin.py:817
 msgid "Reset to default"
 msgstr "Ripristina il valore predefinito"
 
-#: bal/gui/qt/plugin.py:681
+#: bal/gui/qt/plugin.py:690
 msgid "Rebroadcast will"
 msgstr "Trasmetti di nuovo il testamento"
 
-#: bal/gui/qt/plugin.py:692
+#: bal/gui/qt/plugin.py:701
 msgid "Warning: change these settings only if you know what you are doing."
 msgstr "Attenzione: cambia queste impostazioni solo se sai cosa stai facendo."
 
-#: bal/gui/qt/plugin.py:710
+#: bal/gui/qt/plugin.py:719
 msgid ""
 "When checking, automatically sign and broadcast the will transactions to their will-executors.\n"
 "The wallet password is requested only if the wallet is encrypted."
@@ -2520,11 +2520,11 @@ msgstr ""
 "Durante il controllo, firma automaticamente le transazioni del testamento e trasmetti il piano ai rispettivi Will-Executor.\n"
 "La password del portafoglio viene chiesta solo se il portafoglio è cifrato."
 
-#: bal/gui/qt/plugin.py:724
+#: bal/gui/qt/plugin.py:733
 msgid "Panel editable Date and Fee"
 msgstr "Data e commissione modificabili nel pannello"
 
-#: bal/gui/qt/plugin.py:728
+#: bal/gui/qt/plugin.py:737
 msgid ""
 "When enabled, the delivery-time and check-alive date fields can be edited everywhere (toolbar / Heirs tab), not only in the will-building wizard.\n"
 "When disabled, those dates are display-only outside the wizard."
@@ -2532,11 +2532,11 @@ msgstr ""
 "Se attivo, i campi della data di consegna e della data della verifica se sei vivo si possono modificare ovunque (barra degli strumenti / scheda Eredi), non solo nella procedura guidata del testamento.\n"
 "Se disattivo, fuori dalla procedura guidata queste date si possono solo vedere."
 
-#: bal/gui/qt/plugin.py:739
+#: bal/gui/qt/plugin.py:748
 msgid "Max Will-Executor Fee (satoshi)"
 msgstr "Commissione massima del Will-Executor (satoshi)"
 
-#: bal/gui/qt/plugin.py:743
+#: bal/gui/qt/plugin.py:752
 msgid ""
 "Maximum fee (in satoshi) allowed to be paid to a single will-executor. If a will-executor charges more than this, the will will not be built.\n"
 "Default: 500,000 satoshi (0.005 BTC)."
@@ -2544,11 +2544,11 @@ msgstr ""
 "Commissione massima (in satoshi) che si può pagare a un singolo Will-Executor. Se un Will-Executor chiede di più, il testamento non viene preparato.\n"
 "Predefinito: 500.000 satoshi (0,005 BTC)."
 
-#: bal/gui/qt/plugin.py:754
+#: bal/gui/qt/plugin.py:763
 msgid "User Type"
 msgstr "Tipo di utente"
 
-#: bal/gui/qt/plugin.py:758
+#: bal/gui/qt/plugin.py:767
 msgid ""
 "Choose how much detail the plugin shows.\n"
 "\n"
@@ -2562,35 +2562,35 @@ msgstr ""
 "\n"
 "AVANZATO: mostra tutti i controlli, compresi il campo 'Verifica se sei vivo' e il selettore Raw/Data. Permette di configurare l'URL del server welist e lascia sempre modificabili tutti i campi di data e commissione."
 
-#: bal/gui/qt/plugin.py:787
+#: bal/gui/qt/plugin.py:796
 msgid "Yellow warning: inheritance date less than (months)"
 msgstr "Avviso Giallo data eredità inferiore a (mesi)"
 
-#: bal/gui/qt/plugin.py:789
+#: bal/gui/qt/plugin.py:798
 msgid "The delivery date turns yellow when fewer than this many months are left (default 12). It is only a colour: the will does not change. Only used in ADVANCED mode."
 msgstr "La data di consegna diventa gialla quando mancano meno di questi mesi (predefinito 12). È solo un colore: il testamento non cambia. Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:814
+#: bal/gui/qt/plugin.py:823
 msgid "Red warning: inheritance date less than (months)"
 msgstr "Avviso Rosso data eredità inferiore a (mesi)"
 
-#: bal/gui/qt/plugin.py:816
+#: bal/gui/qt/plugin.py:825
 msgid "The delivery date turns red when fewer than this many months are left (default 6): if you are still here, choose a later date. Only used in ADVANCED mode."
 msgstr "La data di consegna diventa rossa quando mancano meno di questi mesi (predefinito 6): se sei ancora qui, scegli una data più lontana. Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:829
+#: bal/gui/qt/plugin.py:838
 msgid "Number of reminders"
 msgstr "Numero di promemoria"
 
-#: bal/gui/qt/plugin.py:831
+#: bal/gui/qt/plugin.py:840
 msgid "How many reminder alarms the exported calendar (.ics) event contains.  Range: 1 to 5 (default 3).  Only used in ADVANCED mode."
 msgstr "Quanti promemoria contiene l'evento del calendario esportato (.ics).  Da 1 a 5 (predefinito 3).  Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:840
+#: bal/gui/qt/plugin.py:849
 msgid "Event summary"
 msgstr "Titolo dell'evento"
 
-#: bal/gui/qt/plugin.py:842
+#: bal/gui/qt/plugin.py:851
 msgid ""
 "Default message to be used in event summary\n"
 "Variables:\n"
@@ -2604,11 +2604,11 @@ msgstr ""
 "  $heirs_complete: elenco degli eredi con nome, indirizzo, importo\n"
 "Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:854
+#: bal/gui/qt/plugin.py:863
 msgid "Event description"
 msgstr "Descrizione dell'evento"
 
-#: bal/gui/qt/plugin.py:856
+#: bal/gui/qt/plugin.py:865
 msgid ""
 "Default message to be used in event description\n"
 "Variables:\n"
@@ -2622,19 +2622,19 @@ msgstr ""
 "  $heirs_complete: elenco degli eredi con nome, indirizzo, importo\n"
 "Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:869
+#: bal/gui/qt/plugin.py:878
 msgid "Welist Server URL"
 msgstr "URL del server welist"
 
-#: bal/gui/qt/plugin.py:871
+#: bal/gui/qt/plugin.py:880
 msgid "URL of the server that provides the will-executor list.  Only available in ADVANCED mode."
 msgstr "URL del server che fornisce l'elenco dei Will-Executor.  Disponibile solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:880
+#: bal/gui/qt/plugin.py:889
 msgid "Calendar app command"
 msgstr "Comando dell'app calendario"
 
-#: bal/gui/qt/plugin.py:882
+#: bal/gui/qt/plugin.py:891
 msgid ""
 "Command used to open .ics calendar files.\n"
 "Leave empty to use the system default (xdg-open/open/start).\n"
@@ -2644,11 +2644,11 @@ msgstr ""
 "Lascia vuoto per usare quello predefinito del sistema (xdg-open/open/start).\n"
 "Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:895
+#: bal/gui/qt/plugin.py:904
 msgid "Save inheritance transactions in history"
 msgstr "Salva le transazioni di eredità nella cronologia"
 
-#: bal/gui/qt/plugin.py:897
+#: bal/gui/qt/plugin.py:906
 #, python-brace-format
 msgid ""
 "After each check, save the valid will transactions into the wallet's local history (the History tab), each with a label.\n"
@@ -2661,11 +2661,11 @@ msgstr ""
 "  {willexecutor}: sostituita con l'URL del Will-Executor dell'elemento\n"
 "Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:909
+#: bal/gui/qt/plugin.py:918
 msgid "History label"
 msgstr "Etichetta nella cronologia"
 
-#: bal/gui/qt/plugin.py:911
+#: bal/gui/qt/plugin.py:920
 #, python-brace-format
 msgid ""
 "Label applied to the will transactions saved into the wallet's local history.\n"
@@ -2678,15 +2678,15 @@ msgstr ""
 "  {willexecutor}: sostituita con l'URL del Will-Executor dell'elemento\n"
 "Usato solo in modalità AVANZATA."
 
-#: bal/gui/qt/plugin.py:933
+#: bal/gui/qt/plugin.py:942
 msgid "Broadcast all transactions to willexecutors including those already pushed"
 msgstr "Trasmetti di nuovo il testamento ai Will-Executor, con tutte le transazioni, comprese quelle già inviate"
 
-#: bal/gui/qt/plugin.py:942
+#: bal/gui/qt/plugin.py:951
 msgid "Rebuild will on wallet close"
 msgstr "Ricrea il testamento alla chiusura del portafoglio"
 
-#: bal/gui/qt/plugin.py:944
+#: bal/gui/qt/plugin.py:953
 msgid ""
 "Run the 'Build your will' wizard every time the wallet is closed or Electrum is quit, so the will is rebuilt and re-validated.\n"
 "When disabled, the will is only rebuilt when you press Check or Prepare. The last built state is still saved to the wallet."
@@ -2694,41 +2694,27 @@ msgstr ""
 "Avvia la procedura 'Crea il tuo testamento' ogni volta che il portafoglio viene chiuso o si esce da Electrum, così il testamento viene ricreato e riconvalidato.\n"
 "Se disattivo, il testamento viene ricreato solo quando premi Controlla o Prepara. L'ultimo stato preparato viene comunque salvato nel portafoglio."
 
-#: bal/gui/qt/plugin.py:960
-msgid "Rebuild automatically on new transactions"
-msgstr "Ricrea automaticamente con nuove transazioni"
-
-#: bal/gui/qt/plugin.py:962
-msgid ""
-"When a new transaction arrives for the wallet, automatically rebuild the will the same way the wizard does at wallet close: the delivery date is anticipated by one day so the new will replaces the previous one, and the rebuilt transactions are signed and sent to their will-executors.\n"
-"An on-chain invalidation transaction is only built when the anticipated delivery date would fall before the Check Alive threshold, or when the threshold is already in the past.\n"
-"When disabled (default), the will is only rebuilt on Check / Prepare / wallet close."
-msgstr ""
-"Quando arriva una nuova transazione nel portafoglio, ricrea automaticamente il testamento come fa la procedura guidata alla chiusura del portafoglio: la data di consegna viene anticipata di un giorno così il nuovo testamento sostituisce il precedente, e le transazioni ricreate vengono firmate e inviate ai rispettivi Will-Executor.\n"
-"Una transazione di invalidazione del piano sulla blockchain viene creata solo se la data di consegna anticipata cadrebbe prima della data della verifica se sei vivo, o se quella data è già passata.\n"
-"Se disattivo (predefinito), il testamento viene ricreato solo con Controlla / Prepara / chiusura del portafoglio."
-
-#: bal/gui/qt/plugin.py:1044
+#: bal/gui/qt/plugin.py:1028
 msgid "Reset to Default Setting"
 msgstr "Ripristina le impostazioni predefinite"
 
-#: bal/gui/qt/plugin.py:1045
+#: bal/gui/qt/plugin.py:1029
 msgid "Reset these settings to their default values"
 msgstr "Riporta queste impostazioni ai valori predefiniti"
 
-#: bal/gui/qt/plugin.py:1052
+#: bal/gui/qt/plugin.py:1036
 msgid "Open the Safe21 support website"
 msgstr "Apri il sito di supporto di Safe21"
 
-#: bal/gui/qt/plugin.py:1064
+#: bal/gui/qt/plugin.py:1048
 msgid "Based on Bitcoin After Life (BAL) by Svatantrya — MIT licence"
 msgstr "Basato su Bitcoin After Life (BAL) di Svatantrya — licenza MIT"
 
-#: bal/gui/qt/plugin.py:1073
+#: bal/gui/qt/plugin.py:1057
 msgid "Support:"
 msgstr "Supporto:"
 
-#: bal/gui/qt/plugin.py:1131
+#: bal/gui/qt/plugin.py:1115
 #, python-brace-format
 msgid "Safe21 Heartbeat - {}"
 msgstr "Safe21 Heartbeat - {}"
@@ -4087,4 +4073,16 @@ msgstr "Ping ai Will-Executor"
 
 #~ msgid "Written on the blockchain at the delivery, with the will transaction: from then on it is public. The will-executors can read it before."
 #~ msgstr "Scritto sulla blockchain alla consegna, con la transazione del testamento: da quel momento è pubblico. I will-executor possono leggerlo prima."
+
+#~ msgid "Rebuild automatically on new transactions"
+#~ msgstr "Ricrea automaticamente con nuove transazioni"
+
+#~ msgid ""
+#~ "When a new transaction arrives for the wallet, automatically rebuild the will the same way the wizard does at wallet close: the delivery date is anticipated by one day so the new will replaces the previous one, and the rebuilt transactions are signed and sent to their will-executors.\n"
+#~ "An on-chain invalidation transaction is only built when the anticipated delivery date would fall before the Check Alive threshold, or when the threshold is already in the past.\n"
+#~ "When disabled (default), the will is only rebuilt on Check / Prepare / wallet close."
+#~ msgstr ""
+#~ "Quando arriva una nuova transazione nel portafoglio, ricrea automaticamente il testamento come fa la procedura guidata alla chiusura del portafoglio: la data di consegna viene anticipata di un giorno così il nuovo testamento sostituisce il precedente, e le transazioni ricreate vengono firmate e inviate ai rispettivi Will-Executor.\n"
+#~ "Una transazione di invalidazione del piano sulla blockchain viene creata solo se la data di consegna anticipata cadrebbe prima della data della verifica se sei vivo, o se quella data è già passata.\n"
+#~ "Se disattivo (predefinito), il testamento viene ricreato solo con Controlla / Prepara / chiusura del portafoglio."
 
