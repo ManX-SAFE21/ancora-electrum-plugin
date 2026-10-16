@@ -241,8 +241,9 @@ def test_settings_boxes_store_once_keep_red_below_yellow_and_reset(monkeypatch):
     (grid,) = [g for g in dialog.findChildren(QGridLayout)
                if g.itemAtPosition(6, 1) is not None
                and g.itemAtPosition(6, 1).widget() is yellow]
-    assert grid.itemAtPosition(7, 1).widget() is red   # right below User Type
-    assert isinstance(grid.itemAtPosition(5, 1).widget(), QComboBox)  # User Type
+    assert grid.itemAtPosition(7, 1).widget() is red   # right below yellow
+    # User Type is the first row since #151 (it was row 5, above yellow).
+    assert isinstance(grid.itemAtPosition(0, 1).widget(), QComboBox)  # User Type
     # Each threshold's own reset button gives BOTH defaults back (red first,
     # since each box bounds the other).
     for row in (6, 7):

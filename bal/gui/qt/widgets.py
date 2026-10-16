@@ -1456,50 +1456,34 @@ class WillSettingsWidget(QWidget):
             self.apply_delivery_form()
             return
 
-        # Group C / C2: apply the current "Editable dates" setting to the date
-        # fields. Done once at creation here, and re-applied later by
-        # apply_editable_dates() whenever the setting changes (called from
-        # BalWindow.update_all()), so toggling the checkbox takes effect
-        # immediately, exactly like the "Hide Invalidated" filter does.
+        # Lock or unlock the date and fee fields for the current mode. Done
+        # once at creation here, and re-applied by apply_editable_dates()
+        # from BalWindow.update_all(), so a mode switch takes effect at once.
         self.apply_editable_dates()
 
     def apply_editable_dates(self):
-        """Re-read the EDITABLE_DATES setting and lock/unlock the editable fields.
+        """Lock or unlock the date and fee fields outside the wizard by mode.
 
         Outside the "Build your will" wizard (``read_only=True``) the
-        delivery-time, check-alive dates AND the mining fee are display-only by
-        default. When the user ticks "Editable dates" in the settings, all three
-        fields (locktime, threshold and fee) become editable here too; when it
-        is unticked they all go back to read-only. The fee follows exactly the
-        same rule as the dates (it used to stay always read-only, but the user
-        asked for the fee to be editable together with the dates).
+        delivery-time, check-alive and mining-fee fields are editable in
+        ADVANCED mode and read-only in BASIC mode, where the tabs do not show
+        them at all (#130).
 
-        This is safe to call repeatedly: it only adjusts the read-only state of
-        the already-created sub-widgets, it does not rebuild anything. It is the
-        per-update hook that lets the settings checkbox take effect without
-        having to recreate the toolbar / re-open the window.
+        CHANGELOG #151: the "Panel editable Date and Fee" setting
+        (EDITABLE_DATES) is gone. It only acted in BASIC, where the fields
+        are hidden, so it changed nothing; a stored value is now ignored.
+
+        Safe to call repeatedly: it only adjusts the read-only state of the
+        already-created sub-widgets and rebuilds nothing.
         """
         # Inside the wizard the dates are always editable; nothing to do.
         if not self.read_only:
             return
 
-        basic = self.bal_window.bal_plugin.is_basic_mode()
-        if not basic:
-            # Advanced mode: fields are always editable.
-            editable_dates = True
-        else:
-            try:
-                editable_dates = self.bal_window.bal_plugin.EDITABLE_DATES.get()
-            except Exception:
-                # If the setting cannot be read, fall back to the safe default
-                # (dates remain read-only outside the wizard).
-                editable_dates = False
-
-        self.widgets["locktime"].set_read_only(not editable_dates)
-        self.widgets["threshold"].set_read_only(not editable_dates)
-        # The fee now follows the very same "Editable dates" rule as the dates:
-        # editable outside the wizard only when the setting is ticked.
-        self.widgets["baltx_fees"].set_read_only(not editable_dates)
+        editable = not self.bal_window.bal_plugin.is_basic_mode()
+        self.widgets["locktime"].set_read_only(not editable)
+        self.widgets["threshold"].set_read_only(not editable)
+        self.widgets["baltx_fees"].set_read_only(not editable)
 
     def apply_delivery_form(self):
         """Show the delivery field in the stored form (#127, owner decision 8).

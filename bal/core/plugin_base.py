@@ -310,6 +310,8 @@ class BalPlugin(BasePlugin):
         # check-alive date fields are editable everywhere (toolbar / Heirs tab),
         # not only inside the "Build your will" wizard. Default OFF, so the dates
         # stay display-only outside the wizard unless the user opts in.
+        # Not read any more since #151 (the setting changed nothing); the key
+        # is kept so a stored value stays as it is.
         self.EDITABLE_DATES = BalConfig(config, "bal_editable_dates", False)
 
         # QR_CHUNK_SIZE (will transfer via QR): payload budget, in characters,
