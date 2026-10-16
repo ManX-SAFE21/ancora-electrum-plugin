@@ -132,12 +132,17 @@ DIVERGENCES = {
     28: ("A build error in the automatic rebuild: log vs message",
          "intentional", [], "no window to show it in the automatic copy"),
     29: ("Manual Sign: Cancel does not stop it, errors are silent",
-         "pinned", ["copies/menu_sign_cancel"], ""),
+         "pinned", ["copies/menu_sign_cancel"],
+         "#157: converged, Cancel signs nothing (no waiting window); an "
+         "error is shown and the ones signed before are kept "
+         "(tests/test_engine_sign_will.py)"),
     30: ("What the manual Sign saves",
          "partly", ["copies/menu_sign_with_password"],
          "the statuses are saved; the form of the stored transaction is not checked"),
     31: ("Signature counts refreshed only by some copies",
-         "not reproduced", [], "single-signature test wallet: nothing to see"),
+         "not reproduced", [], "single-signature test wallet: nothing to see; "
+         "#157: every copy signs through bal.engine.sign.sign_will, which "
+         "refreshes the counts of what it signed"),
     32: ("Which will-executors receive the will",
          "pinned", ["copies/executor_fee_raised_after_sent"],
          "#155: converged (owner D2), the CLI skips the executor over the "
@@ -467,10 +472,11 @@ def test_d26():
 
 
 def test_d29():
-    """Manual Sign: after Cancel the signing task still runs, with no message."""
+    """Manual Sign: Cancel at the password stops it (#157; before, the
+    signing task still ran, with no message)."""
     s = step("copies/menu_sign_cancel", "gui menu sign")
     assert s["questions"][0][0] == "password"
-    assert "waiting window: Signing transactions..." in s["window_events"]
+    assert s["window_events"] == []
     assert not s["popups"] and "COMPLETE" not in statuses(s, "T1")
 
 

@@ -10162,3 +10162,75 @@ after Prepare: fixed, the right click now asks every row sent at least
 once, and the case is a permanent test); then a Check (signed, sent,
 verified 4 of 4). Whole suite in both orders, run before the push for
 #155 and #156 together: 2417 passed each time, goldens unchanged.
+
+## 157. One shared "sign the will"; three signing faults fixed
+
+**Date:** 2026-10-16
+
+**Why (owner):** sixth piece of the de-duplication, after #152-#156, and the
+base of the coming offline signing (USB stick, multisig). Signing the will
+and putting the signed copies back into it was written five times: the
+Will tab's "Sign" (also "Sign and send", the Will Details window and the
+will summary), the Check, the automatic rebuild, the command line
+(`bal_will_sign` and the commands that sign) and "Review and sign imported
+will" (the offline signing). Three faults went with the copies, verified
+in the code and now permanent tests:
+- A: a signing that failed half way (e.g. the 5th of 20) left the
+  transactions signed before it marked "signed" with their signatures
+  thrown away: never signed again, and the Check sent unsigned copies to
+  the will-executors, with no message;
+- F: the waiting window's "signed: ... / signing: ..." never showed;
+- G: "Review and sign imported will" marked each transaction signed but
+  dropped the signature, so the "signed file" carried back to the online
+  computer held unsigned transactions.
+Owner decisions 2026-10-16: signing "all" skips the copies of
+will-executors deselected after the will was built that never received it
+(the #135 rule of the Check, now everywhere); rows the owner chooses (the
+list's right click "sign", `bal_will_sign <txid>`) are signed as chosen.
+
+**What changed:**
+- `bal/engine/sign.py`: `sign_will` (sign every target in order, stop at
+  the first error keeping the ones before, refresh the signature counts;
+  returns what was signed and the error), `sign_targets` with the
+  deselected rule for "sign all", `to_sign`, `is_deselected_leftover`.
+  `sign_will_item` now stores the signed copy in the item in the same step
+  that marks it complete (the signature count is read first: turning a
+  complete transaction into text finalizes it).
+- `BalWindow.sign_transactions` / `ask_password_and_sign_transactions`,
+  `BalBuildWillDialog.task_phase2` / `_ids_to_sign`,
+  `BalWindow._auto_sign_save_push`, `BalController.sign_transactions` and
+  `WillTxReviewSignDialog._sign_current` use it. A signing error is now
+  shown (the Will tab: an error box; the Check: the "Signing your will"
+  row; the command line: saved first, then the error). Cancel at the
+  password signs nothing (before, the signing still ran and failed in
+  silence).
+- No new texts.
+
+**Tests:** `tests/test_engine_sign_will.py` (new, 11 tests, a real test
+wallet with a password, three fake will-executors): the Will tab's "Sign"
+failing at the 2nd transaction (the 1st signed for real and saved, the
+error shown, signing again completes); the Check failing the same way
+(every copy sent is really signed, the row says why); the engine's
+order and report; the waiting window's progress; the offline review (the
+will carried as a file, signed page by page, "Save signed file…": the file
+holds signed transactions); "sign all" skips the deselected copy, the
+right click signs it; the command line without and with a txid, and an
+error (saved, then raised); the rule; no other module stores a signed copy.
+Run on the code before #157, A, G and the deselected rule fail.
+`tests/test_engine_sign.py`, `tests/test_gui_will_flows.py`,
+`tests/test_import_will_details.py` follow the new return value.
+Golden files (`tests/golden/5e/copies/`, BAL_GOLDEN_UPDATE): five
+photographs change exactly as expected: the progress text appears
+(`menu_sign_with_password`, `menus_prepare_sign_broadcast_check`,
+`menu_broadcast_executor_down`, `auto_new_coin_after_menu_window`), and
+`menu_sign_cancel` opens no waiting window. The divergence register:
+D29 converged, D31 noted.
+
+**Verification:** ruff clean; the 122 test files that mention the
+signing: 2164 passed; ZIP built, external zip load and smoke test OK on
+4.8.2; owner's ZIP test: a fee change, Check (signed, sent, verified 4 of
+4); Cancel at "Sign your will" in the Check ("interrupted", nothing
+signed); a will-executor added, then deselected: the "≡" menu's Sign left
+its copy unsigned ("Draft"), the right click "sign" on that row signed it.
+Whole suite in one order (owner rule 2026-10-16: both orders every
+2-3 steps): 2429 passed, goldens unchanged.

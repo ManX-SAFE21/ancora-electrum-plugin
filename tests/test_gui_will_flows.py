@@ -41,7 +41,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from bal.core.heirs import Heirs  # noqa: E402
 from bal.core.plugin_base import BalPlugin  # noqa: E402
 from bal.core.util import Util  # noqa: E402
-from bal.core.will import Will  # noqa: E402
 from bal.core.willexecutors import Willexecutors  # noqa: E402
 from bal.engine import context  # noqa: E402
 from bal.gui.qt.window import BalWindow  # noqa: E402
@@ -341,16 +340,14 @@ def test_sign_transitions_to_complete():
         ctl.prepare_will()
         txid, item = _single(ctl)
 
-        txs = ctl.sign_transactions(None)
+        txs = ctl.sign_transactions(None).txs
 
     assert txs and txid in txs
     signed = txs[txid]
     assert signed.is_complete(), "single-key p2wpkh must be fully signable"
 
-    # Mirror BalWindow.ask_password_and_sign_transactions.on_success: store
-    # the signed tx back into the will item and re-check signatures.
-    item.tx = Will.get_tx_from_any(str(signed))
-    Will.check_signatures(ctl.willitems, ctl.wallet)
+    # #157: the engine stored the signed copy in the item and re-checked
+    # the signatures (before, ask_password_and_sign_transactions did).
 
     assert item.get_status("COMPLETE"), "signed item must become COMPLETE"
     assert item.sigs_have == 1 and item.sigs_required == 1
@@ -370,10 +367,8 @@ def test_export_and_merge_roundtrip():
         src = make_controller()
         src.prepare_will()
         txid, _ = _single(src)
-        signed = src.sign_transactions(None)
+        src.sign_transactions(None)  # #157: stores the signed copy itself
         item = src.willitems[txid]
-        item.tx = Will.get_tx_from_any(str(signed[txid]))
-        Will.check_signatures(src.willitems, src.wallet)
 
         assert item.get_status("COMPLETE")
 
@@ -480,9 +475,7 @@ def test_anticipated_rebuild_reanchors_date_to_check():
         ctl.prepare_will()
         old_txid, _old_item = _single(ctl)
         old_locktime = _old_item.tx.locktime
-        signed = ctl.sign_transactions(None)
-        _old_item.tx = Will.get_tx_from_any(str(signed[old_txid]))
-        Will.check_signatures(ctl.willitems, ctl.wallet)
+        ctl.sign_transactions(None)  # #157: stores the signed copy itself
         assert _old_item.get_status("COMPLETE")
 
         # Anticipate: shorten every heir to 1y.

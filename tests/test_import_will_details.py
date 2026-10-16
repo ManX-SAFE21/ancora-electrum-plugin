@@ -133,7 +133,7 @@ def test_sign_transactions_external_only():
         window_mod.BalWindow._prepare_and_sign_tx, fake
     )
 
-    result = window_mod.BalWindow.sign_transactions(fake, None, will=imported)
+    result = window_mod.BalWindow.sign_transactions(fake, None, will=imported).txs
 
     assert result is not None
     assert set(result) == set(imported)

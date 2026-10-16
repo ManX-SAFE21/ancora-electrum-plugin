@@ -40,7 +40,7 @@ import bal.cli.controller as controller_mod
 import bal.gui.qt.window as window_mod
 from bal.cli.controller import BalController
 from bal.core.will import Will
-from bal.engine.sign import sign_targets, sign_will_item
+from bal.engine.sign import SignResult, sign_targets, sign_will_item
 from bal.gui.qt.window import BalWindow
 
 ROOT = os.path.join(os.path.dirname(__file__), os.pardir, "bal")
@@ -125,7 +125,6 @@ def test_inputs_from_the_will_are_prepared_and_signed():
     own = _input("p", 1)
     outside = _input("f" * 64, 0)
     parsed = _tx([own, outside], complete=True, counts=(2, 3))
-    stored = child.tx
     wallet = MagicMock()
     with patch.object(Will, "get_tx_from_any", return_value=parsed):
         tx, newly = sign_will_item(wallet, items, "c", "pw")
@@ -142,7 +141,8 @@ def test_inputs_from_the_will_are_prepared_and_signed():
     )
     assert child.get_status("COMPLETE") is True
     assert (child.sigs_have, child.sigs_required) == (2, 3)
-    assert child.tx is stored
+    # #157: the signed copy (re-parsed) is stored in the item at once.
+    assert child.tx is parsed
 
 
 def test_incomplete_and_no_count():
@@ -168,6 +168,8 @@ def test_wallet_error_propagates():
             pass
         else:
             raise AssertionError("the error was swallowed")
+    assert items["a"].tx.text == "a"  # #157: nothing stored on an error
+    assert items["a"].get_status("COMPLETE") is False
 
 
 def test_gui_signs_through_the_engine():
@@ -181,15 +183,25 @@ def test_gui_signs_through_the_engine():
     s.assert_called_once_with(win.wallet, items, "a", "pw")
 
 
-def test_gui_batch_uses_the_shared_targets():
-    """The Will tab's "Sign" signs the shared choice of transactions."""
+def test_gui_batch_uses_the_shared_sign_will():
+    """The Will tab's "Sign" is the engine's ``sign_will`` (#157): chosen
+    txids without the deselected rule; "sign all" of the live will with the
+    selected will-executors."""
     win = object.__new__(BalWindow)
+    win.wallet = MagicMock()
     win.willitems = {"a": _Item("a"), "b": _Item("b", valid=False)}
     win.waiting_dialog = MagicMock()
-    win._prepare_and_sign_tx = MagicMock(side_effect=lambda w, t, p: (t + "!", True))
-    with patch.object(window_mod, "sign_targets", return_value=["a"]) as targets:
-        assert BalWindow.sign_transactions(win, "pw", txids=["a", "b"]) == {"a": "a!"}
-    targets.assert_called_once_with(win.willitems, ["a", "b"])
+    win.selected_willexecutors = MagicMock(return_value={"https://a"})
+    with patch.object(window_mod, "sign_will", return_value="RESULT") as sw:
+        assert BalWindow.sign_transactions(win, "pw", txids=["a", "b"]) == "RESULT"
+        assert sw.call_args.args == (win.wallet, win.willitems, "pw", ["a", "b"])
+        assert sw.call_args.kwargs["selected"] is None
+        BalWindow.sign_transactions(win, "pw")
+        assert sw.call_args.kwargs["selected"] == {"https://a"}
+        other = {"x": _Item("x")}
+        BalWindow.sign_transactions(win, "pw", will=other)
+        assert sw.call_args.args[1] is other
+        assert sw.call_args.kwargs["selected"] is None
 
 
 def _controller(items):
@@ -204,27 +216,46 @@ def _controller(items):
     return ctl
 
 
-def test_cli_signs_through_the_engine_and_stores():
-    """The newly signed tx is stored; a complete one is left as it was."""
-    new = _Item("new")
-    done = _Item("done", complete=True)
-    done_stored = done.tx
-    items = {"new": new, "done": done}
+def _result(txs=None, error=None):
+    """A ``SignResult`` with *txs* and *error*."""
+    r = SignResult()
+    r.txs = dict(txs or {})
+    r.error = error
+    return r
+
+
+def test_cli_signs_through_the_engine_and_saves():
+    """The command line is the engine's ``sign_will`` (#157); it saves the
+    will and the History; "sign all" passes the selected will-executors."""
+    items = {"new": _Item("new")}
     ctl = _controller(items)
-    results = {"new": ("SIGNED", True), "done": ("COPY", False)}
-    with patch.object(controller_mod, "sign_targets",
-                      return_value=["new", "done"]) as targets, \
-         patch.object(controller_mod, "sign_will_item",
-                      side_effect=lambda w, it, t, p: results[t]) as s, \
-         patch.object(Will, "get_tx_from_any", side_effect=lambda x: "parsed:" + x), \
-         patch.object(Will, "check_signatures") as check:
+    ctl.willexecutors = {"https://a": {"selected": True},
+                         "https://b": {"selected": False}}
+    with patch.object(controller_mod, "sign_will",
+                      return_value=_result({"new": "SIGNED"})) as sw:
         out = BalController.sign_transactions(ctl, "pw", txids=None)
-    assert out == {"new": "SIGNED", "done": "COPY"}
-    targets.assert_called_once_with(items, None)
-    assert s.call_args_list[0].args == (ctl.wallet, items, "new", "pw")
-    assert new.tx == "parsed:SIGNED"
-    assert done.tx is done_stored
-    check.assert_called_once_with(items, ctl.wallet)
+        assert sw.call_args.kwargs["selected"] == {"https://a"}
+        BalController.sign_transactions(ctl, "pw", txids=["new"])
+        assert sw.call_args.kwargs["selected"] is None
+    assert out == {"new": "SIGNED"}
+    assert sw.call_args.args == (ctl.wallet, items, "pw", ["new"])
+    assert ctl.save_willitems.call_count == 2
+    assert ctl._save_to_history.call_count == 2
+
+
+def test_cli_error_saves_then_raises():
+    """A signing that fails: the ones signed before are saved, then the
+    error reaches the command."""
+    ctl = _controller({"a": _Item("a")})
+    ctl.willexecutors = {}
+    with patch.object(controller_mod, "sign_will",
+                      return_value=_result({"a": "T"}, ValueError("bad"))):
+        try:
+            BalController.sign_transactions(ctl, "pw")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("the error was swallowed")
     ctl.save_willitems.assert_called_once_with()
     ctl._save_to_history.assert_called_once_with()
 

@@ -83,6 +83,7 @@ from ...engine.push import (
     push_will,
     select_push,
 )
+from ...engine.sign import to_sign
 from ...engine.verify import FAILED, NO_ANSWER, verify_targets, verify_will
 from .calendar import BalCalendarButton
 from .common import (
@@ -1257,7 +1258,9 @@ class BalBuildWillDialog(BalDialog):
 
     def _ids_to_sign(self):
         """The VALID items to sign: not COMPLETE, without the leftovers of
-        deselected will-executors (#135, owner's ZIP test).
+        deselected will-executors (#135, owner's ZIP test). Since #157 the
+        rule is the engine's (:func:`bal.engine.sign.to_sign`), used by every
+        "sign all".
 
         Owner: a will-executor selected, Check, Cancel at "Sign your will"
         (its copy stays an unsigned draft), then deselected again: the
@@ -1270,19 +1273,8 @@ class BalBuildWillDialog(BalDialog):
         it as a draft (#128), and if that will-executor is selected again it
         is signed and sent then. A signed or sent item is never touched.
         """
-        willitems = self.bal_window.willitems
-        selected = self._selected_willexecutors()
-        ids = []
-        for wid in Will.only_valid(willitems):
-            w = willitems[wid]
-            if w.get_status("COMPLETE"):
-                continue
-            url = (w.we or {}).get("url")
-            if (selected is not None and url and url not in selected
-                    and not w.get_status("PUSHED")):
-                continue
-            ids.append(wid)
-        return ids
+        return to_sign(self.bal_window.willitems,
+                       selected=self._selected_willexecutors())
 
     def _build_success_report(self):
         """Mark the build step as done and list every heir in green.
@@ -2958,19 +2950,21 @@ class BalBuildWillDialog(BalDialog):
     def task_phase2(self, password):
         if self._stopping:
             return
-        if self.have_to_sign:
+        # password False: "Sign your will" was cancelled ("Aborted" is shown);
+        # nothing to try (#157: before, the signing ran and failed silently).
+        if self.have_to_sign and password is not False:
             try:
                 # #135: only the items to sign (no deselected leftovers).
-                if txs := self.bal_window.sign_transactions(
-                        password, txids=self._ids_to_sign()):
-                    for txid, tx in txs.items():
-                        # Re-parse instead of deepcopy (the signed tx can carry
-                        # wallet-derived input info holding a threading.RLock,
-                        # which copy.deepcopy cannot pickle).
-                        self.bal_window.willitems[txid].tx = Will.get_tx_from_any(
-                            str(tx)
-                        )
+                # #157: the engine stores each signed copy at once; an error
+                # keeps the ones signed before and is shown (before, it was
+                # swallowed and the row said nothing).
+                result = self.bal_window.sign_transactions(
+                    password, txids=self._ids_to_sign())
+                if result.txs:
                     self.bal_window.save_willitems()
+                if result.error is not None:
+                    self.msg_set_signing(self.msg_error(result.error))
+                elif result.txs:
                     self.msg_set_signing(self.msg_ok())
             except Exception as e:
                 self.msg_set_signing(self.msg_error(e))
@@ -5713,17 +5707,20 @@ class WillTxReviewSignDialog(BalDialog):
     # -- actions ---------------------------------------------------------------
 
     def _sign_current(self):
+        """Sign the transaction on this page, then go to the next one.
+
+        #157: the signed copy is stored in the imported will's item by the
+        engine (:func:`bal.engine.sign.sign_will_item`). Before, it was
+        dropped here and only COMPLETE was set, so "Save signed file…" wrote
+        the unsigned transactions.
+        """
         txid = self.txids[self.i]
         try:
-            tx, newly = self.bal_window._prepare_and_sign_tx(
-                self.items, txid, self.password
-            )
+            self.bal_window._prepare_and_sign_tx(self.items, txid, self.password)
         except Exception as e:
             log_error(e, self)
             self.show_error(_("Could not sign the transaction: {}").format(e))
             return
-        if newly and tx.is_complete():
-            self.items[txid].set_status("COMPLETE", True)
         self._advance()
 
     def _advance(self):
