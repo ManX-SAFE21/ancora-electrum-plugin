@@ -414,17 +414,17 @@
    [
     "https://we0.test",
     "T1"
-   ],
-   [
-    "https://we1.test",
-    "T2"
    ]
   ],
   "questions": [],
   "result": {
    "returned": {
+    "_error": true,
+    "_failed": {
+     "https://we1.test": "excluded: fee above the maximum"
+    },
     "https://we0.test": "Success",
-    "https://we1.test": "Success"
+    "https://we1.test": "Excluded"
    }
   },
   "settings": {

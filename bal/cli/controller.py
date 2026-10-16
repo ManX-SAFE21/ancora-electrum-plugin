@@ -62,6 +62,14 @@ from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
 from ..engine import build, context
 from ..engine.invalidate import INVALIDATION_LABEL, build_invalidation
+from ..engine.push import (
+    EXCLUDED_FEE,
+    FAILED,
+    RECEIVED,
+    TIMEOUT,
+    push_will,
+    select_push,
+)
 from ..engine.sign import sign_targets, sign_will_item
 
 _logger = get_logger(__name__)
@@ -1265,6 +1273,12 @@ class BalController(BalSettingsController):
         (CHANGELOG #105: before, only "Failed" was returned, so a script could
         not tell "offline" from "refused by the server"). Refused while a
         delivery hold applies (#123, rule I6).
+
+        The sending is the GUI's too since #155
+        (:mod:`bal.engine.push`): a will-executor that does not answer in
+        time now leaves its transactions PUSH_FAIL (D1), and one whose
+        current record is over the maximum fee or not valid is excluded,
+        reported in ``_failed`` with the reason (D2).
         """
         self._refuse_when_held()
         willitems = self.willitems
@@ -1275,70 +1289,41 @@ class BalController(BalSettingsController):
 
         # Skip executors the user deselected after building the will (the
         # controller's list is read from the config for every command).
-        willexecutors = Willexecutors.get_willexecutor_transactions(
-            willitems, force=force, current_willexecutors=self.willexecutors
+        selected, excluded = select_push(
+            willitems,
+            self.willexecutors,
+            force=force,
+            max_fee=self.plugin.MAX_WILLEXECUTOR_FEE.get(),
+            dust=self.wallet.dust_threshold(),
         )
-        if not willexecutors:
+        if not selected and not excluded:
             return {}
 
-        for url in willexecutors:
-            willexecutors[url].setdefault("broadcast_status", _("waiting..."))
-
-        error = {"flag": False}
-        already_present = []
-        failed = {}
-
-        def on_each(url, willexecutor, ok, exc):
-            if isinstance(exc, Willexecutors.AlreadyPresentException):
-                already_present.append(url)
-                willexecutor["broadcast_status"] = _("checking...")
-            elif ok:
-                for wid in willexecutor.get("txsids", []):
-                    willitems[wid].set_status("PUSHED", True)
-                willexecutor["broadcast_status"] = _("Success")
-            else:
-                for wid in willexecutor.get("txsids", []):
-                    willitems[wid].set_status("PUSH_FAIL", True)
-                error["flag"] = True
-                willexecutor["broadcast_status"] = _("Failed")
-                failed[url] = (
-                    willexecutor.get("broadcast_error")
-                    or (str(exc) if exc else "")
-                    or _("unknown error")
-                )
-            willexecutor.pop("txs", None)
-
-        Willexecutors.push_transactions_parallel(willexecutors, on_each=on_each)
-        # A server still busy at the global deadline never reached on_each.
-        answered = set(failed) | set(already_present) | {
-            url
-            for url, we in willexecutors.items()
-            if we.get("broadcast_status") == _("Success")
-        }
-        for url in willexecutors:
-            if url not in answered:
-                error["flag"] = True
-                willexecutors[url]["broadcast_status"] = _("Failed")
-                failed[url] = _("no answer in time")
-
-        for url in already_present:
-            willexecutor = willexecutors[url]
-            for wid in willexecutor.get("txsids", []):
-                w = self.willitems[wid]
-                try:
-                    w.set_check_willexecutor(
-                        Willexecutors.check_transaction(wid, w.we["url"])
-                    )
-                except Exception as e:
-                    _logger.error(f"check after already-present failed for {wid}: {e}")
-                    w.set_check_willexecutor(None)
-
+        result = push_will(willitems, selected)
         self.save_willitems()
-        out = {
-            url: we.get("broadcast_status", _("unknown"))
-            for url, we in willexecutors.items()
-        }
-        if error["flag"]:
+
+        out = {}
+        failed = {}
+        for url, outcome in result.outcomes.items():
+            if outcome == RECEIVED:
+                out[url] = _("Success")
+            elif outcome == FAILED:
+                out[url] = _("Failed")
+                failed[url] = result.errors.get(url) or _("unknown error")
+            elif outcome == TIMEOUT:
+                out[url] = _("Failed")
+                failed[url] = _("no answer in time")
+            else:
+                # "Already present": its copy was checked (the item's status).
+                out[url] = _("checking...")
+        for url, reason in excluded.items():
+            out[url] = _("Excluded")
+            failed[url] = (
+                _("excluded: fee above the maximum")
+                if reason == EXCLUDED_FEE
+                else _("excluded: not a valid will-executor")
+            )
+        if failed:
             out["_error"] = True
             out["_failed"] = failed
         return out

@@ -164,6 +164,7 @@
     "locktime": "2032-09-23",
     "statuses": [
      "COMPLETE",
+     "PUSH_FAIL",
      "VALID"
     ],
     "tx": "T2"
@@ -175,8 +176,8 @@
   },
   "popups": [
    [
-    "message",
-    "All transactions are broadcasted to respective Will-Executors"
+    "warning",
+    "Some transaction was not broadcasted"
    ]
   ],
   "pushed": [
@@ -208,7 +209,8 @@
   "window_events": [
    "waiting window: Selecting Will-Executors",
    "waiting window text: Broadcasting Transactions to Will-Executors:\nhttps://we0.test: Waiting...\nhttps://we1.test: Waiting...",
-   "waiting window text: Broadcasting Transactions to Will-Executors:\nhttps://we0.test: Success\nhttps://we1.test: Waiting..."
+   "waiting window text: Broadcasting Transactions to Will-Executors:\nhttps://we0.test: Success\nhttps://we1.test: Waiting...",
+   "waiting window text: Broadcasting Transactions to Will-Executors:\nhttps://we0.test: Success\nhttps://we1.test: no answer in time"
   ]
  }
 ]

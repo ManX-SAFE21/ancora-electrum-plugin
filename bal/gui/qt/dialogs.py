@@ -75,6 +75,14 @@ from ...core.summary import executor_states, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
 from ...engine.invalidate import broadcast_invalidation, build_invalidation
+from ...engine.push import (
+    ALREADY_PRESENT,
+    EXCLUDED_FEE,
+    RECEIVED,
+    TIMEOUT,
+    push_will,
+    select_push,
+)
 from .calendar import BalCalendarButton
 from .common import (
     HEIR_DUST_AMOUNT,
@@ -1460,44 +1468,49 @@ class BalBuildWillDialog(BalDialog):
             self.msg_set_invalidating(self.msg_error(e))
 
     def loop_push(self):
-        # Broadcast is "one-shot" (Group B / B2 follow-up): each selected
-        # will-executor is contacted ONCE. Transactions that are broadcast
-        # successfully become PUSHED; transactions whose server fails or times
-        # out are left as PUSH_FAIL and simply skipped - they are NOT retried
-        # automatically. A dead will-executor could otherwise never answer and
-        # make the plugin retry forever. The user can broadcast a failed
-        # transaction manually later with the "Broadcast" button. Note that
-        # get_willexecutor_transactions already excludes PUSHED transactions, so
-        # the successful ones are never re-sent on a subsequent run.
+        """The Check's "Sending" step: send the will to its will-executors.
+
+        Broadcast is "one-shot" (Group B / B2 follow-up): each selected
+        will-executor is contacted ONCE. Transactions that are broadcast
+        successfully become PUSHED; transactions whose server fails or times
+        out are left as PUSH_FAIL and simply skipped - they are NOT retried
+        automatically. A dead will-executor could otherwise never answer and
+        make the plugin retry forever. The user can broadcast a failed
+        transaction manually later with the "Broadcast" button. PUSHED
+        transactions are never re-sent on a subsequent run.
+
+        The sending is the menu's and the command line's too since #155
+        (:mod:`bal.engine.push`); this method keeps the rows, the counter
+        and the report. A will-executor excluded before sending (current
+        record over the maximum fee or not valid, D2) now gets a warning
+        row "Will-Executor excluded" with the reason; before it was
+        skipped silently.
+        """
         if self._stopping:
             return
         self.msg_set_pushing(_("Broadcasting"))
         try:
-
-            willexecutors = Willexecutors.get_willexecutor_transactions(
-                self.bal_window.willitems
+            # Only the will-executors the user actually selected, with a
+            # still valid record (address, fee within the maximum).
+            selected, excluded = select_push(
+                self.bal_window.willitems,
+                self.bal_window.willexecutors,
+                max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
+                dust=self.bal_window.window.wallet.dust_threshold(),
             )
-
-            # Only push to the will-executors the user actually selected.  We
-            # filter the mapping up-front so push_transactions_parallel only
-            # talks to the relevant servers.
-            selected = {
-                url: we
-                for url, we in willexecutors.items()
-                if Willexecutors.is_selected(
-                    self.bal_window.willexecutors.get(url),
-                ) and Willexecutors.is_valid(
-                    self.bal_window.willexecutors.get(url),
-                    max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
-                    dust=self.bal_window.window.wallet.dust_threshold(),
+            for url, reason in excluded.items():
+                self.msg_set_status(
+                    _("Will-Executor excluded"),
+                    None,
+                    "{}: {}".format(
+                        urlparse(url).hostname or url,
+                        _("fee above the maximum")
+                        if reason == EXCLUDED_FEE
+                        else _("not a valid will-executor"),
+                    ),
+                    self.COLOR_WARNING,
                 )
-            }
 
-            # Servers that report "already present" need their stored tx
-            # verified afterwards (network I/O); collect them here and process
-            # them sequentially after the parallel push, keeping the original
-            # check logic untouched.
-            already_present = []
             total = len(selected)
             done = {"count": 0}
             # CHANGELOG #85: the will-executors that have not answered yet,
@@ -1518,13 +1531,13 @@ class BalBuildWillDialog(BalDialog):
                 report = self._report()
                 report.set_step(
                     "send", "run",
-                    "{}/{} \u00b7 {} s / {} s".format(
+                    "{}/{} · {} s / {} s".format(
                         done["count"], total, elapsed, deadline
                     ),
                 )
                 waiting = sorted(urlparse(u).hostname or u for u in pending)
                 sentence = html.escape(
-                    _("Sending your will to the will-executors\u2026")
+                    _("Sending your will to the will-executors…")
                 )
                 if waiting:
                     sentence += " " + html.escape(
@@ -1535,54 +1548,75 @@ class BalBuildWillDialog(BalDialog):
                     done["count"], total, elapsed, deadline, pending,
                 )
 
-            def on_each(url, willexecutor, ok, exc):
+            def on_result(url, record, outcome, exc):
                 # Runs from a worker thread.  Do only thread-safe book-keeping
                 # plus a signal-based UI update (msg_edit_row emits a pyqtSignal,
                 # which is marshalled to the GUI thread).
                 pending.discard(url)
-                if isinstance(exc, Willexecutors.AlreadyPresentException):
-                    already_present.append(url)
-                elif ok:
-                    for wid in willexecutor["txsids"]:
-                        self.bal_window.willitems[wid].set_status("PUSHED", True)
-                else:
-                    # One-shot: mark the failed transactions and move on. They
-                    # are left as PUSH_FAIL (no automatic retry).
-                    for wid in willexecutor["txsids"]:
-                        self.bal_window.willitems[wid].set_status("PUSH_FAIL", True)
+                if outcome == TIMEOUT:
+                    # The global deadline elapsed before this server answered
+                    # (one-shot: no automatic retry; PUSH_FAIL already set).
+                    self._report().set_executor(url, "timeout", deadline)
+                    self._log_only(
+                        "{} : {}".format(url, self.msg_error(_("Timeout - no answer")))
+                    )
+                    return
                 done["count"] += 1
                 # #84b: the executor's own line in the will-executors box.
                 self._report().set_executor(
                     url,
-                    "received"
-                    if ok or isinstance(exc, Willexecutors.AlreadyPresentException)
-                    else "failed",
+                    "received" if outcome in (RECEIVED, ALREADY_PRESENT) else "failed",
                 )
                 # Show the per-server result (Ok/Ko) in bold + color so the
                 # outcome stands out, keeping the server URL in normal weight.
-                result = self.msg_ok(_("Ok")) if ok else self.msg_error(_("Ko"))
+                result = (
+                    self.msg_ok(_("Ok")) if outcome == RECEIVED else self.msg_error(_("Ko"))
+                )
                 self._log_only("{} : {}".format(url, result))
                 self.msg_set_pushing(_status_line())
 
-            def on_timeout(url, willexecutor):
-                # The global deadline elapsed before this server answered. Mark
-                # its txs as failed and move on (one-shot: no automatic retry).
-                # The user can broadcast them manually later if desired.
-                pending.discard(url)
-                for wid in willexecutor.get("txsids", []):
-                    self.bal_window.willitems[wid].set_status("PUSH_FAIL", True)
-                self._report().set_executor(url, "timeout", deadline)
+            check_rows = {}
+
+            def on_check_start(url, wid):
+                """An "already present" copy is being checked: its row."""
+                check_rows[wid] = self._log_only(
+                    "{} : <b>{}</b>".format(
+                        _("checking {} - {}").format(
+                            self.bal_window.willitems[wid].we["url"], wid
+                        ),
+                        _("Waiting"),
+                    )
+                )
+
+            def on_check_done(url, wid, res):
+                """Its answer: the report line and the row, in colour."""
+                checked = self.bal_window.willitems[wid].get_status("CHECKED")
+                if res is Willexecutors.NO_ANSWER:
+                    # #147: it has the will, it did not answer the check.
+                    self._report().set_executor(
+                        url, "no_check_answer", Willexecutors.CHECK_TIMEOUT
+                    )
+                else:
+                    self._report().set_executor(
+                        url, "verified" if checked else "failed"
+                    )
+                result = self.msg_ok(checked) if checked else self.msg_error(checked)
                 self._log_only(
-                    "{} : {}".format(url, self.msg_error(_("Timeout - no answer")))
+                    "{} : {}".format(
+                        _("checked {} - {}").format(
+                            self.bal_window.willitems[wid].we["url"], wid
+                        ),
+                        result,
+                    ),
+                    check_rows.get(wid),
                 )
 
             if self._stopping:
                 return
             # Push to all selected will-executors in parallel: a slow/dead
-            # server no longer blocks the others, so the wizard's "Broadcasting"
-            # step is no longer sequential.  Each server keeps a short retry
-            # behaviour, and a global deadline guarantees the wizard always
-            # proceeds even if a server never answers.
+            # server no longer blocks the others, and a global deadline
+            # guarantees the wizard always proceeds even if a server never
+            # answers.
             push_start = time.time()
             for url in selected:
                 self._report().set_executor(url, "waiting")
@@ -1599,56 +1633,34 @@ class BalBuildWillDialog(BalDialog):
                     return
                 self.msg_set_pushing(_status_line())
 
-            Willexecutors.push_transactions_parallel(
-                selected, on_each=on_each, on_timeout=on_timeout, on_tick=on_tick
-            )
+            # The final summary line comes before the "already present"
+            # checks, as before: they are done after the parallel push.
+            def on_check_start_first(url, wid):
+                if not summary_done["done"]:
+                    summary_done["done"] = True
+                    self.msg_set_pushing(
+                        "{}/{} ({}s)".format(done["count"], total,
+                                             int(time.time() - push_start))
+                    )
+                on_check_start(url, wid)
 
-            # Final summary line with the total elapsed time.
-            self.msg_set_pushing(
-                "{}/{} ({}s)".format(done["count"], total,
-                                     int(time.time() - push_start))
-            )
-
-            # Verify the "already present" servers (sequential, original logic).
+            summary_done = {"done": False}
             self.bal_plugin = self.bal_window.bal_plugin
-            for url in already_present:
-                for wid in willexecutors[url]["txsids"]:
-                    if self._stopping:
-                        return
-                    row = self._log_only(
-                        "{} : <b>{}</b>".format(
-                            _("checking {} - {}").format(
-                                self.bal_window.willitems[wid].we["url"], wid
-                            ),
-                            _("Waiting"),
-                        )
-                    )
-                    w = self.bal_window.willitems[wid]
-                    res = Willexecutors.check_transaction(wid, w.we["url"])
-                    w.set_check_willexecutor(res)
-                    # Show the CHECKED result in bold + color (green True /
-                    # red False) so the outcome stands out, keeping the server
-                    # URL and tx id in normal weight.
-                    checked = self.bal_window.willitems[wid].get_status("CHECKED")
-                    if res is Willexecutors.NO_ANSWER:
-                        # #147: it has the will, it did not answer the check.
-                        self._report().set_executor(
-                            url, "no_check_answer", Willexecutors.CHECK_TIMEOUT
-                        )
-                    else:
-                        self._report().set_executor(
-                            url, "verified" if checked else "failed"
-                        )
-                    result = self.msg_ok(checked) if checked else self.msg_error(checked)
-                    row = self._log_only(
-                        "{} : {}".format(
-                            _("checked {} - {}").format(
-                                self.bal_window.willitems[wid].we["url"], wid
-                            ),
-                            result,
-                        ),
-                        row,
-                    )
+            push_will(
+                self.bal_window.willitems,
+                selected,
+                on_result=on_result,
+                on_tick=on_tick,
+                should_stop=lambda: self._stopping,
+                on_check_start=on_check_start_first,
+                on_check_done=on_check_done,
+            )
+            if not summary_done["done"]:
+                # Final summary line with the total elapsed time.
+                self.msg_set_pushing(
+                    "{}/{} ({}s)".format(done["count"], total,
+                                         int(time.time() - push_start))
+                )
 
             # One-shot broadcast: we deliberately do NOT raise/retry when some
             # will-executors failed. Their transactions stay PUSH_FAIL and are
