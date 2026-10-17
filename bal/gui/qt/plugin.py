@@ -399,6 +399,10 @@ class Plugin(BalPlugin, EventListener):
     def _wallet_activity(self, wallet):
         """React to wallet activity (new transaction / sync update).
 
+        #160: first the will summary of the wallet's window is told
+        (:meth:`BalWindow.notify_wallet_activity`), so "No will in force"
+        turns red when coins arrive in an empty wallet.
+
         Does nothing while ``GUI_AUTO_REBUILD_ENABLED`` is False (the default
         since #149), whatever the stored AUTO_REBUILD value is.
 
@@ -414,6 +418,13 @@ class Plugin(BalPlugin, EventListener):
         thread-safe state and defers all work to the BalWindow (which marshals
         itself onto the GUI thread through QTimer).
         """
+        # #160: the will summary follows the balance ("No will in force" is
+        # red only with funds), whatever the auto rebuild switches say.
+        for win in list(self.bal_windows.values()):
+            if getattr(win, "wallet", None) == wallet:
+                notify = getattr(win, "notify_wallet_activity", None)
+                if notify is not None:
+                    notify()
         # The switch is checked first, so a True left in the config by an
         # older version cannot start the flow.
         if not self.GUI_AUTO_REBUILD_ENABLED:

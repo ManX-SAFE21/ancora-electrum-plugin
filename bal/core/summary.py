@@ -292,7 +292,7 @@ def _heirs_row(heirs_count, prepared=True):
 
 def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
                  still_active=None, warn_months=None, long_dates=False,
-                 selected=None, in_force=None):
+                 selected=None, in_force=None, has_funds=None):
     """Describe the will in force for the summary box of the Will tab.
 
     Args:
@@ -329,6 +329,12 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
             alone, a copy already sent that the prepared will reuses, being
             VALID again, was left out and an older, LATER will was named as
             the will in force). None: ``still_active`` as before.
+        has_funds: #160 (owner): False when the wallet shows no balance.
+            Then "No will in force" is not red: with nothing in the wallet
+            there is nothing to protect yet (and the offline computer of a
+            cold wallet, which never shows a balance, only signs). The box
+            says so in grey, keeps "Build Your Will" and points to Tools >
+            "Sign will offline...". None (unknown) or True: red, as before.
 
     Returns:
         A dict: ``state`` (``"ok"``, ``"to_sign"``, ``"to_send"``,
@@ -346,7 +352,8 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         return _with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
                              is_basic_mode, _now(now), still_active or [],
                              warn_months, datetext.utc_text if long_dates else _day,
-                             long_dates, selected, in_force), willitems or {}, selected)
+                             long_dates, selected, in_force, has_funds),
+                             willitems or {}, selected)
     except Exception:
         return None
 
@@ -376,7 +383,7 @@ def _with_deselected(summary, willitems, selected):
 
 def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
                   still_active, warn_months=None, day=_day, compare=False,
-                  selected=None, in_force=None):
+                  selected=None, in_force=None, has_funds=None):
     """:func:`will_summary` without the safety net (see there).
 
     ``day`` writes a date; ``compare`` adds the "In force now" / "After
@@ -399,6 +406,21 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
             note = _(
                 "Your previous will was invalidated on the blockchain: build "
                 "and sign a new one, otherwise nobody will receive your bitcoin."
+            )
+        elif has_funds is False:
+            # #160 (owner): an empty wallet has nothing to protect yet, and
+            # the offline computer of a cold wallet (no balance shown) only
+            # signs: grey, not red, and the way to the offline signing.
+            return _summary(
+                "none", "info", _("No will yet"),
+                rows=[_heirs_row(heirs_count, prepared=bool(willitems))],
+                note=_(
+                    "This wallet shows no balance: when it holds bitcoin, "
+                    "create your will so it reaches your heirs.\nDo you only "
+                    "need to sign a will brought on a USB stick? Use Tools > "
+                    "Sign will offline."
+                ),
+                action="wizard", action_text=_("Build Your Will"),
             )
         else:
             note = _("Until you create your will, nobody will receive your bitcoin.")
