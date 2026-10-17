@@ -84,7 +84,7 @@ from ...engine.push import (
     push_will,
     select_push,
 )
-from ...engine.sign import to_sign
+from ...engine.sign import signing_outcome, to_sign
 from ...engine.verify import FAILED, NO_ANSWER, verify_targets, verify_will
 from .calendar import BalCalendarButton
 from .common import (
@@ -1276,6 +1276,61 @@ class BalBuildWillDialog(BalDialog):
         """
         return to_sign(self.bal_window.willitems,
                        selected=self._selected_willexecutors())
+
+    def _signing_left(self):
+        """What is left to sign, or None when the will is signed (#159).
+
+        The engine's :func:`bal.engine.sign.signing_outcome` over the copies
+        of "sign all" (no deselected leftovers). Never raises: when it cannot
+        be read, None (as before #159, "Ok").
+        """
+        try:
+            outcome = signing_outcome(self.bal_window.willitems,
+                                      selected=self._selected_willexecutors())
+        except Exception as e:
+            _logger.debug(f"signing outcome failed: {e!r}")
+            return None
+        if outcome.partial or outcome.unsigned:
+            return outcome
+        return None
+
+    def _show_signing_outcome(self):
+        """The "Signing your will" row after the signing (#159, H1 / H2).
+
+        "Ok" only when every copy is signed. Otherwise an orange line that
+        says why (a watch-only wallet has no keys: sign on the offline
+        computer, or on the cosigners' computers for a multisig; a multisig
+        signed here needs another signer) and, below it (owner), that the
+        way to sign depends on the
+        wallet type, which Electrum shows in its window title. Before, the
+        row said "Ok" although nothing, or only one signature of two, was
+        made.
+        """
+        left = self._signing_left()
+        if left is None:
+            self.msg_set_signing(self.msg_ok())
+            return
+        wallet = self.bal_window.wallet
+        if left.unsigned and wallet.is_watching_only():
+            # A multisig has ``n`` cosigners (Electrum's Multisig_Wallet);
+            # watch-only, its signatures are made on their computers (owner).
+            if getattr(wallet, "n", 1) > 1:
+                text = _("Not signed: this wallet has no keys (watch-only). "
+                         "Sign it on the cosigners' computers.")
+            else:
+                text = _("Not signed: this wallet has no keys (watch-only). "
+                         "Sign it on the offline computer.")
+        elif left.partial:
+            have, required = min(left.partial)
+            text = _("{} of {} signatures: another signer must sign.").format(
+                have, required)
+        else:
+            text = _("Not signed yet.")
+        self.msg_set_signing(self.msg_warning(text))
+        hint = _("The way to sign depends on the wallet type, which Electrum "
+                 "shows in the window title.")
+        row = self.msg_edit_row(hint)
+        self._report().put("warnings", ("row", row), hint)
 
     def _build_success_report(self):
         """Mark the build step as done and list every heir in green.
@@ -2966,7 +3021,7 @@ class BalBuildWillDialog(BalDialog):
                 if result.error is not None:
                     self.msg_set_signing(self.msg_error(result.error))
                 elif result.txs:
-                    self.msg_set_signing(self.msg_ok())
+                    self._show_signing_outcome()
             except Exception as e:
                 self.msg_set_signing(self.msg_error(e))
 
@@ -3004,7 +3059,20 @@ class BalBuildWillDialog(BalDialog):
         # sign / broadcast) finished without errors.  Give it an explicit
         # left-side label ("All done") so this closing Ok is not an orphan
         # result like the other rows have.
-        self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_ok()))
+        # #159 (H1, H2): "Ok" only when the will is signed; a watch-only
+        # wallet or a multisig waiting for another signer still has to sign.
+        left = self._signing_left()
+        if left is None:
+            self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_ok()))
+        elif left.partial:
+            # Owner: a multisig signed here ("1 of 2") is partly signed, not
+            # "still to sign" (the signature made here counts).
+            self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_warning(
+                _("Will partly signed: complete it with the missing "
+                  "signatures."))))
+        else:
+            self.msg_edit_row("{}:\t{}".format(
+                _("All done"), self.msg_warning(_("Will still to sign"))))
 
         # Safety net (CHANGELOG #69): warn when an executor still holds a
         # transaction of an OLDER will that could be executed before the

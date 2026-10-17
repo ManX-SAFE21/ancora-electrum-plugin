@@ -289,7 +289,7 @@
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "Finished"
   ],
   "items": [
@@ -386,7 +386,9 @@
      "The delivery date was automatically moved one day earlier so the updated will can correctly replace the previous one.\nPlease sign (and broadcast) to confirm the change."
     ],
     "problems": [],
-    "warnings": []
+    "warnings": [
+     "All done:\tWill still to sign"
+    ]
    },
    "changes": [
     [
@@ -478,7 +480,7 @@
    "Signing your will:\t<b>Aborted</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "Finished"
   ],
   "settings": {
