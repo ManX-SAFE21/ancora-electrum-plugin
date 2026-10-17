@@ -48,6 +48,7 @@ No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 from electrum.logging import get_logger
 
 from ..core.will import Will
+from .merge import merge_summary
 
 __all__ = [
     "SignResult",
@@ -55,6 +56,7 @@ __all__ = [
     "sign_targets",
     "sign_will",
     "sign_will_item",
+    "signing_outcome",
     "to_sign",
 ]
 
@@ -104,6 +106,20 @@ def to_sign(willitems, txids=None, selected=None):
     """
     return [t for t in sign_targets(willitems, txids, selected)
             if not willitems[t].get_status("COMPLETE")]
+
+
+def signing_outcome(willitems, selected=None):
+    """How far the will is signed: a :class:`bal.engine.merge.MergeSummary`.
+
+    Counts the copies of "sign all" (:func:`sign_targets`, without the
+    deselected leftovers when *selected* is given): ``signed``, ``partial``
+    (a multisig waiting for another signer, as ``(have, required)``) and
+    ``unsigned`` (no signature: e.g. a watch-only wallet, whose keys are on
+    another computer). #159: the Check says "Ok" for the signing only when
+    nothing is left to sign (before, it said "Ok" for a watch-only wallet
+    that signed nothing, H1, and for a multisig at "1 of 2", H2).
+    """
+    return merge_summary(willitems, sign_targets(willitems, selected=selected))
 
 
 class SignResult:

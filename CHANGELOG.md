@@ -10302,3 +10302,54 @@ after "Merge"; offline signing simulated by file (4 signed, sent and
 verified 4/4); an unsigned file gives "0 signed, 4 still to sign", the
 Check asks the password; export saves ".json", "Merge" / "Import" show
 JSON first.
+
+## 159. The Check says "Ok" for the signing only when the will is signed
+
+**Date:** 2026-10-17
+
+**Why (owner):** third step towards the offline signing (cold wallet,
+multisig). The analysis of 2026-10-16 found that "Check your will" wrote
+"Signing your will: Ok" and "All done: Ok" when nothing was signed:
+- H1: a watch-only wallet (the keys are on the offline computer) prepared
+  the will, signed nothing and said "Ok" twice;
+- H2: a multisig 2-of-3 signed by one cosigner ("1 of 2") said "Ok" too.
+The same "All done: Ok" showed after a Cancel at "Sign your will", with
+the automatic signing off and after a signing error.
+Owner decisions 2026-10-17: no wallet-type label in the Will tab (Electrum
+already shows the type in its window title and status bar; a label of our
+own could break with an Electrum change); at the signing, say that the way
+to sign depends on the wallet type; a multisig signed here is "partly
+signed", not "still to sign".
+
+**What changed:**
+- `bal/engine/sign.py`: `signing_outcome` (how far the copies of "sign
+  all" are signed: signed, partly signed as "have of required", not
+  signed), using the #158 `merge_summary`.
+- `bal/gui/qt/dialogs.py` (the Check): the "Signing your will" row says
+  "Ok" only when every copy is signed; otherwise, in orange: "Not signed:
+  this wallet has no keys (watch-only). Sign it on the offline computer."
+  ("... on the cosigners' computers." for a watch-only multisig), or "1 of
+  2 signatures: another signer must sign.", and below it "The way to sign
+  depends on the wallet type, which Electrum shows in the window title."
+  The last row "All done" says "Ok" only when the will is signed;
+  otherwise "Will still to sign", or "Will partly signed: complete it with
+  the missing signatures." for a multisig signed here. These lines also go
+  into the report's "Attention" box; the "Sign" step of the bar is orange.
+  A normal wallet is unchanged. New texts translated (IT, ES).
+
+**Tests:** `tests/test_check_signing_honest.py` (new, 5 tests, the test
+wallets of `tests/test_engine_merge.py`, three fake will-executors):
+watch-only, watch-only multisig and multisig "1 of 2" (the rows, the hint,
+"All done", the orange step, nothing sent, the same at the second Check);
+the normal wallet unchanged; the engine's counts. On the code before #159
+the first three fail ("Ok"). Golden files `tests/golden/5e/check/`
+`auto_sign_off`, `cancel_at_sign`, `phase2_error` and
+`owner_drafts_128` (the #128 owner case, password cancelled): "All done" is
+now "Will still to sign" (nothing was signed there).
+
+**Verification:** ruff clean; affected tests 245 passed; whole suite in one
+order: 2441 passed, 1 failed (the `owner_drafts_128` golden, the expected
+"All done" change above; updated with the owner's OK, its file then 22
+passed). Owner's ZIP test on Electrum 4.8.2: a watch-only wallet made
+from the test wallet's public key (the rows above, "Sign" orange, nothing
+sent); the normal test wallet unchanged (in force, verified 4/4).
