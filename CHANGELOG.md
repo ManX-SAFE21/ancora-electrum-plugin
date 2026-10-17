@@ -10234,3 +10234,71 @@ signed); a will-executor added, then deselected: the "≡" menu's Sign left
 its copy unsigned ("Draft"), the right click "sign" on that row signed it.
 Whole suite in one order (owner rule 2026-10-16: both orders every
 2-3 steps): 2429 passed, goldens unchanged.
+
+## 158. One shared "Merge"; a signed copy only when really signed
+
+**Date:** 2026-10-17
+
+**Why (owner):** second step towards the offline signing (cold wallet,
+USB stick, multisig). The analysis of 2026-10-16 ran the whole file route
+on test wallets (a watch-only online wallet with the keys offline; a
+multisig 2-of-3 with cosigner A online and B offline; a watch-only
+multisig with A and B offline): prepare, export, import into Will Details
+and Sign on the other computer, export, "Merge" on the online computer,
+Check. It works; the faults found on the way back ("Merge"):
+- H4 (safety): "Merge" copied the file's "signed" status before looking
+  at the transaction. A file saying "signed" with unsigned transactions
+  inside (an old file, a damaged one) marked the copies signed, and the
+  Check then sent them unsigned to the will-executors (verified on the
+  code before #158: three unsigned copies sent);
+- H3: after a merge a signed copy kept its old signature count ("1 of 2");
+- H5: "Merge" was written twice (window, command line) and the local
+  validity pass after it three times (also the QR / audio import).
+Owner decisions 2026-10-16: one "Merge"; a copy is signed only when its
+transaction is; a message after "Merge" says what came in.
+
+**What changed:**
+- `bal/engine/merge.py` (new): `merge_items` (the rules: the live copy is
+  kept; sent / verified / mempool / confirmed come from the file; the
+  signatures are combined, a multisig's add up; signed only when the
+  transaction is complete; a signed copy counts all its signatures),
+  `local_validity_pass`, `merge_will` (merge, save, check, save) and
+  `merge_summary`.
+- `BalWindow.merge_will` (the Will tab menu "Merge", Will Details'
+  "Merge", "Merge transaction"), `BalController.merge_will`
+  (`bal_will_merge`) and the QR / audio import's validity pass use it.
+- The message after a merge (owner): "Merge done: {} transaction(s)
+  signed, {} still to sign.", and for a multisig waiting for another
+  signer "{} transaction(s) have only {} of {} signatures: another signer
+  must sign them.". The menu "Merge" opens its own file window ("Open
+  will file") so Electrum's "Your will were successfully imported" no
+  longer comes first. `bal_will_merge` also returns `signed`,
+  `partly_signed`, `unsigned`. New texts translated (IT, ES).
+- Files (owner's ZIP test: "Merge" did not find the exported will): the
+  will export saved a file with no extension, which the "JSON" filter of
+  the file windows hid. The export now saves "...will.json"
+  (`export_meta_gui` passes `default_extension`); the file windows of
+  "Merge" and "Import" show "JSON" first and "All files" second (owner:
+  JSON first), for older files. The content is still JSON, unchanged.
+
+**Tests:** `tests/test_engine_merge.py` (new, 8 tests, test wallets made
+from throw-away testnet keys, three fake will-executors): the watch-only
+wallet with the keys offline (prepared, carried, signed, merged: "3
+signed", sent signed); a file saying "signed" with unsigned transactions,
+into the will and into an empty will (not signed, nothing sent); the
+multisig second signer (1 of 2, then 2 of 2, sent signed); the watch-only
+multisig with two offline signers (after A: "1 of 2", nothing sent; after
+B: signed, sent); the command line's counts; the file windows (JSON first, the export
+saves ".json"); no other copy of the merge.
+On the code before #158 the H4 and H3 cases fail (the Check sent three
+unsigned copies). `tests/test_import_will_details.py`: its fake window
+gets the message box. `tests/test_gui_export_dialogs.py`: the export
+title is "will.json".
+
+**Verification:** ruff clean; whole suite in one order: 2436 passed
+(before the file-name fix); after it, the export / import and merge tests
+passed; goldens unchanged. Owner's ZIP tests on Electrum 4.8.2: one message
+after "Merge"; offline signing simulated by file (4 signed, sent and
+verified 4/4); an unsigned file gives "0 signed, 4 still to sign", the
+Check asks the password; export saves ".json", "Merge" / "Import" show
+JSON first.

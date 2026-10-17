@@ -75,6 +75,7 @@ from ...core.summary import executor_states, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
 from ...engine.invalidate import broadcast_invalidation, build_invalidation
+from ...engine.merge import local_validity_pass
 from ...engine.push import (
     ALREADY_PRESENT,
     EXCLUDED_FEE,
@@ -4707,7 +4708,9 @@ class WillExportDialog(BalDialog):
             return
         if self.content_check.isChecked():
             exporter = partial(self.bal_window.export_json_file, will=items)
-            title = "will"
+            # #158: the will file is JSON; before, "will" saved a name
+            # without ".json" that the import windows' JSON filter hid.
+            title = "will.json"
         else:
             exporter = partial(self.bal_window.export_tx_file, will=items)
             title = "will_tx"
@@ -4947,8 +4950,9 @@ class WillImportDialog(BalDialog):
 def _local_validity_pass(bal_window, items):
     """Local, wallet-only validity check (no server, no expiry raise).
 
-    Mirrors the check that :meth:`BalWindow.merge_will` runs after a merge so
-    the QR / audio import and the file-merge paths behave identically.
+    The same check as after a merge, so the QR / audio import and the
+    file-merge paths behave identically: since #158 it is the engine's
+    :func:`bal.engine.merge.local_validity_pass`.
     """
     date_to_check = getattr(bal_window, "date_to_check", None)
     if date_to_check is None:
@@ -4956,24 +4960,13 @@ def _local_validity_pass(bal_window, items):
             bal_window.bal_plugin.is_basic_mode(),
             bal_window.will_settings,
         )
-    history_label = bal_window.bal_plugin.HISTORY_LABEL.get()
     try:
-        Will.add_willtree(items)
-        all_utxos = Util.get_available_utxos(
+        local_validity_pass(
             bal_window.wallet,
-            history_label,
-            Will.get_min_locktime(items, default_value=date_to_check),
-        )
-        Will.check_invalidated(
-            items, Will.utxos_strs(all_utxos), bal_window.wallet
-        )
-        Will.search_rai(
-            Will.get_all_inputs(items, only_valid=True),
-            all_utxos,
+            bal_window.bal_plugin.HISTORY_LABEL.get(),
             items,
-            bal_window.wallet,
+            date_to_check,
         )
-        Will.check_signatures(items, bal_window.wallet)
     except Exception as e:
         log_error(e, bal_window)
 

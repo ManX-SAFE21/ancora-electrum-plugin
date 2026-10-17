@@ -386,6 +386,9 @@ def _make_merge_fake(willitems):
         flush_wallet_db=lambda: None,
     )
     fake.save_willitems = MethodType(window_mod.BalWindow.save_willitems, fake)
+    # #158: the merge ends with a message saying what came in.
+    fake.show_message = lambda msg: calls.append(("show_message", msg))
+    fake._merge_message = MethodType(window_mod.BalWindow._merge_message, fake)
     return fake, calls
 
 
