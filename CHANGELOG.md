@@ -10353,3 +10353,78 @@ order: 2441 passed, 1 failed (the `owner_drafts_128` golden, the expected
 passed). Owner's ZIP test on Electrum 4.8.2: a watch-only wallet made
 from the test wallet's public key (the rows above, "Sign" orange, nothing
 sent); the normal test wallet unchanged (in force, verified 4/4).
+
+## 160. Tools > "Sign will offline...": the guided offline signing
+
+**Date:** 2026-10-17
+
+**Why (owner):** fourth step towards the offline signing (cold wallet,
+USB stick). The offline computer (the keys) signed the will carried from
+the online computer (a watch-only wallet) through the Will tab's "Import"
+and the Will Details window: the will's whole history as coloured boxes,
+buttons that make no sense there ("Merge" would mix the file into the
+offline wallet's own will, "Broadcast will"), and nothing in plain words
+about what was signed. The plugin of the offline computer also showed a
+red "No will in force ... Build Your Will", which invites the wrong
+action. Owner decisions 2026-10-17: one entry in Electrum's Tools menu
+that guides the signing (no "role" setting, no first-run question);
+drawings of our own in the plugin's colours; "No will in force" red only
+when the wallet shows a balance. Verified first: a plain Electrum (no
+plugin) cannot read the plugin's will file nor its list of transactions
+(one transaction per file only), so the offline computer needs the plugin;
+it can sign a single will transaction, which the plugin merges back (kept
+for a later step).
+
+**What changed:**
+- `bal/engine/offline_sign.py` (new, no Qt): `file_problem` (why this
+  wallet cannot sign the file: no keys, nothing to sign, already signed,
+  another wallet or a cosigner that has already signed, Electrum's
+  `can_sign`), `file_summary` (the heirs with their real amounts and
+  addresses, read as the Future view and the PDF do, the message, the
+  delivery date, the will-executors and their fees), `sign_file` (the one
+  signing of #157, "sign all" without the will-executor selection rule)
+  and `signed_file_data` (the JSON will format of the export, so "Merge"
+  reads it).
+- `bal/gui/qt/offline_sign.py` (new): the window, "Step N of 3" with big
+  buttons: 1. choose the will file on the USB stick; 2. check the heirs
+  (name, amount, address), the delivery date and the will-executors;
+  3. "Sign all" (one password, in the "Please wait" window) and "Save on
+  the USB stick…" (`<wallet>-will-signed-<date>.json`); a last page says
+  where the file is and what to do on the online computer. A watch-only
+  wallet gets one page saying it cannot sign; a file that cannot be signed
+  gets a plain message; closing a signed will not saved yet asks first.
+  The drawings (USB stick, sheet under a magnifier, padlock, tick, orange
+  warning) are painted in the brand colours, no image files. The file is a
+  copy: the wallet's own will is never touched, nothing is sent.
+- `bal/gui/qt/window.py`: the Tools menu entry "Sign will offline…"
+  (`show_offline_sign_dialog`), `sign_will_file`; the will summary gets
+  the balance (`wallet_has_funds`) and is redrawn when the wallet gets or
+  loses its balance (`notify_wallet_activity`, through a queued signal to
+  the GUI thread); `bal/gui/qt/plugin.py`: Electrum's wallet events call it.
+- `bal/core/summary.py`: `has_funds`: with no will and no balance the box
+  is grey, "No will yet", keeps "Build Your Will" and says "Do you only
+  need to sign a will brought on a USB stick? Use Tools > Sign will
+  offline."; with a balance (or unknown) it stays red as before; the other
+  red boxes (previous will invalidated, delivery date passed) unchanged.
+- New texts translated (IT, ES); the names of Electrum's Tools menu
+  ("Strumenti", "Herramientas") checked in Electrum's own catalogs.
+
+**Tests:** `tests/test_offline_sign.py` (new, 13 tests, the test wallets
+of `tests/test_engine_merge.py`, three fake will-executors): the whole
+route (watch-only online, the window signs offline, "Merge", the Check
+sends three signed copies); a multisig 2-of-3 (A: "1 of 2 signatures",
+A again refused, B: signed, merged); a watch-only wallet; files that
+cannot be signed (already signed, another wallet, not a will file,
+unreadable); the engine's reasons in order; Cancel at the password; the
+question when closing unsaved; the file name and the drawings; the Tools
+menu entry; the summary box red / grey by balance; the window following
+the balance.
+
+**Verification:** ruff clean; affected tests (summary, goldens, layering)
+852 passed; ZIP built, external zip load and smoke test OK on 4.8.2;
+screenshots of every page in Italian checked. Owner's ZIP test on
+Electrum 4.8.2: watch-only wallet, Check, Export > File; the test wallet
+with keys, Tools > "Sign will offline…", three steps, saved; back on the
+watch-only wallet, "Merge" (the four copies blue: signed), Check (green:
+sent and verified 4 of 4). Whole suite in both orders: 2455 passed each
+time (26:49 and 25:42), goldens unchanged.

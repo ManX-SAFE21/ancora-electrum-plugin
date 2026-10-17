@@ -60,6 +60,7 @@ from ...engine.invalidate import (
 )
 from ...engine.merge import merge_summary
 from ...engine.merge import merge_will as engine_merge_will
+from ...engine.offline_sign import sign_file as engine_sign_file
 from ...engine.push import (
     ALREADY_PRESENT,
     EXCLUDED_FEE,
@@ -145,6 +146,7 @@ from .dialogs import (
 from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
 from .lists import HeirListWidget, PreviewList
+from .offline_sign import OfflineSignDialog
 from .widgets import (
     MESSAGE_WARNING_STYLE,
     LockTimeWidget,
@@ -394,6 +396,10 @@ class BalWindow:
         self._settings_ready = False
         # Refreshes the setting fields on the GUI thread (rule I5).
         self._settings_relay = _SettingsRelay(self.refresh_setting_fields)
+        # #160: Electrum's wallet events come on another thread; the will
+        # summary follows the balance (red only with funds) on the GUI one.
+        self._funds_relay = _SettingsRelay(self._refresh_summary_if_funds_changed)
+        self._summary_has_funds = None
         self.ok = False
         self.disable_plugin = True
         # Guard against wiring the menu/tabs more than once for the same window.
@@ -465,6 +471,11 @@ class BalWindow:
         tools_menu.addSeparator()
         self.tools_menu.willexecutors_action = tools_menu.addAction(
             _("&Will-Executors"), self.show_willexecutor_dialog
+        )
+        # #160 (owner): the offline computer of a cold wallet signs the
+        # will carried on a USB stick from one guided window.
+        self.tools_menu.offline_sign_action = tools_menu.addAction(
+            _("Sign will offline…"), self.show_offline_sign_dialog
         )
         self.window.view_menu.addSeparator()
         add_toggle_action(self.heirs_tab)
@@ -776,6 +787,37 @@ class BalWindow:
         wizard_dialog = BalWizardDialog(self)
         wizard_dialog.exec()
 
+    def show_offline_sign_dialog(self):
+        """Tools > "Sign will offline..." (#160): the guided offline signing.
+
+        The window of :mod:`bal.gui.qt.offline_sign`: choose the will file
+        carried on a USB stick, check it, sign it, save it. Returns the
+        window (the tests drive it).
+        """
+        dialog = OfflineSignDialog(self)
+        show_on_top(dialog)
+        return dialog
+
+    def sign_will_file(self, items, password, on_done):
+        """Sign the copies of a will file in the "Please wait" window (#160).
+
+        *items* is the file loaded by the offline signing window, never the
+        live will. The work is :func:`bal.engine.offline_sign.sign_file`
+        (the one signing of #157); ``on_done((result, outcome))`` runs on
+        the GUI thread when it ends.
+        """
+        task = partial(engine_sign_file, self.wallet, items, password)
+
+        def on_failure(exec_info):
+            """Log the error (the window shows it)."""
+            log_error(exec_info, self)
+
+        self.waiting_dialog = BalWaitingDialog(
+            self, _("Signing transactions..."), task, on_done, on_failure,
+            exe=False,
+        )
+        self.waiting_dialog.exe()
+
     def show_willexecutor_dialog(self, on_close=None):
         """The Tools -> Will-Executors window.
 
@@ -866,6 +908,10 @@ class BalWindow:
         if getattr(self, "_will_summary_busy", 0) > 0:
             widget.show_summary(busy_summary())
             return
+        # #160 (owner): "No will in force" is red only when the wallet
+        # shows a balance (an empty wallet, or the offline computer of a
+        # cold wallet, gets the grey box).
+        self._summary_has_funds = self.wallet_has_funds()
         try:
             summary = will_summary(
                 self.willitems,
@@ -881,11 +927,45 @@ class BalWindow:
                 # #135: THE will in force, the one rule of the List, the
                 # Future view and the wizard (not only the REPLACED copies).
                 in_force=context.in_force_delivery(self),
+                has_funds=self._summary_has_funds,
             )
         except Exception as e:
             _logger.debug(f"will summary failed: {e!r}")
             summary = None
         widget.show_summary(summary)
+
+    def wallet_has_funds(self):
+        """True when the wallet shows a balance, False when it shows none.
+
+        Confirmed, unconfirmed and unmatured coins together: what Electrum
+        shows. ``None`` when it cannot be read (the summary then stays as
+        before, red). Read only; never raises.
+        """
+        try:
+            return sum(self.wallet.get_balance()[:3]) > 0
+        except Exception as e:
+            _logger.debug(f"balance not read: {e!r}")
+            return None
+
+    def notify_wallet_activity(self):
+        """Electrum saw a transaction or a sync of this wallet (#160).
+
+        Called by ``Plugin._wallet_activity`` on Electrum's event thread:
+        only a signal is emitted here; :meth:`_refresh_summary_if_funds_changed`
+        runs on the GUI thread. Never raises.
+        """
+        try:
+            self._funds_relay.changed.emit()
+        except Exception as e:
+            _logger.debug(f"wallet activity not relayed: {e!r}")
+
+    def _refresh_summary_if_funds_changed(self):
+        """Redraw the will summary when the wallet got or lost its balance.
+
+        Only then: a sync pass does not redraw the box each time (#160).
+        """
+        if self.wallet_has_funds() != getattr(self, "_summary_has_funds", None):
+            self.update_will_summary()
 
     def _still_active_for_summary(self):
         """Sent txs, not VALID, still executable on-chain, any date (#84a/#84b).
