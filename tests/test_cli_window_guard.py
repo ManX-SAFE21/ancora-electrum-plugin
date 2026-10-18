@@ -41,8 +41,8 @@ from bal.cli import commands as cli_commands
 
 PW = "flowkit-test"
 
-WALLET_REFUSAL = "This wallet is open in the Safe21 Heartbeat window"
-EXECUTOR_REFUSAL = "A wallet is open in the Safe21 Heartbeat window"
+WALLET_REFUSAL = "This wallet is open in the Àncòra window"
+EXECUTOR_REFUSAL = "A wallet is open in the Àncòra window"
 
 # The controller methods that only read (or change the delivery date and
 # fee, one dict shared with the window): allowed with the window open.

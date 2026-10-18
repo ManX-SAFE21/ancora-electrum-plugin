@@ -2,7 +2,7 @@
 bal.gui.qt
 ==========
 
-The PyQt6 graphical interface of the Safe21 Heartbeat plugin.
+The PyQt6 graphical interface of the Àncòra plugin.
 
 Module map (was previously one 4000-line ``qt.py``):
 

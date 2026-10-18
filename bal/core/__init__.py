@@ -2,7 +2,7 @@
 bal.core
 ========
 
-Pure business-logic layer of the Safe21 Heartbeat Electrum plugin (based on
+Pure business-logic layer of the Àncòra Electrum plugin (based on
 Bitcoin After Life, BAL).
 
 Everything in this sub-package MUST stay completely free of any GUI / Qt

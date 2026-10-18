@@ -1,7 +1,7 @@
 import os
 
 PLUGIN_DIR = os.path.split(os.path.realpath(__file__))[0]
-DEFAULT_ICON = "bal32x32.png"
+DEFAULT_ICON = "ancora-icon-light-128.png"
 DEFAULT_ICON_PATH = "icons"
 
 

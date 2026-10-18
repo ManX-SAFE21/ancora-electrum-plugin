@@ -26,7 +26,7 @@ class WalletUtilityGUI(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Safe21 Heartbeat Wallet Utility")
+        self.setWindowTitle("Àncòra Wallet Utility")
         self.setFixedSize(500, 400)
 
         # Central widget
@@ -115,7 +115,7 @@ class WalletUtilityGUI(QMainWindow):
 
     def uninstall_wallet(self):
         self.log_message(
-            "WARNING: This will remove all Safe21 Heartbeat settings. "
+            "WARNING: This will remove all Àncòra settings. "
             "This operation cannot be undone."
         )
         self.process_wallet("uninstall")
@@ -168,9 +168,9 @@ class WalletUtilityGUI(QMainWindow):
             elif command == "uninstall":
                 have_to_save = uninstall_bal(json_wallet)
                 message = (
-                    "Safe21 Heartbeat uninstalled successfully"
+                    "Àncòra uninstalled successfully"
                     if have_to_save
-                    else "No Safe21 Heartbeat settings found to uninstall"
+                    else "No Àncòra settings found to uninstall"
                 )
 
             if have_to_save:

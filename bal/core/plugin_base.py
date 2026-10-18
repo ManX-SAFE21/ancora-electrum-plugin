@@ -388,13 +388,13 @@ class BalPlugin(BasePlugin):
         self.EVENT_DESCRIPTION = BalConfig(
             config,
             "bal_event_description",
-            N_("Safe21 Heartbeat will execution of $wallet_name\r\n heirs list:  \r\n$heirs_complete"),
+            N_("Àncòra will execution of $wallet_name\r\n heirs list:  \r\n$heirs_complete"),
             translatable=True,
         )
         self.EVENT_SUMMARY = BalConfig(
             config,
             "bal_event_summary",
-            N_("Safe21 Heartbeat - Will execution of $wallet_name"),
+            N_("Àncòra - Will execution of $wallet_name"),
             translatable=True,
         )
 

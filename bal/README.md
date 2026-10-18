@@ -1,7 +1,7 @@
-# Safe21 Heartbeat
-Safe21 Heartbeat Electrum Plugin
+# Àncòra
+Àncòra Electrum Plugin
 
-*As long as you're here, your bitcoin stays yours.* Pre-signed, time-locked
+*Àncora per te, ancòra per loro.* Pre-signed, time-locked
 backup transactions, optionally kept by independent will-executor servers:
 while you keep refreshing them nothing happens; if you stop, from the date you
 chose they send your bitcoin to the people you chose.

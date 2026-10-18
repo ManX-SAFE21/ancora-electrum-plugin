@@ -10578,3 +10578,58 @@ closed, opens and closes on click).
 external zip load and smoke test OK on 4.8.2; screenshots in Italian
 checked by the owner. Owner's ZIP test on Electrum 4.8.2: OK. Whole suite:
 2487 passed (25:51).
+
+## 163. The visible name becomes Àncòra (brand kit ancora-brand_1)
+
+**Date:** 2026-10-18
+
+**Why (owner):** the plugin has its final name: Àncòra, by Safe21 (kit
+`ancora-brand_1`: logo, icons, colours, slogan). Owner decisions: the name
+is the same in every language, with its accents wherever possible;
+"Àncòra (Safe21)" in Electrum's plugin list; the slogan "Àncora per te,
+ancòra per loro." stays Italian in every language; the will report shows
+the new logo; the logo files are used unchanged and the colours of the
+plugin's interface do not change.
+
+**What changed:**
+- `bal/core/brand.py` (new, no Qt): `NAME` ("Àncòra"), `FULLNAME`,
+  `NAME_ASCII`, `SLOGAN` and the two colours of the logo. The texts take
+  the name through `{}`, so it is never inside a text to translate (the
+  only exception: the two calendar defaults, editable with `$` tokens,
+  whose translations keep it as it is).
+- `bal/manifest.json`: `fullname` "Àncòra (Safe21)", the description
+  starts with the slogan, icon `icons/ancora-icon-light-128.png`; the accents
+  written as `\u` escapes, so the file is plain ASCII.
+- Icons: `bal16x16.png`, `bal32x32.png` and `safe21-logo.png` replaced by
+  `ancora-icon-light-16/64/128.png` (the kit's `ancora-icon-light.svg`
+  made into PNG, shapes and colours unchanged; owner: the light icon, with
+  the anchor larger in its square, 76% instead of 66%:
+  `assets/brand/svg/ancora-icon-light-plugin.svg`) and
+  `ancora-lockup.png` (the kit's file): plugin list, status bar, settings
+  dialog, window icons, will report.
+- Window titles "Àncòra - …" (`get_window_title`, the wizard's pages), the
+  wizard title, the restart message, the two command-line refusals, the
+  wallet utility, the calendar texts; the calendar `PRODID` uses "Ancora"
+  (no accents there).
+- `bal/gui/qt/report_pages.py`: the report header shows the àncòra logo;
+  the vector fallback draws the anchor and the word.
+- `README.md`, `bal/README.md`: the new name, logo and slogan.
+  `assets/brand/` (new): the kit's SVG and PNG files and a short README.
+- Catalogs (IT, ES): the texts with the old name replaced by texts with
+  `{}` and translated; the committed order of the entries kept.
+
+**Not changed (Phase 6):** the internal identity (`bal` package, `bal_*`
+keys and commands) and the labels stored in the wallet ("Safe21 Heartbeat
+backup transaction", "Safe21 Heartbeat invalidation"): the plugin
+recognises its own transactions by them.
+
+**Tests:** `tests/test_brand.py` (new): the names, the manifest (name,
+icon, description, plain ASCII), every icon named in the code is shipped,
+no text to translate holds the old name and the new name only in the two
+calendar defaults, kept by every translation. Updated:
+`test_cli_window_guard.py` (the refusal texts), `test_inheritance_report.py`
+(the logo's colours, with the image and with the vector fallback).
+
+**Verification:** ruff clean; affected tests 226 passed (48 s); ZIP built,
+external zip load and smoke test OK on 4.8.2; screenshots checked; after the first ZIP the owner chose the light icon, then a larger anchor
+(choice B of three previews).
