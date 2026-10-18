@@ -21,6 +21,16 @@ BAL plugin. The logic was reorganized to cleanly separate **business logic** fro
 auto-rebuild on new transactions, OP_RETURN heirs, and configurable calendar
 reminders.
 
+## Origin and compatibility
+
+Àncòra is a fork of Bitcoin After Life (BAL, MIT licence), maintained by
+Safe21. It keeps using the same will-executors and the same BAL welist.
+
+- Àncòra and the official BAL plugin cannot be installed together in
+  Electrum: the plugin keeps the internal name `bal`.
+- Releases of this repository are tagged `ancora-vX.Y.Z` (for example
+  `ancora-v0.7.0`) so they are not confused with BAL's own versions.
+
 ## Repository layout
 
 ```
