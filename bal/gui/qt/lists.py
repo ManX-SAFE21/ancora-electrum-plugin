@@ -1594,24 +1594,32 @@ class PreviewList(MyTreeView, MessageBoxMixin):
 
     def create_toolbar(self, config):
         toolbar, menu = self.create_toolbar_with_menu("")
+        # #161 (owner): the order of the menu. First the commands of the
+        # will in the order they are used (prepare, sign, send, check,
+        # invalidate), then the other ones; under the line the offline
+        # route, the calendar reminders and the report.
         menu.addAction(_("Prepare"), self.build_transactions)
-        menu.addAction(_("Display"), self.bal_window.preview_modal_dialog)
         menu.addAction(_("Sign"), self.ask_password_and_sign_transactions)
+        # CHANGELOG #94: "will" in every English command, with its own
+        # translation ("Broadcast" alone read "Trasmissione" and
+        # "Invalidate" read "Invalida il piano" in Electrum's Italian). #161
+        # (owner): in Italian they now read just "Invia" and "Invalida".
+        menu.addAction(_("Broadcast will"), self.broadcast)
+        menu.addAction(_("Check"), self.check)
+        menu.addAction(_("Invalidate will"), self.invalidate_will)
+        menu.addAction(_("Display"), self.bal_window.preview_modal_dialog)
         # Export/Import open a single window that offers all transports
         # (file / QR / audio). The Choose Filter / transport settings live
         # inside that window.
         menu.addAction(_("Export"), self.export_will)
         menu.addAction(_("Import"), self.import_will)
         menu.addAction(_("Merge"), self.merge_will)
-        # CHANGELOG #94 (owner): "will" in every command, the same word as
-        # the rest of the plugin ("Broadcast" alone read "Trasmissione" and
-        # "Invalidate" read "Invalida il piano" in Italian).
-        menu.addAction(_("Broadcast will"), self.broadcast)
-        menu.addAction(_("Check"), self.check)
-        menu.addAction(_("Invalidate will"), self.invalidate_will)
-        # CHANGELOG #92: the inheritance plan report (save as file / print).
         menu.addSeparator()
-        menu.addMenu(report_menu(self.bal_window, self, title=_("Will report")))
+        # #161 (owner): the guided route of a cold wallet is also here,
+        # where the owner first looked for it (and in Electrum's Tools).
+        # A lambda: Qt would pass "checked" as the window's first argument.
+        menu.addAction(_("Sign the will offline…"),
+                       lambda: self.bal_window.show_offline_sign_dialog())
 
         # The Wizard is the main entry point to create an inheritance, so make
         # it stand out: show a bold label next to a slightly larger icon (the
@@ -1630,7 +1638,8 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # CHANGELOG #95 (owner): Check is the command used most after the
         # Wizard (new funds, a change, a will-executor that did not get the
         # will), but as a small icon at the far right it was easy to miss.
-        # Same look as the Wizard, right after it, with its name on it. The
+        # Same look as the Wizard, with its name on it (#161, owner: on the
+        # right, before the calendar). The
         # tooltip names the auto-sign option as it is translated, because
         # with that option off the Check only shows how to sign and send.
         refresh = self._big_button(
@@ -1642,7 +1651,6 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             ).format(_("Auto-sign on Check")),
             self.check,
         )
-
         widget = QWidget(self)
         hlayout = QHBoxLayout(widget)
         hlayout.setContentsMargins(0, 0, 0, 0)
@@ -1654,17 +1662,21 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         calendar_menu = self.calendar_button.menu()
         calendar_menu.setTitle(_("Calendar reminders"))
         menu.addMenu(calendar_menu)
+        # CHANGELOG #92: the inheritance plan report (save as file / print),
+        # the last entry (#161, owner: after the calendar).
+        menu.addMenu(report_menu(self.bal_window, self, title=_("Will report")))
         # Toolbar order (left -> right):
-        #   Wizard | Check | Delivery time | Check Alive | fee ... Calendar
-        # The two main commands go first, on the LEFT (#95: Check used to
-        # be last); the settings widget shows its fields in ADVANCED only
-        # (#130). The row takes the toolbar's free width (stretch 1), so
-        # the buttons stay on the left even when BASIC hides every field,
-        # and the calendar sits on the right, next to Tools (owner).
+        #   Wizard | Delivery time | Check Alive | fee ... Check | Calendar
+        # #161 (owner): the Check ("Verifica/Aggiorna" in Italian) on the
+        # right, just before the calendar.
+        # The settings widget shows its fields in ADVANCED only (#130). The
+        # row takes the toolbar's free width (stretch 1), so the Wizard
+        # stays on the left even when BASIC hides every field, and the
+        # Check and the calendar sit on the right, next to Tools (owner).
         hlayout.addWidget(wizard)
-        hlayout.addWidget(refresh)
         hlayout.addWidget(self.will_settings_widget)
         hlayout.addStretch(1)
+        hlayout.addWidget(refresh)
         hlayout.addWidget(self.calendar_button)
         toolbar.insertWidget(2, widget, 1)
 

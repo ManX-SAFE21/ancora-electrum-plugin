@@ -2936,11 +2936,11 @@ class BuildReportView(QWidget):
             # #135 (owner): the "Real shares" row already says it (with the
             # total in its note): the shares are not said twice.
             note = None
-        if note and note[1]:
-            # #135 (owner): the shares change (or a first will): explained
-            # in a box with a calm title, not "Attention".
-            self.box.addWidget(self._group(
-                _("How the shares are divided"), [(note[0], None, None)], "#b26a00"))
+        # #161 (owner): the box "How the shares are divided" (#135: shown
+        # when the shares change, or for a first will) is no longer drawn:
+        # too much information, the window was no longer read. The real
+        # share of each heir is in the Heirs box below, and the explanation
+        # stays in "Details (log)".
         heirs = snapshot.get("heirs")
         if heirs:
             rows = [

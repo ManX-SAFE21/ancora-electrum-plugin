@@ -835,3 +835,35 @@ def test_no_executor_option_hidden_in_basic(make, mode, stored):
     finally:
         dialog.close()
         window.close()
+
+
+@pytest.mark.parametrize("cosigners, words", [
+    (1, "the keys are on the offline computer"),
+    (3, "made on the cosigners' computers")])
+def test_watch_only_summary_says_where_the_will_goes(make, monkeypatch,
+                                                    cosigners, words):
+    """#161 (owner): on a watch-only wallet the last page says, in a teal
+    frame, that the will is signed elsewhere and that the window "Sign the
+    will offline" opens after "Create the will"; then it opens it."""
+    s, bw = make(mode="basic")
+    monkeypatch.setattr(bw.wallet, "is_watching_only", lambda: True)
+    monkeypatch.setattr(bw.wallet, "n", cosigners, raising=False)
+    dialog = open_wizard(bw)
+    try:
+        to_executors(dialog)
+        page = press_next(dialog)
+        note = page.offline_note
+        assert words in note.text()
+        assert "«Sign the will offline»" in note.text()
+        assert "#0D9488" in note.styleSheet()
+        texts = [label.text() for label in page.findChildren(type(note))]
+        assert not any("asks for the password" in t for t in texts)
+        built, opened = [], []
+        monkeypatch.setattr(dialogs_mod, "BalBuildWillDialog",
+                            lambda bw: type("D", (), {
+                                "build_will_task": lambda self: built.append(1)})())
+        monkeypatch.setattr(bw, "after_wizard_create", lambda: opened.append(1))
+        page.next_button.click()
+        assert built == [1] and opened == [1]
+    finally:
+        dialog.close()

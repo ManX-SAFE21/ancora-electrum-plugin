@@ -10428,3 +10428,96 @@ with keys, Tools > "Sign will offline…", three steps, saved; back on the
 watch-only wallet, "Merge" (the four copies blue: signed), Check (green:
 sent and verified 4 of 4). Whole suite in both orders: 2455 passed each
 time (26:49 and 25:42), goldens unchanged.
+
+## 161. The online computer's steps of the offline signing; a five-step guided route
+
+**Date:** 2026-10-18
+
+**Why (owner):** #160 guided only the offline computer (the keys). On the
+online computer (a watch-only wallet) the owner still had to know "Export,
+choose a filter, save the file, carry it, Merge, Check". Owner: one guided
+route, as simple as possible, "one screen, one thing to do", where each
+screen says on which computer to act. After the ZIP tests the owner asked
+for: five steps with the USB stick travelling as steps of their own; online
+and offline that look different; a map of the whole route before starting;
+no file window opening by itself; a window that fits its screen; larger
+texts; no big button in the Will tab (it did not follow the steps and was
+missing on the offline computer: the Tools menus, which the owner always
+finds, open the window on the right step); the Will tab's Tools menu in a
+new order; "Invia" / "Invalida" / "Verifica/Aggiorna" as the Italian names
+of the Broadcast, Invalidate and Check commands.
+
+**What changed:**
+- `bal/engine/offline_sign.py` (no Qt): the route's steps (`STEP_PREPARE`
+  1, `STEP_CARRY` 2, `STEP_SIGN` 3, `STEP_BRING_BACK` 4, `STEP_SEND` 5);
+  `next_step` (the step to make now: watch-only, 1 while the will to sign
+  is not on a stick, 5 once it is out, none in force); `prepare_problem`
+  (no will / already signed); `stick_items` (only the copies still to
+  sign); `signed_file_problem` (nothing to sign, another wallet, the file
+  still to sign); the wallet's input addresses read from its history, so a
+  fully signed file is recognised.
+- `bal/gui/qt/offline_sign.py`: Tools > "Sign the will offline..." opens
+  the window that fits the wallet: `OnlineSignDialog` (watch-only: steps 1,
+  2, 4, 5) or `OfflineSignDialog` (keys: step 3, #160), always on the step
+  to make now. Shared frame (`_GuidedDialog`): the five-step bar
+  (`StepBar`, each step in the colour of its computer: teal online, orange
+  offline, grey for the stick travelling; "you are here"; a signatures
+  count "1 of 3" for a multisig), the place ("On THIS computer" / "On the
+  OTHER computer ...", in that colour, larger), the drawing of that
+  computer (teal with the network, orange with a padlock, with the stick
+  when it must be moved), a big title, numbered instructions in a larger
+  font, at most one big button, small links ("I already have the signed USB
+  stick →", "I still have to sign it", "See the plan"), larger. The route
+  starts with the map of the five steps ("What we will do",
+  `route_map`, painted, the cosigners' computers for a multisig); "Start"
+  shows step 1. No file window opens by itself: the screen's button opens
+  it. The window fits the height of the screen shown (`fit_height`, the
+  pages not shown ask for no room). Step 1 runs the Check when needed and
+  saves only the copies to sign (marked EXPORTED); step 5 refuses the file
+  still to sign with a warning, merges the signed file (#158) and runs the
+  Check; a multisig goes from cosigner to cosigner on the same stick. The
+  instructions name "Tools > Sign the will offline". In the check before
+  signing, an amount that depends on the will-executor shows "at least
+  ..." with a small "ⓘ" that says it is the least the recipient gets, if
+  the most expensive will-executor sends the transaction.
+- `bal/gui/qt/window.py`: `export_stick_file` (saves the will, then
+  refreshes the will summary); `after_wizard_create` (a watch-only will
+  waiting for its signatures opens the window after the wizard);
+  `show_offline_sign_dialog` without a step; the summary box's
+  "offline_sign" button opens the window.
+- `bal/gui/qt/lists.py`: no big "Sign the will offline" button. The Check
+  button moved to the right, before the calendar. The Will tab's Tools
+  menu in the owner's order: Prepare, Sign, Broadcast will, Check,
+  Invalidate will, Display, Export, Import, Merge, then under a line Sign
+  the will offline..., Calendar reminders, Will report.
+- `bal/core/summary.py`: a watch-only will to sign gets the action
+  "offline_sign" and a note that the keys are on another computer.
+- `bal/gui/qt/basic_wizard.py`: the summary page of a watch-only wallet
+  says the will is signed offline (single key / multisig);
+  `bal/gui/qt/dialogs.py`: the wizard's "Create the will" leads to the
+  window; the Check's watch-only texts name Tools > Sign the will offline.
+- `bal/gui/qt/widgets.py`: the Check window no longer draws "How the
+  shares are divided".
+- Catalogs (IT, ES): every new text translated; Italian "Broadcast will" =
+  "Invia", "Invalidate will" = "Invalida", "Check your will" =
+  "Verifica/Aggiorna" (Spanish "Enviar", "Invalidar",
+  "Verificar/Actualizar"), and the hints that quote those buttons follow.
+
+**Tests:** `tests/test_sign_offline_online.py` (new, three fake
+will-executors): the single-key route through the five steps; the links
+between 2 and 5; a multisig 2-of-3 and a 3-of-4 from the same stick; the
+wrong files; the engine's rules; a signed file without the wallet data; no
+will; the wizard; the summary box; the Tools menu opening the step to make
+now (and the summary refreshed after the stick is saved); the step bar's
+colours; the route map; the colour of each computer; the window fitting
+its screen; "at least" with its "ⓘ". Updated: `test_offline_sign.py`,
+`test_check_button.py` (toolbar order, Tools menu order),
+`test_check_signing_honest.py`, `test_gui_basic_wizard.py`,
+`test_shares_note.py`.
+
+**Verification:** ruff clean; affected tests 201 passed; ZIP built,
+external zip load and smoke test OK on 4.8.2; screenshots in Italian
+checked. Owner's ZIP tests on Electrum 4.8.2 with the test wallets
+(watch-only online, keys offline): the whole route, signed and sent; the
+fixes asked after each test checked again. Whole suite in both orders:
+2475 passed each time (24:14 and 28:22), goldens unchanged.

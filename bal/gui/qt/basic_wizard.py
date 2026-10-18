@@ -129,6 +129,9 @@ MUTED_STYLE = "QLabel{color:#6A737D;}"
 ERROR_STYLE = "QLabel{color:#C62828;}"
 OK_STYLE = "QLabel{color:#1A8F3C; font-weight:bold;}"
 SHIFT_STYLE = "QLabel{color:#8A5A00;}"
+#: #161: the watch-only note of the last page, in the route's teal frame.
+OFFLINE_NOTE_STYLE = ("QLabel{border:1px solid #0D9488; border-radius:6px;"
+                      " padding:8px; color:#1F2328;}")
 
 # ------------------------------------------------------------------ texts
 
@@ -1198,14 +1201,40 @@ class SummaryPage(_StepPage):
             self.changes_box = what_changes_box(changes)
             layout.addWidget(self.changes_box)
         layout.addSpacing(8)
-        layout.addWidget(_label(
-            _("«Create the will» prepares it, asks for the password to sign it "
-              "and sends it to the will-executors."), MUTED_STYLE, wrap=True))
+        if self._watch_only(bw):
+            # #161 (owner): a watch-only wallet cannot sign here: say where
+            # the will goes next, in a teal frame (the route's colour).
+            if getattr(bw.wallet, "n", 1) > 1:
+                text = _(
+                    "This wallet has no keys (watch-only): the signatures are "
+                    "made on the cosigners' computers. «Create the will» "
+                    "prepares it, then the window «Sign the will offline» "
+                    "opens to carry it there on a USB stick.")
+            else:
+                text = _(
+                    "This wallet has no keys (watch-only): the keys are on "
+                    "the offline computer. «Create the will» prepares it, "
+                    "then the window «Sign the will offline» opens to carry "
+                    "it there on a USB stick.")
+            self.offline_note = _label(text, OFFLINE_NOTE_STYLE, wrap=True)
+            layout.addWidget(self.offline_note)
+        else:
+            layout.addWidget(_label(
+                _("«Create the will» prepares it, asks for the password to sign it "
+                  "and sends it to the will-executors."), MUTED_STYLE, wrap=True))
         layout.addSpacing(4)
         layout.addWidget(_label(
             _("After it is created you can put the dates in your calendar with "
               "the 📅 button of the Will tab."), MUTED_STYLE, wrap=True))
 
+
+    @staticmethod
+    def _watch_only(bw):
+        """True for a watch-only wallet (#161). Never raises."""
+        try:
+            return bool(bw.wallet.is_watching_only())
+        except Exception:
+            return False
 
     @staticmethod
     def _heirs_value(bw):

@@ -21,6 +21,7 @@ Run (standalone or with pytest):
         python3 -m pytest tests/test_offline_sign.py
 """
 
+import html
 import json
 import os
 import sys
@@ -54,10 +55,11 @@ PARTLY = "1 of 2 signatures: another signer must sign."
 
 
 def _dialog(s, monkeypatch, save_as=None):
-    """The window of Tools > "Sign will offline..." on session *s*.
+    """The window of Tools > "Sign the will offline..." on session *s*.
 
-    Its message boxes are recorded in ``dialog.errors`` / ``dialog.asked``;
-    the save window answers *save_as*.
+    Its message boxes are recorded in ``dialog.errors`` / ``dialog.asked``
+    (#161: warnings in ``dialog.errors`` too); the save window answers
+    *save_as*.
     """
     monkeypatch.setattr(s.plugin, "read_file", lambda path: b"", raising=False)
     s.bw.window = SimpleNamespace(
@@ -68,6 +70,7 @@ def _dialog(s, monkeypatch, save_as=None):
     d = s.bw.show_offline_sign_dialog()
     d.errors, d.asked = [], []
     d.show_error = lambda text, *a, **kw: d.errors.append(text)
+    d.show_warning = lambda text, *a, **kw: d.errors.append(text)
     d.question = lambda text, *a, **kw: d.asked.append(text) or True
     d.ask_save_path = lambda: save_as
     return d
@@ -98,9 +101,9 @@ def test_watch_only_route_signed_offline_by_the_window(world, monkeypatch):  # n
     offline = world("keys")
     signed = os.path.join(folder, "will-signed.json")
     d = _dialog(offline, monkeypatch, save_as=signed)
-    assert _page(d) == "choose" and d.step_label.text() == "Step 1 of 3"
+    assert _page(d) == "choose" and d.bar.current == engine.STEP_SIGN
     assert d.load_file(stick) and _page(d) == "check"
-    assert d.step_label.text() == "Step 2 of 3"
+    assert d.bar.current == engine.STEP_SIGN
     text = d.details.text()
     for word in ("alice", "bob", "we0.test", "we1.test", "we2.test",
                  "Transactions to sign: 3 of 3"):
@@ -108,10 +111,12 @@ def test_watch_only_route_signed_offline_by_the_window(world, monkeypatch):  # n
     offline.act("sign all", d.sign_all)
     assert offline.user.asked == [
         ["password", "Enter your wallet password to sign the will."]]
-    assert _page(d) == "save" and d.step_label.text() == "Step 3 of 3"
-    assert d.text.text().startswith("Signed 3 of 3 transactions.")
+    assert _page(d) == "save" and d.bar.current == engine.STEP_SIGN
+    assert "Signed 3 of 3 transactions." in d.result.text()
     d.save_file()
     assert d.saved_path == signed and _page(d) == "empty"
+    # #161: next, bring the stick back to the online computer (step 4).
+    assert d.bar.current == engine.STEP_BRING_BACK
     assert d.errors == []
     # The offline wallet's own will is not touched.
     assert offline.bw.willitems == {} or not any(
@@ -136,7 +141,7 @@ def test_multisig_cosigners_sign_one_after_the_other(world, monkeypatch):  # noq
     d = _dialog(a, monkeypatch, save_as=after_a)
     assert d.load_file(stick)
     a.act("sign all", d.sign_all)
-    assert d.text.text().startswith(PARTLY)
+    assert PARTLY in d.result.text()
     d.save_file()
     # A again: this wallet has already signed.
     d2 = _dialog(a, monkeypatch)
@@ -147,7 +152,7 @@ def test_multisig_cosigners_sign_one_after_the_other(world, monkeypatch):  # noq
     d3 = _dialog(b, monkeypatch, save_as=after_b)
     assert d3.load_file(after_a)
     b.act("sign all", d3.sign_all)
-    assert d3.text.text().startswith("Signed 3 of 3 transactions.")
+    assert "Signed 3 of 3 transactions." in d3.result.text()
     d3.save_file()
     message = _merge(online, after_b)
     assert message == "Merge done: 3 transaction(s) signed, 0 still to sign."
@@ -157,11 +162,15 @@ def test_multisig_cosigners_sign_one_after_the_other(world, monkeypatch):  # noq
 
 
 def test_watch_only_wallet_cannot_sign(world, monkeypatch):  # noqa: F811
-    """Opened on a wallet with no keys: one page that says so, no button."""
-    d = _dialog(world("watch"), monkeypatch)
+    """The signing window on a wallet with no keys: one page that says so,
+    no button. #161: the Tools entry opens the online window there
+    (``tests/test_sign_offline_online.py``); this page stays for safety."""
+    s = world("watch")
+    _dialog(s, monkeypatch)
+    d = gui.OfflineSignDialog(s.bw)
     assert _page(d) == "empty"
     assert d.title.text() == "This wallet cannot sign"
-    assert d.text.text() == gui._PROBLEMS[engine.NO_KEYS]
+    assert d.text.text() == html.escape(gui._PROBLEMS[engine.NO_KEYS], quote=False)
 
 
 def test_files_that_cannot_be_signed_here(world, monkeypatch):  # noqa: F811
@@ -254,7 +263,8 @@ def test_default_file_name_and_drawings(world, monkeypatch):  # noqa: F811
     d = _dialog(world("keys"), monkeypatch)
     name = d.default_file_name()
     assert "-will-signed-" in name and name.endswith(".json")
-    for kind in ("usb", "check", "lock", "done", "stop"):
+    for kind in ("usb", "check", "lock", "done", "stop", "send",
+                 "online", "offline", "to_online", "to_offline"):
         assert not gui.drawing(kind).isNull()
 
 
@@ -276,8 +286,13 @@ def test_tools_menu_entry(world, monkeypatch):  # noqa: F811
                 setCheckable=lambda v: None, setChecked=lambda v: None)))
     s.bw.init_menubar_tools(menu)
     texts = [t for t, _slot in added]
-    assert "Sign will offline…" in texts
-    assert dict(added)["Sign will offline…"] == s.bw.show_offline_sign_dialog
+    # #161: the owner's name for the entry.
+    assert "Sign the will offline…" in texts
+    opened = []
+    monkeypatch.setattr(s.bw, "show_offline_sign_dialog",
+                        lambda **kw: opened.append(kw))
+    dict(added)["Sign the will offline…"]()
+    assert opened == [{}]
 
 
 # ------------------------------------------------- the "no will" box
@@ -293,7 +308,7 @@ def test_no_will_box_is_red_only_with_funds(has_funds, kind):
     assert out["action"] == "wizard"
     if has_funds is False:
         assert out["title"] == "No will yet"
-        assert "Tools > Sign will offline" in out["note"]
+        assert "Tools > Sign the will offline" in out["note"]
     else:
         assert out["title"] == "No will in force"
 

@@ -292,7 +292,7 @@ def _heirs_row(heirs_count, prepared=True):
 
 def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
                  still_active=None, warn_months=None, long_dates=False,
-                 selected=None, in_force=None, has_funds=None):
+                 selected=None, in_force=None, has_funds=None, watch_only=None):
     """Describe the will in force for the summary box of the Will tab.
 
     Args:
@@ -334,7 +334,12 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
             there is nothing to protect yet (and the offline computer of a
             cold wallet, which never shows a balance, only signs). The box
             says so in grey, keeps "Build Your Will" and points to Tools >
-            "Sign will offline...". None (unknown) or True: red, as before.
+            "Sign the will offline...". None (unknown) or True: red, as before.
+        watch_only: #161 (owner): True for a watch-only wallet (the online
+            computer of a cold wallet). A will prepared and not signed then
+            says that its keys are elsewhere, and its button
+            (``"offline_sign"``) opens the "Sign the will offline" window:
+            "Sign and send" cannot sign there. None or False: as before.
 
     Returns:
         A dict: ``state`` (``"ok"``, ``"to_sign"``, ``"to_send"``,
@@ -344,7 +349,7 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         will-executors, still to send to the others)), ``kind`` (the colour: ``"ok"`` green,
         ``"warn"`` orange, ``"bad"`` red, ``"info"`` and ``"busy"`` grey), ``title``, ``rows`` (see :func:`_row`), ``note``
         (or ``None``), ``action`` (``"check"``, ``"sign_send"``,
-        ``"send"``, ``"renew"``, ``"wizard"`` or ``None``) and
+        ``"send"``, ``"renew"``, ``"wizard"``, ``"offline_sign"`` or ``None``) and
         ``action_text`` (its button label). Never raises:
         on an unexpected error it returns ``None`` and the GUI hides the box.
     """
@@ -352,7 +357,8 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         return _with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
                              is_basic_mode, _now(now), still_active or [],
                              warn_months, datetext.utc_text if long_dates else _day,
-                             long_dates, selected, in_force, has_funds),
+                             long_dates, selected, in_force, has_funds,
+                             watch_only),
                              willitems or {}, selected)
     except Exception:
         return None
@@ -383,7 +389,8 @@ def _with_deselected(summary, willitems, selected):
 
 def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
                   still_active, warn_months=None, day=_day, compare=False,
-                  selected=None, in_force=None, has_funds=None):
+                  selected=None, in_force=None, has_funds=None,
+                  watch_only=None):
     """:func:`will_summary` without the safety net (see there).
 
     ``day`` writes a date; ``compare`` adds the "In force now" / "After
@@ -418,7 +425,7 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
                     "This wallet shows no balance: when it holds bitcoin, "
                     "create your will so it reaches your heirs.\nDo you only "
                     "need to sign a will brought on a USB stick? Use Tools > "
-                    "Sign will offline."
+                    "Sign the will offline."
                 ),
                 action="wizard", action_text=_("Build Your Will"),
             )
@@ -506,6 +513,19 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
     if unsigned:
         if compare:
             _insert_comparison(rows, still_active, delivery, in_force)
+        if watch_only:
+            # #161 (owner): a watch-only wallet cannot sign: its button
+            # leads to the guided route (USB stick, offline computer).
+            note = _(
+                "This wallet has no keys (watch-only): the will is signed on "
+                "the computer that has them, carried on a USB stick."
+            )
+            previous = _previous_will_note(still_active, day, delivery, in_force)
+            return _summary(
+                "to_sign", "warn", _("Will prepared: it must be signed and sent"),
+                rows=rows, note="{}\n{}".format(previous, note) if previous else note,
+                action="offline_sign", action_text=_("Sign the will offline"),
+            )
         return _summary(
             "to_sign", "warn", _("Will prepared: it must be signed and sent"),
             rows=rows, note=_previous_will_note(still_active, day, delivery, in_force),
