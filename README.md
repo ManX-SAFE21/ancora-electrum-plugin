@@ -1,8 +1,10 @@
-# Safe21 Heartbeat (Electrum plugin)
+<p><img src="assets/brand/svg/ancora-lockup.svg" alt="àncòra" width="360"></p>
 
-*As long as you're here, your bitcoin stays yours.*
+# Àncòra (Electrum plugin)
 
-Safe21 Heartbeat is a plugin for the [Electrum](https://electrum.org) wallet.
+*Àncora per te, ancòra per loro.*
+
+Àncòra is a plugin for the [Electrum](https://electrum.org) wallet.
 It builds pre-signed, time-locked backup transactions, optionally kept by
 independent will-executor servers. While you keep refreshing them (your
 heartbeat), nothing happens; if you stop, from the date you chose they send
@@ -65,7 +67,7 @@ tests/                   smoke + external-zip regression tests
 
 ## Wallet compatibility
 
-Safe21 Heartbeat currently supports **standard (single-signature) wallets** and
+Àncòra currently supports **standard (single-signature) wallets** and
 **hardware wallets** supported by Electrum. **Multisig wallets** and
 **Electrum TrustedCoin (2FA) wallets** are **not yet supported** — see
 [`COMPATIBILITY.md`](COMPATIBILITY.md) for the full compatibility matrix and
@@ -87,7 +89,7 @@ portable builds.
 ### Install as an external plugin (zip)
 
 1. Electrum → **Tools → Plugins** → install from file → pick the built zip.
-2. Enable **Safe21 Heartbeat** and restart Electrum.
+2. Enable **Àncòra (Safe21)** and restart Electrum.
 3. (Recommended) verify the downloaded zip's SHA-256 matches the value printed
    by `build_zip.py`.
 

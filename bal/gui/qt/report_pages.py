@@ -3,7 +3,7 @@
 :func:`bal.core.report.will_report` gives the data (no Qt); here it becomes
 A4 pages:
 
-* page 1, for everyone: the header (the SAFE21 logo on the left; on the
+* page 1, for everyone: the header (the àncòra logo on the left; on the
   right "Will plan", when it was made, the wallet, the versions), the
   state box in the colours of the will summary, the #131 time line with its
   year ruler, the heirs with their full addresses (in groups of 4
@@ -52,12 +52,12 @@ from PyQt6.QtGui import (
     QImage,
     QPainter,
     QPen,
-    QPolygonF,
 )
 from PyQt6.QtWidgets import QApplication
 
 from ...core import datetext
 from ...core import future as core_future
+from ...core.brand import INK, WATER
 from ...core.future import ExecutorMark
 from ...core.report import _host, _percent
 from ...i18n import _
@@ -73,11 +73,11 @@ PAGE_H = (297 - 2 * MARGIN_MM) / 25.4 * 72.0
 FOOTER_H = 24.0
 SMALL_HEADER_H = 28.0
 #: The logo file in the plugin (read with the plugin's ``read_file``: the
-#: plugin is loaded from a zip). Made once from ``brand/safe21-logo-light.png``
-#: (crop of the transparent border, 1200 px wide).
-LOGO_FILE = "icons/safe21-logo.png"
+#: plugin is loaded from a zip): ``ancora-lockup-1200.png`` of the brand kit,
+#: unchanged (``assets/brand/png``, #163: anchor + "àncòra").
+LOGO_FILE = "icons/ancora-lockup.png"
 #: Width / height of the logo (the file's own proportions).
-LOGO_RATIO = 1200.0 / 204.0
+LOGO_RATIO = 1200.0 / 266.0
 #: The grid page shows at most this many will-executors, then "(+N more)".
 MAX_GRID_ROWS = 40
 
@@ -103,7 +103,7 @@ class Item:
     ``rect``, aligned with ``align``), ``"rect"`` (``fill`` and a border in
     ``colour``, corner ``radius``; no border when ``colour`` is empty),
     ``"line"`` (from the top-left to the top-right of ``rect``, ``width``
-    thick), ``"logo"`` (the SAFE21 logo in ``rect``), ``"timeline"``
+    thick), ``"logo"`` (the àncòra logo in ``rect``), ``"timeline"``
     (the #131 time line of ``scene``, drawn by ``future_view.paint_future``)
     or ``"qr"`` (the QR code of ``text`` filling the square ``rect``, #145).
     """
@@ -886,34 +886,39 @@ def load_logo(read_file):
 
 
 def paint_vector_logo(painter, rect):
-    """The SAFE21 logo drawn with lines, from ``brand/safe21-logo-light.svg``.
+    """The àncòra logo drawn with lines, from ``assets/brand/svg/ancora-lockup.svg``.
 
-    The fallback when the PNG cannot be read: the teal tile with the
-    keyhole (geometry of the SVG, 34 units high) and "SAFE" (navy) + "21"
-    (teal) in Electrum's font, bold (the brand font is not decided yet,
-    brand/BRAND.md).
+    The fallback when the PNG cannot be read (#163): the anchor with the
+    geometry of the SVG (the mark is 120 x 140 units, drawn 130 units high
+    as in the lockup) in the logo's own colours, then the word "àncòra" in
+    Electrum's bold font, in ink (the brand font is not installed here).
     """
-    k = rect.height() / 34.0
+    h = rect.height()
+    k = h / 140.0
     x0, y0 = rect.x(), rect.y()
+
+    def pt(x, y):
+        return QPointF(x0 + x * k, y0 + y * k)
+
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QBrush(QColor(TEAL)))
-    painter.drawRoundedRect(QRectF(x0, y0, 34 * k, 34 * k), 8 * k, 8 * k)
-    painter.setBrush(QBrush(QColor("#ffffff")))
-    painter.drawEllipse(QPointF(x0 + 17 * k, y0 + 14 * k), 5 * k, 5 * k)
-    painter.drawPolygon(QPolygonF([QPointF(x0 + a * k, y0 + b * k)
-                                   for a, b in ((14, 17), (20, 17), (22, 27), (12, 27))]))
-    font = report_font(max(1, round(40 * k)), bold=True)
-    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 4 * k)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    pen = QPen(QColor(INK), 9 * k)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.drawLine(pt(60, 28), pt(60, 120))                 # shank
+    painter.drawLine(pt(22, 56), pt(98, 56))                  # stock
+    # The arm: the lower half of a circle of radius 46 around (60, 84).
+    painter.drawArc(QRectF(x0 + 14 * k, y0 + 38 * k, 92 * k, 92 * k), 180 * 16, 180 * 16)
+    pen.setColor(QColor(WATER))
+    painter.setPen(pen)
+    painter.drawEllipse(pt(60, 18), 10 * k, 10 * k)          # ring
+    painter.drawLine(pt(14, 84), pt(26, 72))                  # the two tips
+    painter.drawLine(pt(106, 84), pt(94, 72))
+    font = report_font(max(1, round(0.8 * h)), bold=True)
     painter.setFont(font)
-    base = y0 + 30 * k
-    x = x0 + 48 * k
-    painter.setPen(QColor(NAVY))
-    painter.drawText(QPointF(x, base), "SAFE")
-    x += QFontMetricsF(font).horizontalAdvance("SAFE")
-    painter.setPen(QColor(TEAL))
-    painter.drawText(QPointF(x, base), "21")
+    painter.setPen(QColor(INK))
+    painter.drawText(QPointF(x0 + 151.4 / 130.0 * h, y0 + 0.94 * h), "àncòra")
     painter.restore()
 
 

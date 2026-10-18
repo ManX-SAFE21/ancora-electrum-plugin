@@ -54,7 +54,7 @@ from PyQt6.QtWidgets import QApplication, QPushButton, QWidget
 # The helpers of the #84b-1 tests: will items and a dialog without Qt set-up.
 from test_build_report import _dialog, _item
 
-from bal.core import datetext
+from bal.core import brand, datetext
 from bal.core import future as cf
 from bal.core import report as core_report
 from bal.gui.qt import report_actions
@@ -341,11 +341,25 @@ def test_header_logo_and_no_heartbeat(make):
         os.path.dirname(path), os.path.basename(name)), "rb").read())
     assert logo is not None and logo.width() == 1200
     assert rp.load_logo(lambda name: b"") is None              # -> vector logo
-    teal = QColor(rp.TEAL)
-    for image in (rp.page_image(pages[0], logo, dpi=72), rp.page_image(pages[0], None, dpi=72)):
-        # The middle of the tile (left of the logo, 15 mm margin = 42.5 px).
-        colour = image.pixelColor(42 + 4, 42 + 6)
-        assert abs(colour.red() - teal.red()) < 40 and abs(colour.green() - teal.green()) < 40
+    # #163: the àncòra logo, in its own colours, with the image and with
+    # the vector fallback. At 150 dpi (2.08 px per point, 15 mm margin =
+    # 88.6 px) the logo is 30 points high: the anchor is 140 units high, so
+    # one unit = 30/140 point, and the logo starts 2 points down.
+    def at(image, x, y):
+        """The colour at (x, y) units of the anchor."""
+        k, s = 30.0 / 140.0, 150 / 72.0
+        return image.pixelColor(round(88.6 + x * k * s), round(88.6 + (2 + y * k) * s))
+
+    def near(colour, hex_colour):
+        """True when ``colour`` is close to ``hex_colour``."""
+        c = QColor(hex_colour)
+        return all(abs(a - b) < 60 for a, b in (
+            (colour.red(), c.red()), (colour.green(), c.green()), (colour.blue(), c.blue())))
+
+    for image in (rp.page_image(pages[0], logo), rp.page_image(pages[0], None)):
+        assert near(at(image, 70, 18), brand.WATER)   # the ring, right side
+        assert near(at(image, 40, 56), brand.INK)     # the stock
+        assert near(at(image, 60, 130), brand.INK)    # the bottom of the arm
 
 
 def _many_executors(count):

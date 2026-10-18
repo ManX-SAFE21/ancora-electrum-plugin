@@ -1,4 +1,4 @@
-"""Safe21 Heartbeat Electrum plugin.
+"""Àncòra Electrum plugin.
 
 Pre-signed, time-locked backup transactions for the Electrum wallet: they send
 your bitcoin to the people you chose only if you stop refreshing them.

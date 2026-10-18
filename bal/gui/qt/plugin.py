@@ -20,6 +20,7 @@ from electrum.plugin import hook
 from electrum.util import EventListener, event_listener
 from PyQt6.QtWidgets import QLayout
 
+from ...core.brand import NAME
 from ...i18n import init_from_config
 from .common import (
     BalPlugin,
@@ -293,7 +294,7 @@ class Plugin(BalPlugin, EventListener):
     @hook
     def create_status_bar(self, sb):
         # Show the plugin icon in the status bar (bottom-right): it signals that
-        # the Safe21 Heartbeat plugin is installed and, when clicked, quickly
+        # the Àncòra plugin is installed and, when clicked, quickly
         # opens the plugin settings (settings_dialog).
         #
         # NOTE: this was NOT the "condensed menu/tabs" bug under the Electrum
@@ -313,9 +314,9 @@ class Plugin(BalPlugin, EventListener):
             except Exception:
                 pass
         b = StatusBarButton(
-            read_QIcon_from_bytes(self.read_file("icons/bal32x32.png")),
+            read_QIcon_from_bytes(self.read_file("icons/ancora-icon-light-64.png")),
             # Product name: a brand, so it is never translated.
-            "Safe21 Heartbeat",
+            NAME,
             lambda: self.settings_dialog(sb.window()),
             sb.height(),
         )
@@ -506,7 +507,7 @@ class Plugin(BalPlugin, EventListener):
 
         d = BalDialog(window, self, self.get_window_title(_("Settings")))
         d.setMinimumSize(100, 200)
-        qicon = read_QPixmap_from_bytes(self.read_file("icons/bal16x16.png"))
+        qicon = read_QPixmap_from_bytes(self.read_file("icons/ancora-icon-light-16.png"))
         lbl_logo = QLabel()
         lbl_logo.setPixmap(qicon)
 
@@ -1109,11 +1110,13 @@ class Plugin(BalPlugin, EventListener):
                         )
 
     def get_window_title(self, title):
-        """Return the window title "Safe21 Heartbeat - <title>".
+        """Return the window title "Àncòra - <title>".
 
         ``title`` must already be translated by the caller: a variable passed
-        to _() cannot be extracted into the catalog.
+        to _() cannot be extracted into the catalog. The name is a brand, the
+        same in every language (``bal.core.brand``), so this pattern is not
+        translated (#163).
         """
-        return _("Safe21 Heartbeat - {}").format(title)
+        return "{} - {}".format(NAME, title)
 
 

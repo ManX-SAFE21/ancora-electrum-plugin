@@ -49,6 +49,7 @@ from ...core.animated_qr import (
     format_name,
     parse_for_detection,
 )
+from ...core.brand import NAME
 from ...core.build_report import BuildReport, heir_shares
 from ...core.checkalive import (
     check_alive_basic,
@@ -170,7 +171,7 @@ if TYPE_CHECKING:
 
 class BalDialog(QDialog,MessageBoxMixin):
     _stopping = False
-    def __init__(self, parent, bal_plugin, title=None, icon="icons/bal16x16.png"):
+    def __init__(self, parent, bal_plugin, title=None, icon="icons/ancora-icon-light-16.png"):
         from PyQt6.QtCore import QMetaObject, Qt
         def handler(signum, frame):
             QMetaObject.invokeMethod(self, "close", Qt.ConnectionType.QueuedConnection)
@@ -255,7 +256,7 @@ class BalWizardDialog(BalDialog):
         assert bal_window
         BalDialog.__init__(
             self, bal_window.window, bal_window.bal_plugin,
-            _("Safe21 Heartbeat Wizard Setup"),
+            _("{} Wizard Setup").format(NAME),
         )
         self.setMinimumSize(800, 400)
         self.bal_window = bal_window
@@ -443,7 +444,9 @@ class BalWizardWidget(QWidget):
         self.on_cancel = on_cancel
         # title/message are class attributes marked with N_(): translate them
         # here, when shown (a class body runs before the catalog is loaded).
-        self.titleLabel = QLabel(_(self.title) if self.title else "")
+        # The brand name goes in front, untranslated (#163).
+        self.titleLabel = QLabel(
+            "{} - {}".format(NAME, _(self.title)) if self.title else "")
         self.vbox.addWidget(self.titleLabel)
         self.messageLabel = QLabel(_(self.message))
         self.vbox.addWidget(self.messageLabel)
@@ -498,7 +501,7 @@ class BalWizardWidget(QWidget):
 
 
 class BalWizardHeirsWidget(BalWizardWidget):
-    title = N_("Safe21 Heartbeat - Heirs")
+    title = N_("Heirs")
     message = N_(
         "Please add your heirs\n remember that 100% of wallet balance will be spent"
     )
@@ -537,7 +540,7 @@ class BalWizardHeirsWidget(BalWizardWidget):
 
 
 class BalWizardWEDownloadWidget(BalWizardWidget):
-    title = N_("Safe21 Heartbeat - Will-Executors")
+    title = N_("Will-Executors")
     message = N_("Choose willexecutors download method")
 
     def get_content(self):
@@ -616,7 +619,7 @@ class BalWizardWEDownloadWidget(BalWizardWidget):
 
 
 class BalWizardWEWidget(BalWizardWidget):
-    title = N_("Safe21 Heartbeat - Will-Executors")
+    title = N_("Will-Executors")
     message = N_("Configure and select your willexecutors")
 
     def get_content(self):
@@ -636,7 +639,7 @@ class BalWizardWEWidget(BalWizardWidget):
 
 
 class BalWizardLocktimeAndFeeWidget(BalWizardWidget):
-    title = N_("Safe21 Heartbeat - Will Settings")
+    title = N_("Will Settings")
     message = ""
 
     def get_content(self):

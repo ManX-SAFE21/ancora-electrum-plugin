@@ -1,13 +1,13 @@
 {
     "name": "bal",
-    "fullname": "Safe21 Heartbeat",
+    "fullname": "\u00c0nc\u00f2ra (Safe21)",
     "version": "0.7.0",
-    "description": "As long as you're here, your bitcoin stays yours. Safe21 Heartbeat builds pre-signed, time-locked backup transactions, optionally kept by independent will-executor servers. While you keep refreshing them (your heartbeat), nothing happens; if you stop, from the date you chose they send your bitcoin to the people you chose.",
+    "description": "\u00c0ncora per te, anc\u00f2ra per loro. \u00c0nc\u00f2ra builds pre-signed, time-locked backup transactions, optionally kept by independent will-executor servers. While you keep refreshing them (your heartbeat), nothing happens; if you stop, from the date you chose they send your bitcoin to the people you chose.",
     "author": "Safe21 (based on Bitcoin After Life by Svatantrya)",
     "licence": "MIT",
     "available_for": [
         "qt",
         "cmdline"
     ],
-    "icon": "icons/bal32x32.png"
+    "icon": "icons/ancora-icon-light-128.png"
 }

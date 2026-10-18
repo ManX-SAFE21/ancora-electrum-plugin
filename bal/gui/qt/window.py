@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ...core import datetext, delivery, heir_notes
+from ...core.brand import NAME
 from ...core.checkalive import (
     CheckAliveAfterDeliveryError,
     CheckAliveError,
@@ -566,7 +567,7 @@ class BalWindow:
                 except Exception:
                     self.disable_plugin = True
                     self.show_warning(
-                        _("Please restart Electrum to activate the Safe21 Heartbeat plugin"),
+                        _("Please restart Electrum to activate the {} plugin").format(NAME),
                         title=_("Success"),
                     )
                     self.close_wallet()
@@ -2263,7 +2264,7 @@ class BalWindow:
                 # payment_identifier=payment_identifier,
             )
             d.setWindowIcon(
-                read_QIcon_from_bytes(self.bal_plugin.read_file("icons/bal16x16.png"))
+                read_QIcon_from_bytes(self.bal_plugin.read_file("icons/ancora-icon-light-16.png"))
             )
         except SerializationError as e:
             _logger.error("unable to deserialize the transaction")

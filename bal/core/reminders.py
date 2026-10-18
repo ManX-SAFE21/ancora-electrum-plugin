@@ -15,6 +15,8 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from .brand import NAME_ASCII
+
 
 def compute_reminder_offsets(days, count):
     """Return the reminder offsets (in days BEFORE the deadline) for an .ics event.
@@ -210,7 +212,8 @@ def build_ics_reminders(
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        f"PRODID:-//Safe21//Safe21 Heartbeat Electrum Plugin/{version}",
+        # Without accents: some calendar programs read them wrongly here.
+        f"PRODID:-//Safe21//{NAME_ASCII} Electrum Plugin/{version}",
     ]
 
     # One separate VEVENT per reminder offset (its own date in the calendar).

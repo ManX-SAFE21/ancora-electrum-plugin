@@ -2,7 +2,7 @@
 bal.cli.commands
 ================
 
-CLI commands (``bal_*``) for the Safe21 Heartbeat plugin.
+CLI commands (``bal_*``) for the Àncòra plugin.
 
 This module is the *transport layer* of the command-line front-end: every
 function is a coroutine decorated with ``@plugin_command`` so Electrum exposes
@@ -29,6 +29,7 @@ from functools import partial
 from electrum.commands import plugin_command
 from electrum.util import UserFacingException
 
+from ..core.brand import NAME
 from ..engine.locks import flow_lock_for
 from ..i18n import _
 from .controller import BalController, BalSettingsController, _user_facing
@@ -96,16 +97,16 @@ def _refuse_while_window_open(plugin, wallet, method):
     if method in _WALLET_WRITES:
         if any(getattr(w, "wallet", None) is wallet for w in _open_windows(plugin)):
             raise UserFacingException(_(
-                "This wallet is open in the Safe21 Heartbeat window: make this "
+                "This wallet is open in the {} window: make this "
                 "change there, or close the wallet and use the command line."
-            ))
+            ).format(NAME))
     elif method in _EXECUTOR_WRITES:
         if _open_windows(plugin):
             raise UserFacingException(_(
-                "A wallet is open in the Safe21 Heartbeat window: change the "
+                "A wallet is open in the {} window: change the "
                 "will-executors there, or close the wallets and use the command "
                 "line."
-            ))
+            ).format(NAME))
 
 
 def _call(plugin, wallet, method, *args, **kwargs):
