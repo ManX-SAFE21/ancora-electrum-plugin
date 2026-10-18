@@ -10633,3 +10633,24 @@ calendar defaults, kept by every translation. Updated:
 **Verification:** ruff clean; affected tests 226 passed (48 s); ZIP built,
 external zip load and smoke test OK on 4.8.2; screenshots checked; after the first ZIP the owner chose the light icon, then a larger anchor
 (choice B of three previews).
+
+## 165. Root LICENSE and "Origin and compatibility" in the README
+
+**Date:** 2026-10-18
+
+**Goal:** Prepare the repository to be made public: GitHub must find the
+licence in the root, and readers must learn where Àncòra comes from.
+
+**What changed:**
+
+- `LICENSE` (new): a copy of `bal/LICENSE` (MIT; the original line
+  `Copyright (c) 2024 svatantrya` is kept and the Safe21 line stays below it).
+- `README.md`: new section "Origin and compatibility": fork of BAL, same
+  will-executors and welist, not installable together with the official BAL
+  plugin (internal name `bal`), release tags `ancora-vX.Y.Z`.
+
+**Tests:** none needed; texts only.
+
+**Verification:** `LICENSE` identical to `bal/LICENSE`; ruff unchanged.
+
+**Outcome:** DONE.
