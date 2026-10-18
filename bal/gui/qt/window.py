@@ -144,6 +144,7 @@ from .dialogs import (
     _complete_import,
     decode_will_payload,
 )
+from .explainer import show_explainer
 from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
 from .lists import HeirListWidget, PreviewList
@@ -877,6 +878,12 @@ class BalWindow:
         # Keep it in front of Electrum (window-modal) instead of letting it
         # fall behind the main window.
         show_on_top(self.willexecutor_dialog)
+
+    def show_explainer(self, parent=None):
+        """The window "How BAL PROTOCOL works" (#162): the animated
+        explanation of the will-executors, opened by the Will tab's Tools
+        menu and the "i" buttons next to "will-executor". Returns it."""
+        return show_explainer(self, parent)
 
     def _after_executors_window(self):
         """The will-executor window closed (#134): the summary box and the

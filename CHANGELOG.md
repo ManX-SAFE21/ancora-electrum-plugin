@@ -10521,3 +10521,60 @@ checked. Owner's ZIP tests on Electrum 4.8.2 with the test wallets
 (watch-only online, keys offline): the whole route, signed and sent; the
 fixes asked after each test checked again. Whole suite in both orders:
 2475 passed each time (24:14 and 28:22), goldens unchanged.
+
+
+## 162. "How BAL PROTOCOL works": the animated explainer, offline, in the plugin
+
+**Date:** 2026-10-18
+
+**Why (owner):** the 17-step animation made for the website explains in
+pictures what a will-executor does (copies, tips, a day earlier, the
+invalidated copies, the delivery). Owner: put it in the plugin too,
+offline, in the three languages; block numbers always shown as an
+estimate. After the first ZIP the owner asked for: a visible button with
+words and a "?" (the round "i" was nearly invisible), small and the same
+in the wizard and in the will-executor window, in a tidy box; on page 1 of
+the BASIC wizard no "Mode: Basic · Advanced" link and the "Why two times?"
+box closed until clicked.
+
+**What changed:**
+- `bal/core/explainer.py` (new, no Qt): the story (17 steps, title, text,
+  note), the labels, the geometry and `scene(n, t, start)`, everything
+  drawn at a moment of a step (copies, red and torn copies, the accepted
+  block, the delivery date that moves, heir 2's new address, coins, fee,
+  the strip of blocks that slides when time passes); the years follow the
+  clock (this year, + 3, + 7); the block height is an estimate from a
+  stored tip (144 blocks a day, never lower); the reading time of a step.
+- `bal/gui/qt/explainer.py` (new): the painter (`paint_scene`, logical
+  1030x516 scaled to the window), `ExplainerCanvas` (33 ms repaint, the
+  moving parts glide from what was shown), `ExplainerDialog` (back, next,
+  play/pause, from the start, 17 step dots, the step's card; it plays by
+  itself; closing stops every timer), `explainer_button` (a small
+  rounded button "How will-executors work" with a drawn "?" badge),
+  `explainer_intro` (a light teal box: the sentence on what a will-executor
+  is and the button), `show_explainer` (one window per wallet window).
+- `bal/gui/qt/lists.py`: the Will tab's Tools menu ends with "How BAL
+  PROTOCOL works"; `bal/gui/qt/window.py`: `BalWindow.show_explainer`.
+- `bal/gui/qt/dialogs.py`: the will-executor window starts with the
+  explainer box; `BalWizardDialog.switch_to_advanced` removed (only the
+  page 1 link used it).
+- `bal/gui/qt/basic_wizard.py`: page 3 shows the explainer box; page 1
+  without the mode link (the mode stays in the plugin settings) and with
+  `Disclosure`, a "▸ Why two times?" line that opens and closes its text
+  (the old text split into title and text, same translations).
+- Catalogs (IT, ES): every new text translated; the two removed texts
+  dropped.
+
+**Tests:** `tests/test_gui_explainer.py` (new): the years, the block
+estimate, the strip, the copies of every step, the dates, heir 2, coins
+and fee, the reading time, every step painted, the window's controls and
+autoplay, the glide, Italian; the button of page 3 and of the
+will-executor window (real `BalWindow`, three fake will-executors, each
+with its own fee address). Updated: `test_check_button.py` (the menu's
+last entry), `test_gui_basic_wizard.py` (no mode link; "Why two times?"
+closed, opens and closes on click).
+
+**Verification:** ruff clean; affected tests 52 + 159 passed; ZIP built,
+external zip load and smoke test OK on 4.8.2; screenshots in Italian
+checked by the owner. Owner's ZIP test on Electrum 4.8.2: OK. Whole suite:
+2487 passed (25:51).

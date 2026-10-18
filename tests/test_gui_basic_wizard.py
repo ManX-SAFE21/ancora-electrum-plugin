@@ -41,7 +41,6 @@ from bal.core.heirs import Heirs, percent_total
 from bal.core.util import copy_structure
 from bal.core.willexecutors import Willexecutors
 from bal.gui.qt import basic_wizard
-from bal.gui.qt import common as common_mod
 from bal.gui.qt import dialogs as dialogs_mod
 from bal.gui.qt.basic_wizard import (
     ExecutorsPage,
@@ -169,7 +168,7 @@ def test_basic_shows_the_four_pages_in_order(make):
         page = dialog.widget
         assert isinstance(page, WhenPage)
         assert not hasattr(page, "previous_button")
-        assert visible(page.mode_link)
+        assert not hasattr(page, "mode_link")       # #162: no mode link
         bar = page.findChild(basic_wizard.StepBar)
         assert [lab.text() for lab in bar.labels] == [
             "1  When", "2  Heirs", "3  Will-executors", "4  Summary"]
@@ -599,25 +598,20 @@ def test_new_executors_stay_unselected_after_cancel(make):
     assert selected_urls(s) == WE
 
 
-def test_mode_link_switches_to_the_old_pages(make, monkeypatch):
-    """"Advanced": the "at My Risk" gate; confirmed, the old Heirs page
-    follows and Cancel restores nothing (the old wizard's rule); refused,
-    nothing changes."""
+def test_why_two_times_starts_closed_and_opens_on_click(make):
+    """#162: page 1 shows only the line "Why two times?"; a click opens the
+    text, a second click closes it."""
     s, bw = make(mode="basic")
-    answer = {"text": None}
-    monkeypatch.setattr(
-        common_mod.QInputDialog, "getText",
-        staticmethod(lambda *a, **k: (answer["text"] or "", answer["text"] is not None)))
     dialog = open_wizard(bw)
     try:
-        dialog.widget._on_mode_link("advanced")
-        assert s.plugin.USER_TYPE.get() == "basic"
-        assert isinstance(dialog.widget, WhenPage)
-        answer["text"] = "at My Risk"
-        dialog.widget._on_mode_link("advanced")
-        assert s.plugin.USER_TYPE.get() == "advanced"
-        assert isinstance(dialog.widget, BalWizardHeirsWidget)
-        assert dialog.basic_flow is None
+        box = dialog.widget.why_box
+        assert box.button.text() == "▸ Why two times?"
+        assert not visible(box.body)
+        box.button.click()
+        assert visible(box.body) and "UTC" in box.body.text()
+        assert box.button.text() == "▾ Why two times?"
+        box.button.click()
+        assert not visible(box.body)
     finally:
         dialog.close()
 

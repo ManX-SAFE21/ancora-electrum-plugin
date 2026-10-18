@@ -1665,6 +1665,10 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # CHANGELOG #92: the inheritance plan report (save as file / print),
         # the last entry (#161, owner: after the calendar).
         menu.addMenu(report_menu(self.bal_window, self, title=_("Will report")))
+        # #162: the animated explanation of the protocol and the
+        # will-executors, after the report (a lambda: Qt passes "checked").
+        menu.addAction(_("How BAL PROTOCOL works"),
+                       lambda: self.bal_window.show_explainer())
         # Toolbar order (left -> right):
         #   Wizard | Delivery time | Check Alive | fee ... Check | Calendar
         # #161 (owner): the Check ("Verifica/Aggiorna" in Italian) on the
