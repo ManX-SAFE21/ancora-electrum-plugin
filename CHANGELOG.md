@@ -10633,3 +10633,25 @@ calendar defaults, kept by every translation. Updated:
 **Verification:** ruff clean; affected tests 226 passed (48 s); ZIP built,
 external zip load and smoke test OK on 4.8.2; screenshots checked; after the first ZIP the owner chose the light icon, then a larger anchor
 (choice B of three previews).
+
+## 164. Development line 0.8.0 (branch `dev/0.8.0`)
+
+**Date:** 2026-10-18
+
+**Goal:** Keep `main` as the tested 0.7.0 release and start the 0.8.0 line
+(the "multiverse" work) on its own branch, so that a test ZIP of the new line
+can be told apart from the official one in Electrum's plugin list.
+
+**What changed:**
+
+- `bal/manifest.json`: `version` 0.7.0 -> 0.8.0, on `dev/0.8.0` only. `main`
+  stays 0.7.0. Fixes made on `main` are merged into this branch from time to
+  time; if the work does not succeed, the branch is dropped and `main` is not
+  touched.
+
+**Tests:** none needed; no code changed (no test reads the manifest version:
+the report tests pass the version themselves).
+
+**Verification:** manifest still pure ASCII and valid JSON.
+
+**Outcome:** DONE.
