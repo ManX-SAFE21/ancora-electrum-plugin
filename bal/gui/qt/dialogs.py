@@ -384,12 +384,17 @@ class BalWizardDialog(BalDialog):
         as its last step (CHANGELOG #84b-2). Before, the wizard ran the same
         check as the Check button (allegato15, case B) in a separate "Check
         Transaction" window opened after that dialog had closed.
+
+        #161 (owner): a watch-only wallet cannot sign, so when its will
+        waits for the signatures the "Sign the will offline" window opens
+        next, on step 1 (``BalWindow.after_wizard_create``).
         """
         # #134: the BASIC wizard keeps its changes (no restore at close).
         self._keep_changes = True
         close_window = BalBuildWillDialog(self.bal_window)
         close_window.build_will_task()
         self.close()
+        self.bal_window.after_wizard_create()
         # self.next_widget(BalWizardLocktimeAndFeeWidget(self.bal_window,self,self.on_next_locktimeandfee,self.on_next_wedonwload,self.on_next_wedonwload.on_cancel_heir))
 
     def on_next_locktimeandfee(self):
@@ -1314,12 +1319,15 @@ class BalBuildWillDialog(BalDialog):
         if left.unsigned and wallet.is_watching_only():
             # A multisig has ``n`` cosigners (Electrum's Multisig_Wallet);
             # watch-only, its signatures are made on their computers (owner).
+            # #161: both name the guided route that does it.
             if getattr(wallet, "n", 1) > 1:
                 text = _("Not signed: this wallet has no keys (watch-only). "
-                         "Sign it on the cosigners' computers.")
+                         "Sign it on the cosigners' computers (Tools > Sign "
+                         "the will offline).")
             else:
                 text = _("Not signed: this wallet has no keys (watch-only). "
-                         "Sign it on the offline computer.")
+                         "Sign it on the offline computer (Tools > Sign the "
+                         "will offline).")
         elif left.partial:
             have, required = min(left.partial)
             text = _("{} of {} signatures: another signer must sign.").format(

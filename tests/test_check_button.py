@@ -89,12 +89,17 @@ def _row():
                             if row.itemAt(i).widget() is not None]
 
 
-def test_check_comes_right_after_the_wizard():
+def test_wizard_on_the_left_check_before_the_calendar():
+    """#161 (owner): the Wizard on the left, then the settings; on the
+    right the Check ("Verifica/Aggiorna" in Italian) just before the
+    calendar. No "Sign the will offline" button any more (it is in the
+    Tools menus)."""
     host, settings, widgets = _row()
-    wizard, check = widgets[0], widgets[1]
+    wizard, check = widgets[0], widgets[2]
     assert wizard.text().strip() == _("Build / Edit Your Will")      # #127
     assert check.text().strip() == _("Check your will")
-    assert widgets[2] is settings and len(widgets) == 4
+    assert not hasattr(host, "offline_button")
+    assert widgets[1] is settings and len(widgets) == 4
     # #130 (owner): the calendar on the right, after a stretch.
     assert widgets[3] is host.calendar_button
 
@@ -103,17 +108,17 @@ def test_buttons_stay_on_the_left_calendar_on_the_right():
     """CHANGELOG #130, owner's ZIP test: with every field hidden in BASIC
     the row shrank and the toolbar's stretch pushed both big buttons to
     the right. The row now takes the free width (stretch 1) and has its
-    own stretch before the calendar."""
+    own stretch before the Check and the calendar (#161)."""
     host, _settings, _widgets = _row()
     assert host.toolbar_layout.stretch(2) == 1
     row = host.row_layout
     kinds = ["stretch" if row.itemAt(i).widget() is None else "widget"
              for i in range(row.count())]
-    assert kinds == ["widget", "widget", "widget", "stretch", "widget"]
+    assert kinds == ["widget", "widget", "stretch", "widget", "widget"]
 
 
 def test_check_looks_like_the_wizard():
-    _host, _settings, (wizard, check, _rest, _cal) = _row()
+    _host, _settings, (wizard, _rest, check, _cal) = _row()
     assert isinstance(check, QPushButton)
     assert check.iconSize() == wizard.iconSize()
     assert check.minimumHeight() == wizard.minimumHeight() == 40
@@ -132,7 +137,7 @@ def test_check_looks_like_the_wizard():
 
 
 def test_check_runs_the_check_and_explains_itself():
-    host, _settings, (wizard, check, _rest, _cal) = _row()
+    host, _settings, (wizard, _rest, check, _cal) = _row()
     # assert_called_once, not ..._with(): a mock takes Qt's "checked"
     # argument, the real methods take none and Qt leaves it out.
     check.click()
@@ -232,7 +237,7 @@ def test_will_tab_big_calendar_button_and_tools_entry():
     """CHANGELOG #130: the calendar button of the Will tab is as tall as the
     two main commands, with a doubled icon, and Tools has "Calendar
     reminders" with the same Open / Open with... / Save."""
-    host, _settings, (wizard, _check, _rest, calendar) = _row()
+    host, _settings, (wizard, _rest, _check, calendar) = _row()
     assert calendar.iconSize() == wizard.iconSize()
     assert calendar.minimumHeight() == wizard.minimumHeight() == 40
     titles = [a.text() for a in host.menu.actions()]
@@ -242,6 +247,27 @@ def test_will_tab_big_calendar_button_and_tools_entry():
     assert sub is calendar.menu()
     assert [a.text() for a in sub.actions()] == [
         _("Open"), _("Open with..."), _("Save")]
+
+
+def test_tools_menu_order_and_offline_entry():
+    """#161 (owner): the Will tab's Tools menu in the owner's order: the
+    commands of the will as they are used, then the others; under the line
+    the offline route, the calendar reminders and the report. The offline
+    entry opens the window (on the step to make now, by itself)."""
+    host, _settings, _widgets = _row()
+    texts = [a.text() if not a.isSeparator() else "--"
+             for a in host.menu.actions()]
+    assert texts[:-1] == [
+        _("Prepare"), _("Sign"), _("Broadcast will"), _("Check"),
+        _("Invalidate will"), _("Display"), _("Export"), _("Import"),
+        _("Merge"), "--", _("Sign the will offline…"),
+        _("Calendar reminders")]
+    # The last one is the report's submenu (``report_menu``).
+    assert host.menu.actions()[-1].menu() is not None
+    entry = next(a for a in host.menu.actions()
+                 if a.text() == _("Sign the will offline…"))
+    entry.trigger()
+    host.bal_window.show_offline_sign_dialog.assert_called_once_with()
 
 
 def test_advanced_uses_two_rows_packed_to_the_left():

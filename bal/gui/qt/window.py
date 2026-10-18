@@ -60,6 +60,7 @@ from ...engine.invalidate import (
 )
 from ...engine.merge import merge_summary
 from ...engine.merge import merge_will as engine_merge_will
+from ...engine.offline_sign import prepare_problem as engine_prepare_problem
 from ...engine.offline_sign import sign_file as engine_sign_file
 from ...engine.push import (
     ALREADY_PRESENT,
@@ -146,7 +147,7 @@ from .dialogs import (
 from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
 from .lists import HeirListWidget, PreviewList
-from .offline_sign import OfflineSignDialog
+from .offline_sign import open_sign_offline
 from .widgets import (
     MESSAGE_WARNING_STYLE,
     LockTimeWidget,
@@ -473,9 +474,11 @@ class BalWindow:
             _("&Will-Executors"), self.show_willexecutor_dialog
         )
         # #160 (owner): the offline computer of a cold wallet signs the
-        # will carried on a USB stick from one guided window.
+        # will carried on a USB stick from one guided window. #161: the
+        # same entry guides the online computer too (owner's name).
+        # A lambda: Qt would pass "checked" as the window's first argument.
         self.tools_menu.offline_sign_action = tools_menu.addAction(
-            _("Sign will offline…"), self.show_offline_sign_dialog
+            _("Sign the will offline…"), lambda: self.show_offline_sign_dialog()
         )
         self.window.view_menu.addSeparator()
         add_toggle_action(self.heirs_tab)
@@ -787,16 +790,59 @@ class BalWindow:
         wizard_dialog = BalWizardDialog(self)
         wizard_dialog.exec()
 
-    def show_offline_sign_dialog(self):
-        """Tools > "Sign will offline..." (#160): the guided offline signing.
+    def show_offline_sign_dialog(self, just_checked=False):
+        """Tools > "Sign the will offline..." (#160, #161): the guided route.
 
-        The window of :mod:`bal.gui.qt.offline_sign`: choose the will file
-        carried on a USB stick, check it, sign it, save it. Returns the
-        window (the tests drive it).
+        The window of :mod:`bal.gui.qt.offline_sign` that fits this wallet
+        (:func:`~bal.gui.qt.offline_sign.open_sign_offline`): with keys,
+        choose the will file carried on a USB stick, check it, sign it,
+        save it (#160); watch-only, prepare the stick and send the signed
+        will (#161). Opened by Electrum's Tools menu, the Will tab's Tools
+        menu, the summary box and the wizard; it opens on the step to make
+        now by itself. ``just_checked``: the Check has just run. Returns
+        the window (the tests drive it).
         """
-        dialog = OfflineSignDialog(self)
+        dialog = open_sign_offline(self, just_checked=just_checked)
         show_on_top(dialog)
         return dialog
+
+    def export_stick_file(self, path, items):
+        """Save the copies *items* of the live will as the file to sign (#161).
+
+        Step 1 of the online window: only the copies still to sign, in the
+        JSON will format of the export (:meth:`export_json_file`), which
+        the offline window reads. As the export does, the copies are
+        marked EXPORTED and the will is saved first: EXPORTED tells the
+        window that the stick is out to be signed (step 5 next, see
+        :func:`bal.engine.offline_sign.next_step`); the will summary is
+        then refreshed. Errors propagate (the window shows them).
+        """
+        for wi in items.values():
+            wi.set_status("EXPORTED", True)
+        self.save_willitems()
+        write_json_file(path, {wid: wi.to_dict() for wid, wi in items.items()})
+        # Owner (ZIP test): the Will tab must follow at once (it kept the
+        # state from before the stick was saved).
+        self.update_will_summary()
+
+    def after_wizard_create(self):
+        """The wizard's "Create the will" ended (#161, owner).
+
+        A watch-only wallet cannot sign: when its will waits for its
+        signatures, the "Sign the will offline" window opens by itself on
+        step 1 (the Check has just run, so step 1 does not run it again).
+        Returns the window, or None. Never raises.
+        """
+        try:
+            if not self.wallet.is_watching_only():
+                return None
+            if engine_prepare_problem(
+                    self.willitems, self.selected_willexecutors()) is not None:
+                return None
+            return self.show_offline_sign_dialog(just_checked=True)
+        except Exception as e:
+            _logger.warning(f"offline sign window not opened: {e!r}")
+            return None
 
     def sign_will_file(self, items, password, on_done):
         """Sign the copies of a will file in the "Please wait" window (#160).
@@ -913,6 +959,11 @@ class BalWindow:
         # cold wallet, gets the grey box).
         self._summary_has_funds = self.wallet_has_funds()
         try:
+            watch_only = bool(self.wallet.is_watching_only())
+        except Exception as e:
+            _logger.debug(f"watch-only not read: {e!r}")
+            watch_only = None
+        try:
             summary = will_summary(
                 self.willitems,
                 len(self.heirs or {}),
@@ -928,6 +979,7 @@ class BalWindow:
                 # Future view and the wizard (not only the REPLACED copies).
                 in_force=context.in_force_delivery(self),
                 has_funds=self._summary_has_funds,
+                watch_only=watch_only,
             )
         except Exception as e:
             _logger.debug(f"will summary failed: {e!r}")
@@ -1049,13 +1101,18 @@ class BalWindow:
         the "Build Your Will" wizard. "sign_send" / "send" use the Check too
         when it signs and sends by itself (BASIC mode or "auto sign"), else
         the Sign and Broadcast menu commands, as the owner chose to sign by
-        hand.
+        hand. "offline_sign" (#161): a watch-only will waiting for its
+        signatures, the "Sign the will offline" window.
         """
         auto = self.bal_plugin.is_basic_mode() or self.bal_plugin.AUTO_SIGN.get()
         if action == "open_executors":
             # #134: the deselected will-executors' line; the box follows
             # what the owner selects there when the window closes.
             self.show_willexecutor_dialog(on_close=self._after_executors_window)
+            return
+        if action == "offline_sign":
+            # The window opens on the step to make now by itself.
+            self.show_offline_sign_dialog()
             return
         if action == "wizard":
             self.init_wizard()

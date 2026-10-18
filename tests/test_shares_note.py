@@ -1,12 +1,13 @@
 """The shares recalculated in proportion: a box only when they change (#135).
 
 Owner: "Attention: the heirs' percentages add up to 130%…" was shown at
-every Check and window, alarming when nothing changed. Now the Check
-window shows a box with a calm title ("How the shares are divided") only
+every Check and window, alarming when nothing changed. Then the Check
+window showed a box with a calm title ("How the shares are divided") only
 when the shares as written change compared with the will in force, or
 there is no will in force yet; otherwise one quiet grey line by the heirs
 ("Shares recalculated in proportion: …"). The explanation always stays in
-"Details (log)".
+"Details (log)". #161 (owner): the box is no longer drawn (too much
+information); the report still holds the explanation.
 
 Also (#135, owner): the "renamed … already saved" row and the Cancel
 sentence that does not say a rename is undone; the will-executors box's
@@ -67,8 +68,10 @@ def texts(snapshot):
 
 
 def test_box_for_a_first_will_then_a_quiet_line(make):
-    """First will: the calm box. Next Check (nothing changed): no box,
-    only the grey line, and never "Attention"."""
+    """First will: the explanation is in the report (and the log), but
+    #161 (owner) the window no longer draws its box ("too much
+    information"). Next Check (nothing changed): only the grey line, and
+    never "Attention"."""
     s = make()
     snap = s.check()._report().snapshot()
     text, prominent = snap["amounts_note"]
@@ -76,7 +79,8 @@ def test_box_for_a_first_will_then_a_quiet_line(make):
     assert text.startswith("The percentages you wrote add up to 110%.")
     assert snap["boxes"]["warnings"] == []
     drawn = texts(snap)
-    assert "How the shares are divided" in drawn and "Attention" not in drawn
+    assert "How the shares are divided" not in drawn and "Attention" not in drawn
+    assert text not in drawn
 
     snap = s.check()._report().snapshot()
     text, prominent = snap["amounts_note"]

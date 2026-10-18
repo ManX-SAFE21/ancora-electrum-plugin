@@ -36,10 +36,12 @@ from test_engine_merge import _valid, world  # noqa: F401 - the fixture
 
 from bal.engine.sign import signing_outcome
 
+# #161: both name the guided route (Tools > "Sign the will offline").
 WATCH_ONLY = ("Not signed: this wallet has no keys (watch-only). "
-              "Sign it on the offline computer.")
+              "Sign it on the offline computer (Tools > Sign the will offline).")
 WATCH_ONLY_MULTISIG = ("Not signed: this wallet has no keys (watch-only). "
-                       "Sign it on the cosigners' computers.")
+                       "Sign it on the cosigners' computers (Tools > Sign the "
+                       "will offline).")
 STILL_TO_SIGN = "Will still to sign"
 PARTLY = "Will partly signed: complete it with the missing signatures."
 HINT = ("The way to sign depends on the wallet type, which Electrum shows "
