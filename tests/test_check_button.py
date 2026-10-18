@@ -252,22 +252,26 @@ def test_will_tab_big_calendar_button_and_tools_entry():
 def test_tools_menu_order_and_offline_entry():
     """#161 (owner): the Will tab's Tools menu in the owner's order: the
     commands of the will as they are used, then the others; under the line
-    the offline route, the calendar reminders and the report. The offline
-    entry opens the window (on the step to make now, by itself)."""
+    the offline route, the calendar reminders and the report; #162: "How
+    BAL PROTOCOL works" last. The offline entry opens the window (on the
+    step to make now, by itself); the last one opens the explainer."""
     host, _settings, _widgets = _row()
     texts = [a.text() if not a.isSeparator() else "--"
              for a in host.menu.actions()]
-    assert texts[:-1] == [
+    assert texts[:-2] == [
         _("Prepare"), _("Sign"), _("Broadcast will"), _("Check"),
         _("Invalidate will"), _("Display"), _("Export"), _("Import"),
         _("Merge"), "--", _("Sign the will offline…"),
         _("Calendar reminders")]
-    # The last one is the report's submenu (``report_menu``).
-    assert host.menu.actions()[-1].menu() is not None
+    # Then the report's submenu (``report_menu``) and the explainer.
+    assert host.menu.actions()[-2].menu() is not None
+    assert texts[-1] == _("How BAL PROTOCOL works")
     entry = next(a for a in host.menu.actions()
                  if a.text() == _("Sign the will offline…"))
     entry.trigger()
     host.bal_window.show_offline_sign_dialog.assert_called_once_with()
+    host.menu.actions()[-1].trigger()
+    host.bal_window.show_explainer.assert_called_once_with()
 
 
 def test_advanced_uses_two_rows_packed_to_the_left():

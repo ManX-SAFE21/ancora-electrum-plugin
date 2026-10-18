@@ -21,10 +21,12 @@ Four pages, each opening with a question and a step bar on top:
    build / sign / send / verify window as the old wizard
    (``BalWizardDialog.on_next_we``).
 
-ADVANCED keeps the old pages (``bal.gui.qt.dialogs``); the "Mode: Basic ·
-Advanced" link of page 1 switches the plugin mode through the same "at My
-Risk" gate as the settings page (``common.switch_user_type``) and the
-wizard then continues with the old pages.
+ADVANCED keeps the old pages (``bal.gui.qt.dialogs``). The plugin mode is
+switched in the plugin settings (``common.switch_user_type``, the "at My
+Risk" gate); #162 (owner) removed the "Mode: Basic · Advanced" link of
+page 1. Page 1's "Why two times?" box is closed until clicked
+(:class:`Disclosure`); page 3 has the button "How will-executors work"
+(the animated explanation, ``bal.gui.qt.explainer``).
 
 **Cancel is linear (owner decision).** Today the wizard saves every change
 at once (the heirs at each change, the date at each edit, the will-executor
@@ -86,9 +88,9 @@ from .common import (
     Willexecutors,
     _,
     _logger,
-    switch_user_type,
 )
 from .dialogs import BalWizardWidget
+from .explainer import explainer_intro
 from .lists import (
     FRAMED_BUTTON_STYLE,
     HeirListWidget,
@@ -149,9 +151,11 @@ NEW_DELIVERY_HELP = N_(
     "after the chosen time, sometimes more."
 )
 
-#: The box "Why two times?" of page 1.
+#: The box "Why two times?" of page 1: its title, always shown, and the
+#: text, shown when the title is clicked (#162, owner: less to read).
+WHY_TWO_TIMES_TITLE = N_("Why two times?")
 WHY_TWO_TIMES = N_(
-    "<b>Why two times?</b> Bitcoin counts time in <b>UTC</b>, Greenwich "
+    "Bitcoin counts time in <b>UTC</b>, Greenwich "
     "time, the same all over the world. Your computer's time zone can be "
     "ahead of it or behind it (Italy is 1 hour ahead in winter and 2 in "
     "summer). The will is saved in UTC: that is why the summary and the "
@@ -494,6 +498,41 @@ class WizardSnapshot:
 # ------------------------------------------------------------- widgets
 
 
+class Disclosure(QWidget):
+    """A light blue box that shows only its title ("▸ Why two times?")
+    until it is clicked; a second click closes it (#162, owner: page 1 had
+    too much to read). Starts closed."""
+
+    def __init__(self, title, text, parent=None):
+        """``title`` and ``text`` already translated (``text`` may hold
+        simple HTML)."""
+        super().__init__(parent)
+        self.title = title
+        box = QVBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
+        self.button = QPushButton()
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.button.setFlat(True)
+        self.button.setStyleSheet(
+            "QPushButton { text-align: left; color: #1F4E79; font-weight: 600; "
+            "background: #EEF4FB; border: 1px solid #C9DBF0; border-radius: 6px; "
+            "padding: 6px 10px; }")
+        self.button.clicked.connect(self.toggle)
+        box.addWidget(self.button)
+        self.body = _label(text, INFO_STYLE, wrap=True)
+        box.addWidget(self.body)
+        self.set_open(False)
+
+    def set_open(self, is_open):
+        """Show or hide the text; the arrow follows."""
+        self.body.setVisible(is_open)
+        self.button.setText(("▾ " if is_open else "▸ ") + self.title)
+
+    def toggle(self):
+        self.set_open(not self.body.isVisible())
+
+
 class StepBar(QWidget):
     """"1 When  2 Heirs  3 Will-executors  4 Summary": the current step in
     blue and bold, the steps done lighter, the next ones grey."""
@@ -638,7 +677,6 @@ class WhenPage(_StepPage):
     def __init__(self, flow):
         """Page 1; Next stores the date (:meth:`save`) and goes to Heirs."""
         super().__init__(flow, self._next, None)
-        self._add_mode_link()
 
     # ------------------------------------------------------------ build
 
@@ -676,7 +714,8 @@ class WhenPage(_StepPage):
               "Moving it earlier is free."), NOTE_STYLE, wrap=True)
         layout.addWidget(self.later_note)
         layout.addSpacing(6)
-        layout.addWidget(_label(_(WHY_TWO_TIMES), INFO_STYLE, wrap=True))
+        self.why_box = Disclosure(_(WHY_TWO_TIMES_TITLE), _(WHY_TWO_TIMES))
+        layout.addWidget(self.why_box)
         self._select("keep" if self.keep else wizard_date.DEFAULT_QUICK_MONTHS)
 
     def _build_period(self, layout, settings):
@@ -774,17 +813,6 @@ class WhenPage(_StepPage):
         self.shift_label = _label("", SHIFT_STYLE, wrap=True)
         layout.addWidget(self.shift_label)
         layout.addSpacing(6)
-
-    def _add_mode_link(self):
-        """"Mode: Basic · Advanced" at the bottom left (page 1 only)."""
-        link = _label(_('Mode: <b>Basic</b> · <a href="advanced">Advanced</a>'),
-                      MUTED_STYLE)
-        link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
-        link.setOpenExternalLinks(False)
-        link.linkActivated.connect(self._on_mode_link)
-        self.mode_link = link
-        buttons = self.vbox.itemAt(self.vbox.count() - 1).layout()
-        buttons.insertWidget(0, link)
 
     # ------------------------------------------------------------ state
 
@@ -948,12 +976,6 @@ class WhenPage(_StepPage):
         if self.save():
             self.flow.show_heirs()
 
-    def _on_mode_link(self, _href=None):
-        """"Advanced" clicked: the shared "at My Risk" gate; when it is
-        confirmed the wizard goes on with the ADVANCED pages."""
-        if switch_user_type(self.bal_window.bal_plugin, True, parent=self):
-            self.flow.switch_to_advanced()
-
 
 class HeirsPage(_StepPage):
     """Page 2: "Who receives the bitcoin?" (see module)."""
@@ -1069,10 +1091,14 @@ class ExecutorsPage(_StepPage):
     def build(self, layout):
         """The reminder, the explanation, the state, the list."""
         layout.addWidget(self.reminder())
-        layout.addWidget(_label(
+        # #162: the explanation, with the button "How will-executors work"
+        # that opens the animation (the will-executors are the new part).
+        explain = explainer_intro(
             _("Will-executors are services that keep your signed will and "
-              "send it to the network on the delivery date."), MUTED_STYLE,
-            wrap=True))
+              "send it to the network on the delivery date."),
+            lambda: self.bal_window.show_explainer(self))
+        self.explainer_button = explain.button
+        layout.addWidget(explain)
         self.status_label = _label("", OK_STYLE, wrap=True)
         layout.addWidget(self.status_label)
         self.nobody_row = QWidget()
@@ -1344,7 +1370,3 @@ class BasicWizardFlow:
             return
         self._restored = True
         self.snapshot.restore(self.bal_window)
-
-    def switch_to_advanced(self):
-        """ADVANCED was confirmed: the dialog goes on with the old pages."""
-        self.dialog.switch_to_advanced()

@@ -275,22 +275,6 @@ class BalWizardDialog(BalDialog):
             )
         self.layout.addWidget(self.widget)
 
-    def switch_to_advanced(self):
-        """ADVANCED was confirmed on the BASIC page 1 (#134): go on with the
-        old pages, from the Heirs page.
-
-        The BASIC snapshot is dropped: the old pages save every change at
-        once and their Cancel undoes nothing, exactly as today, and what the
-        BASIC pages had already saved stays (a date chosen on page 1 is
-        saved only by its Next).
-        """
-        self.basic_flow = None
-        self.next_widget(
-            BalWizardHeirsWidget(
-                self.bal_window, self, self.on_next_heir, None, self.on_cancel_heir
-            )
-        )
-
     def show_executors_step(self):
         """Open the wizard at its will-executor step (#134).
 
@@ -4189,6 +4173,15 @@ class WillExecutorDialog(BalDialog, MessageBoxMixin):
         # Lazy import to avoid a dialogs<->lists import cycle.
         from .lists import WillExecutorWidget
         vbox = QVBoxLayout(self)
+        # #162: what a will-executor is, with the button "How will-executors
+        # work" that opens the animation "How BAL PROTOCOL works".
+        from .explainer import explainer_intro
+        intro = explainer_intro(
+            _("Will-executors are services that keep your signed will and "
+              "send it to the network on the delivery date."),
+            lambda: self.bal_window.show_explainer(self))
+        self.explainer_button = intro.button
+        vbox.addWidget(intro)
         self.will_executor_list_widget = WillExecutorWidget(
             self, self.bal_window, self.willexecutors_list
         )
