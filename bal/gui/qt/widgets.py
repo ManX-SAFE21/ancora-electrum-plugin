@@ -1105,9 +1105,12 @@ class DeliveryFormWidget(QWidget):
         return bool(self.bal_window.bal_plugin.is_basic_mode())
 
     def _multiverse(self):
-        """True when the hidden multiverse option is on (no period form)."""
+        """True when the wallet has a table of deliveries (#168, D7): no
+        period form then. BAL's global option is no longer read."""
         try:
-            return bool(self.bal_window.bal_plugin.ENABLE_MULTIVERSE.get())
+            return bool(delivery.instalments_of(self._settings()))
+        except ValueError:
+            return True
         except Exception:
             return False
 

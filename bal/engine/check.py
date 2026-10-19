@@ -32,7 +32,7 @@ from ..core.messages import amounts_message, past_date_message
 # NoHeirsException from bal.core.will, the class init_class_variables
 # raises; bal.core.heirs has another class with the same name.
 from ..core.will import AmountException, NoHeirsException, Will
-from . import context
+from . import context, instalments
 from .invalidate import build_invalidation
 from .ui import Step
 
@@ -235,8 +235,11 @@ def check_variables(host, run, ui):
         # The coins the will can use: Util.get_available_utxos on the
         # wallet, the History label and the will's earliest date, as before.
         available_utxos = context.available_utxos(host)
+        # #168: with a table, the rows of every delivery (their shares add
+        # up to 100 % over the whole table).
+        heirs = instalments.effective_heirs(host)
         Will.check_amounts(
-            host.heirs,
+            heirs,
             host.willexecutors,
             available_utxos,
             host.date_to_check,
@@ -252,7 +255,7 @@ def check_variables(host, run, ui):
         # visible (e.g. after a Cancel) check_amounts fails on its first,
         # balance-based test, which used to hide the explanation too.
         info = Will.describe_amounts(
-            host.heirs,
+            instalments.effective_heirs(host),
             host.willexecutors,
             available_utxos,
             host.date_to_check,

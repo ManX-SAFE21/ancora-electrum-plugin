@@ -242,7 +242,8 @@ def _instalment(item):
     address, the resolved amount stored with the heir
     (``HEIR_REAL_AMOUNT``, the value ``prepare_transactions`` put in that
     output). Below the dust limit (stored as ``"DUST: n"``): no amount.
-    OP_RETURN messages and the will-executor's fee are left out.
+    OP_RETURN messages and the will-executor's fee are left out. The name is
+    the person's (#168: "Luca" for the row "Luca§2" of a later delivery).
     """
     paid = _paid_by_address(item)
     rows = []
@@ -261,7 +262,8 @@ def _instalment(item):
             stored = int(row[HEIR_REAL_AMOUNT])
         except (TypeError, ValueError):
             stored = None
-        rows.append([str(name), address, stored])
+        # #168: the person, never the row of a later delivery ("Luca§2").
+        rows.append([_delivery.person_name(name), address, stored])
     addresses = [address for _n, address, _s in rows]
     heirs = []
     for name, address, stored in sorted(rows):

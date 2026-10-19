@@ -53,7 +53,7 @@ from ...core.messages import (
     will_change_message,
 )
 from ...core.summary import busy_summary, selected_urls, will_summary
-from ...engine import build, context
+from ...engine import build, context, instalments
 from ...engine.invalidate import (
     INVALIDATION_LABEL,
     broadcast_invalidation,
@@ -1378,12 +1378,9 @@ class BalWindow:
         grid.addWidget(message_info, 5, 1)
         _show_message_rows(is_op_return_address(heir_address.text()))
 
-        locktime_label = QLabel(_("Locktime"))
-        enable_multiverse = self.bal_plugin.ENABLE_MULTIVERSE.get()
-        if enable_multiverse:
-            grid.addWidget(locktime_label, 6, 0)
-            grid.addWidget(self.heir_locktime, 6, 1)
-            grid.addWidget(HelpButton(_("locktime")), 6, 2)
+        # #168 (D7): no per-heir date any more (BAL's hidden global
+        # multiverse option is no longer read): every heir gets the will's
+        # date; staged deliveries keep their dates in the table.
 
         # #138 (owner): the owner's private notes on this heir.
         notes = QPlainTextEdit()
@@ -1478,6 +1475,12 @@ class BalWindow:
                 # #135: never overwrite another heir (a new one, or a
                 # rename to a name already in the list).
                 self.show_error(_("An heir named {} already exists.").format(new_name))
+                continue
+            if new_name != heir_key and delivery.has_separator(new_name):
+                # #168 (owner decision 2): the rows of deliveries 2 and 3
+                # are named "Luca§2"..., a person named so would collide.
+                self.show_error(_("An heir name cannot contain the sign {}.").format(
+                    delivery.INSTALMENT_SEP))
                 continue
             try:
                 # #140 (owner): one message per will; a message being edited
@@ -1592,8 +1595,8 @@ class BalWindow:
         heir = list(heir)
         if is_op_return_address(heir[1]):
             heir[2] = "0"
-        if not self.bal_plugin.ENABLE_MULTIVERSE.get():
-            heir[3] = self.will_settings["locktime"]
+        # #168 (D7): every heir gets the will's date (delivery 1).
+        heir[3] = self.will_settings["locktime"]
 
         h = Heirs.validate_heir(heir[0], heir[1:])
         self.heirs[heir[0]] = h
@@ -2025,7 +2028,8 @@ class BalWindow:
             try:
                 self.init_class_variables()
                 Will.check_amounts(
-                    self.heirs,
+                    # #168: the rows of every delivery with a table.
+                    instalments.effective_heirs(self),
                     self.willexecutors,
                     Util.get_available_utxos(
                         self.window.wallet,
@@ -2041,6 +2045,11 @@ class BalWindow:
             except delivery.DeliverySettingsUnavailable:
                 # #123, fail closed: nothing is prepared on display-only values.
                 self.show_error(_(SETTINGS_UNAVAILABLE))
+                return
+            except delivery.InstalmentsMismatch as e:
+                # #168: the table of the deliveries no longer fits the
+                # heirs: nothing is prepared (the message says what to do).
+                self.show_error(str(e))
                 return
             except delivery.DeliveryChoicePending:
                 # #123: the "which date?" question first, as in the Check;

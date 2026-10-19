@@ -220,8 +220,8 @@ def test_default_delivery_date_is_kept_by_the_wallet(plugin, monkeypatch):
 
 
 def test_heir_locktime_refused_when_every_heir_shares_the_date(plugin):
-    """#103: multiverse off (the default): a per-heir --locktime would be
-    overwritten by the will's date at the next check, so it is refused. The
+    """#103: every heir shares the will's date (#168: always): a per-heir
+    --locktime would be overwritten by the will's date at the next check, so it is refused. The
     message points to ``bal_delivery_set --date`` (#123: the date is the
     wallet's own setting; ``bal_will_settings`` is not used any more)."""
     wallet = FakeWallet()
@@ -236,21 +236,30 @@ def test_heir_locktime_refused_when_every_heir_shares_the_date(plugin):
     assert out["value"][1] == "40%"
 
 
-@pytest.mark.parametrize(
-    "locktime, message",
-    [("domani", "not understood"), ("1500000000", "in the past")],
-)
-def test_heir_locktime_checked_with_multiverse(plugin, locktime, message):
-    """#103: multiverse on: a date that is not understood (it gave 0) or is
-    already past is refused; a future one is kept."""
+@pytest.mark.parametrize("locktime", ["domani", "1500000000", "2y"])
+def test_heir_locktime_refused_with_multiverse_too(plugin, locktime):
+    """#168 (D7): BAL's global multiverse option is no longer read, so a
+    per-heir --locktime is refused with it on too (it was accepted, then
+    checked, by #103); every heir gets the will's date."""
     plugin.ENABLE_MULTIVERSE.set(True)
     wallet = FakeWallet()
-    with pytest.raises(UserFacingException, match=message):
+    with pytest.raises(UserFacingException, match="bal_delivery_set --date"):
         run(plugin, "heirs_add", "carol", VALID_ADDRESS, "10%", locktime=locktime,
             wallet=wallet)
-    out = run(plugin, "heirs_add", "carol", VALID_ADDRESS, "10%", locktime="2y",
-              wallet=wallet)
-    assert out["value"][2] == "2y"
+
+
+def test_heir_name_with_the_delivery_separator_is_refused(plugin, tmp_path):
+    """#168 (owner decision 2): the rows of deliveries 2 and 3 are named
+    "Luca§2"...; an heir named with "§" is refused by heirs_add and skipped
+    by heirs_import, with the reason."""
+    wallet = FakeWallet()
+    with pytest.raises(UserFacingException, match="cannot contain the sign"):
+        run(plugin, "heirs_add", "luca§2", VALID_ADDRESS, "10%", wallet=wallet)
+    path = tmp_path / "heirs.json"
+    path.write_text(json.dumps({"x§3": [VALID_ADDRESS, "10%", "1y"]}))
+    out = run(plugin, "heirs_import", str(path), wallet=wallet)
+    assert out["imported"] == 0
+    assert "cannot contain the sign" in out["skipped"]["x§3"]
 
 
 @pytest.mark.parametrize(
@@ -369,15 +378,16 @@ def test_heirs_import_reports_what_it_skipped(plugin, tmp_path):
     assert "notanaddress" in out["skipped"]["bad_address"]
 
 
-def test_heirs_import_checks_dates_with_multiverse(plugin, tmp_path):
-    """#105: with multiverse on, a date that is not understood is refused
-    ("ieri" was imported with a delivery date of 0)."""
+def test_heirs_import_ignores_dates_with_multiverse(plugin, tmp_path):
+    """#105 checked the dates of an import with BAL's multiverse option on
+    ("ieri" was imported with a delivery date of 0). #168 (D7): the option
+    is no longer read and every heir gets the will's date anyway, so an
+    unreadable date in the file is not used, not checked."""
     plugin.ENABLE_MULTIVERSE.set(True)
     path = tmp_path / "heirs.json"
     path.write_text(json.dumps({"x3": [VALID_ADDRESS, "10%", "ieri"]}))
     out = run(plugin, "heirs_import", str(path), wallet=FakeWallet())
-    assert out["imported"] == 0
-    assert "not understood" in out["skipped"]["x3"]
+    assert out["imported"] == 1 and out["skipped"] == {}
 
 
 def test_delete_takes_one_name_and_reports_unknown_ones(plugin):

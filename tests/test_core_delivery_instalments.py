@@ -413,5 +413,105 @@ def test_the_default_table_needs_heirs():
         dv.default_instalments([], D1)
 
 
+# ------------------------------------------- the rows of each delivery (#168)
+
+MESSAGE = ["OP_RETURN:" + b"Ciao".hex(), "0", D1]
+
+
+def person_rows(*names):
+    """The stored heirs: one row per person (amount and date not used)."""
+    return {name: ["addr-" + name, "50%", D1] for name in names}
+
+
+def test_row_names_of_each_delivery():
+    """Owner decision 2: "Luca", "Luca§2", "Luca§3"; the number is read
+    back, the person is shown."""
+    assert dv.INSTALMENT_SEP == "§" and dv.INSTALMENTS_SCHEMA_VERSION == 3
+    assert [dv.instalment_key("Luca", n) for n in (1, 2, 3)] == [
+        "Luca", "Luca§2", "Luca§3"]
+    for key, number, person in [
+        ("Luca", 1, "Luca"), ("Luca§2", 2, "Luca"), ("Luca§3", 3, "Luca"),
+        ("a§b§2", 2, "a§b"), ("Luca§", 1, "Luca§"), ("§2", 1, "§2"),
+        ("Luca§x", 1, "Luca§x"), ("Luca§1", 1, "Luca§1"), ("Luca§0", 1, "Luca§0"),
+    ]:
+        assert dv.instalment_number(key) == number, key
+        assert dv.person_name(key) == person, key
+    assert dv.has_separator("Lu§ca") and not dv.has_separator("Luca")
+
+
+def test_message_rows_are_not_payees():
+    """An OP_RETURN row is a message, not a column of the table."""
+    heirs = dict(person_rows("luca", "john"), note=MESSAGE)
+    assert dv.is_message_row(MESSAGE) and not dv.is_message_row(heirs["luca"])
+    assert not dv.is_message_row([]) and not dv.is_message_row(None)
+    assert dv.payee_names(heirs) == ["luca", "john"]
+
+
+def test_effective_rows_of_a_table():
+    """One row per person and delivery with a share; 0 % gives no row; the
+    message goes with delivery 1; the dates are the table's."""
+    heirs = dict(person_rows("luca", "john"), note=MESSAGE)
+    rows = dv.validate_instalments(table(
+        (D1, {"luca": "10%", "john": "10%"}),
+        (D2, {"luca": "10%", "john": "0%"}),
+        (D3, {"luca": "35%", "john": "35%"}),
+    ), dv.payee_names(heirs), NOW)
+    assert dv.effective_rows(heirs, rows) == {
+        "note": [MESSAGE[0], "0", D1],
+        "luca": ["addr-luca", "10%", D1], "john": ["addr-john", "10%", D1],
+        "luca§2": ["addr-luca", "10%", D2],
+        "luca§3": ["addr-luca", "35%", D3], "john§3": ["addr-john", "35%", D3],
+    }
+
+
+def test_effective_rows_refuse_a_name_with_the_separator():
+    """A stored name with "§" could collide with a row name."""
+    heirs = person_rows("luca", "luca§2")
+    rows = table((D1, {"luca": "50%"}), (D2, {"luca": "50%"}))
+    with pytest.raises(ValueError, match="holds"):
+        dv.effective_rows(heirs, rows)
+
+
+def test_table_rows_put_delivery_1_on_the_wallets_date():
+    """``locktime`` is the one date of delivery 1 (anticipation, anchor,
+    a cancelled postpone keep moving it); the stored row may be older."""
+    stored = owner_table()
+    settings = {"locktime": D1 - dv.DAY, "instalments": stored}
+    rows = dv.table_rows(settings)
+    assert rows[0]["locktime"] == D1 - dv.DAY
+    assert rows[1:] == owner_table()[1:]
+    assert stored[0]["locktime"] == D1                  # not changed in place
+    assert dv.table_rows({"locktime": D1}) == []
+
+
+def test_a_stored_table_is_checked_without_now_and_gap():
+    """``now`` None: a past delivery 1 is fine; ``gap`` False: an automatic
+    anticipation may have brought two dates under 28 days apart. The order
+    and the shares are still checked."""
+    rows = two_dates(gap_days=27)
+    rows[0]["locktime"] = ts(2020, 1, 1)
+    rows[1]["locktime"] = ts(2020, 1, 28)
+    assert dv.validate_instalments(rows, HEIRS, None, gap=False)
+    with pytest.raises(ValueError, match="less than 28 days"):
+        dv.validate_instalments(rows, HEIRS, None)
+    with pytest.raises(ValueError, match="not in the future"):
+        dv.validate_instalments(rows, HEIRS, NOW, gap=False)
+    rows[1]["locktime"] = rows[0]["locktime"]
+    with pytest.raises(ValueError, match="not after"):
+        dv.validate_instalments(rows, HEIRS, None, gap=False)
+
+
+def test_anticipated_rows_move_later_deliveries_earlier_only():
+    """F1: deliveries 2 and 3 follow an EARLIER date of the will; delivery
+    1 (it follows ``locktime``) and a later date (a postpone) never."""
+    rows = owner_table()
+    new = dv.anticipated_rows(rows, {1: D1 - dv.DAY, 2: D2 - dv.DAY, 3: D3 + dv.DAY})
+    assert [r["locktime"] for r in new] == [D1, D2 - dv.DAY, D3]
+    assert rows == owner_table()                        # a new list
+    assert dv.anticipated_rows(rows, {2: D2, 3: D3}) is None
+    assert dv.anticipated_rows(rows, {}) is None
+    assert dv.anticipated_rows(rows, {1: D1 - dv.DAY}) is None
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

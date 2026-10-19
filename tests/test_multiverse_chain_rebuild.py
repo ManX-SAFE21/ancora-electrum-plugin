@@ -1,7 +1,7 @@
 """Rebuilding a will with delivery instalments (multiverse, CHANGELOG #166).
 
-With the hidden multiverse option each later delivery spends the change of
-the one before, and every will-executor holds a copy of every delivery: a
+With a table of deliveries (#168; BAL's hidden global option until then)
+each later delivery spends the change of the one before, and every will-executor holds a copy of every delivery: a
 chain of 3 + 9 (two dates) or 3 + 9 + 27 (three dates) transactions with
 three will-executors. The first build always worked; every REBUILD that
 moved a date (new funds, the miner fee rate, an heir changed) failed with
@@ -19,8 +19,13 @@ with the test password; fixed clock):
 * a later delivery's share changed: the whole chain one day earlier (D6);
 * the dispatch: a will with one date never takes the chain path;
 * :meth:`Will.chain_links` refuses broken links with a clear error;
-* known and left for M3 (F1): after an anticipated rebuild the heirs'
-  dates are not moved, so the NEXT Check asks for the paid invalidation.
+* F1 (#166, fixed in #168): after an anticipated rebuild the dates of
+  the table follow, so the NEXT Check finds the will in force.
+
+#168: the shapes are tables of deliveries (one row per person, one address
+per person, the same dates for every heir, shares of the whole estate
+adding up to 100 %) written through ``context.set_instalments``; the
+items name the rows "luca", "luca§2", "luca§3".
 
 Run (standalone or with pytest):
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \\
@@ -40,8 +45,10 @@ import flowkit as fk
 from electrum.transaction import tx_from_any
 from PyQt6.QtWidgets import QApplication
 
+from bal.core import delivery
 from bal.core.will import Will, WillChainError
 from bal.engine import build as engine_build
+from bal.engine import context
 
 # Kept at module level: flowkit's window needs a Qt application.
 _APP = QApplication.instance() or QApplication(sys.argv)
@@ -58,18 +65,17 @@ RBF = 0xFFFFFFFD
 
 @pytest.fixture
 def make(monkeypatch):
-    """flowkit sessions: three will-executors, multiverse on, synchronized."""
+    """flowkit sessions: three will-executors, synchronized."""
     fk.ensure_event_loop()
     made = []
 
-    def _make(multiverse=True):
+    def _make():
         """One ADVANCED session with a password, miner fee 2 sat/vB."""
         s = fk.Session(monkeypatch, mode="advanced", password=TEST_PASSWORD,
                        fee=2, locktime=D1)
         s.world.add_executor()
         # The flowkit wallet is offline: synchronized for the #128 rules.
         monkeypatch.setattr(s.wallet, "is_up_to_date", lambda: True)
-        s.plugin.ENABLE_MULTIVERSE.set(multiverse)
         made.append(s)
         return s
 
@@ -79,40 +85,46 @@ def make(monkeypatch):
     fk.stop_event_loop()
 
 
-def _set_heirs(s, rows):
-    """Replace the heirs by ``rows``: ``{name: (address, share, date)}``."""
+def _set_heirs(s, names):
+    """Replace the heirs by one row per person of ``names`` (the amount of
+    a person row is not used with a table)."""
     for name in list(s.bw.heirs.keys()):
         del s.bw.heirs[name]
     s.bw.heirs.save()
-    for name, (addr, share, date) in rows.items():
-        s.bw.heirs[name] = [addr, share, date]
+    for name in names:
+        s.bw.heirs[name] = [ADDR[name], "50%", D1]
+
+
+def _table(s, rows):
+    """Store the table ``[(date, {name: share})]`` (the engine's write)."""
+    context.set_instalments(
+        s.bw, [{"locktime": d, "shares": dict(sh)} for d, sh in rows])
 
 
 def two_dates(s):
     """Shape A: alice 60 % in 2030, bob 40 % in 2033 (3 + 9 items)."""
-    _set_heirs(s, {"alice": (ADDR["alice"], "60%", D1),
-                   "bob": (ADDR["bob"], "40%", D2)})
+    _set_heirs(s, ["alice", "bob"])
+    _table(s, [(D1, {"alice": "60%", "bob": "0%"}),
+               (D2, {"alice": "0%", "bob": "40%"})])
 
 
 def three_dates(s):
-    """Shape B, the owner's model written with today's rows (the same
-    address for one person at each date): 10/10, 10/10, 30/30 %."""
-    _set_heirs(s, {
-        "luca@1": (ADDR["luca"], "10%", D1), "john@1": (ADDR["john"], "10%", D1),
-        "luca@2": (ADDR["luca"], "10%", D2), "john@2": (ADDR["john"], "10%", D2),
-        "luca@3": (ADDR["luca"], "30%", D3), "john@3": (ADDR["john"], "30%", D3),
-    })
+    """Shape B, the owner's model: 10/10, 10/10, 30/30 %."""
+    _set_heirs(s, ["luca", "john"])
+    _table(s, [(D1, {"luca": "10%", "john": "10%"}),
+               (D2, {"luca": "10%", "john": "10%"}),
+               (D3, {"luca": "30%", "john": "30%"})])
+
+
+def _edit_table(s, change):
+    """Rewrite the stored table: ``change(rows)`` edits it in place."""
+    rows = delivery.table_rows(s.bw.will_settings)
+    change(rows)
+    context.set_instalments(s.bw, rows)
 
 
 SHAPES = {"two_dates": (two_dates, {1: 3, 2: 9}),
           "three_dates": (three_dates, {1: 3, 2: 9, 3: 27})}
-
-
-def _change(s, name, field, value):
-    """Change one field (0 address, 1 share, 2 date) of the heir ``name``."""
-    heir = list(s.bw.heirs[name])
-    heir[field] = value
-    s.bw.heirs[name] = heir
 
 
 def _level(wid, will):
@@ -273,16 +285,20 @@ def test_fee_rate_change(make):
 
 
 def test_later_delivery_share_changed(make):
-    """luca's share of delivery 2 from 10 % to 15 %: the amounts of
-    delivery 1 change too (the shares are spread over every delivery)
-    although its heir rows do not. Before, the old and the new first
-    delivery stayed VALID on the same coins on the same day (78 VALID
-    items); now the whole chain is one day earlier (owner decision D6)."""
+    """luca's share of delivery 2 from 10 % to 15 % and john's of delivery
+    1 from 10 % to 5 % (the table stays at 100 %): the amounts of delivery
+    1 change. Before, the old and the new first delivery stayed VALID on
+    the same coins on the same day (78 VALID items); now the whole chain is
+    one day earlier (owner decision D6)."""
     s = make()
     levels = _first(s, "three_dates")
     old = set(_valid(s))
     s.clock.travel(1)
-    _change(s, "luca@2", 1, "15%")
+
+    def change(rows):
+        rows[0]["shares"]["john"] = "5%"
+        rows[1]["shares"]["luca"] = "15%"
+    _edit_table(s, change)
     pushed = len(s.world.pushed)
     s.check()
     audit(s, levels, pushed)
@@ -291,21 +307,36 @@ def test_later_delivery_share_changed(make):
     _second_build_changes_nothing(s)
 
 
-def test_later_delivery_address_changed_keeps_the_first(make):
-    """john's address of delivery 2 changed: delivery 1 is the signed one
-    (not sent again); delivery 2 one day earlier, delivery 3 relinked."""
+def test_later_deliveries_shares_moved_keep_the_first(make):
+    """5 % of luca's moved from delivery 3 to delivery 2 (the table stays
+    at 100 %, delivery 1 unchanged): delivery 1 is the signed one (not
+    sent again); delivery 2 one day earlier and delivery 3 rebuilt on it.
+    #168 (F1): the table follows the earlier dates, and the next Check
+    finds the will in force."""
     s = make()
     levels = _first(s, "three_dates")
     firsts = {k for k in _valid(s) if _level(k, s.bw.willitems) == 1}
     s.clock.travel(1)
-    _change(s, "john@2", 0, fk.address(30))
+
+    def change(rows):
+        rows[1]["shares"]["luca"] = "15%"
+        rows[2]["shares"]["luca"] = "25%"
+    _edit_table(s, change)
     pushed = len(s.world.pushed)
     s.check()
     audit(s, levels, pushed)
     assert {k for k in _valid(s) if _level(k, s.bw.willitems) == 1} == firsts
     assert len(s.world.pushed) - pushed == 36
-    assert _dates(s) == {1: {"2030-03-01"}, 2: {"2033-02-28"}, 3: {"2036-03-01"}}
+    dates = _dates(s)
+    assert dates[1] == {"2030-03-01"} and dates[2] == {"2033-02-28"}
+    table = [fk.fmt(r["locktime"]) for r in delivery.table_rows(s.bw.will_settings)]
+    assert table == ["2030-03-01", "2033-02-28", min(dates[3])]
     _second_build_changes_nothing(s)
+    s.clock.travel(1)
+    pushed = len(s.world.pushed)
+    s.check(cancel_on=("invalidat",))
+    assert not any("nvalidat" in a[1] for a in s.user.asked)
+    assert len(s.world.pushed) == pushed
 
 
 @pytest.mark.parametrize("which,expected", [
@@ -318,8 +349,10 @@ def test_one_delivery_earlier(make, which, expected):
     s = make()
     levels = _first(s, "three_dates")
     s.clock.travel(1)
-    for name in ("luca@" + which, "john@" + which):
-        _change(s, name, 2, s.bw.heirs[name][2] - 30 * fk.DAY)
+
+    def change(rows):
+        rows[int(which) - 1]["locktime"] -= 30 * fk.DAY
+    _edit_table(s, change)
     pushed = len(s.world.pushed)
     s.check()
     audit(s, levels, pushed)
@@ -328,14 +361,16 @@ def test_one_delivery_earlier(make, which, expected):
 
 
 def test_one_date_never_takes_the_chain_path(make, monkeypatch):
-    """The dispatch (#166): with one delivery date (multiverse off, the
-    default) the chain pass never runs and today's dating runs, also for a
-    new coin and a fee change."""
+    """The dispatch (#166): with one delivery date (no table, the default)
+    the chain pass never runs and today's dating runs, also for a new coin
+    and a fee change. #168 (D7): BAL's global option, even on, is not read
+    any more."""
     calls = []
     real = Will.date_chain
     monkeypatch.setattr(Will, "date_chain", staticmethod(
         lambda *a, **k: (calls.append(1), real(*a, **k))[1]))
-    s = make(multiverse=False)
+    s = make()
+    s.plugin.ENABLE_MULTIVERSE.set(True)
     s.check()
     s.clock.travel(1)
     s.add_coin(250_000)
@@ -370,20 +405,22 @@ def test_broken_links_are_refused(make):
         Will.chain_links(will)
 
 
-@pytest.mark.xfail(strict=True, reason="F1, left for M3: the heirs' dates "
-                   "do not follow the one-day anticipation of a chain")
 def test_next_check_after_an_anticipated_rebuild_asks_nothing(make):
-    """After the new-coin rebuild, the next Check should find the will in
-    force. Today it reads the heirs' dates (2030-03-01) as a postpone of the
-    signed chain (2030-02-28) and asks for the paid invalidation."""
+    """F1 (#166, fixed in #168): after the new-coin rebuild the next Check
+    finds the will in force. Before, it read the heirs' dates (2030-03-01)
+    as a postpone of the signed chain (2030-02-28) and asked for the paid
+    invalidation."""
     s = make()
     _first(s, "three_dates")
     s.clock.travel(1)
     s.add_coin(250_000)
     s.check()
+    assert fk.fmt(s.bw.will_settings["locktime"]) == "2030-02-28"
     s.clock.travel(1)
+    pushed = len(s.world.pushed)
     s.check(cancel_on=("invalidat",))
     assert not any("nvalidat" in a[1] for a in s.user.asked)
+    assert len(s.world.pushed) == pushed
 
 
 if __name__ == "__main__":

@@ -190,10 +190,13 @@ def test_bad_values_are_refused_before_anything_is_written(make):
 
 
 def test_no_period_form_with_multiverse(make):
-    """Owner decision 10: the hidden multiverse option has no period form."""
+    """Owner decision 10: a will in deliveries (a table, #168; BAL's hidden
+    multiverse option before) has no period form."""
     s = make(mode="advanced")
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    with pytest.raises(ValueError, match="multiverse"):
+    date = delivery.as_delivery(wallet_dict(s)["locktime"])
+    s.set_instalments((date, {"alice": "60%", "bob": "0%"}),
+                      (date + 365 * 86400, {"alice": "0%", "bob": "40%"}))
+    with pytest.raises(ValueError, match="table of deliveries"):
         engine_context.set_delivery(s.bw, form="period", months=36)
     assert delivery.form_of(wallet_dict(s)) == "fixed"
 

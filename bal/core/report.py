@@ -33,6 +33,7 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from ..i18n import N_, _, number_separators
+from . import delivery as core_delivery
 from . import future as core_future
 from . import will_versions
 from .heirs import HEIR_ADDRESS, is_op_return_address, message_text
@@ -215,7 +216,8 @@ def _levels(version):
 
 
 def _addresses(items):
-    """``{heir name: address}`` of the heirs of ``items`` (people only)."""
+    """``{heir name: address}`` of the heirs of ``items`` (people only; the
+    rows of later deliveries under the person's name, #168)."""
     out = {}
     for item in items:
         for name, heir in (getattr(item, "heirs", None) or {}).items():
@@ -226,7 +228,8 @@ def _addresses(items):
             except (TypeError, IndexError):
                 continue
             if address and not is_op_return_address(address):
-                out.setdefault(str(name), address)
+                # #168: by person (the rows "Luca§2"... are Luca's).
+                out.setdefault(core_delivery.person_name(name), address)
     return out
 
 

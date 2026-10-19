@@ -579,10 +579,12 @@ def test_search_looks_in_versions_and_transactions(make):
 
 
 def test_multiverse_does_not_break_the_list(make):
+    """A will in two deliveries (a table, #168; BAL's multiverse option
+    before): one version, each first-delivery row holds its three
+    instalments."""
     s = make()
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    s.bw.heirs["bob"] = [fk.HEIR_ADDR["bob"], "40%", D + 365 * fk.DAY]
-    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "60%", D]
+    s.set_instalments((D, {"alice": "60%", "bob": "0%"}),
+                      (D + 365 * fk.DAY, {"alice": "0%", "bob": "40%"}))
     s.check()
     lst = _list(s)
     m = lst.model()

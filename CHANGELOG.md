@@ -10821,3 +10821,136 @@ caught by the new tests.
 No ZIP: nothing in the plugin calls the new functions yet (owner, choice B).
 
 **Outcome:** DONE.
+
+## 168. Staged deliveries in the engine: the table of deliveries builds the chain
+
+**Date:** 2026-10-19
+
+**Goal (step M3a of `context/MULTIVERSE-PLAN.md`; owner decisions of
+2026-10-19, M3 study):** a wallet with a table of deliveries
+(`will_settings["instalments"]`, rules of #167) gets a will in up to three
+deliveries, the same dates for every heir, each heir with a share of the
+whole estate at each date. BAL's hidden global option
+`bal_enable_multiverse` (each heir with its own date) is no longer read
+(D7). The command line (`bal_instalments_*`, M3b) and the editor (M4) come
+next: until then a table can only be written by the engine.
+
+**What changed:**
+
+- `bal/core/delivery.py`: `INSTALMENT_SEP` ("§") and the row names of each
+  delivery (owner decision 2): `instalment_key` ("Luca", "Luca§2",
+  "Luca§3": the delivery NUMBER, never the date), `instalment_number`,
+  `person_name`, `has_separator`; `is_message_row`, `payee_names` (the
+  OP_RETURN message is not a column); `table_rows` (delivery 1 is always
+  on the wallet's `locktime`, the one date every existing rule moves);
+  `effective_rows` (one row per person and delivery with a share above
+  0 %, the message with delivery 1, decision 4); `anticipated_rows` (F1:
+  deliveries 2 and 3 follow an EARLIER date of the will, never a later
+  one); `InstalmentsMismatch`; `INSTALMENTS_SCHEMA_VERSION` 3.
+  `validate_instalments(rows, heirs, now, gap=True)`: `now` None skips
+  "after today", `gap` False the 28 days (a stored table: delivery 1 may
+  be past, the automatic one-day anticipations may shorten a gap,
+  decision 5).
+- `bal/engine/instalments.py` (new): `DeliveryHeirs` (the rows of every
+  delivery, in memory only, never saved); `has_table`; `check_table` (the
+  table against the heirs at every flow: an heir added, removed or renamed
+  without the table stops everything, decision 3); `effective_heirs`
+  (`host.heirs` itself without a table); `first_delivery_heirs`;
+  `delivery_dates`; `sync_later_deliveries` (F1).
+- `bal/engine/context.py`: `init_class_variables` checks the table (after
+  the Check Alive gate, so a renewal is still offered; never in
+  `check_holds`, so an invalidation stays possible) and always gives the
+  person rows the will's date; `check_will` compares the items with the
+  rows of every delivery (renames and the will check);
+  `drop_anticipation_leftover` compares delivery 1 only; `_multiverse` =
+  the wallet has a table (no period form); the migration no longer reads
+  the global option. New `set_instalments(host, rows, now)` (the one
+  validated write: refused with the period form; the table stored whole,
+  schema 3 only together with a table, owner choice B; the wallet's date =
+  delivery 1) and `clear_instalments(host)`. `set_will_setting`: with a
+  table, a delivery date on or after delivery 2 is refused (the order only;
+  the 28 days are checked where the owner types the date).
+- `bal/engine/build.py`: the build uses the rows of every delivery (the
+  chain of #166, unchanged `heirs.py`); `last_build_error` is copied back;
+  `sync_delivery_date` also moves deliveries 2 and 3 earlier (F1 of #166:
+  the next Check no longer reads an anticipation as a postpone).
+  `bal/engine/check.py`, `bal/gui/qt/window.py` (Prepare) and
+  `bal/cli/controller.py`: the amounts check reads the rows of every
+  delivery; a table that does not fit stops Prepare with its message, and
+  the command line shows it. `bal/gui/qt/dialogs.py`: the Check's quiet
+  "Shares recalculated in proportion" line and its "shares changed"
+  comparison read the table's rows (delivery 1 for the comparison), not
+  the person rows.
+- `bal/core/will.py`: `_pure_rename` and `_renamed_to` match a row of the
+  same delivery only ("Marco§2" for "Luca§2"); `planned_delivery` reads the
+  earliest VALID item (delivery 1).
+- Display (the person, never "Luca§2"): `bal/core/future.py` (`_instalment`),
+  `bal/core/report.py` (`_addresses`, so `_heirs` sums by person),
+  `bal/core/will_versions.py` (`_heir_rows`). The other texts that may
+  show a row name (Check messages, the Will tab, the CLI output) come with
+  M3b and M4.
+- D7, BAL's global option no longer read: the heir dialog has no Locktime
+  row; `set_heir` always gives the will's date; the delivery form's period
+  choice is off with a table (`widgets.py`); the command line always
+  refuses `--locktime` and no longer checks the dates of an import
+  (`_check_locktime_value` removed). `plugin_base.py`: the key stays
+  defined, with a comment.
+- Heir names with "§" refused (decision 2): the heir dialog, `heirs_add`,
+  `heirs_import` (skipped with the reason). New texts, IT/ES catalogs
+  updated: "The table of the deliveries no longer matches the heirs...",
+  "An heir name cannot contain the sign {}."; "locktime" (the removed help
+  button) dropped.
+
+**Tests:**
+
+- `tests/test_engine_instalments.py` (new, three will-executors): the
+  chain of a table (3 + 9 + 27 items, the row names of each delivery,
+  amounts within 1 % of 10 / 10 / 30 % of the estate, the person rows
+  unchanged, one password prompt); a 0 % cell; the message with delivery
+  1; `planned_delivery`; `set_instalments` and four refused tables
+  (nothing written), the period form, a name with "§"; the wallet's date
+  kept before delivery 2; an heir added or removed without the table:
+  Check, Prepare and the command line stop, nothing built or sent; a rename
+  in the heirs and the table is a pure rename; delivery 2 later asks the
+  paid invalidation, earlier is free (D6); the table removed: one delivery
+  one day earlier; BAL's global option not read; two wallets keep their
+  own form; the table survives a reload; the amounts check reads the
+  table (it found the Check dialog's own shares line reading the person
+  rows: fixed in `bal/gui/qt/dialogs.py`, `_quiet_shares_line` and
+  `_shares_change`); no period form with a table.
+- `tests/test_core_delivery_instalments.py`: the row names, the message
+  rows, `effective_rows`, `table_rows`, a stored table checked without
+  `now` and the 28 days, `anticipated_rows`.
+- `tests/test_multiverse_chain_rebuild.py`: the shapes are tables now
+  (`context.set_instalments`); the share changes keep the table at 100 %;
+  "a later delivery's address changed" became "shares moved between
+  deliveries 2 and 3" (one address per person); F1 is no longer an xfail:
+  it passes, also after a delivery 2 anticipated.
+- Moved from the global option to a table (or to D7): 13 files
+  (`test_advanced_period_default`, `test_cli_command_layer`,
+  `test_cli_controller_offline`, `test_core_future`,
+  `test_core_will_versions`, `test_delivery_form_lock`,
+  `test_gui_date_form_change_flow` (the per-heir period kept by leaving the
+  heirs' dates alone), `test_gui_delivery_date_message`,
+  `test_gui_delivery_form`, `test_gui_will_flows`,
+  `test_gui_will_versions_list`, `test_inheritance_report`,
+  `test_per_wallet_settings_flow`). `tests/flowkit.py`:
+  `Session.set_instalments`.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory: normal order 2653 passed (45 minutes, before the last
+two fixes: the Check dialog's shares line and its test), files in reverse
+order 2655 passed (35 minutes, with them); no xfail left (F1 passes);
+golden files unchanged. Mutation check on a copy of the code: 16 rules
+broken one at a time, all 16 caught. Scenario harness (full matrix, the
+2-coin scenarios 6 times, warn_matrix synced and not): log identical to the
+base `dev/0.8.0` 412c88b (135 lines) and to the #166 log. `build_zip.py` +
+`external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass. Test ZIP
+`test-zips/ancora_0.8.0-TEST-168-instalments-engine.zip`, sha256
+`72cbfd12...423c`.
+
+**Outcome:** DONE. The owner tested the ZIP on his test wallet (one date,
+four will-executors): the heir dialog has no Locktime row; Check "ok",
+nothing to prepare, sign or send, verification 4/4; an heir's share from
+60 % to 70 %: the will rebuilt one day earlier (free), signed, verified
+4/4, in force.
