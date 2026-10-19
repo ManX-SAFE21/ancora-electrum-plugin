@@ -30,7 +30,12 @@ result. The rules here:
   :func:`period_values`), the v2 upgrade (:func:`upgrade_values`), and the
   two predicates on the will items: the form is locked while a will is in
   force (:func:`form_locked`), the period date is re-anchored only when no
-  will is in force (:func:`will_in_force`).
+  will is in force (:func:`will_in_force`);
+* the staged deliveries of #167 (multiverse): the instalments table, its
+  reader (:func:`instalments_of`), its rules (:func:`validate_instalments`,
+  :func:`as_share`, :func:`share_text`) and the example table the editor
+  starts from (:func:`default_instalments`). Nothing uses them yet: the
+  engine and the schema 3 come with M3.
 
 Pure: standard library only, no Qt, no Electrum objects, no I/O, and the
 clock is NEVER read here. Every "now" comes from the caller, so the test
@@ -58,6 +63,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 
 # --------------------------------------------------------------------------- #
 # Constants
@@ -1468,6 +1474,251 @@ def will_in_force(items, synced, executable):
         if not synced or executable(i.wid):
             return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+# Staged deliveries: the instalments table (multiverse, #167)
+# --------------------------------------------------------------------------- #
+# The table, stored in the wallet settings under INSTALMENTS_KEY (M3 writes
+# it and moves the schema to 3): a list of rows, one per delivery date,
+#     [{"locktime": <ts>, "shares": {"<heir name>": "<n>%", ...}}, ...]
+# Each share is a part of the WHOLE estate (owner decision D4): the cells of
+# the whole table add up to 100 %. The UI calls a row "Delivery 1, 2, 3";
+# "instalment" is a code word only.
+#: The settings key of the table. A wallet without it has one delivery.
+INSTALMENTS_KEY = "instalments"
+#: Fewest and most dates in a table (owner, 2026-10-19: one date is a normal
+#: will, so a table needs two; at most 3, decision D3: 3 + 9 + 27
+#: transactions with three will-executors).
+INSTALMENTS_MIN = 2
+INSTALMENTS_MAX = 3
+#: Smallest gap between two delivery dates, in days (owner, 2026-10-19).
+#: The will-executors never retry a failed broadcast, and a delivery whose
+#: parent is not mined yet fails for good: 28 days is twice Bitcoin Core's
+#: default mempool expiry (14 days), and monthly deliveries still work
+#: across February.
+MIN_GAP_DAYS = 28
+#: The share of the estate paid at each date of the default table, and the
+#: months between its dates (owner, 2026-10-19: 33 / 33 / 34 %, one year
+#: apart). Texts, so the arithmetic stays exact (:class:`decimal.Decimal`).
+DEFAULT_INSTALMENT_TOTALS = ("33", "33", "34")
+DEFAULT_INSTALMENT_STEP_MONTHS = 12
+
+_HUNDRED = Decimal(100)
+_CENT = Decimal("0.01")
+_ROW_KEYS = frozenset(("locktime", "shares"))
+
+
+def instalments_of(settings):
+    """The instalments table stored in ``settings``, as plain lists and dicts.
+
+    ``[]`` when there is none (the key is missing, None or an empty list):
+    the wallet has one delivery, as before #167. A copy, so the caller can
+    change it without touching the wallet dict. Not validated here: the
+    caller checks it with :func:`validate_instalments` before using it. A
+    value that is not a list raises ``ValueError``: reading it as "no table"
+    would build a will that pays everything at the first date.
+    """
+    if not isinstance(settings, Mapping):
+        return []
+    raw = settings.get(INSTALMENTS_KEY)
+    if raw is None:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError("instalments: not a list: {!r}".format(raw))
+    rows = []
+    for row in raw:
+        if isinstance(row, Mapping):
+            row = dict(row)
+            if isinstance(row.get("shares"), Mapping):
+                row["shares"] = dict(row["shares"])
+        rows.append(row)
+    return rows
+
+
+def as_share(x):
+    """A share of the estate as a :class:`decimal.Decimal`, or None.
+
+    A text ``"11.33%"`` (the ``%`` may be left out) or a number, from 0 to
+    100 with at most two decimals (owner, 2026-10-19). A bool, a negative
+    value, more decimals, NaN or garbage give None.
+    """
+    if isinstance(x, bool):
+        return None
+    if isinstance(x, str):
+        text = x.strip()
+        if text.endswith("%"):
+            text = text[:-1].strip()
+    elif _is_number(x):
+        # str() first: Decimal(0.1) would keep the binary error of the float.
+        text = str(x)
+    else:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not value.is_finite() or value < 0 or value > _HUNDRED:
+        return None
+    if value != value.quantize(_CENT):
+        return None
+    # abs(): "-0" is a valid zero, but its text would be "-0%".
+    return abs(value)
+
+
+def share_text(value):
+    """The stored text of a share: ``"11.33%"``, ``"11.5%"``, ``"0%"``.
+
+    The form of the heirs' amounts (``"<n>%"``), without trailing zeros, so
+    one share always has one text.
+    """
+    text = "{:f}".format(value.quantize(_CENT))
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text + "%"
+
+
+def validate_instalments(rows, heirs, now):
+    """Check an instalments table before it is written; return it normalized.
+
+    ``rows``: the table (see :data:`INSTALMENTS_KEY`); ``heirs``: the names
+    of the heirs (the keys of the wallet's ``heirs`` dict, in their order,
+    each once); ``now``: the caller's clock. The rules (owner, 2026-10-19):
+
+    * from :data:`INSTALMENTS_MIN` to :data:`INSTALMENTS_MAX` rows, each with
+      exactly the keys ``locktime`` and ``shares``;
+    * the dates (:func:`as_delivery`, a period is refused) are after
+      ``now``, strictly increasing and at least :data:`MIN_GAP_DAYS` days
+      apart;
+    * every share is a part of the estate (:func:`as_share`); a name that is
+      not an heir is refused, a missing heir counts 0 %;
+    * every date pays at least one heir, every heir gets something at one
+      date at least (an heir with 0 % everywhere must be removed), and the
+      whole table adds up to exactly 100 %.
+
+    Returns a new list: the dates as ints, and every row naming every heir
+    in the order of ``heirs`` with its share text (:func:`share_text`).
+    Raises ``ValueError`` (English, for the log and the command line) on the
+    first broken rule.
+    """
+    names = list(heirs)
+    if not names:
+        raise ValueError("instalments: there are no heirs")
+    for name in names:
+        if not isinstance(name, str):
+            raise ValueError("instalments: not an heir name: {!r}".format(name))
+    if len(set(names)) != len(names):
+        raise ValueError("instalments: an heir is named twice")
+    if not isinstance(rows, (list, tuple)):
+        raise ValueError("instalments: not a list: {!r}".format(rows))
+    if not INSTALMENTS_MIN <= len(rows) <= INSTALMENTS_MAX:
+        raise ValueError(
+            "instalments: {} delivery dates (from {} to {})".format(
+                len(rows), INSTALMENTS_MIN, INSTALMENTS_MAX
+            )
+        )
+    out = []
+    totals = dict.fromkeys(names, Decimal(0))
+    previous = None
+    for n, row in enumerate(rows, 1):
+        if not isinstance(row, Mapping) or set(row) != _ROW_KEYS:
+            raise ValueError(
+                "delivery {}: not a row with 'locktime' and 'shares': {!r}".format(
+                    n, row
+                )
+            )
+        raw = row["locktime"]
+        if isinstance(raw, str) and _PERIOD.fullmatch(raw.strip()):
+            raise ValueError(
+                "delivery {}: a period is not a delivery date: {!r}".format(n, raw)
+            )
+        locktime = as_delivery(raw)
+        if locktime is None:
+            raise ValueError("delivery {}: not a delivery date: {!r}".format(n, raw))
+        if locktime <= now:
+            raise ValueError("delivery {}: the date is not in the future".format(n))
+        if previous is not None:
+            if locktime <= previous:
+                raise ValueError(
+                    "delivery {}: the date is not after delivery {}".format(n, n - 1)
+                )
+            if locktime - previous < MIN_GAP_DAYS * DAY:
+                raise ValueError(
+                    "delivery {}: less than {} days after delivery {}".format(
+                        n, MIN_GAP_DAYS, n - 1
+                    )
+                )
+        previous = locktime
+        shares = row["shares"]
+        if not isinstance(shares, Mapping):
+            raise ValueError("delivery {}: shares not a table: {!r}".format(n, shares))
+        for name in shares:
+            if name not in totals:
+                raise ValueError("delivery {}: not an heir: {!r}".format(n, name))
+        values = {}
+        for name in names:
+            value = as_share(shares.get(name, 0))
+            if value is None:
+                raise ValueError(
+                    "delivery {}: {}: not a share (0 to 100, two decimals at "
+                    "most): {!r}".format(n, name, shares.get(name))
+                )
+            values[name] = value
+            totals[name] += value
+        if not any(values.values()):
+            raise ValueError("delivery {}: pays no heir".format(n))
+        out.append(
+            {
+                "locktime": locktime,
+                "shares": {name: share_text(values[name]) for name in names},
+            }
+        )
+    for name in names:
+        if not totals[name]:
+            raise ValueError(
+                "{}: gets nothing at any delivery (remove the heir)".format(name)
+            )
+    total = sum(totals.values(), Decimal(0))
+    if total != _HUNDRED:
+        raise ValueError(
+            "instalments: the shares add up to {}, not 100%".format(share_text(total))
+        )
+    return out
+
+
+def default_instalments(heirs, first):
+    """The example table the editor starts from (owner, 2026-10-19).
+
+    Three dates: ``first`` (the wallet's delivery date), then
+    :data:`DEFAULT_INSTALMENT_STEP_MONTHS` and twice that many months later
+    (:func:`add_months`). Each date pays the share of the estate of
+    :data:`DEFAULT_INSTALMENT_TOTALS` (33, 33, 34 %), split equally among
+    the heirs in cents; the cents left over go to the last heir, so the
+    table adds up to exactly 100 %. With three heirs: 11 / 11 / 11 %, again
+    11 / 11 / 11 %, then 11.33 / 11.33 / 11.34 %. The owner changes it
+    before it is saved; it still goes through :func:`validate_instalments`.
+    """
+    names = list(heirs)
+    if not names:
+        raise ValueError("instalments: there are no heirs")
+    rows = []
+    for k, total in enumerate(DEFAULT_INSTALMENT_TOTALS):
+        cents = int(Decimal(total) * 100)
+        each = cents // len(names)
+        shares = {name: Decimal(each) / 100 for name in names}
+        shares[names[-1]] = Decimal(cents - each * (len(names) - 1)) / 100
+        # The first date is the wallet's own, kept as it is; add_months
+        # would move it to 00:00 UTC.
+        locktime = first if k == 0 else add_months(
+            first, k * DEFAULT_INSTALMENT_STEP_MONTHS
+        )
+        rows.append(
+            {
+                "locktime": locktime,
+                "shares": {name: share_text(shares[name]) for name in names},
+            }
+        )
+    return rows
 
 
 # --------------------------------------------------------------------------- #

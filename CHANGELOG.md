@@ -10759,3 +10759,65 @@ synced and not): log identical to the base `dev/0.8.0` (135 lines).
 **Outcome:** DONE. The owner tested the ZIP on his test wallet (one date,
 four will-executors): Check "ok", preparation, signature and sending "not
 needed", verification 4/4, "Your will is in force".
+
+## 167. The rules of the staged deliveries (multiverse): the instalments table
+
+**Date:** 2026-10-19
+
+**Goal (step M2 of `context/MULTIVERSE-PLAN.md`, owner decisions of
+2026-10-19):** the pure rules of a will paid in up to three deliveries on
+the same dates for every heir. A table: one row per date, one cell per heir,
+each cell a share of the WHOLE estate. Nothing uses the rules yet: the
+engine, the command line and the schema 3 of the wallet settings come with
+M3 (owner choice B: the schema moves to 3 only when a table is really
+written), the editor with M4.
+
+**What changed:**
+
+- `bal/core/delivery.py`, new section "Staged deliveries":
+  - `INSTALMENTS_KEY` (`"instalments"`, the settings key M3 writes),
+    `INSTALMENTS_MIN` 2 (one date is a normal will), `INSTALMENTS_MAX` 3,
+    `MIN_GAP_DAYS` 28 (the will-executors never retry a failed broadcast:
+    twice Bitcoin Core's 14-day mempool expiry; monthly deliveries still
+    work across February).
+  - `instalments_of(settings)`: the stored table as a copy, `[]` when there
+    is none (one delivery); a value that is not a list raises `ValueError`
+    (read as "no table" it would pay everything at the first date).
+  - `as_share` / `share_text`: a share from 0 to 100 with two decimals at
+    most, read with `decimal.Decimal` (exact sums), stored as `"<n>%"`
+    without trailing zeros.
+  - `validate_instalments(rows, heirs, now)`: 2 or 3 rows with exactly
+    `locktime` and `shares`; dates after `now`, strictly increasing, at least
+    28 days apart (a period or a block height refused); a name that is not
+    an heir refused, a missing heir counts 0 %; every date pays one heir at
+    least; an heir with 0 % at every date refused ("remove the heir"); the
+    whole table exactly 100 %. Returns the normalized table (dates as ints,
+    every heir named in every row). `ValueError` in English on the first
+    broken rule.
+  - `default_instalments(heirs, first)`: the example the editor will start
+    from: the wallet's date, +12 and +24 months; 33 / 33 / 34 % of the
+    estate split equally among the heirs in cents, the cents left over to
+    the last heir (three heirs: 11 / 11 / 11, 11 / 11 / 11,
+    11.33 / 11.33 / 11.34 %).
+  - Module docstring: the new section listed. `SCHEMA_VERSION` stays 2.
+- `tests/test_core_delivery_settings.py`: `decimal` added to the standard
+  library modules `delivery.py` may import.
+
+**Tests:** `tests/test_core_delivery_instalments.py` (new, 116 tests): the
+constants; the reader (no table, a copy, not a list); `as_share` and
+`share_text` ("-0" stored as "0%"); the owner's example table valid and
+kept; a missing heir written as 0 %; numbers read exactly; exactly 28 days
+accepted (also across February); every rule refused with its message (1 or 4 dates, not a list,
+bad rows, bad dates, past dates, dates not increasing, 27 days, a name that
+is not an heir, bad shares, a date paying nobody, an heir getting nothing,
+99.99 % / 100.01 %, bad heir names); the default table for 1, 2, 3, 4 and 7
+heirs, valid for 1 to 12 heirs, its dates. No will-executor is involved.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory, normal order: 2621 passed, 1 xfailed (F1) (25 minutes);
+the "-0" test was added after it (the new file alone: 116 passed).
+Mutation check on a copy of the code: 25 rules broken one at a time, all 25
+caught by the new tests.
+No ZIP: nothing in the plugin calls the new functions yet (owner, choice B).
+
+**Outcome:** DONE.
