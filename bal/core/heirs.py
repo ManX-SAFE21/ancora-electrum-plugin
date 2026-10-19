@@ -7,7 +7,9 @@ Heir management and inheritance-transaction building.
 This is the heart of the plugin's Bitcoin logic and the most delicate part of
 the whole codebase, so the implementation below is kept byte-for-byte identical
 to the original ``heirs.py``; only the dead commented-out imports were removed
-and documentation was added.
+and documentation was added. Exception (CHANGELOG #166, owner decision): with
+more than one delivery date, ``prepare_transactions`` makes the first delivery
+spend every coin.
 
 An *heir* is stored as a small list addressed by the ``HEIR_*`` column
 constants defined below.  ``Heirs`` is a ``dict`` subclass persisted inside the
@@ -233,12 +235,21 @@ def prepare_transactions(locktimes, available_utxos, fees, wallet):
 
         in_amount = 0.0
         used_utxos = []
+        # CHANGELOG #166 (owner, solution C): with more than one delivery
+        # date (multiverse) the first delivery spends EVERY coin and the
+        # next ones only its change. WHY: a new first delivery must always
+        # spend the coins of the one in force; taking only the coins it
+        # needs, new funds that cover it alone left the old coins to a
+        # later delivery, and the old and the new first delivery could then
+        # both be executed. One date: unchanged (that transaction already
+        # spends every coin).
+        take_all = len(locktimes) > 1
         try:
             while utxo := available_utxos.pop():
                 value = utxo.value_sats()
                 in_amount += value
                 used_utxos.append(utxo)
-                if in_amount >= out_amount:
+                if in_amount >= out_amount and not (take_all and available_utxos):
                     break
 
         except IndexError as e:

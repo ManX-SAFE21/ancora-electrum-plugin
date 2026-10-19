@@ -10655,3 +10655,86 @@ the report tests pass the version themselves).
 **Verification:** manifest still pure ASCII and valid JSON.
 
 **Outcome:** DONE.
+
+## 166. Rebuilding a will with delivery instalments (multiverse) gives a correct chain
+
+**Date:** 2026-10-19
+
+**Problem (probe M0, `context/reports/multiverse-probe-2026-10-19.md`,
+three fake will-executors, hidden option `bal_enable_multiverse` on):** with
+heirs on different dates the will is a chain (each later delivery spends the
+change of the one before; every will-executor holds a copy of every level:
+3 + 9 or 3 + 9 + 27 transactions). The first build worked. Every REBUILD
+that moved a date (new funds, a new miner fee rate, an heir address changed)
+failed with "list index out of range" or saved a broken will: children
+spending their own txid, one item under two keys, transactions without a
+txid. A later delivery's share changed left the old and the new first
+delivery both VALID on the same coins on the same day (78 VALID items). New
+funds that covered the first delivery alone were spent by it alone, the old
+coins went to a later delivery, and the old and the new first delivery could
+both be executed. Causes (multi-agent analysis + probes): `Will.change_input`
+relinked each child to its own key instead of the parent's new txid, deleted
+by `tx.txid()` (None for chain children right after the build: the PSBT
+re-parse drops their input data) so stale keys stayed, rebuilt the input with
+another sequence number; `normalize_will` works on copies; `check_anticipate`
+compares the heir rows, not the real amounts; the coin selection takes only
+the coins a delivery needs.
+
+**What changed:**
+
+- `bal/core/will.py` `Will.update_will`: a will whose new items spend
+  outputs of other new items (`Will.chain_links`) is dated by the new
+  `Will.date_chain`; a will with one date keeps `search_anticipate_rec`,
+  byte for byte. `date_chain`: the parent links are read once, by object;
+  each chain input gets the data of the output it spends
+  (`_fill_chain_input`, in memory only, as `add_info_from_will` does);
+  generation by generation the children are pointed at their parents' FINAL
+  txids (`_relink`: in place, same sequence number, inputs in BIP69 order as
+  `from_io`, cached txid cleared), then dated with today's rules plus the
+  #166 rule (`_chain_set_anticipate`: same will-executor, other REAL heir
+  amounts -> one day earlier, owner decision D6). The first delivery is dated
+  against the old items on the same coins; a later one only against old
+  items spending the same parent output. `_check_chain` refuses (new
+  `WillChainError`, the will in force untouched) a link not pointing at its
+  parent, a later delivery not dated after the one it spends, an old first
+  delivery left executable together with the new will, and an old and a new
+  transaction of the same will-executor executable together. The dict is
+  re-keyed once by the final txids and each `_id` follows.
+- `bal/core/heirs.py` `prepare_transactions` (owner decision, solution C):
+  with more than one delivery date the first delivery spends EVERY coin and
+  the later ones only its change. One date: unchanged (that transaction
+  already spends every coin). Noted in the module docstring as the only
+  exception to "kept byte-for-byte identical".
+- Not changed (owner decision, step M3 of `context/MULTIVERSE-PLAN.md`):
+  after a rebuild that anticipated the chain, the heirs' own dates stay the
+  old ones, so the next Check reads a postpone and asks for the paid
+  invalidation (F1); the multiverse option stays hidden. `change_input`,
+  `new_input` and `normalize_will` stay for the one-date path (cleanup
+  later). `WillChainError` is shown as raw English text (text step later).
+- `context/reports/multiverso-resoconto-per-truman-IT.md`: the bugs found
+  and the fix, in Italian, for BAL.
+
+**Tests:** `tests/test_multiverse_chain_rebuild.py` (new, three
+will-executors, two and three dates): first build; new coin; a new coin that
+covers the first delivery alone; three coins then a new one; fee rate
+change; a later delivery's share changed; a later delivery's address changed
+(the first delivery kept); delivery 1 or 2 earlier; each followed by a
+second build that changes nothing, and an audit of the chain (key = txid, no
+self-spend, child after parent, sequence 0xfffffffd, pushed raw = stored
+txid); the dispatch (one date never takes the chain path); broken links
+refused; F1 as a strict xfail. Before the fix the new-coin, fee, address,
+share and big-coin cases failed (probe on the same code).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+Whole `tests/` directory, normal order and files in reverse order: 2506
+passed, 1 xfailed (F1) each (23 and 19 minutes); golden files unchanged.
+Scenario harness (full matrix, the 2-coin scenarios 6 times, warn_matrix
+synced and not): log identical to the base `dev/0.8.0` (135 lines).
+`build_zip.py` + `external_zip_test.py` + `smoke_test.py` on Electrum
+4.8.2: pass. Test ZIP
+`test-zips/ancora_0.8.0-TEST-166-multiverse-chain-rebuild.zip`, sha256
+`c6ea1557...c6c5`.
+
+**Outcome:** DONE. The owner tested the ZIP on his test wallet (one date,
+four will-executors): Check "ok", preparation, signature and sending "not
+needed", verification 4/4, "Your will is in force".

@@ -409,6 +409,328 @@ class Will:
 
             Will.search_anticipate_rec(will, old_inputs)
 
+    # ------------------------------------------------------------------ #
+    # Chains of wills (multiverse): one explicit dating pass (#166)
+    # ------------------------------------------------------------------ #
+    #: How many times one generation of a chain may be dated again before
+    #: the pass gives up (each pass only moves locktimes EARLIER, so a few
+    #: passes always settle a real will; the guard stops a loop on data that
+    #: cannot be settled).
+    CHAIN_MAX_PASSES = 20
+
+    @staticmethod
+    def chain_links(will):
+        """The parent links of a freshly built ``will``: a list of
+        ``(child, txin, parent, out_idx)`` (CHANGELOG #166).
+
+        One entry for every input whose previous transaction is an item of
+        ``will`` (the multiverse instalments: each later delivery spends the
+        change of the one before). Read once, while the keys are still the
+        txids the build gave (``bal/core/heirs.py``), and kept by OBJECT:
+        the item and the input themselves, never an index, because the
+        relink below re-sorts the inputs. A will with one delivery date has
+        no link: ``[]``.
+
+        Raises :class:`WillChainError` for an input that spends its own
+        item, or an output its parent does not have.
+        """
+        links = []
+        for key, item in will.items():
+            for txin in item.tx.inputs():
+                ptxid = txin.prevout.txid.hex()
+                if ptxid not in will:
+                    continue
+                parent = will[ptxid]
+                if parent is item or ptxid == key:
+                    raise WillChainError(
+                        "chain: transaction {} spends its own output".format(key[:8]))
+                idx = txin.prevout.out_idx
+                if idx >= len(parent.tx.outputs()):
+                    raise WillChainError(
+                        "chain: transaction {} spends output {} that {} does not "
+                        "have".format(key[:8], idx, ptxid[:8]))
+                links.append((item, txin, parent, idx))
+        return links
+
+    @staticmethod
+    def _fill_chain_input(txin, parent_out):
+        """Give the chain input ``txin`` the data of the output it spends.
+
+        The same fields :meth:`add_info_from_will` writes, in memory only:
+        the build's re-parse (``WillItem`` from the PSBT text) drops them for
+        an input whose previous transaction is not in the wallet, and
+        without them Electrum cannot compute the txid of an unsigned
+        transaction (``Transaction.txid`` returns None). Nothing new is
+        written into the stored PSBT.
+        """
+        txin._trusted_value_sats = parent_out.value
+        try:
+            txin.script_descriptor = parent_out.script_descriptor
+        except Exception:
+            pass
+        txin.is_mine = True
+        txin._TxInput__address = parent_out.address
+        txin._TxInput__scriptpubkey = parent_out.scriptpubkey
+        txin._TxInput__value_sats = parent_out.value
+
+    @staticmethod
+    def _relink(child, txin, parent, idx):
+        """Point ``txin`` of ``child`` at the CURRENT txid of ``parent``.
+
+        WHY in place: the input keeps its sequence number and every other
+        field, so a relinked child is the transaction a fresh build of the
+        same chain would give (the #122 reuse and the "second Check is
+        clean" rule need that). The inputs are then sorted as Electrum's
+        ``PartialTransaction.from_io`` sorts them (BIP69), which also clears
+        the cached txid. A previous transaction attached to the input is
+        dropped when it is not the new parent (Electrum refuses an input
+        whose ``utxo`` has another txid). Returns True when the input moved.
+        """
+        ptxid = parent.tx.txid()
+        if ptxid is None:
+            raise WillChainError(
+                "chain: the txid of {} cannot be computed".format(
+                    (parent._id or "?")[:8]))
+        if txin.prevout.txid.hex() == ptxid and txin.prevout.out_idx == idx:
+            return False
+        utxo = getattr(txin, "_utxo", None)
+        if utxo is not None and utxo.txid() != ptxid:
+            txin._utxo = None
+        txin.prevout = TxOutpoint(txid=bfh(ptxid), out_idx=idx)
+        Will._fill_chain_input(txin, parent.tx.outputs()[idx])
+        child.tx.BIP69_sort(outputs=False)
+        return True
+
+    @staticmethod
+    def _real_heir_amounts(item):
+        """``{(address, amount)}`` the item really pays its heirs (#166).
+
+        Only the real amounts (index 3, an int) of the heirs that are not
+        the will-executor pseudo-heirs; the DUST rows and stored errors are
+        left out.
+        """
+        out = set()
+        for name, heir in (item.heirs or {}).items():
+            if str(name).startswith('w!ll3x3c"'):
+                continue
+            try:
+                amount = heir[3]
+            except (IndexError, TypeError):
+                continue
+            if isinstance(amount, int) and not isinstance(amount, bool):
+                out.add((str(heir[0]), amount))
+        return out
+
+    @staticmethod
+    def _same_url(a, b):
+        """True when items ``a`` and ``b`` are for the same will-executor
+        (both with one and the same URL, or both without: the backup)."""
+        return (a.we or {}).get("url") == (b.we or {}).get("url")
+
+    @staticmethod
+    def _chain_set_anticipate(item, ow):
+        """Date the new chain item ``item`` against the old item ``ow``.
+
+        Today's rule first (:meth:`WillItem.set_anticipate`, which applies
+        :meth:`check_anticipate`). Then the multiverse rule of #166 (owner
+        decision D6: changing the deliveries while a will is in force gives
+        a new will one day earlier): for the same will-executor, when the
+        heirs' REAL amounts differ, one day before ``ow``. WHY: in a chain a
+        share of a later delivery changes the amounts paid by the earlier
+        ones (the percentages are shared out over every later delivery),
+        while the heir rows they carry stay the same, so
+        :meth:`check_anticipate` keeps the old date and the old and the new
+        transaction could both be executed on the same coins on the same
+        day. Returns True when the locktime moved.
+        """
+        moved = item.set_anticipate(ow)
+        if (
+            Will._same_url(item, ow)
+            and Will._real_heir_amounts(item) != Will._real_heir_amounts(ow)
+        ):
+            earlier = int(Util.anticipate_locktime(ow.tx.locktime, days=1))
+            if int(item.tx.locktime) > earlier:
+                item.tx.locktime = earlier
+                moved = True
+        return moved
+
+    @staticmethod
+    def _chain_generations(will, links):
+        """``{id(item): n}``: 0 for the first delivery, 1 for the items
+        spending its change, and so on. Raises :class:`WillChainError` on a
+        loop."""
+        parents = {}
+        for child, _txin, parent, _idx in links:
+            parents.setdefault(id(child), []).append(parent)
+        gen = {}
+
+        def depth(item, seen):
+            """The generation of ``item`` (``seen``: the path, for loops)."""
+            key = id(item)
+            if key in gen:
+                return gen[key]
+            if key in seen:
+                raise WillChainError("chain: a loop between the transactions")
+            seen.add(key)
+            ps = parents.get(key, [])
+            value = 0 if not ps else 1 + max(depth(p, seen) for p in ps)
+            gen[key] = value
+            return value
+
+        for item in will.values():
+            depth(item, set())
+        return gen
+
+    @staticmethod
+    def date_chain(new_will, links, references, old_will):
+        """Date and relink a freshly built CHAIN against the will in force.
+
+        CHANGELOG #166. Used by :meth:`update_will` instead of
+        :meth:`search_anticipate_rec` when the new will has delivery
+        instalments (``links`` from :meth:`chain_links` not empty). The old
+        relinking (``change_input`` over the dict, by keys) pointed every
+        child at its own txid and left stale keys: every rebuild of a chain
+        that moved a date failed or saved a broken will.
+
+        ``new_will``: ``{txid: WillItem}`` of the build, changed in place;
+        ``references``: the items the new will is dated against
+        (:meth:`anticipation_references`); ``old_will``: the will so far.
+
+        1. Every chain input gets the data of the output it spends, so each
+           item's txid can be computed (and equals its key).
+        2. Generation by generation (first delivery, then the next...):
+           the children are pointed at their parents' FINAL txids, then the
+           generation is dated to a fixed point with today's rules
+           (:meth:`WillItem.set_anticipate`) plus the rule of
+           :meth:`_chain_set_anticipate`. The first delivery is dated against
+           the old items that spend the same coins; a later one only against
+           old items that spend the same parent output (an old child of a
+           parent kept unchanged): when its parent changed, the new parent,
+           dated earlier, already makes the old one and its children
+           unexecutable.
+        3. Checks that refuse the will (:class:`WillChainError`, nothing is
+           changed in the will in force) instead of saving a chain that
+           could be executed wrongly: see :meth:`_check_chain`.
+        4. The dict is re-keyed once by the final txids, in the same order
+           (parents before children), and each item's ``_id`` follows.
+        """
+        for _child, txin, parent, idx in links:
+            Will._fill_chain_input(txin, parent.tx.outputs()[idx])
+        for key, item in new_will.items():
+            if item.tx.txid() is None or item.tx.txid() != key:
+                raise WillChainError(
+                    "chain: transaction {} has no computable txid".format(key[:8]))
+        gen = Will._chain_generations(new_will, links)
+        link_parent_outputs = {id(txin) for _c, txin, _p, _i in links}
+        ref_inputs = Will.get_all_inputs(references)
+        items = list(new_will.values())
+        for g in range(max(gen.values()) + 1):
+            for child, txin, parent, idx in links:
+                if gen[id(child)] == g:
+                    Will._relink(child, txin, parent, idx)
+            members = [it for it in items if gen[id(it)] == g]
+            for _pass in range(Will.CHAIN_MAX_PASSES):
+                if not Will._date_chain_pass(
+                    new_will, members, ref_inputs, link_parent_outputs, g
+                ):
+                    break
+            else:
+                raise WillChainError("chain: the delivery dates do not settle")
+        Will._check_chain(new_will, links, references, old_will, ref_inputs,
+                          link_parent_outputs, gen)
+        new_will.clear()
+        for item in items:
+            txid = item.tx.txid()
+            if txid is None or txid in new_will:
+                raise WillChainError("chain: two transactions with one txid")
+            item._id = txid
+            new_will[txid] = item
+
+    @staticmethod
+    def _date_chain_pass(new_will, members, ref_inputs, link_parent_outputs, g):
+        """One dating pass over the generation ``members`` (see
+        :meth:`date_chain`, step 2). Returns True when a locktime moved."""
+        moved = False
+        new_inputs = Will.get_all_inputs(new_will, only_valid=True)
+        for item in members:
+            for txin in item.tx.inputs():
+                prevout = txin.prevout.to_str()
+                for _wid, other, _i in new_inputs.get(prevout, []):
+                    if other is not item and item.set_anticipate(other):
+                        moved = True
+                if g > 0 and id(txin) not in link_parent_outputs:
+                    # A later delivery is dated only through its parent's
+                    # output (see date_chain, step 2).
+                    continue
+                for _wid, old, _i in ref_inputs.get(prevout, []):
+                    if Will._chain_set_anticipate(item, old):
+                        moved = True
+        return moved
+
+    @staticmethod
+    def _check_chain(new_will, links, references, old_will, ref_inputs,
+                     link_parent_outputs, gen):
+        """Refuse a chain that could be executed wrongly (#166).
+
+        Raises :class:`WillChainError` when:
+
+        * a link does not point at its parent's txid and output, or the
+          input's amount is not that output's amount;
+        * a later delivery is not dated strictly after the one it spends
+          (the will-executors would broadcast it before its parent exists,
+          and they never try again);
+        * a transaction of the will in force that starts a chain (it spends
+          only wallet coins) is for a will-executor that gets new
+          transactions, and none of its new first deliveries spends one of
+          its coins with an earlier date: it would stay executable together
+          with the new will. Since #166 the first delivery spends every coin
+          (``heirs.prepare_transactions``), so this is a safety net;
+        * a new transaction and an old one of the same will-executor share
+          a coin, pay other amounts to the heirs and the new one is not
+          dated earlier.
+        """
+        for child, txin, parent, idx in links:
+            if (txin.prevout.txid.hex() != parent.tx.txid()
+                    or txin.prevout.out_idx != idx):
+                raise WillChainError("chain: an instalment is not linked to its parent")
+            if txin.value_sats() != parent.tx.outputs()[idx].value:
+                raise WillChainError("chain: an instalment spends a wrong amount")
+            if int(child.tx.locktime) <= int(parent.tx.locktime):
+                raise WillChainError(
+                    "chain: a later delivery is not dated after the one before")
+        new_keys = {item.tx.txid() for item in new_will.values()}
+        firsts = [it for it in new_will.values() if gen[id(it)] == 0]
+        for _oid, old in references.items():
+            spends_will = any(
+                i.prevout.txid.hex() in old_will for i in old.tx.inputs())
+            if spends_will or old.tx.txid() in new_keys:
+                continue
+            same = [n for n in firsts if Will._same_url(n, old)]
+            if not same:
+                continue
+            if not any(
+                Will._shares_coins(n, old) and int(n.tx.locktime) < int(old.tx.locktime)
+                for n in same
+            ):
+                raise WillChainError(
+                    "chain: the will in force would stay executable "
+                    "together with the new one")
+        for item in new_will.values():
+            g = gen[id(item)]
+            for txin in item.tx.inputs():
+                if g > 0 and id(txin) not in link_parent_outputs:
+                    continue
+                for _wid, old, _i in ref_inputs.get(txin.prevout.to_str(), []):
+                    if (
+                        Will._same_url(item, old)
+                        and old.tx.txid() != item.tx.txid()
+                        and int(item.tx.locktime) >= int(old.tx.locktime)
+                        and Will._real_heir_amounts(item) != Will._real_heir_amounts(old)
+                    ):
+                        raise WillChainError(
+                            "chain: an old and a new transaction would be "
+                            "executable together")
+
     @staticmethod
     def wallet_synced(wallet):
         """True when ``wallet`` is synchronized (``wallet.is_up_to_date()``).
@@ -574,7 +896,10 @@ class Will:
            then ``search_anticipate_rec`` and ``normalize_will``). A sent
            item that an unsigned draft had marked REPLACED is still in force
            (the will-executors hold it), so a new will is never dated after
-           it.
+           it. A will with delivery instalments (multiverse) is dated by
+           :meth:`date_chain` instead of ``search_anticipate_rec`` (CHANGELOG
+           #166); it may raise :class:`WillChainError`. NB ``normalize_will``
+           works on copies: it does not date the caller's items.
         3. A new transaction with the txid of a VALID old item is the SAME
            transaction (the txid covers inputs, outputs and locktime, not
            the signatures), so (CHANGELOG #122):
@@ -613,7 +938,13 @@ class Will:
         references = Will.anticipation_references(old_will, in_force)
         # check if the new input is already spent by a transaction of the
         # will in force: if it is, use the same locktime, or anticipate.
-        Will.search_anticipate_rec(new_will, Will.get_all_inputs(references))
+        # CHANGELOG #166: a will with delivery instalments (multiverse) is
+        # dated by one explicit pass; a will with one date keeps today's.
+        links = Will.chain_links(new_will)
+        if links:
+            Will.date_chain(new_will, links, references, old_will)
+        else:
+            Will.search_anticipate_rec(new_will, Will.get_all_inputs(references))
         other_inputs = Will.get_all_inputs(old_will, {})
         try:
             Will.normalize_will(new_will, others_inputs=other_inputs)
@@ -2910,6 +3241,12 @@ class WillException(Exception):
     def __str__(self):
         return self.msg
 
+
+
+class WillChainError(WillException):
+    """A chain of delivery instalments (multiverse) that cannot be built
+    safely (CHANGELOG #166). Not a "will to prepare again" case: the will
+    in force is left as it is and the reason is shown."""
 
 
 class WillExpiredException(WillException):
