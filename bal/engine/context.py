@@ -46,6 +46,7 @@ from ..core.util import Util, copy_structure
 from ..core.will import NoHeirsException, Will, WillItem
 from ..core.willexecutors import Willexecutors
 from ..i18n import _
+from . import instalments
 from .locks import flow_lock_for
 
 _logger = get_logger(__name__)
@@ -189,9 +190,11 @@ def init_class_variables(host):
     reads the refreshed items, and the dates below read the delivery date
     it may store), refreshes the Check Alive value, sets ``date_to_check``,
     ``no_willexecutor`` and ``willexecutors``, checks the Check Alive
-    against the delivery date and gives every heir the delivery date
-    (unless each heir has its own). Raises ``NoHeirsException`` without
-    heirs and the Check Alive errors of ``bal.core.checkalive``.
+    against the delivery date, checks the table of the deliveries against
+    the heirs (#168, :func:`bal.engine.instalments.check_table`) and gives
+    every heir the delivery date. Raises ``NoHeirsException`` without
+    heirs, the Check Alive errors of ``bal.core.checkalive`` and
+    ``bal.core.delivery.InstalmentsMismatch``.
     """
     check_holds(host)
     if not host.heirs:
@@ -229,13 +232,21 @@ def init_class_variables(host):
         host.date_to_check,
         delivery_date=delivery_date,
     )
-    init_heirs_to_locktime(host, host.bal_plugin.ENABLE_MULTIVERSE.get())
+    # #168 (owner decision 3): a table that no longer fits the heirs stops
+    # the flow here, after the Check Alive gate (a renewal is still
+    # offered) and before anything is built. Never in check_holds: an
+    # invalidation must stay possible.
+    instalments.check_table(host)
+    # #168 (D7): the stored person rows always carry the will's date (the
+    # first delivery); the dates of the later deliveries live in the table.
+    init_heirs_to_locktime(host)
 
 
 def init_heirs_to_locktime(host, multiverse=False):
     """Give every heir the delivery date of the settings, then
     ``host.flush_wallet_db()``. Nothing with ``multiverse`` (each heir keeps
-    its own date)."""
+    its own date): BAL's model, no longer used by the plugin (#168, D7: a
+    staged will keeps its dates in the table; the callers pass nothing)."""
     if multiverse:
         return
     locktime = host.will_settings["locktime"]
@@ -263,10 +274,16 @@ def check_will(host, undo_anticipation=False):
     ``undo_anticipation`` (#135): also :func:`drop_anticipation_leftover`
     first. Only the FIRST check of a Check passes it, never the check
     after its own build (it would drop the drafts it just made).
+
+    #168: with a table of deliveries, the heirs compared are the rows of
+    every delivery (:func:`bal.engine.instalments.effective_heirs`).
     """
     renames = []
     try:
-        renames = Will.sync_heir_names(host.willitems, host.heirs)
+        # #168: with a table the items carry the rows of every delivery
+        # ("Luca", "Luca§2"...), so they are compared with those rows.
+        renames = Will.sync_heir_names(
+            host.willitems, instalments.effective_heirs(host))
         if renames:
             _logger.info(f"heirs renamed (names only): {renames}")
             save_willitems(host)
@@ -280,7 +297,8 @@ def check_will(host, undo_anticipation=False):
         host.date_to_check,
         host.will_settings["baltx_fees"],
         available_utxos(host),
-        heirs=host.heirs,
+        # After the leftover above: it may move delivery 1 back.
+        heirs=instalments.effective_heirs(host),
         willexecutors=host.willexecutors,
         self_willexecutor=host.no_willexecutor,
         wallet=host.wallet,
@@ -423,16 +441,14 @@ def _global_raw(host):
 def heirs_periods_to_date(host, locktime):
     """Give the delivery date to every heir that still holds a period.
 
-    A migration step of #123, multiverse off only: then every heir gets the
-    will's date anyway (:func:`init_heirs_to_locktime`), and an old recipe
-    such as ``"1054d"`` must not stay in the heirs, where it would be read
-    against the clock again. With multiverse on each heir keeps its own
-    value. Uses ``host.heirs`` when it is loaded, else the wallet's
+    A migration step of #123: every heir gets the will's date anyway
+    (:func:`init_heirs_to_locktime`), and an old recipe such as ``"1054d"``
+    must not stay in the heirs, where it would be read against the clock
+    again. (BAL's global multiverse option kept them; #168, D7: no longer
+    read.) Uses ``host.heirs`` when it is loaded, else the wallet's
     ``Heirs`` (each change is saved by ``Heirs.__setitem__``). Returns the
     names changed.
     """
-    if host.bal_plugin.ENABLE_MULTIVERSE.get():
-        return []
     heirs = host.heirs if host.heirs else Heirs(host.wallet)
     changed = []
     for name in list(heirs):
@@ -496,7 +512,9 @@ def ensure_will_settings(host, willitems=None, now=None):
                 _has_plugin_data(host),
                 now,
                 creation_date=_creation_time(host, willitems),
-                multiverse=bool(host.bal_plugin.ENABLE_MULTIVERSE.get()),
+                # #168 (D7): BAL's global option is no longer read, and a
+                # dict still to migrate holds no table of deliveries.
+                multiverse=False,
                 advanced=_advanced(host),
             )
             # The heirs first: when they cannot be written, nothing is
@@ -652,12 +670,101 @@ def set_will_setting(host, field, value):
         raise ValueError("not a delivery setting: {!r}".format(field))
     values = delivery.validate_values({field: value})
     d = host.will_settings
+    if field == "locktime":
+        _check_first_delivery(d, values[field])
     delivery.write_values(d, values)
     if field == "locktime":
         if d.get(delivery.CHOICE_KEY):
             delivery.clear_choice(d)
         delivery.drop_later_wish(d)
     return values[field]
+
+
+def _check_first_delivery(d, locktime):
+    """Refuse a delivery date that is not before delivery 2 (#168).
+
+    With a table, the wallet's delivery date is the date of delivery 1
+    (:func:`bal.core.delivery.table_rows`): a date on or after delivery 2
+    would break the order of the deliveries. Only the order: the 28 days
+    are checked where the owner types the date (owner decision 5: the
+    automatic one-day moves may shorten them). ``ValueError``, nothing
+    written.
+    """
+    try:
+        rows = delivery.instalments_of(d)
+    except ValueError:
+        return
+    if len(rows) < 2 or not isinstance(rows[1], dict):
+        return
+    second = delivery.as_delivery(rows[1].get("locktime"))
+    if second is not None and locktime >= second:
+        raise ValueError(
+            "the delivery date must be before delivery 2 ({}): change the "
+            "table of the deliveries first".format(utc_day_text(second))
+        )
+
+
+def set_instalments(host, rows, now=None):
+    """The one validated write of the table of deliveries (#168).
+
+    ``rows``: the table (``[{"locktime", "shares"}, ...]``), checked in full
+    by :func:`bal.core.delivery.validate_instalments` against the paid
+    heirs (the message rows are not columns): 2 or 3 dates after ``now``,
+    at least 28 days apart, shares of the whole estate adding up to 100 %.
+    Refused with the period form (one renewable date, #127 decision 10) and
+    while the settings are display-only.
+
+    Then, all checked: the table is stored whole (a stored list's inner
+    dicts are not tracked by the wallet file), the schema becomes
+    :data:`bal.core.delivery.INSTALMENTS_SCHEMA_VERSION` (owner choice B:
+    only together with a table) and the wallet's delivery date becomes the
+    date of delivery 1 (:func:`set_will_setting`). Like every date change,
+    an earlier date is a free rebuild and a later one the paid invalidation
+    of the will in force (owner decision D6), decided by the next Check.
+    The caller makes it durable. Returns the table as stored.
+    """
+    if getattr(host, "settings_unavailable", False):
+        raise delivery.DeliverySettingsUnavailable()
+    if now is None:
+        now = time.time()
+    d = host.will_settings
+    if delivery.is_period(d):
+        raise ValueError(
+            "the period form has one delivery date: choose a fixed date first")
+    names = delivery.payee_names(host.heirs)
+    for name in names:
+        if delivery.has_separator(name):
+            raise ValueError("an heir name holds {!r}: {!r}".format(
+                delivery.INSTALMENT_SEP, name))
+    table = delivery.validate_instalments(rows, names, now)
+    d[delivery.INSTALMENTS_KEY] = table
+    version = d.get("settings_version")
+    if not isinstance(version, int) or version < delivery.INSTALMENTS_SCHEMA_VERSION:
+        d["settings_version"] = delivery.INSTALMENTS_SCHEMA_VERSION
+    set_will_setting(host, "locktime", table[0]["locktime"])
+    _logger.info(
+        "delivery table stored: {}".format(
+            [utc_day_text(row["locktime"]) for row in table]
+        )
+    )
+    return table
+
+
+def clear_instalments(host):
+    """Remove the table of deliveries: one delivery again (#168).
+
+    The wallet's delivery date stays (it was delivery 1's). The schema
+    stays 3: it only says a table may be there. Returns True when a table
+    was removed. The caller makes it durable.
+    """
+    if getattr(host, "settings_unavailable", False):
+        raise delivery.DeliverySettingsUnavailable()
+    d = host.will_settings
+    if delivery.INSTALMENTS_KEY not in d:
+        return False
+    del d[delivery.INSTALMENTS_KEY]
+    _logger.info("delivery table removed: one delivery date")
+    return True
 
 
 def answer_delivery_choice(host, use_later=False):
@@ -1022,8 +1129,10 @@ def drop_anticipation_leftover(host):
             return None
         if any(delivery.as_delivery(willitems[w].tx.locktime) != stored for w in drafts):
             return None
+        # #168: the will in force's side is its FIRST delivery: compare it
+        # with the rows of delivery 1 (the person rows without a table).
         new = will_changes.side_from_settings(
-            host.heirs or {}, stored, sorted(selected) if selected is not None
+            instalments.first_delivery_heirs(host) or {}, stored, sorted(selected) if selected is not None
             else list(old.executors), (host.will_settings or {}).get("baltx_fees"))
         changes = will_changes.will_changes(old, new)
         if not changes or [c.kind for c in changes] != [will_changes.DELIVERY]:
@@ -1039,10 +1148,10 @@ def drop_anticipation_leftover(host):
             store("locktime", old.delivery)
         else:
             set_will_setting(host, "locktime", old.delivery)
-        # The heirs carry the will's date too (multiverse off): the check
-        # gave them the earlier day before this ran; give them the will in
-        # force's again, as the check itself does.
-        init_heirs_to_locktime(host, _multiverse(host))
+        # The heirs carry the will's date too: the check gave them the
+        # earlier day before this ran; give them the will in force's again,
+        # as the check itself does.
+        init_heirs_to_locktime(host)
         return stored, old.delivery
     except Exception as e:
         _logger.error(f"anticipation leftover not checked: {e!r}")
@@ -1083,10 +1192,11 @@ def revert_cancelled_postpone(host):
 
 
 def _multiverse(host):
-    """The hidden multiverse option: each heir keeps its own date, and the
-    period form is not available (#127, owner decision 10)."""
+    """True when the wallet has a table of deliveries (#168, D7): then the
+    period form is not available (#127, owner decision 10). It replaces
+    BAL's hidden global option ``bal_enable_multiverse``, no longer read."""
     try:
-        return bool(host.bal_plugin.ENABLE_MULTIVERSE.get())
+        return instalments.has_table(host)
     except Exception:
         return False
 
@@ -1117,7 +1227,7 @@ def set_delivery(host, form=None, date=None, months=None, now=None):
       paid invalidation of that will first (owner decision 2).
     * Fixed: ``form`` "fixed" (``period_months`` and ``period_start``
       removed); with ``date``, the date through :func:`set_will_setting`.
-    * Period (refused with multiverse on): ``period_months`` = N. With no
+    * Period (refused with a table of deliveries, #168): ``period_months`` = N. With no
       will in force (the form not locked) also ``period_start`` = today and
       ``locktime`` = today + N months (:func:`bal.core.delivery.period_values`).
       With a will in force only N is stored: it applies at the next renewal
@@ -1163,7 +1273,8 @@ def set_delivery(host, form=None, date=None, months=None, now=None):
                 "the period form has no fixed date: give months instead"
             )
         if _multiverse(host):
-            raise ValueError("the period form is not available with multiverse")
+            raise ValueError(
+                "the period form is not available with a table of deliveries")
         n = delivery.period_months(d) if months is None else delivery.as_months(months)
         if n is None:
             raise ValueError(

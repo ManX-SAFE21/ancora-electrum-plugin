@@ -214,12 +214,12 @@ def test_an_executor_that_did_not_receive_it(make):
 
 
 def test_multiverse_two_instalments(make):
-    """Multiverse on (hidden option): alice at D, bob one year later. No
-    crash; two instalments, earliest first; shares over both."""
+    """A table of deliveries (#168; BAL's hidden option before): alice at
+    D, bob one year later. No crash; two instalments, earliest first;
+    shares over both; the person's name, never the row "bob§2"."""
     s = make()
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    s.bw.heirs["bob"] = [fk.HEIR_ADDR["bob"], "40%", D + 365 * fk.DAY]
-    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "60%", D]
+    s.set_instalments((D, {"alice": "60%", "bob": "0%"}),
+                      (D + 365 * fk.DAY, {"alice": "0%", "bob": "40%"}))
     s.check()
     f = _future(s)
     assert f.state == cf.STATE_IN_FORCE

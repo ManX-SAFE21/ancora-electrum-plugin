@@ -75,6 +75,7 @@ from ...core.reminders import build_ics_reminders
 from ...core.summary import executor_states, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
+from ...engine import instalments as engine_instalments
 from ...engine.invalidate import broadcast_invalidation, build_invalidation
 from ...engine.merge import local_validity_pass
 from ...engine.push import (
@@ -1986,11 +1987,14 @@ class BalBuildWillDialog(BalDialog):
         no line at all (the amounts check did not explain it on that pass).
         Read from the Heirs tab (``will_changes.real_shares_text``: the
         written percentages in proportion; nothing with fixed amounts).
+        #168: with a table of deliveries, from the rows of every delivery
+        (the table adds up to 100 %; the person rows' amounts are not used).
         """
         try:
             if report.snapshot().get("amounts_note"):
                 return
-            shares = will_changes.real_shares_text(self.bal_window.heirs or {})
+            shares = will_changes.real_shares_text(
+                engine_instalments.effective_heirs(self.bal_window) or {})
             if shares and shares[1]:
                 report.set_amounts_note(
                     _("Shares recalculated in proportion: {}").format(shares[0]), False)
@@ -2002,7 +2006,8 @@ class BalBuildWillDialog(BalDialog):
         from the will in force's, or no will is in force (#135).
 
         The names do not count (a rename is not a change of shares), nor
-        the will-executors or the date.
+        the will-executors or the date. #168: with a table of deliveries the
+        first item is compared with the rows of delivery 1.
         """
         in_force = engine_context.in_force_items(self.bal_window)
         # THE will in force: the copies with the earliest delivery (#128);
@@ -2021,7 +2026,8 @@ class BalBuildWillDialog(BalDialog):
                 out[str(heir[0])] = str(heir[1])
             return out
 
-        return written(first.heirs) != written(self.bal_window.heirs)
+        return written(first.heirs) != written(
+            engine_instalments.first_delivery_heirs(self.bal_window))
 
     @staticmethod
     def _shares_line(info):

@@ -204,9 +204,12 @@ def test_a_will_in_force_keeps_its_fixed_date(make, monkeypatch, phrase):
 
 
 def test_multiverse_keeps_the_fixed_date_in_the_wizard(make, monkeypatch, phrase):
-    """Multiverse on: ADVANCED in the wizard keeps the fixed date."""
+    """A table of deliveries (#168; BAL's global multiverse option before):
+    ADVANCED in the wizard keeps the fixed date."""
     s = make(mode="basic")
-    s.plugin.ENABLE_MULTIVERSE.set(True)
+    date = dv.as_delivery(settings_of(s)["locktime"])
+    s.set_instalments((date, {"alice": "60%", "bob": "0%"}),
+                      (date + 365 * 86400, {"alice": "0%", "bob": "40%"}))
     bw = real_window(s, monkeypatch)
     box = wizard_page(bw).form_box
     box.mode_combo.setCurrentIndex(1)

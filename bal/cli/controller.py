@@ -60,7 +60,7 @@ from ..core.summary import selected_urls
 from ..core.util import Util
 from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
-from ..engine import build, context
+from ..engine import build, context, instalments
 from ..engine.invalidate import INVALIDATION_LABEL, build_invalidation
 from ..engine.merge import merge_summary
 from ..engine.merge import merge_will as engine_merge_will
@@ -89,6 +89,10 @@ def _user_facing(e):
         return e
     if isinstance(e, DeliveryHold):
         return UserFacingException(_delivery_hold_message(e))
+    if isinstance(e, delivery.InstalmentsMismatch):
+        # #168: the table of the deliveries no longer fits the heirs; the
+        # message (translated) says to update it.
+        return UserFacingException(str(e))
     if isinstance(e, will_mod.NoHeirsException):
         return UserFacingException(_("There are no valid heirs"))
     if isinstance(e, will_mod.WillExpiredException):
@@ -842,7 +846,8 @@ class BalController(BalSettingsController):
         date_to_check: float = self.date_to_check
         try:
             Will.check_amounts(
-                self.heirs,
+                # #168: the rows of every delivery with a table.
+                instalments.effective_heirs(self),
                 self.willexecutors,
                 self._available_utxos(),
                 date_to_check,
@@ -1742,46 +1747,42 @@ class BalController(BalSettingsController):
     def _check_heir_locktime(self, locktime):
         """Refuse a per-heir delivery date that would not be used, or is wrong.
 
-        CHANGELOG #103. With "multiverse" off (the default, and the only mode
-        of the GUI) every heir gets the will's delivery date: the next
+        CHANGELOG #103. Every heir gets the will's delivery date: the next
         check/prepare overwrote a per-heir ``--locktime`` without a word, so
         it is refused with a message that says how to change the date.
-        With multiverse on, a date that is not understood ("domani" gave 0)
-        or already past is refused; before, both were accepted.
+        #168 (D7): always, BAL's global multiverse option is no longer read
+        (staged deliveries keep their dates in the table).
         """
         if locktime is None:
             return
-        if not self.plugin.ENABLE_MULTIVERSE.get():
-            raise UserFacingException(
-                _(
-                    "Every heir gets the delivery date of the will, so --locktime "
-                    "cannot be set for one heir. To change the date for every "
-                    "heir, use bal_delivery_set --date YYYY-MM-DD (see the "
-                    "current date with bal_delivery_show)."
-                )
+        raise UserFacingException(
+            _(
+                "Every heir gets the delivery date of the will, so --locktime "
+                "cannot be set for one heir. To change the date for every "
+                "heir, use bal_delivery_set --date YYYY-MM-DD (see the "
+                "current date with bal_delivery_show)."
             )
-        self._check_locktime_value(locktime)
+        )
 
-    def _check_locktime_value(self, locktime):
-        """Refuse a delivery date that is not understood or already past."""
-        when = Util.parse_locktime_string(locktime)
-        if not when:
+    def _check_heir_name(self, name):
+        """Refuse an heir name holding the delivery separator (#168).
+
+        With a table of deliveries the rows of deliveries 2 and 3 are named
+        "Luca§2", "Luca§3" (``bal.core.delivery.INSTALMENT_SEP``): a person
+        named so would collide with them (owner decision 2).
+        """
+        if delivery.has_separator(name):
             raise UserFacingException(
-                _(
-                    "Delivery date not understood: {} (use a timestamp, or a "
-                    "time from now such as 30d or 1y)"
-                ).format(locktime)
-            )
-        if when <= time.time():
-            raise UserFacingException(
-                _("The delivery date is in the past: {}").format(locktime)
-            )
+                _("An heir name cannot contain the sign {}.").format(
+                    delivery.INSTALMENT_SEP))
 
     def heirs_add(self, name, address, amount, locktime=None):
-        """Add (or replace) the heir ``name``; ``locktime`` only with
-        multiverse on (see :meth:`_check_heir_locktime`). #140: never a
-        second message (:meth:`_check_one_message`)."""
+        """Add (or replace) the heir ``name``; ``locktime`` is refused (see
+        :meth:`_check_heir_locktime`), and so is a name with "§"
+        (:meth:`_check_heir_name`, #168). #140: never a second message
+        (:meth:`_check_one_message`)."""
         self._check_heir_locktime(locktime)
+        self._check_heir_name(name)
         self._check_address_free(address, name)
         self._check_one_message(address, name)
         value = self._build_heir_entry(name, address, amount, locktime)
@@ -1807,7 +1808,7 @@ class BalController(BalSettingsController):
 
     def heirs_update(self, name, address=None, amount=None, locktime=None):
         """Change only the given fields of the heir ``name``; ``locktime``
-        only with multiverse on (see :meth:`_check_heir_locktime`). #140:
+        is refused (see :meth:`_check_heir_locktime`). #140:
         never a second message (:meth:`_check_one_message`)."""
         if name not in self.heirs:
             raise UserFacingException(_("Heir not found: {}").format(name))
@@ -1857,23 +1858,24 @@ class BalController(BalSettingsController):
         and invalid entries were dropped silently (only an INFO log line).
         Now ``imported`` counts the heirs taken from the file, ``names`` lists
         them, ``skipped`` maps each refused entry to the reason and ``total``
-        is the number of heirs afterwards. With multiverse on, a delivery date
-        that is not understood or already past is refused too; with it off,
-        every heir gets the will's date anyway. #140: a message (OP_RETURN)
-        when the heirs already have one is skipped, with the reason.
+        is the number of heirs afterwards. Every heir gets the will's date
+        anyway (#168: BAL's per-heir dates are no longer used); a name with
+        the delivery separator "§" is skipped (#168). #140: a message
+        (OP_RETURN) when the heirs already have one is skipped, with the
+        reason.
         """
         data = read_json_file(path)
         if isinstance(data, dict) and isinstance(data.get("heirs"), dict):
             data = data["heirs"]  # the nesting Heirs._validate accepts
         if not isinstance(data, dict):
             raise UserFacingException(_("Invalid heirs file: {}").format(path))
-        multiverse = self.plugin.ENABLE_MULTIVERSE.get()
         valid, skipped = {}, {}
         for name, value in data.items():
             try:
+                # #168: a name with the delivery separator is refused (the
+                # rows of deliveries 2 and 3 are named "Luca§2"...).
+                self._check_heir_name(name)
                 valid[name] = Heirs.validate_heir(name, value)
-                if multiverse:
-                    self._check_locktime_value(value[2])
             except Exception as e:
                 valid.pop(name, None)
                 skipped[name] = str(_user_facing(e))

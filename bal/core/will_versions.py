@@ -62,6 +62,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from . import will_state
+from .delivery import person_name
 from .heirs import (
     HEIR_ADDRESS,
     HEIR_AMOUNT,
@@ -316,7 +317,8 @@ def _heir_rows(items):
 
     The first time a name appears wins (every executor copy carries the
     same heirs; multiverse instalments add theirs). OP_RETURN messages are
-    left out.
+    left out. The name shown is the person's (#168: one row per delivery,
+    each under the person's name).
     """
     rows = {}
     for item in items:
@@ -334,7 +336,8 @@ def _heir_rows(items):
                 sats = int(row[HEIR_REAL_AMOUNT])
             except (TypeError, ValueError):
                 sats = None
-            rows[name] = (str(name), str(row[HEIR_AMOUNT]), sats)
+            # #168: shown under the person's name ("Luca" for "Luca§2").
+            rows[name] = (person_name(name), str(row[HEIR_AMOUNT]), sats)
     return [rows[name] for name in rows]
 
 

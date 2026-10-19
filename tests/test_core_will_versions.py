@@ -252,12 +252,12 @@ def test_draft_dropped_and_will_in_force_brought_back(make):
 
 
 def test_multiverse_instalments_stay_under_their_root(make):
-    """Multiverse on: alice at D, bob one year later. Each instalment-1
-    transaction has its three children; one version, three roots."""
+    """A table of deliveries (#168; BAL's multiverse option before): alice
+    at D, bob one year later. Each instalment-1 transaction has its three
+    children; one version, three roots."""
     s = make()
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    s.bw.heirs["bob"] = [fk.HEIR_ADDR["bob"], "40%", D + 365 * fk.DAY]
-    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "60%", D]
+    s.set_instalments((D, {"alice": "60%", "bob": "0%"}),
+                      (D + 365 * fk.DAY, {"alice": "0%", "bob": "40%"}))
     s.check()
     history = _history(s)
     (v,) = history.versions

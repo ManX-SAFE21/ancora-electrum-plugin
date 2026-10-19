@@ -31,7 +31,7 @@ from ..core.checkalive import resolve_date_to_check
 from ..core.util import Util, copy_structure
 from ..core.will import NoWillExecutorNotPresent, Will, WillItem
 from ..core.willexecutors import Willexecutors
-from . import context
+from . import context, instalments
 
 _logger = get_logger(__name__)
 
@@ -58,7 +58,10 @@ def build_will(host, *, with_creation_date):
     3. refresh the will-executors and raise ``NoWillExecutorNotPresent`` when
        none is selected and valid (unless the user is their own executor);
     4. build the transactions with ``Heirs.get_transactions`` against
-       ``date_to_check`` and the coins the will can use;
+       ``date_to_check`` and the coins the will can use. With a table of
+       deliveries (#168) on the rows of every delivery
+       (:func:`bal.engine.instalments.effective_heirs`): the chain of up to
+       three deliveries, each spending the change of the one before;
     5. wrap each one in a ``WillItem`` (same creation time for all) and merge
        them into ``host.willitems`` (``Will.update_will`` drops the unsigned
        drafts, anticipates against the will in force and reuses or brings
@@ -72,8 +75,11 @@ def build_will(host, *, with_creation_date):
     Will.remove_stale_wallet_history(
         host.wallet, host.bal_plugin.HISTORY_LABEL.get()
     )
+    # #168: with a table of deliveries the build gets the rows of every
+    # delivery (in memory only); without one, host.heirs itself.
+    heirs = instalments.effective_heirs(host)
     new_locktime = min(
-        (Util.parse_locktime_string(h[2]) for h in host.heirs.values()),
+        (Util.parse_locktime_string(h[2]) for h in heirs.values()),
         default=None,
     )
     if new_locktime:
@@ -110,14 +116,18 @@ def build_will(host, *, with_creation_date):
         # current mode (the Check Alive in ADVANCED, "now" in BASIC). The
         # available-UTXO view restores coins that a newer, wallet-local will
         # tx (stored in the history with a later locktime) nominally spent.
-        txs = _transactions(host)
+        txs = _transactions(host, heirs)
+        if heirs is not host.heirs:
+            # The reason of a build with no transaction is read from
+            # host.heirs by the front-ends.
+            host.heirs.last_build_error = heirs.last_build_error
         _logger.info(f"txs built: {txs}")
         creation_time = time.time()
         if not txs:
             _logger.info("No transactions was built")
             _logger.info(f"will-settings: {host.will_settings}")
             _logger.info(f"date_to_check:{host.date_to_check}")
-            _logger.info(f"heirs: {host.heirs}")
+            _logger.info(f"heirs: {heirs}")
             return {}
         for txid in txs:
             tx = {}
@@ -151,8 +161,11 @@ def build_will(host, *, with_creation_date):
     return host.willitems
 
 
-def _transactions(host):
+def _transactions(host, heirs):
     """Build the will's transactions for ``build_will`` (step 4).
+
+    ``heirs``: the rows to build (``host.heirs``, or the rows of every
+    delivery with a table, #168).
 
     CHANGELOG #141: a will-executor gives a new fee address when the
     user's IP changes (bal-server keeps one per IP), but it accepts every
@@ -167,7 +180,7 @@ def _transactions(host):
 
     def build(pinned):
         """The transactions with the payment data ``pinned``."""
-        return host.heirs.get_transactions(
+        return heirs.get_transactions(
             host.bal_plugin,
             host.wallet,
             host.will_settings["baltx_fees"],
@@ -238,6 +251,10 @@ def sync_delivery_date(host, store, *, on_error=None):
     change ``host.will_settings`` in place). With ``on_error`` an error of
     the rule is passed to it and nothing is stored (the automatic rebuild);
     without, it is raised. Returns the new date, or ``None``.
+
+    With a table of deliveries (#168) the dates of deliveries 2 and 3 move
+    earlier the same way (:func:`bal.engine.instalments.sync_later_deliveries`),
+    or the next Check would read a postpone (F1 of #166).
     """
     try:
         new_locktime = Will.anticipated_delivery_to_store(
@@ -250,4 +267,11 @@ def sync_delivery_date(host, store, *, on_error=None):
         return None
     if new_locktime is not None:
         store("locktime", new_locktime)
+    # #168 (F1 of #166): deliveries 2 and 3 of a table follow too.
+    try:
+        instalments.sync_later_deliveries(host)
+    except Exception as e:
+        if on_error is None:
+            raise
+        on_error(e)
     return new_locktime

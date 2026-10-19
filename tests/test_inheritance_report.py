@@ -164,13 +164,14 @@ def test_report_data_of_the_will_in_force(make):
 
 
 def test_report_data_multiverse_two_instalments(make):
-    """Multiverse on (hidden option): alice at D, bob one year later. Two
-    instalments; the first has one transaction per will-executor, each
-    later one spends the change of every transaction before it."""
+    """A table of deliveries (#168; BAL's hidden option before): alice at
+    D, bob one year later. Two instalments; the first has one transaction
+    per will-executor, each later one spends the change of every
+    transaction before it. The heirs under their own names, never the
+    row "bob§2" of delivery 2."""
     s = make()
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    s.bw.heirs["bob"] = [fk.HEIR_ADDR["bob"], "40%", D + 365 * fk.DAY]
-    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "60%", D]
+    s.set_instalments((D, {"alice": "60%", "bob": "0%"}),
+                      (D + 365 * fk.DAY, {"alice": "0%", "bob": "40%"}))
     s.check()
     r = _report(s)
     assert r.multiverse

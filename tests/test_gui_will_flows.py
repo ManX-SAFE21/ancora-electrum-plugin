@@ -449,7 +449,7 @@ def test_guard_not_blocked_by_old_built_will():
 
 def test_anticipated_rebuild_reanchors_date_to_check():
     """Regression (karen7): rebuilding a SIGNED will whose delivery was
-    anticipated (per-heir recipes shortened from 2y to 1y, ADVANCED mode) must
+    anticipated (the delivery shortened from 2y to 1y, ADVANCED mode) must
     succeed.
 
     ``date_to_check`` stays anchored to the OLD built delivery for the validity
@@ -463,9 +463,9 @@ def test_anticipated_rebuild_reanchors_date_to_check():
     with _no_willexecutors():
         ctl = make_controller()
         ctl.bal_plugin.USER_TYPE.set("advanced")
-        # Per-heir deliveries require multiverse mode (the only way heirs can
-        # carry a different recipe than the settings locktime).
-        ctl.bal_plugin.ENABLE_MULTIVERSE.set(True)
+        # #168 (D7): every heir gets the settings' delivery (BAL's per-heir
+        # recipes, through its hidden multiverse option, are gone): the
+        # anticipation below shortens the settings' delivery itself.
         ctl.will_settings = {"locktime": "2y", "threshold": "-150d", "baltx_fees": 20}
         Util.fix_will_settings_tx_fees(ctl.will_settings)
         ctl.heirs["alice"][2] = "2y"
@@ -478,9 +478,8 @@ def test_anticipated_rebuild_reanchors_date_to_check():
         ctl.sign_transactions(None)  # #157: stores the signed copy itself
         assert _old_item.get_status("COMPLETE")
 
-        # Anticipate: shorten every heir to 1y.
-        ctl.heirs["alice"][2] = "1y"
-        ctl.heirs["bob"][2] = "1y"
+        # Anticipate: shorten the delivery to 1y (every heir gets it).
+        ctl.will_settings["locktime"] = "1y"
 
         ctl.init_class_variables()
         # date_to_check stays anchored to the OLD built delivery...

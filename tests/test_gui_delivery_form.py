@@ -328,9 +328,12 @@ def test_wizard_grows_when_advanced_is_chosen(make, monkeypatch, phrase):
 
 
 def test_no_period_with_multiverse(make, monkeypatch):
-    """Owner decision 10: multiverse on, the period cannot be chosen."""
+    """Owner decision 10: a will in deliveries (a table, #168; BAL's hidden
+    multiverse option before), the period cannot be chosen."""
     s = make(mode="advanced")
-    s.plugin.ENABLE_MULTIVERSE.set(True)
+    date = int(s.bw.will_settings["locktime"])
+    s.set_instalments((date, {"alice": "60%", "bob": "0%"}),
+                      (date + 365 * 86400, {"alice": "0%", "bob": "40%"}))
     bw = real_window(s, monkeypatch)
     assert not wizard_page(bw).form_box.period_radio.isEnabled()
 

@@ -1115,6 +1115,14 @@ class Session:
             self.bw.heirs[name] = [HEIR_ADDR[name], amount,
                                    self.bw.will_settings["locktime"]]
 
+    def set_instalments(self, *rows):
+        """Store a table of deliveries (#168): ``(date, {name: share})``
+        rows, through the engine's one validated write
+        (``context.set_instalments``: 2-3 dates, 28 days apart, shares of the
+        whole estate adding up to 100 %). Returns the table as stored."""
+        return engine_context.set_instalments(
+            self.bw, [{"locktime": d, "shares": dict(sh)} for d, sh in rows])
+
     def check(self, cancel_on=(), renew=False, closing=False, until_idle=True):
         """Press "Check your will" and let the dialog run to its end."""
         pushed_before = self._begin(cancel_on)

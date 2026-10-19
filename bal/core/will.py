@@ -47,6 +47,7 @@ from electrum.util import (
 
 from ..i18n import N_, _
 from . import will_state
+from .delivery import instalment_number
 from .heirs import WillExecutorFeeTooHighException, address_key, is_op_return_address
 from .util import Util, copy_structure
 from .willexecutors import Willexecutors
@@ -1857,8 +1858,14 @@ class Will:
         date when the setting is unchanged (``in_force`` True), the date a
         changed setting would give, or - with no will in force - the date a
         new will gets (``in_force`` False). Read-only.
+
+        #168: the setting is the date of the FIRST delivery, so it is read
+        against the earliest VALID item (in a chain of deliveries the dict
+        order may give a later one first).
         """
-        for w in Will.only_valid_list(will).values():
+        valid = sorted(Will.only_valid_list(will).values(),
+                       key=lambda w: int(w.tx.locktime))
+        for w in valid:
             for name, their in (w.heirs or {}).items():
                 if name[:9] == 'w!ll3x3c"':
                     continue
@@ -2558,7 +2565,8 @@ class Will:
         ``their``: its entry in the item; ``current``: the Heirs tab. The
         ONE heir of the tab that the item does not carry, at the same
         address (``heirs.address_key``) with the same amount (compared by
-        value: "20%" and "20.0%" are the same share). Logged when it is not
+        value: "20%" and "20.0%" are the same share). #168: with a table of
+        deliveries, a row of the same delivery only. Logged when it is not
         a pure rename, so the reason can be read in the log.
         """
         try:
@@ -2569,9 +2577,15 @@ class Will:
         if key is None:
             return None
         found = []
+        # #168: with a table of deliveries a person has one row per
+        # delivery on the same address ("Marco", "Marco§2"): only the row
+        # of the SAME delivery can be the new name. Without a table every
+        # row is delivery 1, as before.
+        number = instalment_number(name)
         for new_name, heir in current.items():
             try:
-                if address_key(heir[0]) == key and new_name not in item_heirs:
+                if (address_key(heir[0]) == key and new_name not in item_heirs
+                        and instalment_number(new_name) == number):
                     found.append(new_name)
             except (IndexError, TypeError):
                 continue
@@ -2611,14 +2625,18 @@ class Will:
         ``heirs``: the Heirs tab now; ``will_heirs``: the item's heirs. The
         new name is the ONE heir of the Heirs tab with the same address that
         the item does not carry; ``None`` otherwise (removed, or ambiguous).
-        Used only to word the Check message (#135 follow-up).
+        Used only to word the Check message (#135 follow-up). #168: only a
+        row of the same delivery counts.
         """
         try:
             address = str(their[0])
         except (IndexError, TypeError):
             return None
+        # #168: only the row of the same delivery (see _pure_rename).
+        number = instalment_number(old_name)
         found = [name for name, heir in (heirs or {}).items()
-                 if name not in (will_heirs or {}) and str(heir[0]) == address]
+                 if name not in (will_heirs or {}) and str(heir[0]) == address
+                 and instalment_number(name) == number]
         return found[0] if len(found) == 1 else None
 
     @staticmethod

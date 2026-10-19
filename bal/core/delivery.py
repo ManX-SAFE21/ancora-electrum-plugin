@@ -1503,6 +1503,21 @@ MIN_GAP_DAYS = 28
 #: apart). Texts, so the arithmetic stays exact (:class:`decimal.Decimal`).
 DEFAULT_INSTALMENT_TOTALS = ("33", "33", "34")
 DEFAULT_INSTALMENT_STEP_MONTHS = 12
+#: The schema of a settings dict that holds a table (#168, owner choice B:
+#: written only together with the table; a wallet without one stays at
+#: :data:`SCHEMA_VERSION`).
+INSTALMENTS_SCHEMA_VERSION = 3
+#: The separator of the in-memory heir rows of deliveries 2 and 3 (#168,
+#: owner decision 2): "Luca" is delivery 1, "Luca§2" and "Luca§3" the
+#: next ones. The delivery NUMBER, never the date: anticipations and
+#: postpones move the dates. These names reach the will items (the check
+#: compares them by name) and are shown without the suffix
+#: (:func:`person_name`). An heir name holding it is refused.
+INSTALMENT_SEP = "§"
+# The address prefix of an OP_RETURN message row (the same marker as
+# ``bal.core.heirs.OP_RETURN_PREFIX``; not imported, so this module needs no
+# Electrum). A message is not a payee: it has no cell in the table.
+_MESSAGE_PREFIX = "OP_RETURN:"
 
 _HUNDRED = Decimal(100)
 _CENT = Decimal("0.01")
@@ -1578,7 +1593,7 @@ def share_text(value):
     return text + "%"
 
 
-def validate_instalments(rows, heirs, now):
+def validate_instalments(rows, heirs, now, gap=True):
     """Check an instalments table before it is written; return it normalized.
 
     ``rows``: the table (see :data:`INSTALMENTS_KEY`); ``heirs``: the names
@@ -1589,7 +1604,11 @@ def validate_instalments(rows, heirs, now):
       exactly the keys ``locktime`` and ``shares``;
     * the dates (:func:`as_delivery`, a period is refused) are after
       ``now``, strictly increasing and at least :data:`MIN_GAP_DAYS` days
-      apart;
+      apart. ``now`` None skips "after now" and ``gap`` False the 28 days
+      (#168): the check of a table already stored, whose first date may be
+      past and whose gaps the automatic one-day anticipations may have
+      shortened (owner decision 5); the owner's own changes are checked
+      in full;
     * every share is a part of the estate (:func:`as_share`); a name that is
       not an heir is refused, a missing heir counts 0 %;
     * every date pays at least one heir, every heir gets something at one
@@ -1635,14 +1654,14 @@ def validate_instalments(rows, heirs, now):
         locktime = as_delivery(raw)
         if locktime is None:
             raise ValueError("delivery {}: not a delivery date: {!r}".format(n, raw))
-        if locktime <= now:
+        if now is not None and locktime <= now:
             raise ValueError("delivery {}: the date is not in the future".format(n))
         if previous is not None:
             if locktime <= previous:
                 raise ValueError(
                     "delivery {}: the date is not after delivery {}".format(n, n - 1)
                 )
-            if locktime - previous < MIN_GAP_DAYS * DAY:
+            if gap and locktime - previous < MIN_GAP_DAYS * DAY:
                 raise ValueError(
                     "delivery {}: less than {} days after delivery {}".format(
                         n, MIN_GAP_DAYS, n - 1
@@ -1719,6 +1738,148 @@ def default_instalments(heirs, first):
             }
         )
     return rows
+
+
+class InstalmentsMismatch(ValueError):  # noqa: N818 - named after the state, not an error
+    """The stored table no longer fits the heirs (#168, owner decision 3).
+
+    An heir added, removed or renamed without the table being updated: the
+    flows stop with this error and nothing is built, never a guess. The
+    message is the caller's (translated); ``reason`` the English rule that
+    failed (:func:`validate_instalments`), for the log.
+    """
+
+    def __init__(self, message, reason=None):
+        """Keep the user's ``message`` and the English ``reason``."""
+        super().__init__(message)
+        self.reason = reason
+
+
+def instalment_key(name, n):
+    """The heir-row name of person ``name`` at delivery ``n`` (1, 2, 3).
+
+    Delivery 1 keeps the plain name (owner decision 2): a will with one
+    date, and the first delivery of a table, name their rows as before
+    #168, so the items of a will built before the table still match.
+    """
+    return name if n == 1 else "{}{}{}".format(name, INSTALMENT_SEP, n)
+
+
+def instalment_number(key):
+    """The delivery number of heir-row name ``key``: 2 for ``"Luca§2"``,
+    1 for a plain name (or a suffix that is not a number)."""
+    text = str(key)
+    head, sep, tail = text.rpartition(INSTALMENT_SEP)
+    if sep and head and tail.isdigit() and int(tail) >= 2:
+        return int(tail)
+    return 1
+
+
+def person_name(key):
+    """The person behind heir-row name ``key``: ``"Luca"`` for
+    ``"Luca§2"``; the name itself otherwise. What the owner always sees."""
+    if instalment_number(key) == 1:
+        return str(key)
+    return str(key).rpartition(INSTALMENT_SEP)[0]
+
+
+def has_separator(name):
+    """True when an heir name holds :data:`INSTALMENT_SEP` (refused, #168)."""
+    return INSTALMENT_SEP in str(name)
+
+
+def is_message_row(value):
+    """True for an OP_RETURN message row (``[address, ...]`` whose address
+    starts with ``OP_RETURN:``): a message, not a payee."""
+    try:
+        return str(value[0]).startswith(_MESSAGE_PREFIX)
+    except (IndexError, TypeError, KeyError):
+        return False
+
+
+def payee_names(heirs):
+    """The names of the heirs that are paid (the message rows left out), in
+    their order: the people of the table's columns."""
+    return [name for name, value in heirs.items() if not is_message_row(value)]
+
+
+def table_rows(settings):
+    """The table of ``settings`` with delivery 1 on the wallet's own date.
+
+    ``settings["locktime"]`` is the ONE date of delivery 1 (#168): the
+    rules that move it (anticipation, anchor, later wish, a cancelled
+    postpone, the owner's date field) keep working unchanged, and the
+    first row follows it here. ``[]`` without a table (one delivery).
+    Raises ``ValueError`` like :func:`instalments_of`.
+    """
+    rows = instalments_of(settings)
+    if not rows:
+        return []
+    first = as_delivery(settings.get("locktime"))
+    if first is not None and isinstance(rows[0], Mapping):
+        rows[0]["locktime"] = first
+    return rows
+
+
+def effective_rows(heirs, rows):
+    """The heir rows the build and the check use with a table (#168).
+
+    ``heirs``: the stored heirs (one row ``[address, amount, date]`` per
+    person); ``rows``: the table, validated (:func:`validate_instalments`).
+    One row per person and delivery with a share above 0 % (a 0 % row would
+    be built as a dust row and missed by the check):
+    ``{instalment_key(name, n): [address, "<share>%", date of n]}``. The
+    percentages are shares of the whole estate: the build treats them as
+    weights over every later row (``Heirs.normalize_perc``), so each
+    delivery pays its share. A message row keeps its name and amount and
+    goes with delivery 1 (owner decision 4). Pure: nothing is stored.
+
+    Raises ``ValueError`` when an heir name holds :data:`INSTALMENT_SEP`
+    (it could collide with a row name).
+    """
+    out = {}
+    for name, value in heirs.items():
+        if has_separator(name):
+            raise ValueError("an heir name holds {!r}: {!r}".format(INSTALMENT_SEP, name))
+        if is_message_row(value):
+            out[name] = [value[0], value[1], rows[0]["locktime"]]
+    for n, row in enumerate(rows, 1):
+        for name, value in heirs.items():
+            if is_message_row(value):
+                continue
+            share = as_share(row["shares"].get(name, 0))
+            if not share:
+                continue
+            out[instalment_key(name, n)] = [value[0], share_text(share), row["locktime"]]
+    return out
+
+
+def anticipated_rows(rows, dates):
+    """The table with deliveries 2 and 3 moved to the will's dates, or None.
+
+    F1 of #166, fixed in #168: a rebuild against the will in force dates
+    every delivery that changed ONE day earlier, so its transactions are
+    valid first. Delivery 1 follows through ``locktime``
+    (``Will.anticipated_delivery_to_store``); the later ones must follow
+    too, or the next Check reads "stored date later than the transaction"
+    as a postpone and asks for the paid invalidation. ``dates``:
+    ``{n: earliest locktime of the VALID items of delivery n}``. A date
+    only moves EARLIER (a postpone is never undone here). Returns a new
+    list, or None when nothing moves.
+    """
+    out = [dict(row) for row in rows]
+    moved = False
+    for n, row in enumerate(out, 1):
+        if n == 1:
+            continue
+        date = dates.get(n)
+        current = as_delivery(row.get("locktime"))
+        if date is None or current is None:
+            continue
+        if int(date) < current:
+            row["locktime"] = int(date)
+            moved = True
+    return out if moved else None
 
 
 # --------------------------------------------------------------------------- #

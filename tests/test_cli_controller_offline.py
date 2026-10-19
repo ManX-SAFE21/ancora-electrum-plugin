@@ -28,6 +28,7 @@ from electrum.util import UserFacingException
 from bal.cli.controller import BalController
 from bal.core.heirs import Heirs
 from bal.core.util import Util
+from bal.engine import context as engine_context
 
 VALID_ADDRESS = "bc1qusymuetsz2psaqzqxv8qmzcy64d9meckj3lxxf"
 
@@ -254,10 +255,14 @@ def test_build_will_reanchors_date_to_check_to_new_locktime():
     with Plugin() as plugin:
         plugin.USER_TYPE.set("advanced")
         plugin.NO_WILLEXECUTOR.set(True)
-        plugin.ENABLE_MULTIVERSE.set(True)
         c = _make_controller(plugin)
         c.store_will_setting("threshold", "-150d")
-        c.store_will_setting("locktime", Util.parse_locktime_string("1y"))
+        # A new ADVANCED wallet starts in the period form (#146), which
+        # dates the will today + 24 months at every flow; the fixed form
+        # keeps the 1y date. Before #168 BAL's multiverse option kept the
+        # heir's own "1y" and hid that (D7: every heir gets the will's date).
+        engine_context.set_delivery(
+            c, form="fixed", date=Util.parse_locktime_string("1y"))
         c.store_will_setting("baltx_fees", 20)
         assert c.will_settings is c.wallet.db.get_dict("will_settings")
         c.no_willexecutor = True
