@@ -145,6 +145,7 @@ exposes `bal_*` commands that replicate the full inheritance cycle.
 |----------|----------|
 | Settings | `bal_settings_list`, `bal_settings_get`, `bal_settings_set`, `bal_settings_reset` |
 | Delivery (per wallet) | `bal_delivery_show`, `bal_delivery_set`, `bal_delivery_form` |
+| Staged inheritance (per wallet) | `bal_instalments_show`, `bal_instalments_set`, `bal_instalments_clear` |
 | Heirs | `bal_heirs_list`, `bal_heirs_show`, `bal_heirs_add`, `bal_heirs_update`, `bal_heirs_delete`, `bal_heirs_import`, `bal_heirs_export` |
 | Will-Executors | `bal_willexecutors_list`, `bal_willexecutors_show`, `bal_willexecutors_add`, `bal_willexecutors_update`, `bal_willexecutors_select`, `bal_willexecutors_delete`, `bal_willexecutors_ping`, `bal_willexecutors_download`, `bal_willexecutors_import`, `bal_willexecutors_export` |
 | Will | `bal_will_status`, `bal_will_check`, `bal_will_prepare`, `bal_will_autorebuild`, `bal_will_sign`, `bal_will_broadcast`, `bal_will_export`, `bal_will_import_merge`, `bal_will_invalidate`, `bal_will_check_executor` |
@@ -193,6 +194,13 @@ electrum bal_delivery_form period --months 36   # renewable period, N months
 electrum bal_delivery_set --months 24           # a new N (period form only)
 electrum bal_delivery_form fixed --date 2029-08-29
 
+# Staged inheritance (ADVANCED): 2 or 3 delivery dates, shares of the whole estate
+electrum bal_instalments_set --example true     # an example table, to change
+electrum bal_instalments_set --table '[{"date": "2030-03-01", "shares": {"alice": "20%", "bob": "20%"}}, {"date": "2031-03-01", "shares": {"alice": "30%", "bob": "30%"}}]'
+electrum bal_instalments_set --path table.json  # the same JSON in a file
+electrum bal_instalments_show
+electrum bal_instalments_clear --confirm_earlier true   # one delivery date again
+
 # Plugin settings: key, then value (JSON for object-typed keys)
 electrum bal_settings_get bal_user_type
 electrum bal_settings_set bal_hide_replaced false
@@ -203,8 +211,8 @@ period such as `1y` or `730d` is refused. A date earlier than the will in
 force needs `--confirm_earlier true`. A later date is stored; if the will
 was already sent, the next `bal_will_prepare` answers `postponed`: the old
 will must be invalidated first (on-chain, miner fee). Every heir gets the
-delivery date of the will, so `--locktime` for a single heir is refused
-unless `bal_enable_multiverse` is on.
+delivery date of the will: `--locktime` for a single heir is always
+refused (the dates of a staged inheritance are in its table, below).
 
 The delivery form: a **fixed date** (the default) or a **period** of N
 calendar months (1 to 240) that the Check Alive renews.
@@ -219,8 +227,31 @@ with a will in force the new N is used at the next renewal (no fee now);
 `--date` is refused for the period form and `--months` for a fixed date.
 `bal_delivery_show` adds `form`, `period_months`, `period` (N in words),
 `period_start` (the day the period started) and `locked` (a will in force:
-the form cannot change). The period form is not available with
-`bal_enable_multiverse`.
+the form cannot change). The period form is not available with a table
+of the deliveries.
+
+Staged inheritance (ADVANCED mode, fixed delivery date): the heirs
+receive in 2 or 3 deliveries, on the same dates for every heir, at least
+28 days apart. At each date each heir receives a share of the WHOLE
+estate; the shares of the whole table add up to exactly 100% (an heir may
+have 0% at a date). `bal_instalments_set` writes the table (`--table`
+JSON, `--path` a JSON file, or `--example true`: 33%, 33% and 34% split
+among the heirs, one year apart); every rule is checked before anything
+is written. Delivery 1 is the wallet's delivery date: `bal_delivery_set
+--date` moves it, at least 28 days before delivery 2. A change by which
+the heirs would receive part of the estate earlier than now needs
+`--confirm_earlier true`: a date moved earlier, shares moved to an earlier
+delivery, delivery 3 removed, or the table removed
+(`bal_instalments_clear --confirm_earlier true`). A later date of a will
+already sent needs the paid invalidation at the next `bal_will_prepare`,
+as for one date. `bal_instalments_show` shows the
+table, the totals and the transactions of the will per delivery (with
+three will-executors: 3, 9 and 27); its `deliveries` can be given back
+to `bal_instalments_set`. While the table is there the heirs' shares
+come from it, not from their amounts. An heir added, removed or renamed
+without updating the table stops `bal_will_prepare` until the table is
+updated (the heir commands say so in `instalments_note`).
+`bal_instalments_clear` goes back to one date, with the heirs' amounts.
 
 Where the delivery settings are kept: in the wallet file, under the wallet
 key `will_settings`. Electrum's global `bal_will_settings` (the key of the

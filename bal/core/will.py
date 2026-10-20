@@ -2717,11 +2717,27 @@ class Will:
     def check_willexecutors_and_heirs(
         will, heirs, willexecutors, self_willexecutor, check_date, tx_fees
     ):
+        """Check that the VALID will items still match the heirs and the
+        will-executors; raise the reason when they do not.
+
+        ``heirs``: the heir rows the will is built from (with a table of
+        the deliveries, the rows of every delivery, #168). A postpone of a
+        signed or sent item raises ``WillPostponedException``; an heir
+        removed, renamed, added or changed raises ``HeirNotFoundException``
+        (with ``all_heirs`` when the heirs of the same delivery all have
+        the new date, #125 and #169, and ``staged`` when the will has
+        deliveries 2 or 3, so the messages name the delivery);
+        a will-executor change raises its own exception. Returns False when
+        there is no VALID item.
+        """
         _logger.debug("check willexecutors heirs")
         no_willexecutor = 0
         willexecutors_found = {}
         terms_changed = {}
         heirs_found = {}
+        # #169: a will in deliveries ("Luca§2" rows): the messages name the
+        # delivery of every row, also "Luca (delivery 1)".
+        staged = any(instalment_number(x) > 1 for x in heirs)
         will_only_valid = Will.only_valid_list(will)
         if len(will_only_valid) < 1:
             return False
@@ -2843,10 +2859,11 @@ class Will:
                         if renamed_to is not None:
                             raise HeirNotFoundException(
                                 wheir, HeirNotFoundException.HEIR_RENAMED,
-                                new_name=renamed_to,
+                                new_name=renamed_to, staged=staged,
                             )
                         raise HeirNotFoundException(
-                            wheir, HeirNotFoundException.HEIR_REMOVED
+                            wheir, HeirNotFoundException.HEIR_REMOVED,
+                            staged=staged,
                         )
 
             if willexecutor := w.we:
@@ -2882,11 +2899,17 @@ class Will:
             _logger.debug(f"heir: {h} not found ({changes[h]})")
             # CHANGELOG #125: when every heir has the same delivery date (the
             # normal case: multiverse off gives them the will's date), a new
-            # date concerns the whole will, not the heir named first.
-            same_date = len({str(heirs[x][2]) for x in heirs}) == 1
+            # date concerns the whole will, not the heir named first. #169:
+            # with a table of the deliveries, the heirs of the SAME delivery
+            # ("Luca§2", "John§2") share its date: a new date concerns that
+            # delivery. A will with one date has delivery 1 only: as before.
+            number = instalment_number(h)
+            same_date = len({str(heirs[x][2]) for x in heirs
+                             if instalment_number(x) == number}) == 1
             raise HeirNotFoundException(
                 h, changes[h],
                 all_heirs=changes[h] == HeirNotFoundException.HEIR_DATE and same_date,
+                staged=staged,
             )
         count_heirs = 0
         for h in heirs:
@@ -3293,7 +3316,10 @@ class HeirNotFoundException(NotCompleteWillException):
     :data:`HEIR_RENAMED` (#135 follow-up, with ``new_name``), or ``None``
     when unknown. ``all_heirs`` (CHANGELOG #125) is True for a date
     change when every heir has the same delivery date: the will's date
-    changed, not one heir's.
+    changed, not one heir's. Since #169, with a table of the deliveries,
+    every heir OF THE SAME DELIVERY: that delivery's date changed.
+    ``staged`` (#169): the will has deliveries 2 or 3, so a row of
+    delivery 1 is named "Luca (delivery 1)" too.
     """
 
     HEIR_REMOVED = "removed"
@@ -3304,16 +3330,19 @@ class HeirNotFoundException(NotCompleteWillException):
     # #135 follow-up: same address, new name (``new_name``).
     HEIR_RENAMED = "renamed"
 
-    def __init__(self, heir, change=None, all_heirs=False, new_name=None):
+    def __init__(self, heir, change=None, all_heirs=False, new_name=None,
+                 staged=False):
         """Keep ``heir`` as the only arg so ``str(e)`` stays the heir name.
 
         ``new_name``: the heir's new name for :data:`HEIR_RENAMED`.
+        ``staged``: the will has deliveries 2 or 3 (#169).
         """
         super().__init__(heir)
         self.heir = heir
         self.change = change
         self.all_heirs = all_heirs
         self.new_name = new_name
+        self.staged = staged
 
 
 class WillPostponedException(NotCompleteWillException):

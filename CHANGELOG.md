@@ -10954,3 +10954,152 @@ four will-executors): the heir dialog has no Locktime row; Check "ok",
 nothing to prepare, sign or send, verification 4/4; an heir's share from
 60 % to 70 %: the will rebuilt one day earlier (free), signed, verified
 4/4, in force.
+
+## 169. Staged deliveries on the command line: bal_instalments_show, set and clear
+
+**Date:** 2026-10-20
+
+**Goal (step M3b of `context/MULTIVERSE-PLAN.md`; owner answers of
+2026-10-19):** the table of deliveries of #168 can be written, read and
+removed from the command line (Electrum's Console, the terminal, JSON-RPC);
+the command-line texts name the people, never the row names "Luca§2".
+Owner answers: (1a) the heir commands keep working with a table and say
+what it needs; (2) the table as JSON in the command, or a JSON file; (3)
+the live test on the command line is made by Claude. After the review,
+owner decision (a): any change by which the heirs would receive part of
+the estate EARLIER needs `--confirm_earlier true` (not only a date moved
+earlier: also shares moved to an earlier delivery, delivery 3 removed, the
+table removed). WHY: earlier is a free, silent rebuild that only the paid
+invalidation can undo once sent, and in practice the command line is used
+by an AI (owner): the refusal tells it to ask the owner first.
+
+**What changed:**
+
+- `bal/cli/commands.py`: three commands. `bal_instalments_show` (read);
+  `bal_instalments_set` (`--table` JSON, `--path` a JSON file, or
+  `--example true`; `--confirm_earlier true`); `bal_instalments_clear`
+  (`--confirm_earlier true`). Set and clear are wallet writes, refused
+  while the wallet's plugin window is open (#148 list). The `--locktime`
+  help of `bal_heirs_add` and `bal_heirs_update` now says it is always
+  refused (#168, D7). The "%" of the help texts is written "%%": argparse
+  %-formats them.
+- `bal/cli/controller.py`:
+  - `instalments_show`: `staged`, `date`, `deliveries` (`delivery`,
+    `date`, `locktime`, `shares`: the form `bal_instalments_set` takes
+    back, also for a date not at 00:00 UTC), `fits_heirs` and `problem`
+    (owner decision 3), and when the table fits `delivery_totals`,
+    `heir_totals`, `total`, `gaps_days`, `min_gap_days` and `will_items`
+    (the VALID items per delivery).
+  - `instalments_set`: one source; refused in BASIC mode (owner decision
+    D5: staged inheritance is ADVANCED only), with the period form, without
+    heirs; the table read strictly (`date` or `locktime`, `shares`,
+    `delivery` that must match its place, as a number or a text such as
+    "1"; an unknown field, a period, a block height, a past date or two
+    different dates for one delivery are refused); every rule of #167
+    checked before anything is written. `--confirm_earlier true` needed
+    (decision (a)) for a date earlier than its reference (the VALID items
+    of that delivery, as `bal_delivery_set`; else the stored date, with
+    its own words "the current date of this delivery") and for a table
+    that pays more of the estate by one of its dates than now
+    (`_schedule_now`: the stored table's shares on the dates in force;
+    `_first_earlier`, date by date). Every refusal of this kind ends with
+    "Ask the owner; if this is what the owner wants, run the command again
+    with --confirm_earlier true." Then `context.set_instalments` (#168).
+    The message lists the dates, says when a delivery is later than the
+    will in force (the next prepare asks for the paid invalidation, D6)
+    and that the heirs' amounts are not used while the table is there.
+  - `instalments_clear`: one delivery again, with `--confirm_earlier true`
+    (the rest of the estate arrives at delivery 1); the answer lists the
+    heirs, whose amounts count again, and says to check them.
+  - `bal_delivery_set --date` and `bal_delivery_form fixed --date`: with a
+    table the date is delivery 1, at least 28 days before delivery 2 (owner
+    decision 5). `bal_delivery_form period` with a table: refused with
+    "remove the table first" (before the "will in force" refusal, which
+    pointed to an invalidation that does not help).
+  - `bal_delivery_show`: `staged` and `deliveries`.
+  - Heir commands (`add`, `update`, `delete`, `import`): with a table,
+    `instalments_note` says whether the heirs still fit it (owner answer
+    1a). A table that no longer fits: the message of #168 plus the commands
+    that fix it.
+  - `bal_will_status` (and every answer that shows the will): `heirs` and
+    `description` name the people; with a table each item has its
+    `delivery`. A will with one date gives the same answer as before (the
+    golden files are unchanged).
+- `bal/core/messages.py` (shared with the Check dialog): `heir_label`, the
+  person and the delivery: "Heir "Luca (delivery 2)" was removed", "The
+  amount of heir "Luca (delivery 2)" changed"; in a will in deliveries
+  delivery 1 too ("Luca (delivery 1)": "Heir Luca was removed" was wrong
+  when Luca still receives later); a rename "Luca → Marco"; "The date of
+  delivery N changed: preparing a new will." when every heir of that
+  delivery has the new date. `bal/core/will.py`:
+  `check_willexecutors_and_heirs` (docstring added) computes `all_heirs`
+  (the "same date" of #125) among the heirs of the same delivery and
+  passes `staged` (the will has deliveries 2 or 3) to
+  `HeirNotFoundException` (new attribute, docstring). A will with one date:
+  the same messages as before.
+- Catalogs: two new texts, "{name} (delivery {n})" and "The date of
+  delivery {} changed: preparing a new will.", translated (IT "consegna",
+  ES "entrega"). The command line stays English.
+- `README.md`: the commands, examples, the rules (also the confirmation of
+  decision (a)); the two sentences about `bal_enable_multiverse` (no
+  longer read since #168) updated.
+
+**Tests:**
+
+- `tests/test_cli_instalments.py` (new, three will-executors, 58 tests):
+  show without a table; set and show give back the same table (also from
+  the show answer, a JSON text, a file, a date at 01:00 UTC); the example
+  table; 19 bad tables write nothing, each with its message; a delivery
+  number as text or decimal; one source only; BASIC, period form and no
+  heirs refused; the whole cycle by command (3 + 9 + 27 items, the
+  people's names, `will_items`, then coherent); a will with one date has
+  no `delivery` field; an earlier delivery 1 or 2 needs the confirmation;
+  the reference is the will in force, else the stored table (with its
+  words); shares that arrive earlier (rows swapped, delivery 3 removed)
+  need the confirmation, shares moved later do not; a later delivery 2:
+  the message, then `postponed`; an earlier delivery 2: free rebuild,
+  reason "The date of delivery 2 changed"; shares moved: reason "luca
+  (delivery 2)"; luca out of delivery 1: "luca (delivery 1) was removed";
+  `bal_delivery_set` and `bal_delivery_form` keep the 28 days, the period
+  refused; the heir commands' note and the stop of prepare; clear: the
+  confirmation, the heirs' amounts, one delivery one day earlier; the
+  stored heirs untouched; Electrum's parser (`--table` JSON, bools); the
+  Check sentences with the delivery, and unchanged for one date.
+- `tests/test_cli_commands_registered.py`: the three commands, and the help
+  of every `bal_*` command printed (a lone "%" broke it).
+- `tests/test_cli_window_guard.py`: `instalments_show` is a read; the
+  snapshot includes the delivery settings (the table).
+- `tests/test_cli_delivery_commands.py`: `bal_delivery_show` has `staged`
+  and `deliveries`.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory: normal order 2716 passed (26 minutes), files in
+reverse order 2716 passed (27 minutes); golden files unchanged. Mutation
+check on a copy of the code: 37 rules broken one at a time, all 37
+caught. Independent review (one agent, read only): no crash, no partial
+write, no change for wallets without a table; its points fixed (decision
+(a), "delivery 1" in the messages, the delivery number, the words without
+a will, two docstrings, four more tests); its claim that a failed staged
+build loses its reason is not right (`engine/build.py` copies it back).
+Scenario harness (full matrix, the 2-coin scenarios 6 times, warn_matrix
+synced and not): log identical to the #168 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-169-instalments-cli.zip` (sha256
+`85d43ce7...6b1c`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2. Live command-line test on Electrum 4.8.2 (the ZIP's plugin,
+an offline daemon, a throw-away testnet wallet, three fake will-executors,
+removed afterwards): the help prints; a table with a 19-day gap refused;
+the owner's table stored; prepare, 39 transactions signed (3 + 9 + 27),
+the people's names, no "§" in any answer; broadcast says "You are
+offline" for each will-executor; `bal_delivery_set` 2031-02-15 refused
+(28 days); an heir added: the note, prepare stopped with the commands;
+delivery 2 later: the message, prepare `postponed`; clear refused without
+the confirmation, done with it; prepare: one delivery, one day earlier.
+
+Seen in passing, not changed here: with the command line the will stays
+unsigned between prepare and sign, and the "save to local history"
+convenience logs "save to history failed" for the items of deliveries 2
+and 3 (their parent is not in the wallet), log only;
+`bal_delivery_form fixed --date` can move the date earlier without a
+confirmation (since #127).
+
+**Outcome:** DONE.

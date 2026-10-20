@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from electrum.logging import get_logger
 
 from ..i18n import _, number_separators
+from .delivery import instalment_number, person_name
 from .plugin_base import BalTimestamp
 from .will import (
     HeirChangeException,
@@ -35,6 +36,23 @@ from .will import (
 )
 
 _logger = get_logger(__name__)
+
+
+def heir_label(key, staged=False):
+    """The heir behind heir-row name ``key``, as the owner reads it (#169).
+
+    A will in deliveries (#168) names the rows of deliveries 2 and 3
+    "Luca§2", "Luca§3" (``bal.core.delivery.instalment_key``): the person
+    is shown with the delivery, "Luca (delivery 2)" (owner decision 2 of
+    M3: never the row name). In such a will (``staged``) the row of
+    delivery 1, "Luca", is "Luca (delivery 1)": "Heir Luca was removed"
+    would be wrong when Luca still receives at a later delivery. Any other
+    name as it is.
+    """
+    n = instalment_number(key)
+    if n == 1 and not staged:
+        return str(key)
+    return _("{name} (delivery {n})").format(name=person_name(key), n=n)
 
 
 def executor_terms_message(url, change):
@@ -113,37 +131,50 @@ def will_change_message(e):
     if isinstance(e, HeirNotFoundException):
         # Owner decision (CHANGELOG #77): one sentence per kind of change,
         # as reported by the core (Will._heir_change). The generic
-        # sentence stays for an exception without that detail.
+        # sentence stays for an exception without that detail. #169: the
+        # heir is named as the owner knows it (heir_label: "Luca (delivery
+        # 2)", never the row name "Luca§2").
         change = getattr(e, "change", None)
+        staged = bool(getattr(e, "staged", False))
+        heir = heir_label(str(e), staged)
         if change == HeirNotFoundException.HEIR_RENAMED:
-            # #135 follow-up (owner): the same heir under a new name.
+            # #135 follow-up (owner): the same heir under a new name. A
+            # rename concerns the person: the plain names (#169).
             return _("Heir renamed: {old} → {new}: preparing a new will.").format(
-                old=str(e), new=getattr(e, "new_name", ""))
+                old=person_name(str(e)),
+                new=person_name(getattr(e, "new_name", "") or ""))
         if change == HeirNotFoundException.HEIR_REMOVED:
-            return _('Heir "{}" was removed: preparing a new will.').format(str(e))
+            return _('Heir "{}" was removed: preparing a new will.').format(heir)
         if change == HeirNotFoundException.HEIR_ADDED:
-            return _('Heir "{}" was added: preparing a new will.').format(str(e))
+            return _('Heir "{}" was added: preparing a new will.').format(heir)
         if change == HeirNotFoundException.HEIR_DATE and getattr(e, "all_heirs", False):
+            number = instalment_number(str(e))
+            if number > 1 or staged:
+                # #169: every heir of that delivery has its date (a table
+                # of the deliveries): the date of the delivery changed.
+                return _(
+                    "The date of delivery {} changed: preparing a new will."
+                ).format(number)
             # CHANGELOG #125 (owner): every heir has the will's date, so the
             # will's date changed; naming only the first heir confused.
             return _("The delivery date changed: preparing a new will.")
         if change == HeirNotFoundException.HEIR_DATE:
             return _(
                 'The delivery date of heir "{}" changed: preparing a new will.'
-            ).format(str(e))
+            ).format(heir)
         if change == HeirNotFoundException.HEIR_AMOUNT:
             return _(
                 'The amount of heir "{}" changed: preparing a new will.'
-            ).format(str(e))
+            ).format(heir)
         if change == HeirNotFoundException.HEIR_ADDRESS:
             return _(
                 'The address of heir "{}" changed: preparing a new will.'
-            ).format(str(e))
+            ).format(heir)
         return _(
             'Heir "{}" is not covered by the current will (it was added '
             "or removed, or its delivery date changed): a new will must "
             "be prepared."
-        ).format(str(e))
+        ).format(heir)
     # Kept for completeness: nothing in the plugin raises these two today,
     # but they ARE NotCompleteWillException subclasses, so should future
     # code raise them they get a sensible message rather than the fallback.
