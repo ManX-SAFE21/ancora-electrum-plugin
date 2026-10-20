@@ -513,5 +513,104 @@ def test_anticipated_rows_move_later_deliveries_earlier_only():
     assert dv.anticipated_rows(rows, {1: D1 - dv.DAY}) is None
 
 
+# ------------------------------------- shared with the window since #170 (M4a)
+
+def test_rule_errors_keep_their_english_and_can_be_translated():
+    """``str(e)`` is the English of before #170 (the command line and the
+    log read it); the template and its values give the window's
+    translation; a broken translation falls back to the English."""
+    rows = two_dates(gap_days=27)
+    with pytest.raises(dv.TableRuleError) as info:
+        dv.validate_instalments(rows, HEIRS, NOW)
+    e = info.value
+    assert isinstance(e, ValueError)
+    assert str(e) == "delivery 2: less than 28 days after delivery 1"
+    assert e.template == "delivery {}: less than {} days after delivery {}"
+    assert e.values == (2, 28, 1)
+    italian = {e.template: "consegna {}: meno di {} giorni dopo la consegna {}"}
+    assert dv.rule_text(e, lambda t: italian.get(t, t)) == (
+        "consegna 2: meno di 28 giorni dopo la consegna 1")
+    assert dv.rule_text(e, lambda t: "{} {} {} {}") == str(e)    # a field too many
+    assert dv.rule_text(ValueError("plain"), lambda t: "x") == "plain"
+    assert dv.N_("text") == "text"
+
+
+@pytest.mark.parametrize("rows, match", [
+    (two_dates(first={"Luca": "50%", "John": "0%", "Maria": "0%"},
+               second={"Luca": "0%", "John": "0%", "Maria": "40%"}),
+     "John: gets nothing"),
+    (two_dates(first={"Luca": "60%"}, second={"John": "30%", "Maria": "30%"}),
+     "add up to 120%"),
+    ([], "0 delivery dates"),
+])
+def test_every_rule_raises_a_table_rule_error(rows, match):
+    """Each rule of the table raises the translatable error."""
+    with pytest.raises(dv.TableRuleError, match=match):
+        dv.validate_instalments(rows, HEIRS, NOW)
+
+
+def test_schedules_of_a_table_and_of_now():
+    """``schedule_of``: each date and its share of the estate;
+    ``schedule_now``: the stored table on its reference dates, or 100 % on
+    delivery 1 without a table."""
+    rows = owner_table()
+    assert dv.schedule_of(rows) == [(D1, Decimal(33)), (D2, Decimal(33)),
+                                    (D3, Decimal(34))]
+    reference = {1: (D1, True), 2: (D2 - DAY, True), 3: (None, False)}
+    assert dv.schedule_now(reference, rows) == [(D1, Decimal(33)), (D2 - DAY, Decimal(33))]
+    assert dv.schedule_now({1: (D1, False)}, []) == [(D1, Decimal(100))]
+    assert dv.schedule_now({1: (None, False)}, []) == []
+
+
+def test_what_arrives_earlier():
+    """Owner decision (a): the first date by which more of the estate
+    would be paid; a date earlier than its reference; nothing for a
+    later or equal table."""
+    now = [(D1, Decimal(33)), (D2, Decimal(33)), (D3, Decimal(34))]
+    assert dv.first_earlier(now, now) is None
+    later = [(D1, Decimal(33)), (D2 + DAY, Decimal(33)), (D3, Decimal(34))]
+    assert dv.first_earlier(later, now) is None
+    moved = [(D1, Decimal(66)), (D3, Decimal(34))]
+    assert dv.first_earlier(moved, now) == (1, D1, Decimal(66), Decimal(33))
+    assert dv.first_earlier([(D1, Decimal(100))], now) == (
+        1, D1, Decimal(100), Decimal(33))
+    reference = {1: (D1, False), 2: (D2, True), 3: (D3, False)}
+    rows = owner_table()
+    assert dv.first_earlier_date(rows, reference) is None
+    rows[1]["locktime"] = D2 - DAY
+    assert dv.first_earlier_date(rows, reference) == (2, D2 - DAY, D2, True)
+    assert dv.first_earlier_date(rows, {1: (None, False)}) is None
+
+
+def test_dates_later_than_the_will_in_force():
+    """The deliveries after the will in force's date of the same delivery."""
+    rows = owner_table()
+    assert dv.later_than_in_force(rows, {1: D1, 2: D2, 3: D3}) == []
+    assert dv.later_than_in_force(rows, {1: D1 - DAY, 2: None, 3: D3 - DAY}) == [
+        (1, D1 - DAY), (3, D3 - DAY)]
+
+
+def test_delivery_1_keeps_its_28_days_before_delivery_2():
+    """Delivery 2's date when delivery 1 typed by the owner comes less than
+    28 days before it; None without a table or with one unreadable."""
+    settings = {"locktime": D1, "instalments": owner_table()}
+    assert dv.too_close_to_second(settings, D1) is None
+    assert dv.too_close_to_second(settings, D2 - 28 * DAY) is None
+    assert dv.too_close_to_second(settings, D2 - 27 * DAY) == D2
+    assert dv.too_close_to_second({"locktime": D1}, D2) is None
+    assert dv.too_close_to_second({"locktime": D1, "instalments": "x"}, D2) is None
+
+
+@pytest.mark.parametrize("branches, deliveries, total", [
+    (3, 3, 39), (3, 1, 3), (2, 11, 4094), (2, 12, 8190), (3, 7, 3279),
+    (3, 8, 9840), (1, 12, 12), (0, 3, 0),
+])
+def test_transactions_count(branches, deliveries, total):
+    """N + N**2 + ... + N**K (``context/MULTIVERSE-PLAN.md``: the future
+    5000 limit depends on the will-executors)."""
+    levels = dv.transactions_count(branches, deliveries)
+    assert len(levels) == deliveries and sum(levels) == total
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

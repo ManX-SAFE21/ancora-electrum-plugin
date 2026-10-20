@@ -11103,3 +11103,177 @@ and 3 (their parent is not in the wallet), log only;
 confirmation (since #127).
 
 **Outcome:** DONE.
+
+## 170. The window "Inheritance in several deliveries" (the table of the deliveries in Electrum's window)
+
+**Date:** 2026-10-20
+
+**Goal (step M4a of `context/MULTIVERSE-PLAN.md`; owner answers of
+2026-10-20):** the table of the deliveries of #168 / #169 can be written,
+changed and removed in Electrum's window, with the same rules as the
+command line. Owner answers to the M4 plan: (1) M4 in two steps, M4a this
+window, M4b the rest; (2) the window opens from the ADVANCED wizard (a third
+choice next to "Fixed date" / "Period") and from Tools in the Will tab;
+(3) with a table the date fields are read-only, the dates are changed only
+in the window; (4) an heir renamed keeps its shares in the table; (5) one
+message only, in delivery 1; (6) percentages only in the window (the real
+amounts per delivery are in the Future view after signing). The name, chosen
+by the owner: "Eredità in più consegne" / "Inheritance in several
+deliveries" / "Herencia en varias entregas" (it replaces "Staged
+inheritance" in the texts: the command line's refusal in BASIC, its help
+and the README). Three drafts of the window, the owner's choices: the
+table HORIZONTAL (the deliveries from left to right, as time in the Future
+view and the chain; the heirs in rows), the shares of the heirs bigger
+than the check sums (the totals small and grey, 100 % in green), at most 3
+deliveries today and everything visible; later up to 12 deliveries (owner,
+2026-10-20): only the deliveries scroll sideways then, with a bar at the
+bottom, the names and the totals stay in place.
+
+**What changed:**
+
+- `bal/core/delivery.py`: the rules the command line and the window share
+  (moved from `bal/cli/controller.py`, same behaviour): `schedule_of`,
+  `schedule_now`, `first_earlier`, `first_earlier_date` (owner decision
+  (a) of #169: what would arrive earlier), `later_than_in_force`,
+  `too_close_to_second` (the 28 days of delivery 1), and
+  `transactions_count` (N + N^2 + ... + N^K: the window's line, ready for
+  the future limit of 5000 transactions, which depends on the
+  will-executors). The rules of the table raise `TableRuleError` (a
+  `ValueError`): `str(e)` is the English text (the command line), its
+  template is in the catalogs (`N_`, a local marker: the module stays
+  standard library only) and `rule_text` translates it for the window.
+  Six of these texts lose the code word "instalments: " (#132: the owner
+  never reads "instalment"; the catalogs are checked for it): e.g. "the
+  shares add up to 95%, not 100%" (also on the command line).
+- `bal/engine/instalments.py`: `dates_in_force` (moved from the command
+  line), `rename_heir` (owner answer 4: the shares follow the new name;
+  nothing without a table, for a name not in it or onto one already in
+  it); the "Details" of the mismatch message are translated.
+- `bal/cli/controller.py`: uses the shared rules (`_dates_in_force`,
+  `_schedule_now` and `_first_earlier` removed; `_check_table_gap` calls
+  `too_close_to_second`); the answers are unchanged. `bal/cli/commands.py`:
+  the help names the inheritance in several deliveries.
+- `bal/gui/qt/deliveries.py` (new): the window. A line with a dot per
+  delivery, "Delivery n", a date picker (a date changed is 00:00 UTC of the
+  day, as on the command line; one not touched keeps its exact time) and
+  the time since the delivery before ("+2 years", "+4 years and 11
+  months"); one row per heir with its share (bold, bigger), "%" next to
+  it; the totals per heir and per delivery, 100 % ✓ in green. Every row
+  has a fixed height and every delivery column a fixed width, so the three
+  parts (names, deliveries, totals) line up; the deliveries are in a
+  scrolling area that shows 3 columns. "Add a delivery" (12 months after
+  the last, 0 %), "Remove the last delivery", "Example table" (33 / 33 /
+  34 %, one year apart); grey lines: the transactions to sign ("With 3
+  will-executors: 39 transactions to sign (3 + 9 + 27)", counted as the
+  build does: selected and valid will-executors, plus the copy without a
+  will-executor when that option is on), "Each will-executor takes its fee
+  at every delivery", and, with a message, "The message in the will is in
+  delivery 1". One problem at a time under the table, from
+  `validate_instalments`, translated (in English the code word
+  "instalments:" is left out); Save only without a problem. A delivery
+  later than the will in force says that the next Check asks for the paid
+  invalidation (D6). Save: what would arrive earlier is asked first (Yes /
+  No, No is the default), then `context.set_instalments`. "Back to one
+  delivery": asked (the rest of the estate would arrive at delivery 1, the
+  heirs' amounts count again), then `context.clear_instalments`. Opened
+  without a table: the example; with heirs changed since the table: a
+  column of 0 % for an heir added, an heir removed left out, a note to
+  check the shares. With a table, the date fields show "10/03/2030 (+2
+  deliveries)" (`staged_field_text`), read-only, with a tooltip saying
+  where the dates are changed.
+- `bal/gui/qt/widgets.py`: the wizard's delivery form has "Several
+  deliveries" (ADVANCED, a fixed date; with a table it is selected and
+  "Edit the deliveries…" opens the window; "Fixed date" asks to go back to
+  one delivery; the period is off with a table; BASIC shows a wallet's
+  table as it is, without changing it); `show_period` takes a tooltip and
+  `apply_delivery_form` shows the text of a table; the Will Details name
+  "luca (delivery 2)", never "luca§2".
+- `bal/gui/qt/lists.py`: Tools in the Will tab, "Inheritance in several
+  deliveries…" (ADVANCED only, checked each time the menu opens); the
+  Heirs list's Delete asks to open the table when it no longer fits. The
+  Will tab list (owner's ZIP test): in a will in deliveries every column
+  of a delivery-2 or delivery-3 row steps right by two figure spaces per
+  level (the tree indented only the first column); "Copy", the tooltips
+  and the search keep the plain values; a will with one date is
+  unchanged.
+- `bal/gui/qt/window.py`: `ask_deliveries` (the Yes / No questions of the
+  window of the table go through the window, as `ask_renew_will`; in the
+  test window of `tests/flowkit.py` they are answered No: a real box, never
+  clicked in a test without a screen, kept the first suite run waiting for
+  2 hours); `open_deliveries_editor` (refused with a message
+  in BASIC, with the period form, without heirs, with the settings on
+  hold); `table_mismatch` (Prepare with a table that no longer fits: in
+  ADVANCED the question "Open the table of the deliveries now?");
+  `offer_table_update` (after the heir window, an import or a delete, when
+  the heirs changed and the table no longer fits: asked once, after the
+  last "Add another heir"); the heir window says under the amount that it
+  is not used with a table, and a rename carries the shares
+  (`instalments.rename_heir`).
+- `bal/gui/qt/dialogs.py`: the Check's "Heir" rows name each person once;
+  the DUST rows name "luca (delivery 2)"; a rename is said once with the
+  persons' names (`person_renames`; also in the "What changes" box); the
+  Check stopped by a table that no longer fits has "Open the table of the
+  deliveries" (ADVANCED).
+- Catalogs: 53 new texts (the window, the 17 rules of the table), Italian
+  and Spanish.
+- `README.md`: the window; the new name.
+
+**Tests:**
+
+- `tests/flowkit.py`: `ask_deliveries` of the test window (recorded as a
+  "question" popup, answered No).
+- `tests/test_check_button.py`: the Tools menu has the new entry after
+  "Merge".
+- `tests/test_gui_deliveries.py` (new, three will-executors, 36 tests): the
+  example table and its Save, the date fields after it; the stored table,
+  its totals, gaps, no bar with 3 deliveries; 6 columns (maximum raised in
+  the test) scroll, names and totals outside; four problems (28 days, not a
+  share, 95 %, three decimals), Save off; the decimal comma and an empty
+  cell; add and remove; an earlier date asked (No: nothing stored; Yes:
+  stored); shares moved earlier asked; a later date not asked; a date
+  later than the will in force said; back to one delivery asked, then the
+  date editor again; heirs changed since the table; the wizard's choice
+  (ADVANCED only, not with the period form, opens the window, Cancel keeps
+  "Fixed date", "Fixed date" with a table asks); the Tools entry (ADVANCED
+  only); the refusals; "+1 delivery"; a rename in the real heir window
+  keeps the shares, nothing asked, the note shown; no note without a
+  table; an heir added or deleted asks to open the table (not when
+  nothing changed, not in BASIC, not after the heir window closed
+  unchanged); Prepare's question; the transactions to sign (39; 84 with
+  the copy without a will-executor); the flows' Prepare asks to open the
+  table and the Check stopped by it has the button; the Check's rows and
+  a rename (said once, "luca → marco") never show "§"; the Will Details.
+- `tests/test_gui_will_versions_list.py`: each delivery steps right in
+  every column, "Copy" plain, one date unchanged.
+- `tests/test_core_delivery_instalments.py`: the rule errors (English kept,
+  translatable, a broken translation falls back), every rule raises it,
+  the schedules, what arrives earlier, later than the will in force, the
+  28 days of delivery 1, the transaction counts (3 x 3 = 39, 2 x 11 = 4094,
+  2 x 12 = 8190, 3 x 7 = 3279, 3 x 8 = 9840).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory, normal order: 2769 passed (33 minutes; a first run had
+7 failures, fixed above: the Tools menu of the test toolbar and the word
+"instalments" in the catalogs). Golden files unchanged. Mutation check on
+a copy of the code: 40 rules broken one at a time (the shared rules, the
+engine, the window, the wizard, Tools, the heirs, the Check texts), all 40
+caught (two needed new tests). Scenario harness (full matrix, the 2-coin
+scenarios 6 times, warn_matrix synced and not): log identical to the #169
+log (135 lines). Screenshots of the window (offscreen, English and, from
+the ZIP's catalog, Italian) checked: 3 deliveries fit, 6 scroll with the
+names and totals in place. Test ZIP
+`test-zips/ancora_0.8.0-TEST-170-several-deliveries.zip` (sha256
+`9300450e...c808`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2. Owner's ZIP test (2026-10-20, a new wallet, a base will
+then several deliveries, delivery 1 moved earlier, 4 will-executors):
+the will in force has 4 + 16 + 64 = 84 transactions, rebuilt from the
+log's pushes as a complete chain; we.safe21.io holds its 21, WAITING,
+each with its fee. Seen there, for the next steps (not changed here):
+the will-executors answer "429 Too Many Requests" to the check of every
+transaction (21 per server at once), so a 2nd or 3rd Check finishes the
+verification; old delivery-3 copies shown as separate "Invalidated"
+versions; "txid is none" log blocks from `Will.normalize_will` on
+unsigned children. The "no server" message after the date change was the
+owner's DNS failing at that moment.
+
+**Outcome:** DONE.

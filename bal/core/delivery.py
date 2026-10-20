@@ -34,8 +34,13 @@ result. The rules here:
 * the staged deliveries of #167 (multiverse): the instalments table, its
   reader (:func:`instalments_of`), its rules (:func:`validate_instalments`,
   :func:`as_share`, :func:`share_text`) and the example table the editor
-  starts from (:func:`default_instalments`). Nothing uses them yet: the
-  engine and the schema 3 come with M3.
+  starts from (:func:`default_instalments`); since #170 also the rules
+  the command line and the window share: what arrives earlier
+  (:func:`first_earlier`, :func:`first_earlier_date`), the 28 days of
+  delivery 1 (:func:`too_close_to_second`), the dates later than the will
+  in force (:func:`later_than_in_force`), the number of transactions
+  (:func:`transactions_count`) and the translatable rule texts
+  (:class:`TableRuleError`).
 
 Pure: standard library only, no Qt, no Electrum objects, no I/O, and the
 clock is NEVER read here. Every "now" comes from the caller, so the test
@@ -1524,6 +1529,50 @@ _CENT = Decimal("0.01")
 _ROW_KEYS = frozenset(("locktime", "shares"))
 
 
+def N_(msg):  # noqa: N802 - the gettext marker name the catalog extraction reads
+    """Mark ``msg`` as translatable and return it unchanged (#170).
+
+    The rules of the table raise English texts (the log, the command line);
+    the window shows them translated (:class:`TableRuleError`). This module
+    uses the standard library only, so the marker of :mod:`bal.i18n` (which
+    imports Electrum) is not imported here.
+    """
+    return msg
+
+
+class TableRuleError(ValueError):
+    """A rule of the table of the deliveries is broken (#170).
+
+    ``str(e)`` is the English text, the same as before #170 (the log, the
+    command line and its tests read it). ``template`` (marked with
+    :func:`N_`, so it is in the catalogs) and ``values`` let the window show
+    it in the owner's language: ``_(e.template).format(*e.values)``
+    (:func:`rule_text`).
+    """
+
+    def __init__(self, template, *values):
+        """Keep the English ``template`` and its ``values``."""
+        super().__init__(template.format(*values))
+        self.template = template
+        self.values = values
+
+
+def rule_text(error, translate):
+    """The text of a broken rule in the owner's language (#170).
+
+    ``translate``: the caller's ``_`` (this module has no translations). A
+    :class:`TableRuleError` is translated with its values; any other error
+    gives its English text.
+    """
+    if isinstance(error, TableRuleError):
+        try:
+            return translate(error.template).format(*error.values)
+        except (IndexError, KeyError, ValueError):
+            # A broken translation must not hide the reason.
+            return str(error)
+    return str(error)
+
+
 def instalments_of(settings):
     """The instalments table stored in ``settings``, as plain lists and dicts.
 
@@ -1617,75 +1666,73 @@ def validate_instalments(rows, heirs, now, gap=True):
 
     Returns a new list: the dates as ints, and every row naming every heir
     in the order of ``heirs`` with its share text (:func:`share_text`).
-    Raises ``ValueError`` (English, for the log and the command line) on the
-    first broken rule.
+    Raises :class:`TableRuleError` (a ``ValueError``; English, for the log
+    and the command line, translatable for the window, #170) on the first
+    broken rule.
     """
     names = list(heirs)
     if not names:
-        raise ValueError("instalments: there are no heirs")
+        raise TableRuleError(N_("there are no heirs"))
     for name in names:
         if not isinstance(name, str):
-            raise ValueError("instalments: not an heir name: {!r}".format(name))
+            raise TableRuleError(N_("not an heir name: {!r}"), name)
     if len(set(names)) != len(names):
-        raise ValueError("instalments: an heir is named twice")
+        raise TableRuleError(N_("an heir is named twice"))
     if not isinstance(rows, (list, tuple)):
-        raise ValueError("instalments: not a list: {!r}".format(rows))
+        raise TableRuleError(N_("the table is not a list: {!r}"), rows)
     if not INSTALMENTS_MIN <= len(rows) <= INSTALMENTS_MAX:
-        raise ValueError(
-            "instalments: {} delivery dates (from {} to {})".format(
-                len(rows), INSTALMENTS_MIN, INSTALMENTS_MAX
-            )
+        raise TableRuleError(
+            N_("{} delivery dates (from {} to {})"),
+            len(rows), INSTALMENTS_MIN, INSTALMENTS_MAX,
         )
     out = []
     totals = dict.fromkeys(names, Decimal(0))
     previous = None
     for n, row in enumerate(rows, 1):
         if not isinstance(row, Mapping) or set(row) != _ROW_KEYS:
-            raise ValueError(
-                "delivery {}: not a row with 'locktime' and 'shares': {!r}".format(
-                    n, row
-                )
+            raise TableRuleError(
+                N_("delivery {}: not a row with 'locktime' and 'shares': {!r}"), n, row
             )
         raw = row["locktime"]
         if isinstance(raw, str) and _PERIOD.fullmatch(raw.strip()):
-            raise ValueError(
-                "delivery {}: a period is not a delivery date: {!r}".format(n, raw)
+            raise TableRuleError(
+                N_("delivery {}: a period is not a delivery date: {!r}"), n, raw
             )
         locktime = as_delivery(raw)
         if locktime is None:
-            raise ValueError("delivery {}: not a delivery date: {!r}".format(n, raw))
+            raise TableRuleError(N_("delivery {}: not a delivery date: {!r}"), n, raw)
         if now is not None and locktime <= now:
-            raise ValueError("delivery {}: the date is not in the future".format(n))
+            raise TableRuleError(N_("delivery {}: the date is not in the future"), n)
         if previous is not None:
             if locktime <= previous:
-                raise ValueError(
-                    "delivery {}: the date is not after delivery {}".format(n, n - 1)
+                raise TableRuleError(
+                    N_("delivery {}: the date is not after delivery {}"), n, n - 1
                 )
             if gap and locktime - previous < MIN_GAP_DAYS * DAY:
-                raise ValueError(
-                    "delivery {}: less than {} days after delivery {}".format(
-                        n, MIN_GAP_DAYS, n - 1
-                    )
+                raise TableRuleError(
+                    N_("delivery {}: less than {} days after delivery {}"),
+                    n, MIN_GAP_DAYS, n - 1,
                 )
         previous = locktime
         shares = row["shares"]
         if not isinstance(shares, Mapping):
-            raise ValueError("delivery {}: shares not a table: {!r}".format(n, shares))
+            raise TableRuleError(N_("delivery {}: shares not a table: {!r}"), n, shares)
         for name in shares:
             if name not in totals:
-                raise ValueError("delivery {}: not an heir: {!r}".format(n, name))
+                raise TableRuleError(N_("delivery {}: not an heir: {!r}"), n, name)
         values = {}
         for name in names:
             value = as_share(shares.get(name, 0))
             if value is None:
-                raise ValueError(
-                    "delivery {}: {}: not a share (0 to 100, two decimals at "
-                    "most): {!r}".format(n, name, shares.get(name))
+                raise TableRuleError(
+                    N_("delivery {}: {}: not a share (0 to 100, two decimals at "
+                       "most): {!r}"),
+                    n, name, shares.get(name),
                 )
             values[name] = value
             totals[name] += value
         if not any(values.values()):
-            raise ValueError("delivery {}: pays no heir".format(n))
+            raise TableRuleError(N_("delivery {}: pays no heir"), n)
         out.append(
             {
                 "locktime": locktime,
@@ -1694,13 +1741,13 @@ def validate_instalments(rows, heirs, now, gap=True):
         )
     for name in names:
         if not totals[name]:
-            raise ValueError(
-                "{}: gets nothing at any delivery (remove the heir)".format(name)
+            raise TableRuleError(
+                N_("{}: gets nothing at any delivery (remove the heir)"), name
             )
     total = sum(totals.values(), Decimal(0))
     if total != _HUNDRED:
-        raise ValueError(
-            "instalments: the shares add up to {}, not 100%".format(share_text(total))
+        raise TableRuleError(
+            N_("the shares add up to {}, not 100%"), share_text(total)
         )
     return out
 
@@ -1719,7 +1766,7 @@ def default_instalments(heirs, first):
     """
     names = list(heirs)
     if not names:
-        raise ValueError("instalments: there are no heirs")
+        raise TableRuleError(N_("there are no heirs"))
     rows = []
     for k, total in enumerate(DEFAULT_INSTALMENT_TOTALS):
         cents = int(Decimal(total) * 100)
@@ -1880,6 +1927,138 @@ def anticipated_rows(rows, dates):
             row["locktime"] = int(date)
             moved = True
     return out if moved else None
+
+
+# Owner decision (a) of 2026-10-20 (#169), shared by the command line and the
+# window since #170: every change by which the heirs would receive part of
+# the estate EARLIER is confirmed first. Earlier is a free rebuild, which
+# only the paid invalidation can undo once the will is sent.
+def schedule_of(rows):
+    """``[(date, share)]`` of a table: each delivery's date and the share of
+    the estate it pays (the sum of its cells; a cell that cannot be read
+    counts 0 %). For a table already validated (:func:`validate_instalments`).
+    """
+    out = []
+    for row in rows:
+        shares = row.get("shares") if isinstance(row, Mapping) else None
+        ts = as_delivery(row.get("locktime")) if isinstance(row, Mapping) else None
+        if ts is None or not isinstance(shares, Mapping):
+            continue
+        out.append((ts, sum(
+            (as_share(v) or Decimal(0) for v in shares.values()), Decimal(0))))
+    return out
+
+
+def schedule_now(reference, old):
+    """``[(date, share)]``: what the heirs receive now, date by date (#169).
+
+    ``reference``: ``{n: (date, from_will)}``, the date each delivery is
+    compared with (``bal.engine.instalments.dates_in_force``); ``old``: the
+    stored table (:func:`table_rows`, ``[]`` without one). With a table:
+    each delivery's share of the estate on its reference date; without one:
+    100 % on the date of delivery 1.
+    """
+    if not old:
+        ts = reference.get(1, (None, False))[0]
+        return [(ts, _HUNDRED)] if ts is not None else []
+    out = []
+    for n, row in enumerate(old, 1):
+        ts = reference.get(n, (None, False))[0]
+        shares = row.get("shares") if isinstance(row, Mapping) else None
+        if ts is None or not isinstance(shares, Mapping):
+            continue
+        total = sum(
+            (as_share(v) or Decimal(0) for v in shares.values()), Decimal(0))
+        out.append((ts, total))
+    return out
+
+
+def first_earlier(new, now):
+    """The first date of ``new`` by which the heirs would receive MORE of
+    the estate than ``now``, as ``(n, date, share new, share now)``; None
+    when nothing arrives earlier (#169, owner decision (a)).
+
+    Not only a date moved earlier: also shares moved to an earlier
+    delivery, the last delivery removed or the table removed. Compared date
+    by date, the share paid by that date. ``new`` and ``now``:
+    ``[(date, share)]`` (:func:`schedule_of`, :func:`schedule_now`).
+    """
+    def paid_by(schedule, when):
+        """The share of the estate ``schedule`` pays on or before ``when``."""
+        return sum((share for ts, share in schedule if ts <= when), Decimal(0))
+
+    for n, (ts, _share) in enumerate(new, 1):
+        more, before = paid_by(new, ts), paid_by(now, ts)
+        if more > before:
+            return n, ts, more, before
+    return None
+
+
+def first_earlier_date(rows, reference):
+    """The first delivery of ``rows`` dated before its reference date, as
+    ``(n, new date, reference date, from_will)``; None when none is (#169).
+
+    ``reference``: see :func:`schedule_now`; ``from_will`` says whether the
+    reference is the will (its VALID items) or the stored date (the words
+    of the message).
+    """
+    for n, row in enumerate(rows, 1):
+        ref, from_will = reference.get(n, (None, False))
+        ts = as_delivery(row.get("locktime")) if isinstance(row, Mapping) else None
+        if ref is None or ts is None or ts >= ref:
+            continue
+        return n, ts, ref, from_will
+    return None
+
+
+def later_than_in_force(rows, in_force):
+    """``[(n, date in force)]``: the deliveries of ``rows`` dated after the
+    will in force (#169: the next Check asks for the paid invalidation of a
+    will already sent, D6). ``in_force``: ``{n: date or None}``
+    (``bal.engine.instalments.dates_in_force``)."""
+    out = []
+    for n, row in enumerate(rows, 1):
+        ts = as_delivery(row.get("locktime")) if isinstance(row, Mapping) else None
+        current = in_force.get(n)
+        if ts is not None and current is not None and ts > current:
+            out.append((n, current))
+    return out
+
+
+def too_close_to_second(settings, first):
+    """Delivery 2's date when ``first``, typed as the date of delivery 1, is
+    less than :data:`MIN_GAP_DAYS` days before it; else None (#169).
+
+    Owner decision 5 of M3: the owner's own dates keep the 28 days (only
+    the automatic one-day anticipations may shorten them). None without a
+    table, or with one that cannot be read (the flows stop on it).
+    """
+    try:
+        rows = table_rows(settings)
+    except ValueError:
+        return None
+    if len(rows) < 2 or not isinstance(rows[1], Mapping):
+        return None
+    second = as_delivery(rows[1].get("locktime"))
+    if second is None:
+        return None
+    if first > second - MIN_GAP_DAYS * DAY:
+        return second
+    return None
+
+
+def transactions_count(branches, deliveries):
+    """The transactions of a will in ``deliveries`` dates, level by level:
+    ``[N, N**2, ..., N**K]`` for ``N`` = ``branches`` (#170).
+
+    Every copy of a delivery has its own children, one per branch (a
+    will-executor, or the copy without one): the chain of #168
+    (``context/MULTIVERSE-PLAN.md`` 1.3). 3 will-executors and 3 dates:
+    3 + 9 + 27 = 39. For the window's line, and for the future limit of
+    5000 transactions (owner, 2026-10-20), which depends on N.
+    """
+    n, k = max(int(branches), 0), max(int(deliveries), 0)
+    return [n ** level for level in range(1, k + 1)]
 
 
 # --------------------------------------------------------------------------- #

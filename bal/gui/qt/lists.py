@@ -238,8 +238,15 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         self.update()
 
     def delete_heirs(self, selected_keys):
+        """Delete the selected heirs; #170: then, when the table of the
+        deliveries no longer fits them, the question to open it."""
+        snapshot = getattr(self.bal_window, "_heirs_snapshot", None)
+        before = snapshot() if callable(snapshot) else None
         self.bal_window.delete_heirs(selected_keys)
         self.update()
+        offer = getattr(self.bal_window, "offer_table_update", None)
+        if callable(offer) and before is not None:
+            offer(before)
 
     def create_menu(self, position):
         menu = QMenu()
@@ -624,6 +631,11 @@ class _GapDelegate(ElectrumItemDelegate):
         size = super().sizeHint(option, idx)
         size.setWidth(size.width() + _COLUMN_GAP)
         return size
+
+
+#: One step right per level of a will in deliveries (#170, owner: "two
+#: characters"): two figure spaces, as wide as two digits.
+_LEVEL_STEP = "\u2007\u2007"
 
 
 def _host_of(url):
@@ -1209,7 +1221,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
                 item.setBackground(QColor(background))
         return items
 
-    def _variant_row(self, txid, item, in_force=False):
+    def _variant_row(self, txid, item, in_force=False, level=0):
         """The row of one transaction (a will-executor's copy or the backup).
 
         In columns, as the owner asked: the delivery, the txid, the
@@ -1217,7 +1229,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         will-executor" for the backup), its fee, and the status of #83, the
         whole row in the colour of its status. ``in_force``: the item is in
         force (``will_state``), so a REPLACED flag left by a later draft
-        does not make it read "Replaced" (owner, #129).
+        does not make it read "Replaced" (owner, #129). ``level``: 0 for a
+        delivery-1 copy, 1 for delivery 2, 2 for delivery 3 (#170, owner's
+        ZIP test: the whole row steps right, not only its first column).
 
         #136 (owner: the row ran off the right edge): the delivery in the
         short date style of the version rows, not bold; the txid and the
@@ -1269,7 +1283,17 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # its colour (where its will-executor stands); the executor and the
         # whole history are in the tooltip.
         labels[self.Columns.STATUS] = will_status_text(item, in_force=in_force)
-        items = [QStandardItem(str(text)) for text in labels]
+        # #170 (owner): in a will in deliveries each level steps right by two
+        # digit widths in every column (the tree indents only the first
+        # one), so the steps of the chain read at a glance. Display only:
+        # the search, the tooltips and "Copy" keep the plain values.
+        step = _LEVEL_STEP * level
+        items = [QStandardItem((step if column != self.Columns.LOCKTIME and text
+                                else "") + str(text))
+                 for column, text in enumerate(labels)]
+        # The status had no copy value of its own (its text was copied).
+        full[self.Columns.STATUS] = labels[self.Columns.STATUS]
+        tips[self.Columns.STATUS] = ""
         colour = QColor(status_color(item, in_force=in_force))
         for cell in items:
             cell.setEditable(False)
@@ -1317,7 +1341,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         items[0].setData("subheader", self.ROLE_KIND)
         return items
 
-    def _add_variants(self, parent_item, wid, version, will):
+    def _add_variants(self, parent_item, wid, version, will, level=0):
         """Add the row of ``wid`` under ``parent_item``, then its instalments.
 
         Only the rows of THE version in force read "In force" (green), even
@@ -1325,7 +1349,8 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         older version still held by the will-executors keep their own
         status ("Replaced", in its colour), like the version's state:
         CHANGELOG #130, owner's ZIP test (#15 showed green "In force" rows
-        under "Replaced (still held by the will-executors)").
+        under "Replaced (still held by the will-executors)"). ``level``:
+        the depth in the chain (#170: the rows step right).
         """
         states = self.history.states if self.history is not None else {}
         current = self.history.current if self.history is not None else None
@@ -1333,10 +1358,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             wid, will[wid],
             in_force=(version.vid == current
                       and states.get(wid) == will_state.IN_FORCE),
+            level=level,
         )
         parent_item.appendRow(row)
         for child in version.children.get(wid, []):
-            self._add_variants(row[0], child, version, will)
+            self._add_variants(row[0], child, version, will, level + 1)
 
     def _invalidation_items(self, inv):
         """The row of a paid invalidation (between the versions it ended)."""
@@ -1614,6 +1640,16 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Export"), self.export_will)
         menu.addAction(_("Import"), self.import_will)
         menu.addAction(_("Merge"), self.merge_will)
+        # #170 (owner answer 2 of the M4 plan): the window of the deliveries,
+        # ADVANCED only: shown or hidden each time the menu opens, so it
+        # follows a change of mode. A lambda: Qt would pass "checked".
+        self.deliveries_action = menu.addAction(
+            _("Inheritance in several deliveries…"),
+            lambda: self.bal_window.open_deliveries_editor())
+        # Through the class: a test host built without __init__ has the
+        # toolbar's attributes only.
+        menu.aboutToShow.connect(lambda: PreviewList._show_deliveries_action(self))
+        PreviewList._show_deliveries_action(self)
         menu.addSeparator()
         # #161 (owner): the guided route of a cold wallet is also here,
         # where the owner first looked for it (and in Electrum's Tools).
@@ -1687,6 +1723,16 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         self.menu = menu
         self.toolbar = toolbar
         return toolbar
+
+    def _show_deliveries_action(self):
+        """The Tools entry of the deliveries: ADVANCED only (D5, #170)."""
+        action = getattr(self, "deliveries_action", None)
+        if action is None:
+            return
+        try:
+            action.setVisible(not self.bal_window.bal_plugin.is_basic_mode())
+        except Exception as e:
+            _logger.debug(f"deliveries entry not shown: {e!r}")
 
     def _big_button(self, text, icon_path, tooltip, slot, framed=False):
         """A main toolbar command: bold name next to a larger icon.

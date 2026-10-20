@@ -16,6 +16,9 @@ A wallet without a table is untouched: every function here gives back
 No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 """
 
+import time
+from collections.abc import Mapping
+
 from electrum.logging import Logger, get_logger
 
 from ..core import delivery
@@ -85,12 +88,14 @@ def check_table(host):
         return delivery.validate_instalments(rows, names, None, gap=False)
     except ValueError as e:
         _logger.warning(f"delivery table does not fit the heirs: {e}")
+        # #170: the details in the owner's language (the window); the
+        # English rule stays in ``reason`` (the log, the command line).
         raise delivery.InstalmentsMismatch(
             _(
                 "The table of the deliveries no longer matches the heirs, so "
                 "nothing was built or signed. Update the table of the "
                 "deliveries. Details: {}"
-            ).format(e),
+            ).format(delivery.rule_text(e, _)),
             reason=str(e),
         ) from None
 
@@ -175,3 +180,84 @@ def sync_later_deliveries(host):
         )
     )
     return new
+
+
+def dates_in_force(host, now=None):
+    """The dates of the deliveries now, read before the table changes (#169).
+
+    Moved from the command line in #170, so the window uses the same rule.
+    Returns ``(in_force, reference, old)``:
+
+    * ``in_force``: ``{n: date}`` of the will in force (delivery 1:
+      :func:`bal.core.delivery.earliest_in_force`, the VALID items or the
+      ones still pending at the will-executors; deliveries 2 and 3: the
+      earliest VALID item of that delivery, :func:`delivery_dates`), or
+      None;
+    * ``reference``: ``{n: (date, from_will)}``, what a new date of
+      delivery n is compared with (owner decision (a)): the VALID items of
+      that delivery (delivery 1: :func:`bal.core.delivery.earliest_valid`),
+      else the stored date (delivery 1: the wallet's; 2 and 3: the stored
+      table); ``from_will`` says which (the words of the message);
+    * ``old``: the stored table (:func:`bal.core.delivery.table_rows`),
+      ``[]`` without one or when it cannot be read.
+
+    ``now``: the clock (``time.time()`` when None).
+    """
+    if now is None:
+        now = time.time()
+    settings = host.will_settings
+    try:
+        old = delivery.table_rows(settings)
+    except ValueError:
+        old = []
+    willitems = host.willitems or {}
+    views = delivery.views_from(willitems)
+    valid = delivery_dates(willitems)
+    stored = delivery.as_delivery(settings.get("locktime"))
+    earliest_valid = delivery.earliest_valid(views)
+    in_force = {1: delivery.earliest_in_force(views, now)}
+    if earliest_valid is not None:
+        reference = {1: (earliest_valid, True)}
+    else:
+        reference = {1: (stored, False)}
+    for n in range(2, delivery.INSTALMENTS_MAX + 1):
+        in_force[n] = valid.get(n)
+        if valid.get(n) is not None:
+            reference[n] = (valid[n], True)
+            continue
+        before = None
+        if len(old) >= n and isinstance(old[n - 1], Mapping):
+            before = delivery.as_delivery(old[n - 1].get("locktime"))
+        reference[n] = (before, False)
+    return in_force, reference, old
+
+
+def rename_heir(host, old, new):
+    """The table follows an heir renamed in the window (#170).
+
+    Owner answer 4 of the M4 plan (2026-10-20): the shares of ``old`` keep
+    their place under ``new`` in every delivery, so a rename is still only
+    a rename (``Will.sync_heir_names``) and the table keeps fitting the
+    heirs. Without a table, or when ``old`` is not in it (a message row) or
+    ``new`` already is: nothing. The table is replaced whole (a stored
+    list's inner dicts are not tracked by the wallet file). The caller makes
+    it durable. Returns True when the table changed.
+    """
+    if old == new or not has_table(host):
+        return False
+    try:
+        rows = delivery.instalments_of(host.will_settings)
+    except ValueError:
+        return False
+    changed = False
+    for row in rows:
+        shares = row.get("shares") if isinstance(row, dict) else None
+        if not isinstance(shares, dict) or old not in shares or new in shares:
+            continue
+        row["shares"] = {(new if name == old else name): value
+                         for name, value in shares.items()}
+        changed = True
+    if changed:
+        host.will_settings[delivery.INSTALMENTS_KEY] = rows
+        _logger.info("delivery table: heir renamed in the table")
+    return changed

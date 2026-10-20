@@ -629,6 +629,13 @@ class FlowWindow(BalWindow):
         """The Check Alive "Renew / Not now" question (#79)."""
         return self.user.answer("renew", text)
 
+    def ask_deliveries(self, text):
+        """The question "Open the table of the deliveries now?" (#170):
+        recorded as a popup; the scripted owner answers No, so the window
+        of the table (a real dialog) is not opened by the flows."""
+        self.popups.append(["question", strip(text)])
+        return False
+
     def ask_delivery_choice(self, parent=None):
         """The "which date?" question (#123): the scripted owner answers.
 

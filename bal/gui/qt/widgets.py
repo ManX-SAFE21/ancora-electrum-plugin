@@ -49,7 +49,7 @@ from ...core.input_rules import (
     normalize_perc_amount_text,
     parse_perc_amount,
 )
-from ...core.messages import months_text
+from ...core.messages import heir_label, months_text
 from ...core.reminders import build_ics_reminders, write_temp_ics
 from ...core.summary import deselected_text
 from ...engine import context as engine_context
@@ -556,24 +556,28 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         if self._value_for_editor(self.current_index, x) != self.get_value():
             self._show(x)
 
-    def show_period(self, text):
+    def show_period(self, text, tooltip=None):
         """Show the period form instead of the date editor (#127).
 
         ``text``: "36 months (3 years) -> 12/10/2029" (see
         :func:`period_field_text`): the date editor is hidden and the text is
-        shown, read-only (N is edited in the wizard's form box). ``None`` or
-        an empty text: the date editor again (the fixed form). Display only:
-        nothing is saved.
+        shown, read-only (N is edited in the wizard's form box). Since #170
+        also a table of deliveries: "10/03/2030 (+2 deliveries)", with
+        ``tooltip`` saying where the dates are changed. ``None`` or an empty
+        text: the date editor again (the fixed form). Display only: nothing
+        is saved.
         """
         label = getattr(self, "period_label", None)
         if label is None:
             return
         if text:
             label.setText(text)
+            label.setToolTip(tooltip or "")
             label.setVisible(True)
             self.editor.setVisible(False)
         else:
             label.setText("")
+            label.setToolTip("")
             label.setVisible(False)
             self.editor.setVisible(True)
 
@@ -1033,8 +1037,12 @@ class DeliveryFormWidget(QWidget):
       "at My Risk" gate (``common.switch_user_type``); a wrong phrase puts
       BASIC back. Choosing BASIC sets the form back to fixed, only when it
       is not locked;
-    * "Fixed date" / "Period (renewable)": the period is offered only in
-      ADVANCED and never with multiverse on. BASIC shows neither radio for
+    * "Fixed date" / "Period (renewable)" / "Several deliveries" (#170):
+      the period is offered only in ADVANCED and never with a table of
+      deliveries; "Several deliveries" (ADVANCED, a fixed date) opens the
+      window of the deliveries (``BalWindow.open_deliveries_editor``), and
+      with a table "Edit the deliveries…" opens it again; "Fixed date" with
+      a table asks to go back to one delivery. BASIC shows neither radio for
       a fixed date (nothing to choose; owner, 2026-10-12), both when the
       wallet already has the period form, so its state stays visible; both
       are enabled
@@ -1069,9 +1077,14 @@ class DeliveryFormWidget(QWidget):
         form_row = QHBoxLayout()
         self.fixed_radio = QRadioButton(_("Fixed date"))
         self.period_radio = QRadioButton(_("Period (renewable)"))
+        # #170 (owner, M4 plan answer 2): the third form, the table of the
+        # deliveries; its window holds the dates and the shares.
+        self.staged_radio = QRadioButton(_("Several deliveries"))
+        self.staged_button = QPushButton(_("Edit the deliveries…"))
         self.radio_group = QButtonGroup(self)
         self.radio_group.addButton(self.fixed_radio)
         self.radio_group.addButton(self.period_radio)
+        self.radio_group.addButton(self.staged_radio)
         self.months_box = QSpinBox()
         self.months_box.setRange(delivery.PERIOD_MIN, delivery.PERIOD_MAX)
         # Stored once, when editing finishes: typing "36" must not store 3.
@@ -1081,6 +1094,8 @@ class DeliveryFormWidget(QWidget):
         form_row.addWidget(self.period_radio)
         form_row.addWidget(self.months_box)
         form_row.addWidget(self.months_label)
+        form_row.addWidget(self.staged_radio)
+        form_row.addWidget(self.staged_button)
         form_row.addStretch(1)
         vbox.addLayout(form_row)
 
@@ -1093,6 +1108,8 @@ class DeliveryFormWidget(QWidget):
         self.fixed_radio.clicked.connect(self._on_fixed)
         self.period_radio.clicked.connect(self._on_period)
         self.months_box.editingFinished.connect(self._on_months)
+        self.staged_radio.clicked.connect(self._on_staged)
+        self.staged_button.clicked.connect(self._edit_deliveries)
 
     # ------------------------------------------------------------- state
 
@@ -1124,23 +1141,34 @@ class DeliveryFormWidget(QWidget):
         settings = self._settings()
         basic = self._basic()
         period = delivery.is_period(settings)
+        staged = self._multiverse()
         self.locked = engine_context.form_locked(self.bal_window)
-        for w in (self.mode_combo, self.fixed_radio, self.period_radio, self.months_box):
+        for w in (self.mode_combo, self.fixed_radio, self.period_radio,
+                  self.staged_radio, self.months_box):
             w.blockSignals(True)
         try:
             self.mode_combo.setCurrentIndex(0 if basic else 1)
-            self.fixed_radio.setChecked(not period)
+            self.fixed_radio.setChecked(not period and not staged)
             self.period_radio.setChecked(period)
+            self.staged_radio.setChecked(staged)
             # Owner (ZIP test, 2026-10-12): BASIC shows as little text as
             # possible. A fixed date there has nothing to choose, so neither
             # radio is shown (a lone, disabled "Fixed date" only confused);
             # a period-form will still shows its state.
             self.fixed_radio.setVisible(not basic or period)
             self.period_radio.setVisible(not basic or period)
-            self.fixed_radio.setEnabled(not self.locked)
+            # #170: with a table, "Fixed date" is the way back to one
+            # delivery, a change of the table (owner decision D6: allowed
+            # with a will in force, as on the command line).
+            self.fixed_radio.setEnabled(not self.locked or staged)
             self.period_radio.setEnabled(
-                not self.locked and not basic and not self._multiverse()
+                not self.locked and not basic and not staged
             )
+            # ADVANCED only (owner decision D5); BASIC shows a wallet's
+            # table as it is, like the period form, but cannot change it.
+            self.staged_radio.setVisible(not basic or staged)
+            self.staged_radio.setEnabled(not basic and not period)
+            self.staged_button.setVisible(staged and not basic)
             self.months_box.setValue(self._initial_months())
             self.months_box.setVisible(period)
             self.months_box.setEnabled(period and not basic)
@@ -1152,7 +1180,7 @@ class DeliveryFormWidget(QWidget):
             self.lock_label.setVisible(self.locked and not basic)
         finally:
             for w in (self.mode_combo, self.fixed_radio, self.period_radio,
-                      self.months_box):
+                      self.staged_radio, self.months_box):
                 w.blockSignals(False)
 
     # ------------------------------------------------------------- writes
@@ -1213,9 +1241,38 @@ class DeliveryFormWidget(QWidget):
                 _logger.debug(f"wizard visibility not refreshed: {e!r}")
 
     def _on_fixed(self):
-        """"Fixed date" clicked: the fixed form, the stored date kept."""
+        """"Fixed date" clicked: the fixed form, the stored date kept.
+
+        #170: with a table of deliveries, the question "Go back to one
+        delivery?" (``deliveries.confirm_back_to_one``: the rest of the
+        estate would arrive earlier, owner decision (a)).
+        """
+        if self._multiverse():
+            from .deliveries import confirm_back_to_one
+
+            confirm_back_to_one(self.bal_window, self)
+            self._after_write()
+            return
         if delivery.is_period(self._settings()):
             self._write(form=delivery.FORM_FIXED)
+
+    def _on_staged(self):
+        """"Several deliveries" clicked (#170): the window of the
+        deliveries, on the example table; Cancel keeps one delivery."""
+        if not self._multiverse():
+            self._edit_deliveries()
+        else:
+            self._after_write()
+
+    def _edit_deliveries(self):
+        """Open the window of the deliveries, then show what it stored."""
+        opener = getattr(self.bal_window, "open_deliveries_editor", None)
+        if callable(opener):
+            try:
+                opener(parent=self)
+            except Exception as e:
+                _logger.error(f"window of the deliveries failed: {e!r}")
+        self._after_write()
 
     def _on_period(self):
         """"Period (renewable)" clicked: the period form with the box's N
@@ -1493,7 +1550,9 @@ class WillSettingsWidget(QWidget):
 
         Fixed date: the date editor, as before. Period: the read-only text
         "36 months (3 years) -> 12/10/2029" (:func:`period_field_text`)
-        instead of the editor; N is edited only in the wizard. Called each
+        instead of the editor; N is edited only in the wizard. A table of
+        deliveries (#170): "10/03/2030 (+2 deliveries)", read-only too; the
+        dates are changed in the window of the deliveries. Called each
         time the toolbar's list is redrawn (:meth:`on_locktime_change`),
         after every settings write (``BalWindow.refresh_setting_fields``)
         and by ``update_all``, so both tabs follow a change of the form, of
@@ -1501,7 +1560,17 @@ class WillSettingsWidget(QWidget):
         """
         try:
             settings = getattr(self.bal_window, "will_settings", None) or {}
-            self.widgets["locktime"].show_period(period_field_text(settings))
+            text = period_field_text(settings)
+            tooltip = None
+            if not text:
+                # #170 (owner answer 3): with a table the date is delivery 1
+                # and the dates are changed only in the window of the
+                # deliveries (the 28 days and the "earlier" question).
+                from .deliveries import staged_field_text, staged_field_tip
+
+                text = staged_field_text(settings)
+                tooltip = staged_field_tip() if text else None
+            self.widgets["locktime"].show_period(text, tooltip)
         except Exception as e:
             _logger.debug(f"delivery form not shown: {e!r}")
 
@@ -2202,6 +2271,11 @@ class WillWidget(QWidget):
         self.setLayout(vlayout)
         self.will = will if will is not None else parent.bal_window.willitems
         self._bal_parent = parent
+        # #170: a will in deliveries names each heir with its delivery
+        # ("Luca (delivery 2)"), never the row name "Luca§2".
+        staged = any(
+            delivery.instalment_number(name) > 1
+            for item in self.will.values() for name in (item.heirs or {}))
         # CHANGELOG #129: every transaction is shown (the "Hide Replaced" /
         # "Hide Invalidated" options are gone; this view is replaced later).
         for w in self.will:
@@ -2274,7 +2348,7 @@ class WillWidget(QWidget):
                     else:
                         detaillayout.addWidget(
                             qlabel(
-                                heir_name,
+                                heir_label(heir_name, staged),
                                 f"{decoded_amount} {self._bal_parent.base_unit_name} "
                                 f"[{h[0]}]",
                             )
