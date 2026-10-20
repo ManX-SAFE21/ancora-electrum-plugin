@@ -60,6 +60,9 @@ def _controller(plugin, wallet):
 # delivery date and fee (one dict shared with the window), stay allowed.
 _WALLET_WRITES = frozenset({
     "heirs_add", "heirs_update", "heirs_delete", "heirs_import",
+    # #169: the table of the deliveries goes with the heirs (its columns);
+    # the window keeps its own view of both.
+    "instalments_set", "instalments_clear",
     "prepare_will", "auto_rebuild", "sign_transactions", "broadcast_command",
     "export_will", "merge_will_from_file", "check_transactions",
 })
@@ -315,6 +318,76 @@ async def delivery_form(self, form, date=None, months=None, wallet=None, plugin=
 
 
 # --------------------------------------------------------------------------- #
+# Staged inheritance: the table of the deliveries (CHANGELOG #169)
+# --------------------------------------------------------------------------- #
+@plugin_command("nw", plugin_name)
+async def instalments_show(self, wallet=None, plugin=None):
+    """Show the table of the deliveries of the current wallet (staged inheritance).
+
+    Without a table the wallet has one delivery (``staged`` false). With
+    one: ``deliveries`` (each with ``delivery``, ``date``, ``locktime`` and
+    the ``shares`` of the whole estate per heir), ``delivery_totals``,
+    ``heir_totals``, ``total`` (100%), ``gaps_days`` between the dates,
+    ``fits_heirs`` (false when the heirs changed and the table did not:
+    ``problem`` says why, and bal_will_prepare stops until it is updated)
+    and ``will_items`` (the valid transactions of the will now, per
+    delivery). ``deliveries`` can be given back to bal_instalments_set.
+    """
+    return await _call_off_loop(plugin, wallet, "instalments_show")
+
+
+@plugin_command("nw", plugin_name)
+async def instalments_set(
+    self,
+    table=None,
+    path=None,
+    example=None,
+    confirm_earlier=None,
+    wallet=None,
+    plugin=None,
+):
+    """Write the table of the deliveries of the current wallet (staged inheritance).
+
+    Two or three delivery dates, the same for every heir, at least 28 days
+    apart; at each date each heir receives a share of the WHOLE estate; the
+    shares of the whole table add up to exactly 100% (an heir may have 0%
+    at a date). Give the table with ``--table`` (JSON) or ``--path`` (a JSON
+    file), or ``--example true`` for the example table (33%, 33%, 34% split
+    among the heirs, one year apart, from the current delivery date).
+    Delivery 1 becomes the wallet's delivery date. A table by which the heirs
+    would receive part of the estate earlier than now (a date moved earlier,
+    shares moved to an earlier delivery, delivery 3 removed) needs
+    ``--confirm_earlier true``. Nothing is written when a rule is broken. ADVANCED mode and the fixed delivery form only.
+    Returns the table as ``bal_instalments_show``, with a ``message``.
+
+    arg:json:table:The table, e.g. [{"date": "2030-03-01", "shares": {"Luca": "20%%", "Anna": "10%%"}}, {"date": "2031-03-01", "shares": {"Luca": "40%%", "Anna": "30%%"}}].
+    arg:str:path:Path to a JSON file holding the table (the same form as --table).
+    arg:bool:example:true writes the example table (33%%, 33%%, 34%%, one year apart).
+    arg:bool:confirm_earlier:true confirms that the heirs may receive part of the estate earlier.
+    """
+    # The "%%" above: Electrum gives these lines to argparse as help texts,
+    # which are %-formatted when the help is printed (see bal_heirs_add).
+    return await _call_off_loop(
+        plugin, wallet, "instalments_set", table, path, example, confirm_earlier
+    )
+
+
+@plugin_command("nw", plugin_name)
+async def instalments_clear(self, confirm_earlier=None, wallet=None, plugin=None):
+    """Remove the table of the deliveries: one delivery date again.
+
+    Every heir then receives everything at the wallet's delivery date (the
+    date of delivery 1), with the amounts of the heirs (bal_heirs_list),
+    which the table had replaced: check them before bal_will_prepare. The
+    later deliveries then arrive earlier: ``--confirm_earlier true`` is
+    needed. Returns ``removed`` and the heirs, with a ``message``.
+
+    arg:bool:confirm_earlier:true confirms that the heirs may receive the rest of the estate at delivery 1.
+    """
+    return await _call_off_loop(plugin, wallet, "instalments_clear", confirm_earlier)
+
+
+# --------------------------------------------------------------------------- #
 # Heirs
 # --------------------------------------------------------------------------- #
 @plugin_command("nw", plugin_name)
@@ -343,7 +416,7 @@ async def heirs_add(self, name, address, amount, locktime=None, wallet=None, plu
     arg:str:name:The heir name.
     arg:str:address:The destination address (or ``OP_RETURN:<hex>`` for an OP_RETURN heir).
     arg:str:amount:The amount in satoshis or a percentage like ``50%%``.
-    arg:str:locktime:The delivery locktime (absolute timestamp or ``30d``/``1y``); defaults to the will locktime.
+    arg:str:locktime:Not accepted (refused with a message): every heir gets the delivery date of the will, see bal_delivery_set and bal_instalments_set.
     """
     return await _call_off_loop(plugin, wallet, "heirs_add", name, address, amount, locktime)
 
@@ -363,7 +436,7 @@ async def heirs_update(
     arg:str:name:The heir name.
     arg:str:address:The new destination address.
     arg:str:amount:The new amount in satoshis or a percentage.
-    arg:str:locktime:The new delivery locktime.
+    arg:str:locktime:Not accepted (refused with a message): every heir gets the delivery date of the will, see bal_delivery_set and bal_instalments_set.
     """
     return await _call_off_loop(plugin, wallet, "heirs_update", name, address, amount, locktime)
 

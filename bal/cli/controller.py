@@ -25,6 +25,7 @@ so a missing wallet or a network-less daemon can still start Electrum.
 import json
 import time
 from collections.abc import Mapping
+from decimal import Decimal, InvalidOperation
 
 from electrum import bitcoin, constants
 from electrum.i18n import _
@@ -77,6 +78,16 @@ from ..engine.verify import verify_targets, verify_will
 
 _logger = get_logger(__name__)
 
+# The names of the will-executor fee rows inside a will item start with this
+# reserved marker (``bal.core.heirs``): they are not heirs.
+_EXECUTOR_HEIR = 'w!ll3x3c"'
+# The fields of one delivery that ``bal_instalments_set`` reads (#169):
+# ``delivery`` and ``locktime`` too, so the answer of
+# ``bal_instalments_show`` can be given back as it is.
+_TABLE_FIELDS = frozenset(("delivery", "date", "locktime", "shares"))
+# The whole estate, in the shares of the table of the deliveries.
+_HUNDRED = Decimal(100)
+
 
 def _user_facing(e):
     """Translate a ``bal.core`` domain exception into a user-facing message.
@@ -91,8 +102,17 @@ def _user_facing(e):
         return UserFacingException(_delivery_hold_message(e))
     if isinstance(e, delivery.InstalmentsMismatch):
         # #168: the table of the deliveries no longer fits the heirs; the
-        # message (translated) says to update it.
-        return UserFacingException(str(e))
+        # message (translated) says to update it. #169: and with which
+        # commands (its last sentence, the rule broken, has no full stop).
+        text = str(e).rstrip()
+        if not text.endswith("."):
+            text += "."
+        return UserFacingException(
+            text + " " + _(
+                "See bal_instalments_show, then update the table with "
+                "bal_instalments_set (or remove it with bal_instalments_clear)."
+            )
+        )
     if isinstance(e, will_mod.NoHeirsException):
         return UserFacingException(_("There are no valid heirs"))
     if isinstance(e, will_mod.WillExpiredException):
@@ -149,6 +169,34 @@ def _user_facing(e):
         # (CHANGELOG #104). The text already says what failed and why.
         return UserFacingException(str(e))
     return e
+
+
+def _confirm_earlier_hint():
+    """The end of every "the heirs would receive earlier" refusal of the
+    table commands (#169). In practice the command line is used by an AI
+    (owner, 2026-10-19): the text tells it to ask the owner before it
+    confirms."""
+    return _(
+        "Ask the owner; if this is what the owner wants, run the command "
+        "again with --confirm_earlier true."
+    )
+
+
+def _delivery_number(value):
+    """The number of a delivery as typed in the table (#169): an int, or a
+    whole number as a number or a text ("1", 1.0: Electrum's JSON gives
+    decimals as text). None otherwise (a bool is not a number)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        number = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    if not number.is_finite() or number != number.to_integral_value():
+        return None
+    return int(number)
 
 
 def _as_name_list(names):
@@ -603,17 +651,38 @@ class BalController(BalSettingsController):
     # ------------------------------------------------------------------ #
     # Serialization helpers
     # ------------------------------------------------------------------ #
-    def _willitem_summary(self, wi):
+    def _willitem_summary(self, wi, staged=False):
+        """One will item for the commands (JSON-safe).
+
+        #169: ``heirs`` and ``description`` name the people ("Luca", never
+        the row name "Luca§2" of a later delivery, owner decision 2 of M3;
+        the stored item keeps its row names); with a table
+        of the deliveries (``staged``) ``delivery`` is the item's delivery
+        number. A will with one date gives the same answer as before.
+        """
+        names = list((wi.heirs or {}).keys()) if wi.heirs is not None else []
         out = {
             "txid": wi._id,
             "tx": str(wi.tx) if wi.tx is not None else None,
             "locktime": int(wi.tx.locktime) if wi.tx is not None else None,
-            "heirs": list((wi.heirs or {}).keys()) if wi.heirs is not None else [],
+            "heirs": [delivery.person_name(name) for name in names],
             "tx_fees": int(wi.tx_fees),
-            "description": wi.description,
+            # One row name per line (``bal.core.heirs``): the people here too.
+            "description": (
+                "\n".join(delivery.person_name(line)
+                          for line in wi.description.split("\n"))
+                if isinstance(wi.description, str) else wi.description
+            ),
             "sigs_have": int(getattr(wi, "sigs_have", 0)),
             "sigs_required": int(getattr(wi, "sigs_required", 0)),
         }
+        if staged:
+            numbers = {
+                delivery.instalment_number(name)
+                for name in names
+                if not str(name).startswith(_EXECUTOR_HEIR)
+            }
+            out["delivery"] = numbers.pop() if len(numbers) == 1 else None
         if wi.we:
             out["willexecutor"] = wi.we.get("url")
         out["status"] = {}
@@ -622,7 +691,10 @@ class BalController(BalSettingsController):
         return out
 
     def _will_status_dict(self):
-        items = [self._willitem_summary(w) for w in self.willitems.values()]
+        """The will for the commands: its items, the count of each status
+        and the Check Alive date (JSON-safe)."""
+        staged = instalments.has_table(self)
+        items = [self._willitem_summary(w, staged) for w in self.willitems.values()]
         counts = {}
         for w in self.willitems.values():
             for key, value in w.STATUS.items():
@@ -1463,7 +1535,9 @@ class BalController(BalSettingsController):
         "period"), ``period_months`` and ``period`` (N in words) and
         ``period_start`` (the day the period started) for the period form,
         and ``locked`` (a will is in force: the form cannot change, see
-        ``bal_delivery_form``).
+        ``bal_delivery_form``). Since #169 ``staged`` (the wallet has a
+        table of the deliveries) and ``deliveries`` (see
+        ``bal_instalments_show``).
         """
         ws = self.will_settings if isinstance(self.will_settings, Mapping) else {}
         locktime = delivery.as_delivery(ws.get("locktime"))
@@ -1499,6 +1573,10 @@ class BalController(BalSettingsController):
         if dates is not None:
             keep, later = dates
             out["choice"] = {"keep": self._dated(keep), "later": self._dated(later)}
+        # #169: staged inheritance, the table of the deliveries (details:
+        # bal_instalments_show).
+        out["staged"] = bool(instalments.has_table(self))
+        out["deliveries"] = self._deliveries_view()[0]
         if self.settings_unavailable:
             out["message"] = _delivery_hold_message(
                 delivery.DeliverySettingsUnavailable()
@@ -1524,7 +1602,9 @@ class BalController(BalSettingsController):
         calendar months; with no will in force the delivery date becomes
         today + N months, with a will in force N applies at the next
         renewal (no fee now). The period form has no date: ``date`` is
-        refused there (see ``bal_delivery_form``).
+        refused there (see ``bal_delivery_form``). With a table of the
+        deliveries (#169) the date is delivery 1's: at least 28 days before
+        delivery 2 (:meth:`_check_table_gap`).
 
         Everything is checked before anything is written (through
         :func:`bal.engine.context.set_will_setting`), then the wallet file
@@ -1598,6 +1678,8 @@ class BalController(BalSettingsController):
                         context.utc_day_text(new_date), context.utc_day_text(reference)
                     )
                 )
+            # #169: with a table the date is delivery 1's.
+            self._check_table_gap(new_date)
             changes["locktime"] = new_date
         if fee is not None:
             changes["baltx_fees"] = _as_fee(fee)
@@ -1667,7 +1749,9 @@ class BalController(BalSettingsController):
         follow, and while the settings could not be prepared. Everything is
         checked before anything is written (:func:`bal.engine.context.
         set_delivery`), then the wallet file is saved. Returns
-        :meth:`delivery_show` with a ``message``.
+        :meth:`delivery_show` with a ``message``. #169: the period is
+        refused while the wallet has a table of the deliveries, and a fixed
+        date keeps its 28 days before delivery 2 (:meth:`_check_table_gap`).
         """
         if self.settings_unavailable:
             raise UserFacingException(
@@ -1693,12 +1777,24 @@ class BalController(BalSettingsController):
                         months, delivery.PERIOD_MIN, delivery.PERIOD_MAX
                     )
                 )
+        if form == delivery.FORM_PERIOD and instalments.has_table(self):
+            # #169: said before the "will in force" refusal, which would
+            # point to an invalidation that does not help.
+            raise UserFacingException(
+                _(
+                    "This wallet has a table of the deliveries "
+                    "(bal_instalments_show): the renewable period has one "
+                    "delivery date. Remove the table first with "
+                    "bal_instalments_clear."
+                )
+            )
         new_date = None
         if date is not None:
             try:
                 new_date = delivery.parse_cli_date(date, time.time())
             except ValueError as e:
                 raise UserFacingException(str(e)) from None
+            self._check_table_gap(new_date)
         try:
             result = context.set_delivery(
                 self, form=form, date=new_date, months=months, now=time.time()
@@ -1732,8 +1828,622 @@ class BalController(BalSettingsController):
         return out
 
     # ------------------------------------------------------------------ #
+    # Staged inheritance: the table of the deliveries (#169)
+    # ------------------------------------------------------------------ #
+    def _check_table_gap(self, new_date):
+        """Refuse a delivery date too close to delivery 2 (#169).
+
+        With a table the wallet's delivery date is delivery 1
+        (:func:`bal.core.delivery.table_rows`): typed by the owner, it must
+        stay at least :data:`bal.core.delivery.MIN_GAP_DAYS` days before
+        delivery 2 (owner decision 5 of M3; only the automatic one-day
+        anticipations may shorten the gap). Nothing to check without a
+        table, or with one that cannot be read (the flows stop on it).
+        """
+        if not instalments.has_table(self):
+            return
+        try:
+            rows = delivery.table_rows(self.will_settings)
+        except ValueError:
+            return
+        if len(rows) < 2 or not isinstance(rows[1], Mapping):
+            return
+        second = delivery.as_delivery(rows[1].get("locktime"))
+        if second is None:
+            return
+        if new_date > second - delivery.MIN_GAP_DAYS * delivery.DAY:
+            raise UserFacingException(
+                _(
+                    "This wallet has a table of the deliveries: its delivery date "
+                    "is delivery 1, which must be at least {} days before "
+                    "delivery 2 ({}). To move the other deliveries too, use "
+                    "bal_instalments_set (see bal_instalments_show)."
+                ).format(delivery.MIN_GAP_DAYS, context.utc_day_text(second))
+            )
+
+    def _deliveries_view(self):
+        """The stored table as the commands show it (#169).
+
+        Returns ``(rows, problem)``. ``rows``: one dict per delivery,
+        ``{"delivery": n, "date", "locktime", "shares"}``, delivery 1 on the
+        wallet's date (:func:`bal.core.delivery.table_rows`): the form
+        ``bal_instalments_set`` takes back. ``problem``: None when the table
+        fits the heirs (the rows are then normalized: every heir named, in
+        the heirs' order), else the broken rule
+        (:func:`bal.engine.instalments.check_table`) and the rows as stored.
+        ``([], None)`` without a table; a value that cannot be read gives
+        no rows and its reason.
+        """
+        try:
+            stored = delivery.table_rows(self.will_settings)
+        except ValueError as e:
+            return [], str(e)
+        if not stored:
+            return [], None
+        problem = None
+        try:
+            stored = instalments.check_table(self)
+        except delivery.InstalmentsMismatch as e:
+            problem = e.reason or str(e)
+        rows = []
+        for n, row in enumerate(stored, 1):
+            row = row if isinstance(row, Mapping) else {}
+            dated = self._dated(row.get("locktime"))
+            shares = row.get("shares")
+            rows.append({
+                "delivery": n,
+                "date": dated["date"] if dated else None,
+                "locktime": dated["locktime"] if dated else row.get("locktime"),
+                "shares": dict(shares) if isinstance(shares, Mapping) else shares,
+            })
+        return rows, problem
+
+    def _items_per_delivery(self, count):
+        """How many VALID will items each of ``count`` deliveries holds.
+
+        The delivery of an item is read from its heir-row names ("Luca" is
+        delivery 1, "Luca§2" delivery 2: :func:`bal.core.delivery.
+        instalment_number`); the will-executor fee rows are left out. A
+        list, delivery 1 first.
+        """
+        counts = [0] * count
+        for w in self.willitems.values():
+            if not w.get_status("VALID"):
+                continue
+            numbers = {
+                delivery.instalment_number(name)
+                for name in (w.heirs or {})
+                if not str(name).startswith(_EXECUTOR_HEIR)
+            }
+            if len(numbers) == 1:
+                n = numbers.pop()
+                if 1 <= n <= count:
+                    counts[n - 1] += 1
+        return counts
+
+    def instalments_show(self):
+        """``bal_instalments_show``: the table of the deliveries (#169).
+
+        Read only. ``staged``: the wallet has a table; ``date``: the
+        wallet's delivery date (delivery 1); ``deliveries``: see
+        :meth:`_deliveries_view`; ``fits_heirs`` and ``problem``: the table
+        against the heirs (owner decision 3: when it no longer fits,
+        ``bal_will_prepare`` stops until it is updated). When it fits:
+        ``delivery_totals`` (the share of the estate paid at each date),
+        ``heir_totals`` (each heir over the table), ``total`` (100%),
+        ``gaps_days`` (whole days between two dates; the owner's changes
+        keep at least ``min_gap_days``) and ``will_items`` (the VALID
+        transactions of the will now, per delivery). ``message`` says it
+        in words.
+        """
+        ws = self.will_settings if isinstance(self.will_settings, Mapping) else {}
+        locktime = delivery.as_delivery(ws.get("locktime"))
+        rows, problem = self._deliveries_view()
+        staged = bool(instalments.has_table(self))
+        out = {
+            "staged": staged,
+            "date": self._dated(locktime),
+            "deliveries": rows,
+            "fits_heirs": problem is None,
+            "problem": problem,
+            "min_gap_days": delivery.MIN_GAP_DAYS,
+        }
+        if not staged:
+            out["message"] = _(
+                "One delivery: every heir receives on {}. To stage the "
+                "inheritance in 2 or 3 deliveries, write a table with "
+                "bal_instalments_set (--example true writes an example to "
+                "change)."
+            ).format(context.utc_day_text(locktime) if locktime else "?")
+            return out
+        if problem is not None:
+            out["message"] = _(
+                "The table of the deliveries no longer matches the heirs ({}): "
+                "bal_will_prepare stops until the table is updated with "
+                "bal_instalments_set."
+            ).format(problem)
+            return out
+        totals = {}
+        delivery_totals = []
+        for row in rows:
+            paid = Decimal(0)
+            for name, share in row["shares"].items():
+                value = delivery.as_share(share)
+                paid += value
+                totals[name] = totals.get(name, Decimal(0)) + value
+            delivery_totals.append(delivery.share_text(paid))
+        out["delivery_totals"] = delivery_totals
+        out["heir_totals"] = {
+            name: delivery.share_text(value) for name, value in totals.items()
+        }
+        out["total"] = delivery.share_text(sum(totals.values(), Decimal(0)))
+        dates = [row["locktime"] for row in rows]
+        out["gaps_days"] = [
+            int((b - a) // delivery.DAY) for a, b in zip(dates, dates[1:], strict=False)
+        ]
+        out["will_items"] = self._items_per_delivery(len(rows))
+        out["message"] = _("{} deliveries: {}.").format(
+            len(rows),
+            ", ".join(
+                "{} ({})".format(row["date"], total)
+                for row, total in zip(rows, delivery_totals, strict=True)
+            ),
+        )
+        return out
+
+    def _table_from_input(self, raw, now):
+        """The table typed by the owner as engine rows (#169).
+
+        ``raw``: a list of deliveries, or the text of one (JSON), or the
+        answer of ``bal_instalments_show`` (its ``deliveries`` are read).
+        Each delivery: ``date`` (YYYY-MM-DD at 00:00 UTC, or a UNIX
+        timestamp; :func:`bal.core.delivery.parse_cli_date`: a period, a
+        block height or a past date is refused) or ``locktime`` (both are
+        accepted when they are the same date, as the show command gives
+        them), ``shares`` (``{heir: "n%"}``), and optionally ``delivery``
+        (its number, which must match its place). Any other field is
+        refused: a typo must not be skipped. Returns
+        ``[{"locktime", "shares"}, ...]``; the rules of the table are
+        checked afterwards (:func:`bal.core.delivery.validate_instalments`).
+        """
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError as e:
+                raise UserFacingException(
+                    _("The table is not valid JSON: {}").format(e)
+                ) from None
+        if isinstance(raw, Mapping) and "deliveries" in raw:
+            raw = raw["deliveries"]
+        if not isinstance(raw, (list, tuple)):
+            raise UserFacingException(
+                _(
+                    'The table must be a list of deliveries, e.g. [{"date": '
+                    '"2030-03-01", "shares": {"Luca": "50%"}}, {"date": '
+                    '"2031-03-01", "shares": {"Luca": "50%"}}].'
+                )
+            )
+        rows = []
+        for n, row in enumerate(raw, 1):
+            if not isinstance(row, Mapping):
+                raise UserFacingException(
+                    _("Delivery {}: not a delivery with date and shares: {}").format(
+                        n, row
+                    )
+                )
+            unknown = sorted(str(k) for k in row if k not in _TABLE_FIELDS)
+            if unknown:
+                raise UserFacingException(
+                    _("Delivery {}: unknown field {}: give date and shares.").format(
+                        n, ", ".join(unknown)
+                    )
+                )
+            if "delivery" in row:
+                number = _delivery_number(row["delivery"])
+                if number is None:
+                    raise UserFacingException(
+                        _("Delivery {}: not a delivery number: {}").format(
+                            n, row["delivery"]
+                        )
+                    )
+                if number != n:
+                    raise UserFacingException(
+                        _(
+                            "Delivery {}: it says delivery {}: give the "
+                            "deliveries in their order."
+                        ).format(n, number)
+                    )
+            if "date" not in row and "locktime" not in row:
+                raise UserFacingException(_("Delivery {}: no date.").format(n))
+            if "shares" not in row:
+                raise UserFacingException(_("Delivery {}: no shares.").format(n))
+            try:
+                if "locktime" in row:
+                    ts = delivery.parse_cli_date(row["locktime"], now)
+                    if "date" in row and str(row["date"]).strip() != (
+                        context.utc_day_text(ts)
+                    ):
+                        try:
+                            other = delivery.parse_cli_date(row["date"], now)
+                        except ValueError:
+                            other = None
+                        if other != ts:
+                            raise UserFacingException(
+                                _(
+                                    "Delivery {}: date and locktime are two "
+                                    "different dates: give only one."
+                                ).format(n)
+                            )
+                else:
+                    ts = delivery.parse_cli_date(row["date"], now)
+            except ValueError as e:
+                raise UserFacingException(
+                    _("Delivery {}: {}").format(n, e)
+                ) from None
+            rows.append({"locktime": ts, "shares": row["shares"]})
+        return rows
+
+    def _dates_in_force(self):
+        """The dates of the deliveries now, read before the table changes (#169).
+
+        Returns ``(in_force, reference, old)``:
+
+        * ``in_force``: ``{n: date}`` of the will in force (delivery 1: as
+          :meth:`_will_in_force`; deliveries 2 and 3: the earliest VALID item
+          of that delivery, :func:`bal.engine.instalments.delivery_dates`),
+          or None;
+        * ``reference``: ``{n: (date, from_will)}``, what a new date of
+          delivery n is compared with for ``--confirm_earlier``: the VALID
+          items of that delivery (delivery 1: :func:`bal.core.delivery.
+          earliest_valid`, as ``bal_delivery_set``), else the stored date
+          (delivery 1: the wallet's; 2 and 3: the stored table);
+          ``from_will`` says which (the words of the message);
+        * ``old``: the stored table (:func:`bal.core.delivery.table_rows`),
+          ``[]`` without one or when it cannot be read.
+        """
+        try:
+            old = delivery.table_rows(self.will_settings)
+        except ValueError:
+            old = []
+        valid = instalments.delivery_dates(self.willitems)
+        stored = delivery.as_delivery(self.will_settings.get("locktime"))
+        earliest_valid = delivery.earliest_valid(delivery.views_from(self.willitems))
+        in_force = {1: self._will_in_force()}
+        if earliest_valid is not None:
+            reference = {1: (earliest_valid, True)}
+        else:
+            reference = {1: (stored, False)}
+        for n in range(2, delivery.INSTALMENTS_MAX + 1):
+            in_force[n] = valid.get(n)
+            if valid.get(n) is not None:
+                reference[n] = (valid[n], True)
+                continue
+            before = None
+            if len(old) >= n and isinstance(old[n - 1], Mapping):
+                before = delivery.as_delivery(old[n - 1].get("locktime"))
+            reference[n] = (before, False)
+        return in_force, reference, old
+
+    @staticmethod
+    def _schedule_now(reference, old):
+        """``[(date, share)]``: what the heirs receive now, date by date (#169).
+
+        With a table (``old``): each delivery's share of the estate (the sum
+        of its cells; a cell that cannot be read counts 0 %) on its
+        reference date (:meth:`_dates_in_force`); without one: 100 % on the
+        date of delivery 1.
+        """
+        if not old:
+            date = reference[1][0]
+            return [(date, _HUNDRED)] if date is not None else []
+        out = []
+        for n, row in enumerate(old, 1):
+            date = reference.get(n, (None, False))[0]
+            shares = row.get("shares") if isinstance(row, Mapping) else None
+            if date is None or not isinstance(shares, Mapping):
+                continue
+            total = sum(
+                (delivery.as_share(v) or Decimal(0) for v in shares.values()),
+                Decimal(0),
+            )
+            out.append((date, total))
+        return out
+
+    @staticmethod
+    def _first_earlier(new, now):
+        """The first date of ``new`` by which the heirs would receive MORE of
+        the estate than ``now`` (#169), as ``(n, date, share new, share
+        now)``; None when nothing arrives earlier.
+
+        Owner decision (a) of 2026-10-19: not only a date moved earlier, also
+        shares moved to an earlier delivery, delivery 3 removed or the
+        table removed make the heirs receive part of the estate earlier (a
+        free rebuild, which only the paid invalidation could undo once
+        sent), so they need ``--confirm_earlier true``. Compared date by
+        date, the share paid by that date: ``new`` and ``now`` are
+        ``[(date, share)]`` (:meth:`_schedule_now`).
+        """
+        def paid_by(schedule, when):
+            """The share of the estate ``schedule`` pays on or before ``when``."""
+            return sum(
+                (share for date, share in schedule if date <= when), Decimal(0)
+            )
+
+        for n, (date, _share) in enumerate(new, 1):
+            more, before = paid_by(new, date), paid_by(now, date)
+            if more > before:
+                return n, date, more, before
+        return None
+
+    def instalments_set(self, table=None, path=None, example=None,
+                        confirm_earlier=None):
+        """``bal_instalments_set``: write the table of the deliveries (#169).
+
+        One source: ``table`` (a list, or its JSON text), ``path`` (a JSON
+        file of the same form) or ``example`` (the owner's example table,
+        :func:`bal.core.delivery.default_instalments`: 33 / 33 / 34 %
+        split among the heirs, from the wallet's date, one year apart).
+        Refused in BASIC mode (owner decision D5: staged inheritance is
+        ADVANCED only), with the period form (one renewable date, #127
+        decision 10), without heirs, and while the settings could not be
+        prepared. The rules of the table (owner, M2: 2 or 3 dates in the
+        future, at least 28 days apart, shares of the whole estate adding up
+        to 100 %, only the heirs' names) are checked before anything is
+        written. A delivery date EARLIER than the one in force (the VALID
+        items of that delivery, else the stored date) needs
+        ``confirm_earlier``, as in ``bal_delivery_set``: the heirs could
+        receive earlier, and a typo in a script must not do it. So does a
+        table by which the heirs would receive more of the estate by one of
+        its dates than now (shares moved earlier, delivery 3 removed: owner
+        decision (a), :meth:`_first_earlier`). Then
+        :func:`bal.engine.context.set_instalments` stores it (delivery 1
+        becomes the wallet's date) and the wallet file is saved. A later
+        date is stored too: the next ``bal_will_prepare`` asks for the paid
+        invalidation of a will already sent (D6). Returns
+        :meth:`instalments_show` with a ``message``.
+        """
+        example = _as_bool(example, "example")
+        confirm_earlier = _as_bool(confirm_earlier, "confirm_earlier")
+        if self.settings_unavailable:
+            raise UserFacingException(
+                _delivery_hold_message(delivery.DeliverySettingsUnavailable())
+            )
+        sources = [table is not None, path is not None, example]
+        if sum(1 for given in sources if given) != 1:
+            raise UserFacingException(
+                _(
+                    "Give the table with one of --table, --path or "
+                    "--example true."
+                )
+            )
+        if self.plugin.is_basic_mode():
+            raise UserFacingException(
+                _(
+                    "Staged inheritance is available in ADVANCED mode only: "
+                    "bal_settings_set bal_user_type advanced, then try again."
+                )
+            )
+        if delivery.is_period(self.will_settings):
+            raise UserFacingException(
+                _(
+                    "This wallet uses a renewable period, which has one "
+                    "delivery date. Choose a fixed date first with "
+                    "bal_delivery_form form=fixed date=YYYY-MM-DD, then write "
+                    "the table."
+                )
+            )
+        names = delivery.payee_names(self.heirs)
+        if not names:
+            raise UserFacingException(
+                _("There are no heirs: add them first with bal_heirs_add.")
+            )
+        now = time.time()
+        if example:
+            first = delivery.as_delivery(self.will_settings.get("locktime"))
+            if first is None:
+                raise UserFacingException(
+                    _(
+                        "The wallet has no delivery date: set one with "
+                        "bal_delivery_set --date YYYY-MM-DD."
+                    )
+                )
+            rows = delivery.default_instalments(names, first)
+        else:
+            raw = read_json_file(path) if path is not None else table
+            rows = self._table_from_input(raw, now)
+        try:
+            for name in names:
+                if delivery.has_separator(name):
+                    raise ValueError(
+                        "an heir name holds {!r}: {!r}: rename it first".format(
+                            delivery.INSTALMENT_SEP, name
+                        )
+                    )
+            rows = delivery.validate_instalments(rows, names, now)
+        except ValueError as e:
+            raise UserFacingException(
+                _("The table was not stored: {}").format(e)
+            ) from None
+
+        # The dates in force, per delivery, read before anything is written.
+        in_force, reference, old = self._dates_in_force()
+        if not confirm_earlier:
+            for n, row in enumerate(rows, 1):
+                ref, from_will = reference.get(n, (None, False))
+                if ref is None or row["locktime"] >= ref:
+                    continue
+                if from_will:
+                    text = _(
+                        "Delivery {}: {} is earlier than the date in force "
+                        "({}): the heirs could receive the bitcoin earlier."
+                    )
+                else:
+                    # No will in force for this delivery: its stored date
+                    # (as bal_delivery_set words it).
+                    text = _(
+                        "Delivery {}: {} is earlier than the current date of "
+                        "this delivery ({}): the heirs could receive the "
+                        "bitcoin earlier."
+                    )
+                raise UserFacingException(
+                    text.format(
+                        n,
+                        context.utc_day_text(row["locktime"]),
+                        context.utc_day_text(ref),
+                    ) + " " + _confirm_earlier_hint()
+                )
+            new = [
+                (row["locktime"], sum(
+                    (delivery.as_share(v) for v in row["shares"].values()),
+                    Decimal(0),
+                ))
+                for row in rows
+            ]
+            earlier = self._first_earlier(new, self._schedule_now(reference, old))
+            if earlier is not None:
+                n, date, more, before = earlier
+                raise UserFacingException(
+                    _(
+                        "Delivery {} ({}): by this date the heirs would receive "
+                        "{} of the estate instead of {}: part of it would "
+                        "arrive earlier."
+                    ).format(
+                        n,
+                        context.utc_day_text(date),
+                        delivery.share_text(more),
+                        delivery.share_text(before),
+                    ) + " " + _confirm_earlier_hint()
+                )
+        try:
+            stored_rows = context.set_instalments(self, rows, now=now)
+        except ValueError as e:
+            raise UserFacingException(
+                _("The table was not stored: {}").format(e)
+            ) from None
+        self.wallet.save_db()
+
+        messages = [
+            _("The table of the deliveries is stored: {}.").format(
+                ", ".join(
+                    _("delivery {} on {}").format(
+                        n, context.utc_day_text(row["locktime"])
+                    )
+                    for n, row in enumerate(stored_rows, 1)
+                )
+            )
+        ]
+        for n, row in enumerate(stored_rows, 1):
+            date = in_force.get(n)
+            if date is not None and row["locktime"] > date:
+                messages.append(
+                    _(
+                        "Delivery {} is later than the will in force ({}): if "
+                        "that will was already sent to the will-executors, the "
+                        "next bal_will_prepare asks to invalidate it first "
+                        "(on-chain, miner fee)."
+                    ).format(n, context.utc_day_text(date))
+                )
+        messages.append(
+            _(
+                "While the table is there, the heirs' shares come from it, "
+                "not from the amounts of the heirs."
+            )
+        )
+        messages.append(
+            _("Run bal_will_prepare to prepare the will with the new table.")
+        )
+        out = self.instalments_show()
+        out["message"] = " ".join(messages)
+        return out
+
+    def instalments_clear(self, confirm_earlier=None):
+        """``bal_instalments_clear``: remove the table (#169).
+
+        One delivery again (:func:`bal.engine.context.clear_instalments`):
+        everything at the wallet's date (delivery 1's), with the amounts of
+        the heirs, which the table had replaced: the answer lists them
+        (``heirs``) and the message says to check them before
+        ``bal_will_prepare``. The heirs would then receive the rest of the
+        estate at delivery 1, earlier: refused without ``confirm_earlier``
+        (owner decision (a), :meth:`_first_earlier`). Refused while the
+        settings could not be prepared. ``removed``: False when there was
+        no table.
+        """
+        confirm_earlier = _as_bool(confirm_earlier, "confirm_earlier")
+        if self.settings_unavailable:
+            raise UserFacingException(
+                _delivery_hold_message(delivery.DeliverySettingsUnavailable())
+            )
+        first = delivery.as_delivery(self.will_settings.get("locktime"))
+        if instalments.has_table(self) and not confirm_earlier and first is not None:
+            _in_force, reference, old = self._dates_in_force()
+            earlier = self._first_earlier(
+                [(first, _HUNDRED)], self._schedule_now(reference, old)
+            )
+            if earlier is not None:
+                _n, date, _more, before = earlier
+                raise UserFacingException(
+                    _(
+                        "Without the table the heirs receive the whole estate "
+                        "on {} (delivery 1), instead of {} by that date: the "
+                        "rest would arrive earlier."
+                    ).format(context.utc_day_text(date), delivery.share_text(before))
+                    + " " + _confirm_earlier_hint()
+                )
+        removed = context.clear_instalments(self)
+        if removed:
+            self.wallet.save_db()
+        locktime = delivery.as_delivery(self.will_settings.get("locktime"))
+        day = context.utc_day_text(locktime) if locktime is not None else "?"
+        out = {
+            "removed": removed,
+            "date": self._dated(locktime),
+            "heirs": self.heirs_list(),
+        }
+        if removed:
+            out["message"] = _(
+                "The table of the deliveries was removed: every heir receives "
+                "everything on {}, with the amounts of the heirs (see heirs), "
+                "which the table had replaced. Check them (bal_heirs_update), "
+                "then run bal_will_prepare."
+            ).format(day)
+        else:
+            out["message"] = _(
+                "There is no table of the deliveries: the wallet has one "
+                "delivery date ({})."
+            ).format(day)
+        return out
+
+    # ------------------------------------------------------------------ #
     # Heirs CRUD
     # ------------------------------------------------------------------ #
+    def _with_table_note(self, out):
+        """Add ``instalments_note`` to an heir command's answer (#169).
+
+        Only for a wallet with a table of the deliveries (owner answer 1a
+        of M3b: the heir commands work, and say what follows): the heirs
+        still fit the table (their shares come from it, not from their
+        amounts), or they no longer do (``bal_will_prepare`` stops until
+        the table is updated, owner decision 3). Returns ``out``.
+        """
+        if not instalments.has_table(self):
+            return out
+        try:
+            instalments.check_table(self)
+        except delivery.InstalmentsMismatch:
+            out["instalments_note"] = _(
+                "The heirs no longer match the table of the deliveries: "
+                "bal_will_prepare stops until the table is updated with "
+                "bal_instalments_set (see bal_instalments_show)."
+            )
+        else:
+            out["instalments_note"] = _(
+                "This wallet has a table of the deliveries: the heirs' shares "
+                "come from it (bal_instalments_show), not from the amounts of "
+                "the heirs."
+            )
+        return out
+
     def _build_heir_entry(self, name, address, amount, locktime):
         heir = [name, address, amount]
         if locktime is not None:
@@ -1780,7 +2490,8 @@ class BalController(BalSettingsController):
         """Add (or replace) the heir ``name``; ``locktime`` is refused (see
         :meth:`_check_heir_locktime`), and so is a name with "§"
         (:meth:`_check_heir_name`, #168). #140: never a second message
-        (:meth:`_check_one_message`)."""
+        (:meth:`_check_one_message`). #169: with a table of the deliveries
+        the answer has ``instalments_note`` (:meth:`_with_table_note`)."""
         self._check_heir_locktime(locktime)
         self._check_heir_name(name)
         self._check_address_free(address, name)
@@ -1788,7 +2499,7 @@ class BalController(BalSettingsController):
         value = self._build_heir_entry(name, address, amount, locktime)
         self.heirs[name] = value
         self.wallet.save_db()
-        return {"name": name, "value": list(value)}
+        return self._with_table_note({"name": name, "value": list(value)})
 
     def _check_one_message(self, address, name):
         """Refuse a second OP_RETURN message (#140, owner: one per will);
@@ -1809,7 +2520,9 @@ class BalController(BalSettingsController):
     def heirs_update(self, name, address=None, amount=None, locktime=None):
         """Change only the given fields of the heir ``name``; ``locktime``
         is refused (see :meth:`_check_heir_locktime`). #140:
-        never a second message (:meth:`_check_one_message`)."""
+        never a second message (:meth:`_check_one_message`). #169: with a
+        table of the deliveries the answer has ``instalments_note``
+        (:meth:`_with_table_note`)."""
         if name not in self.heirs:
             raise UserFacingException(_("Heir not found: {}").format(name))
         self._check_heir_locktime(locktime)
@@ -1822,13 +2535,15 @@ class BalController(BalSettingsController):
         value = self._build_heir_entry(name, address, amount, locktime)
         self.heirs[name] = value
         self.wallet.save_db()
-        return {"name": name, "value": list(value)}
+        return self._with_table_note({"name": name, "value": list(value)})
 
     def heirs_delete(self, names):
         """Delete heirs by name; ``not_found`` lists the unknown names.
 
         A single name is accepted too (CHANGELOG #105): Electrum passes a
-        plain name as text, and the loop then ran over its letters.
+        plain name as text, and the loop then ran over its letters. #169:
+        with a table of the deliveries the answer has ``instalments_note``
+        (:meth:`_with_table_note`).
         """
         deleted, not_found = [], []
         for name in _as_name_list(names):
@@ -1841,9 +2556,11 @@ class BalController(BalSettingsController):
         # #138: the notes of the deleted heirs go with them.
         heir_notes.delete(self.wallet, deleted)
         self.wallet.save_db()
-        return {"deleted": deleted, "not_found": not_found}
+        return self._with_table_note({"deleted": deleted, "not_found": not_found})
 
     def heirs_list(self):
+        """The stored heirs, ``{name: [address, amount, date]}`` (one row
+        per person, also with a table of the deliveries)."""
         return {k: list(v) for k, v in self.heirs.items()}
 
     def heirs_show(self, name):
@@ -1862,7 +2579,8 @@ class BalController(BalSettingsController):
         anyway (#168: BAL's per-heir dates are no longer used); a name with
         the delivery separator "§" is skipped (#168). #140: a message
         (OP_RETURN) when the heirs already have one is skipped, with the
-        reason.
+        reason. #169: with a table of the deliveries the answer has
+        ``instalments_note`` (:meth:`_with_table_note`).
         """
         data = read_json_file(path)
         if isinstance(data, dict) and isinstance(data.get("heirs"), dict):
@@ -1889,7 +2607,7 @@ class BalController(BalSettingsController):
         # #138: no note of an heir that is no longer there.
         heir_notes.clean(self.wallet, list(self.heirs.keys()))
         self.wallet.save_db()
-        return {
+        return self._with_table_note({
             "imported": len(valid),
             "names": list(valid),
             "skipped": skipped,
@@ -1897,7 +2615,7 @@ class BalController(BalSettingsController):
             # #135: heirs on one address after the import (a warning: the
             # file is imported as it is; keep only one of each pair).
             "same_address": [list(p) for p in heirs_mod.shared_addresses(self.heirs)],
-        }
+        })
 
     def heirs_export(self, path):
         self.heirs.export_file(path)

@@ -51,6 +51,8 @@ READS = {
     "heirs_list", "heirs_show", "heirs_export",
     "willexecutors_list", "willexecutors_show", "willexecutors_export",
     "will_status", "will_check", "invalidate_will_command",
+    # #169: the table of the deliveries, shown.
+    "instalments_show",
 }
 
 
@@ -68,7 +70,8 @@ def sess(monkeypatch):
 
 
 def _snapshot(s):
-    """What the wallet and the plugin hold: heirs, will, will-executors."""
+    """What the wallet and the plugin hold: heirs, will, will-executors,
+    and the delivery settings (with the table of the deliveries, #169)."""
     db = s.wallet.db
     will = {k: dict(v) if isinstance(v, dict) else v
             for k, v in db.get_dict("will").items()}
@@ -76,6 +79,8 @@ def _snapshot(s):
         "heirs": dict(db.get("heirs", {}) or {}),
         "will": will,
         "executors": s.plugin.WILLEXECUTORS.get(),
+        # #169: the table of the deliveries lives in the delivery settings.
+        "will_settings": dict(db.get_dict("will_settings")),
     }, sort_keys=True, default=str)
 
 
