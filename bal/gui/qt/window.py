@@ -792,6 +792,70 @@ class BalWindow:
         wizard_dialog = BalWizardDialog(self)
         wizard_dialog.exec()
 
+    def table_mismatch(self, text):
+        """The table of the deliveries no longer fits the heirs (#170).
+
+        ``text``: the message of ``InstalmentsMismatch`` (nothing was built
+        or signed). In ADVANCED the question "Open the table of the
+        deliveries now?", which opens its window; in BASIC the message only.
+        Returns the window's result, or None.
+        """
+        if self.bal_plugin.is_basic_mode():
+            self.show_error(text)
+            return None
+        if self.ask_deliveries(
+                text + "\n\n" + _("Open the table of the deliveries now?")):
+            return self.open_deliveries_editor()
+        return None
+
+    def ask_deliveries(self, text):
+        """A Yes / No question about the table of the deliveries (#170):
+        ``deliveries.ask`` on Electrum's window. A window method, as
+        ``ask_renew_will``: the flows' test window answers it (a real box
+        would wait for a click that never comes)."""
+        from .deliveries import ask
+
+        return ask(self.window, text)
+
+    def deliveries_refusal(self):
+        """Why the window of the deliveries cannot open now, or None (#170).
+
+        ADVANCED only (owner decision D5); not with the period form (one
+        renewable date, #127 decision 10: the command line refuses it too);
+        not without heirs; not while the delivery settings could not be
+        prepared (#123, fail closed).
+        """
+        if getattr(self, "settings_unavailable", False):
+            return _(SETTINGS_UNAVAILABLE)
+        if self.bal_plugin.is_basic_mode():
+            return _("The inheritance in several deliveries is available in "
+                     "ADVANCED mode only.")
+        if delivery.is_period(self.will_settings):
+            return _("This wallet uses a renewable period, which has one "
+                     "delivery date. Choose \"Fixed date\" first (Build / Edit "
+                     "Your Will).")
+        if not delivery.payee_names(self.heirs or {}):
+            return _("There are no heirs: add them first.")
+        return None
+
+    def open_deliveries_editor(self, parent=None):
+        """The window "Inheritance in several deliveries" (#170, M4a).
+
+        From the wizard's "Several deliveries" choice and from Tools in the
+        Will tab (owner answer 2 of the M4 plan). A refusal
+        (:meth:`deliveries_refusal`) is said in a message. Returns what the
+        window did: "saved", "removed" or None (closed, or refused).
+        """
+        refusal = self.deliveries_refusal()
+        if refusal is not None:
+            self.show_message(refusal)
+            return None
+        from .deliveries import DeliveriesEditor
+
+        editor = DeliveriesEditor(self, parent)
+        editor.exec()
+        return editor.result_kind
+
     def show_offline_sign_dialog(self, just_checked=False):
         """Tools > "Sign the will offline..." (#160, #161): the guided route.
 
@@ -1136,7 +1200,57 @@ class BalWindow:
             self.broadcast_transactions()
         self.update_will_summary()
 
+    def _heirs_snapshot(self):
+        """The heirs as plain values, to see whether a window changed them."""
+        try:
+            return {name: tuple(value) for name, value in (self.heirs or {}).items()}
+        except Exception:
+            return None
+
+    def offer_table_update(self, before=None):
+        """After the heirs changed, the table of the deliveries (#170).
+
+        When the wallet has a table that no longer fits the heirs (an heir
+        added or removed: owner decision 3 of M3, the Check stops until the
+        table is updated), ask whether to open its window now. ``before``:
+        the heirs before the change (:meth:`_heirs_snapshot`); nothing is
+        asked when they did not change. ADVANCED only (the window is).
+        Returns the window's result, or None.
+        """
+        if before is not None and before == self._heirs_snapshot():
+            return None
+        try:
+            if not instalments.has_table(self) or self.bal_plugin.is_basic_mode():
+                return None
+            instalments.check_table(self)
+            return None
+        except delivery.InstalmentsMismatch:
+            pass
+        except Exception as e:
+            _logger.debug(f"table of the deliveries not checked: {e!r}")
+            return None
+        if not self.ask_deliveries(_(
+                "The heirs changed: the table of the deliveries must be "
+                "updated before the will can be prepared. Open it now?")):
+            return None
+        return self.open_deliveries_editor()
+
     def new_heir_dialog(self, heir_key=None):
+        """The heir window (:meth:`_heir_dialog`); then, when the heirs
+        changed and the table of the deliveries no longer fits them, the
+        question to open it (#170, :meth:`offer_table_update`), once, after
+        the last "Add another heir"."""
+        depth = getattr(self, "_heir_dialog_depth", 0)
+        before = self._heirs_snapshot() if depth == 0 else None
+        self._heir_dialog_depth = depth + 1
+        try:
+            return self._heir_dialog(heir_key)
+        finally:
+            self._heir_dialog_depth = depth
+            if depth == 0 and before is not None:
+                self.offer_table_update(before)
+
+    def _heir_dialog(self, heir_key=None):
         """The "New heir" window, or "Edit: <name>" for ``heir_key``.
 
         Also used by the BASIC wizard and the Heirs list. #139 (owner): the
@@ -1378,6 +1492,26 @@ class BalWindow:
         grid.addWidget(message_info, 5, 1)
         _show_message_rows(is_op_return_address(heir_address.text()))
 
+        # #170: with a table of deliveries the amount of an heir is not used
+        # (the shares are in the table; it counts again without the table,
+        # as on the command line): said under the amount.
+        table_note = QLabel(_(
+            "With the inheritance in several deliveries this amount is not "
+            "used: the shares are in the table of the deliveries."))
+        table_note.setWordWrap(True)
+        table_note.setStyleSheet("color:#6A737D;")
+        grid.addWidget(table_note, 6, 1)
+        staged = instalments.has_table(self)
+
+        def _show_table_note():
+            """The note of the table, for a payee only (a message has no
+            amount)."""
+            table_note.setVisible(
+                staged and not is_op_return_address(heir_address.text()))
+
+        _show_table_note()
+        heir_address.textChanged.connect(_show_table_note)
+
         # #168 (D7): no per-heir date any more (BAL's hidden global
         # multiverse option is no longer read): every heir gets the will's
         # date; staged deliveries keep their dates in the table.
@@ -1505,6 +1639,9 @@ class BalWindow:
                 self.show_error(heir_error_message(e))
                 continue
             if heir_key is not None and new_name != heir_key:
+                # #170 (owner answer 4 of the M4 plan): the shares of the
+                # table follow the new name, so it still fits the heirs.
+                instalments.rename_heir(self, heir_key, new_name)
                 # #135: a rename. The old name goes AFTER the new one is
                 # saved, so a refused entry never loses the heir; before,
                 # it was never removed and a second heir took a share.
@@ -1626,14 +1763,19 @@ class BalWindow:
             """``Heirs.import_file``, keeping the skipped messages."""
             skipped[:] = self.heirs.import_file(path) or []
 
+        before = self._heirs_snapshot()
+
         def after_import():
-            """Clean the notes, then show the list (and the skipped ones)."""
+            """Clean the notes, then show the list (and the skipped ones);
+            #170: the table of the deliveries, when the heirs changed."""
             heir_notes.clean(self.wallet, list(self.heirs.keys()))
             self.heir_list_widget.update()
             if skipped:
                 self.show_message(_(
                     "Not imported: {}. There is already a message in the will: "
                     "only one is allowed.").format(", ".join(skipped)))
+            if before is not None:
+                self.offer_table_update(before)
 
         import_meta_gui(
             self.window,
@@ -2048,8 +2190,9 @@ class BalWindow:
                 return
             except delivery.InstalmentsMismatch as e:
                 # #168: the table of the deliveries no longer fits the
-                # heirs: nothing is prepared (the message says what to do).
-                self.show_error(str(e))
+                # heirs: nothing is prepared (the message says what to do;
+                # #170: in ADVANCED its window can be opened at once).
+                self.table_mismatch(str(e))
                 return
             except delivery.DeliveryChoicePending:
                 # #123: the "which date?" question first, as in the Check;

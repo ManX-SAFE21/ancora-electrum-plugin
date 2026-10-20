@@ -1842,16 +1842,9 @@ class BalController(BalSettingsController):
         """
         if not instalments.has_table(self):
             return
-        try:
-            rows = delivery.table_rows(self.will_settings)
-        except ValueError:
-            return
-        if len(rows) < 2 or not isinstance(rows[1], Mapping):
-            return
-        second = delivery.as_delivery(rows[1].get("locktime"))
-        if second is None:
-            return
-        if new_date > second - delivery.MIN_GAP_DAYS * delivery.DAY:
+        # #170: the rule is shared with the window.
+        second = delivery.too_close_to_second(self.will_settings, new_date)
+        if second is not None:
             raise UserFacingException(
                 _(
                     "This wallet has a table of the deliveries: its delivery date "
@@ -2083,98 +2076,6 @@ class BalController(BalSettingsController):
             rows.append({"locktime": ts, "shares": row["shares"]})
         return rows
 
-    def _dates_in_force(self):
-        """The dates of the deliveries now, read before the table changes (#169).
-
-        Returns ``(in_force, reference, old)``:
-
-        * ``in_force``: ``{n: date}`` of the will in force (delivery 1: as
-          :meth:`_will_in_force`; deliveries 2 and 3: the earliest VALID item
-          of that delivery, :func:`bal.engine.instalments.delivery_dates`),
-          or None;
-        * ``reference``: ``{n: (date, from_will)}``, what a new date of
-          delivery n is compared with for ``--confirm_earlier``: the VALID
-          items of that delivery (delivery 1: :func:`bal.core.delivery.
-          earliest_valid`, as ``bal_delivery_set``), else the stored date
-          (delivery 1: the wallet's; 2 and 3: the stored table);
-          ``from_will`` says which (the words of the message);
-        * ``old``: the stored table (:func:`bal.core.delivery.table_rows`),
-          ``[]`` without one or when it cannot be read.
-        """
-        try:
-            old = delivery.table_rows(self.will_settings)
-        except ValueError:
-            old = []
-        valid = instalments.delivery_dates(self.willitems)
-        stored = delivery.as_delivery(self.will_settings.get("locktime"))
-        earliest_valid = delivery.earliest_valid(delivery.views_from(self.willitems))
-        in_force = {1: self._will_in_force()}
-        if earliest_valid is not None:
-            reference = {1: (earliest_valid, True)}
-        else:
-            reference = {1: (stored, False)}
-        for n in range(2, delivery.INSTALMENTS_MAX + 1):
-            in_force[n] = valid.get(n)
-            if valid.get(n) is not None:
-                reference[n] = (valid[n], True)
-                continue
-            before = None
-            if len(old) >= n and isinstance(old[n - 1], Mapping):
-                before = delivery.as_delivery(old[n - 1].get("locktime"))
-            reference[n] = (before, False)
-        return in_force, reference, old
-
-    @staticmethod
-    def _schedule_now(reference, old):
-        """``[(date, share)]``: what the heirs receive now, date by date (#169).
-
-        With a table (``old``): each delivery's share of the estate (the sum
-        of its cells; a cell that cannot be read counts 0 %) on its
-        reference date (:meth:`_dates_in_force`); without one: 100 % on the
-        date of delivery 1.
-        """
-        if not old:
-            date = reference[1][0]
-            return [(date, _HUNDRED)] if date is not None else []
-        out = []
-        for n, row in enumerate(old, 1):
-            date = reference.get(n, (None, False))[0]
-            shares = row.get("shares") if isinstance(row, Mapping) else None
-            if date is None or not isinstance(shares, Mapping):
-                continue
-            total = sum(
-                (delivery.as_share(v) or Decimal(0) for v in shares.values()),
-                Decimal(0),
-            )
-            out.append((date, total))
-        return out
-
-    @staticmethod
-    def _first_earlier(new, now):
-        """The first date of ``new`` by which the heirs would receive MORE of
-        the estate than ``now`` (#169), as ``(n, date, share new, share
-        now)``; None when nothing arrives earlier.
-
-        Owner decision (a) of 2026-10-19: not only a date moved earlier, also
-        shares moved to an earlier delivery, delivery 3 removed or the
-        table removed make the heirs receive part of the estate earlier (a
-        free rebuild, which only the paid invalidation could undo once
-        sent), so they need ``--confirm_earlier true``. Compared date by
-        date, the share paid by that date: ``new`` and ``now`` are
-        ``[(date, share)]`` (:meth:`_schedule_now`).
-        """
-        def paid_by(schedule, when):
-            """The share of the estate ``schedule`` pays on or before ``when``."""
-            return sum(
-                (share for date, share in schedule if date <= when), Decimal(0)
-            )
-
-        for n, (date, _share) in enumerate(new, 1):
-            more, before = paid_by(new, date), paid_by(now, date)
-            if more > before:
-                return n, date, more, before
-        return None
-
     def instalments_set(self, table=None, path=None, example=None,
                         confirm_earlier=None):
         """``bal_instalments_set``: write the table of the deliveries (#169).
@@ -2195,7 +2096,7 @@ class BalController(BalSettingsController):
         receive earlier, and a typo in a script must not do it. So does a
         table by which the heirs would receive more of the estate by one of
         its dates than now (shares moved earlier, delivery 3 removed: owner
-        decision (a), :meth:`_first_earlier`). Then
+        decision (a), :func:`bal.core.delivery.first_earlier`). Then
         :func:`bal.engine.context.set_instalments` stores it (delivery 1
         becomes the wallet's date) and the wallet file is saved. A later
         date is stored too: the next ``bal_will_prepare`` asks for the paid
@@ -2219,8 +2120,9 @@ class BalController(BalSettingsController):
         if self.plugin.is_basic_mode():
             raise UserFacingException(
                 _(
-                    "Staged inheritance is available in ADVANCED mode only: "
-                    "bal_settings_set bal_user_type advanced, then try again."
+                    "The inheritance in several deliveries is available in "
+                    "ADVANCED mode only: bal_settings_set bal_user_type "
+                    "advanced, then try again."
                 )
             )
         if delivery.is_period(self.will_settings):
@@ -2265,13 +2167,13 @@ class BalController(BalSettingsController):
                 _("The table was not stored: {}").format(e)
             ) from None
 
-        # The dates in force, per delivery, read before anything is written.
-        in_force, reference, old = self._dates_in_force()
+        # The dates in force, per delivery, read before anything is written
+        # (#170: the rules of owner decision (a) are shared with the window).
+        in_force, reference, old = instalments.dates_in_force(self)
         if not confirm_earlier:
-            for n, row in enumerate(rows, 1):
-                ref, from_will = reference.get(n, (None, False))
-                if ref is None or row["locktime"] >= ref:
-                    continue
+            hit = delivery.first_earlier_date(rows, reference)
+            if hit is not None:
+                n, date, ref, from_will = hit
                 if from_will:
                     text = _(
                         "Delivery {}: {} is earlier than the date in force "
@@ -2288,18 +2190,12 @@ class BalController(BalSettingsController):
                 raise UserFacingException(
                     text.format(
                         n,
-                        context.utc_day_text(row["locktime"]),
+                        context.utc_day_text(date),
                         context.utc_day_text(ref),
                     ) + " " + _confirm_earlier_hint()
                 )
-            new = [
-                (row["locktime"], sum(
-                    (delivery.as_share(v) for v in row["shares"].values()),
-                    Decimal(0),
-                ))
-                for row in rows
-            ]
-            earlier = self._first_earlier(new, self._schedule_now(reference, old))
+            earlier = delivery.first_earlier(
+                delivery.schedule_of(rows), delivery.schedule_now(reference, old))
             if earlier is not None:
                 n, date, more, before = earlier
                 raise UserFacingException(
@@ -2332,17 +2228,15 @@ class BalController(BalSettingsController):
                 )
             )
         ]
-        for n, row in enumerate(stored_rows, 1):
-            date = in_force.get(n)
-            if date is not None and row["locktime"] > date:
-                messages.append(
-                    _(
-                        "Delivery {} is later than the will in force ({}): if "
-                        "that will was already sent to the will-executors, the "
-                        "next bal_will_prepare asks to invalidate it first "
-                        "(on-chain, miner fee)."
-                    ).format(n, context.utc_day_text(date))
-                )
+        for n, date in delivery.later_than_in_force(stored_rows, in_force):
+            messages.append(
+                _(
+                    "Delivery {} is later than the will in force ({}): if "
+                    "that will was already sent to the will-executors, the "
+                    "next bal_will_prepare asks to invalidate it first "
+                    "(on-chain, miner fee)."
+                ).format(n, context.utc_day_text(date))
+            )
         messages.append(
             _(
                 "While the table is there, the heirs' shares come from it, "
@@ -2365,7 +2259,7 @@ class BalController(BalSettingsController):
         (``heirs``) and the message says to check them before
         ``bal_will_prepare``. The heirs would then receive the rest of the
         estate at delivery 1, earlier: refused without ``confirm_earlier``
-        (owner decision (a), :meth:`_first_earlier`). Refused while the
+        (owner decision (a), :func:`bal.core.delivery.first_earlier`). Refused while the
         settings could not be prepared. ``removed``: False when there was
         no table.
         """
@@ -2376,9 +2270,9 @@ class BalController(BalSettingsController):
             )
         first = delivery.as_delivery(self.will_settings.get("locktime"))
         if instalments.has_table(self) and not confirm_earlier and first is not None:
-            _in_force, reference, old = self._dates_in_force()
-            earlier = self._first_earlier(
-                [(first, _HUNDRED)], self._schedule_now(reference, old)
+            _in_force, reference, old = instalments.dates_in_force(self)
+            earlier = delivery.first_earlier(
+                [(first, _HUNDRED)], delivery.schedule_now(reference, old)
             )
             if earlier is not None:
                 _n, date, _more, before = earlier

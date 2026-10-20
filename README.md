@@ -145,7 +145,7 @@ exposes `bal_*` commands that replicate the full inheritance cycle.
 |----------|----------|
 | Settings | `bal_settings_list`, `bal_settings_get`, `bal_settings_set`, `bal_settings_reset` |
 | Delivery (per wallet) | `bal_delivery_show`, `bal_delivery_set`, `bal_delivery_form` |
-| Staged inheritance (per wallet) | `bal_instalments_show`, `bal_instalments_set`, `bal_instalments_clear` |
+| Inheritance in several deliveries (per wallet) | `bal_instalments_show`, `bal_instalments_set`, `bal_instalments_clear` |
 | Heirs | `bal_heirs_list`, `bal_heirs_show`, `bal_heirs_add`, `bal_heirs_update`, `bal_heirs_delete`, `bal_heirs_import`, `bal_heirs_export` |
 | Will-Executors | `bal_willexecutors_list`, `bal_willexecutors_show`, `bal_willexecutors_add`, `bal_willexecutors_update`, `bal_willexecutors_select`, `bal_willexecutors_delete`, `bal_willexecutors_ping`, `bal_willexecutors_download`, `bal_willexecutors_import`, `bal_willexecutors_export` |
 | Will | `bal_will_status`, `bal_will_check`, `bal_will_prepare`, `bal_will_autorebuild`, `bal_will_sign`, `bal_will_broadcast`, `bal_will_export`, `bal_will_import_merge`, `bal_will_invalidate`, `bal_will_check_executor` |
@@ -194,7 +194,7 @@ electrum bal_delivery_form period --months 36   # renewable period, N months
 electrum bal_delivery_set --months 24           # a new N (period form only)
 electrum bal_delivery_form fixed --date 2029-08-29
 
-# Staged inheritance (ADVANCED): 2 or 3 delivery dates, shares of the whole estate
+# Inheritance in several deliveries (ADVANCED): 2 or 3 delivery dates, shares of the whole estate
 electrum bal_instalments_set --example true     # an example table, to change
 electrum bal_instalments_set --table '[{"date": "2030-03-01", "shares": {"alice": "20%", "bob": "20%"}}, {"date": "2031-03-01", "shares": {"alice": "30%", "bob": "30%"}}]'
 electrum bal_instalments_set --path table.json  # the same JSON in a file
@@ -212,7 +212,8 @@ force needs `--confirm_earlier true`. A later date is stored; if the will
 was already sent, the next `bal_will_prepare` answers `postponed`: the old
 will must be invalidated first (on-chain, miner fee). Every heir gets the
 delivery date of the will: `--locktime` for a single heir is always
-refused (the dates of a staged inheritance are in its table, below).
+refused (the dates of an inheritance in several deliveries are in its
+table, below).
 
 The delivery form: a **fixed date** (the default) or a **period** of N
 calendar months (1 to 240) that the Check Alive renews.
@@ -230,8 +231,8 @@ with a will in force the new N is used at the next renewal (no fee now);
 the form cannot change). The period form is not available with a table
 of the deliveries.
 
-Staged inheritance (ADVANCED mode, fixed delivery date): the heirs
-receive in 2 or 3 deliveries, on the same dates for every heir, at least
+Inheritance in several deliveries (ADVANCED mode, fixed delivery date):
+the heirs receive in 2 or 3 deliveries, on the same dates for every heir, at least
 28 days apart. At each date each heir receives a share of the WHOLE
 estate; the shares of the whole table add up to exactly 100% (an heir may
 have 0% at a date). `bal_instalments_set` writes the table (`--table`
@@ -252,6 +253,15 @@ come from it, not from their amounts. An heir added, removed or renamed
 without updating the table stops `bal_will_prepare` until the table is
 updated (the heir commands say so in `instalments_note`).
 `bal_instalments_clear` goes back to one date, with the heirs' amounts.
+
+In Electrum's window the same table is changed in the window
+"Inheritance in several deliveries" (ADVANCED mode): open it with
+"Several deliveries" in Build / Edit Your Will, or from Tools in the Will
+tab. The deliveries go from left to right, the heirs are the rows; the
+window checks the same rules, one problem at a time, and asks before
+anything would arrive earlier. While the table is there, the delivery
+date in the toolbars reads "10/03/2030 (+2 deliveries)" and is changed
+only in that window; an heir renamed in the heir window keeps its shares.
 
 Where the delivery settings are kept: in the wallet file, under the wallet
 key `will_settings`. Electrum's global `bal_will_settings` (the key of the

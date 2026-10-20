@@ -601,6 +601,37 @@ def test_multiverse_does_not_break_the_list(make):
     assert m.rowCount() == 1
 
 
+def test_each_delivery_steps_right_in_every_column(make):
+    """#170 (owner's ZIP test): in a will in deliveries the rows of delivery
+    2 and 3 step right by two figure spaces per level in every column but
+    the first (the tree indents that one); "Copy" keeps the plain values; a
+    will with one date is unchanged."""
+    step = "  "
+    s = make()
+    s.check(cancel_on=SIGN)
+    lst = _list(s)
+    m = lst.model()
+    root = m.index(1, 0, m.index(0, 0))
+    assert not any(str(t).startswith(" ") for t in _shown(lst, root))
+    s = make()
+    s.set_instalments((D, {"alice": "30%", "bob": "30%"}),
+                      (D + 365 * fk.DAY, {"alice": "20%", "bob": "0%"}),
+                      (D + 730 * fk.DAY, {"alice": "0%", "bob": "20%"}))
+    s.check()
+    lst = _list(s)
+    m = lst.model()
+    root = m.index(1, 0, m.index(0, 0))
+    child = m.index(0, 0, root)
+    grandchild = m.index(0, 0, child)
+    for level, idx in enumerate((root, child, grandchild)):
+        shown = _shown(lst, idx)
+        assert not str(shown[0]).startswith(" ")
+        for text in shown[1:]:
+            assert text.startswith(step * level), (level, text)
+            assert not text.startswith(step * (level + 1)), (level, text)
+        assert not any(str(v).startswith(" ") for v in _cells(lst, idx))
+
+
 # --------------------------------------------------------------- settings
 
 def _settings_dialog(user_type):

@@ -39,7 +39,7 @@ from urllib.parse import urlparse
 from electrum.util import MyEncoder
 from PyQt6.QtCore import QEvent
 
-from ...core import datetext, invalidation_preview, will_changes
+from ...core import datetext, delivery, invalidation_preview, will_changes
 from ...core.animated_qr import (
     AnimatedQrError,
     AnimatedQrSession,
@@ -61,6 +61,7 @@ from ...core.messages import (
     amounts_message,
     build_failure_message,
     check_alive_message,
+    heir_label,
     no_valid_transaction,
     rebuild_reason_message,
     will_change_message,
@@ -168,6 +169,18 @@ if TYPE_CHECKING:
 
 # NOTE: list views (HeirListWidget, PreviewList, WillExecutorWidget) are
 # imported lazily where needed to avoid a dialogs<->lists import cycle.
+
+
+def person_renames(renames):
+    """``[(old, new)]`` of the persons renamed (#170): the rows of one person
+    in a will in deliveries ("Luca" -> "Marco", "Luca§2" -> "Marco§2") are one
+    rename, with the persons' names; the order is kept."""
+    out = []
+    for old, new in renames:
+        pair = (delivery.person_name(old), delivery.person_name(new))
+        if pair not in out:
+            out.append(pair)
+    return out
 
 
 class BalDialog(QDialog,MessageBoxMixin):
@@ -1230,16 +1243,19 @@ class BalBuildWillDialog(BalDialog):
         # without the will-executor reference. So N heirs => at most N rows,
         # regardless of how many will-executors exist.
         dust_heirs = {}
+        staged = False
         for wid in Will.only_valid(self.bal_window.willitems):
             heirs = self.bal_window.willitems[wid].heirs
             for hid, heir in heirs.items():
+                staged = staged or delivery.instalment_number(hid) > 1
                 if "DUST" in str(heir[HEIR_REAL_AMOUNT]):
                     # Keep the first dust amount seen for this heir; it is the
                     # same share in every will-executor copy of the will.
                     dust_heirs.setdefault(hid, heir[HEIR_DUST_AMOUNT])
         for hid, dust_amount in dust_heirs.items():
             self.msg_set_status(
-                _("Heir {}").format(hid),
+                # #170: the person and the delivery, never "Luca§2".
+                _("Heir {}").format(heir_label(hid, staged)),
                 None,
                 _("{} is DUST - excluded (amount below dust limit)").format(
                     dust_amount
@@ -1368,6 +1384,9 @@ class BalBuildWillDialog(BalDialog):
             for hname in self.bal_window.willitems[wid].heirs:
                 if str(hname)[:9] == 'w!ll3x3c"':
                     continue
+                # #170: one line per person, never the row name "Luca§2"
+                # of a later delivery (the person receives at each one).
+                hname = delivery.person_name(hname)
                 if hname in shown_heirs:
                     continue
                 shown_heirs.add(hname)
@@ -2069,6 +2088,10 @@ class BalBuildWillDialog(BalDialog):
         try:
             renames = getattr(self.bal_window, "heir_renames", None)
             renames = list(renames) if isinstance(renames, list) else []
+            # #170: with a table of deliveries a rename comes once per
+            # delivery ("Luca" -> "Marco", "Luca§2" -> "Marco§2"): the owner
+            # reads it once, with the persons' names.
+            renames = person_renames(renames)
             if renames:
                 self._renames_seen = renames
             for old, new in renames:
@@ -3218,8 +3241,21 @@ class BalBuildWillDialog(BalDialog):
         button=QPushButton(_("Close"))
         button.clicked.connect(self.close)
         self.vbox.addWidget(button)
+        if isinstance(b, delivery.InstalmentsMismatch) and \
+                not self.bal_window.bal_plugin.is_basic_mode():
+            # #170: the table of the deliveries no longer fits the heirs:
+            # its window, at once (ADVANCED, as the window is).
+            table_button = QPushButton(_("Open the table of the deliveries"))
+            table_button.clicked.connect(self._open_table_after_error)
+            self.vbox.addWidget(table_button)
         self.resize(self.vbox.sizeHint()+button.sizeHint()*2)
         self.repaint()
+
+    def _open_table_after_error(self):
+        """Close the Check and open the window of the deliveries (#170)."""
+        self.close()
+        self.bal_window.open_deliveries_editor()
+
     def on_error_phase2(self, error):
         """Show an error raised while signing/sending the will (phase 2).
 

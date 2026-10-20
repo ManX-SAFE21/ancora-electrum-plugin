@@ -261,7 +261,8 @@ def test_tools_menu_order_and_offline_entry():
     assert texts[:-2] == [
         _("Prepare"), _("Sign"), _("Broadcast will"), _("Check"),
         _("Invalidate will"), _("Display"), _("Export"), _("Import"),
-        _("Merge"), "--", _("Sign the will offline…"),
+        _("Merge"), _("Inheritance in several deliveries…"), "--",
+        _("Sign the will offline…"),
         _("Calendar reminders")]
     # Then the report's submenu (``report_menu``) and the explainer.
     assert host.menu.actions()[-2].menu() is not None

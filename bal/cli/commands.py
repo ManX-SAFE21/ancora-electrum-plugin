@@ -322,7 +322,7 @@ async def delivery_form(self, form, date=None, months=None, wallet=None, plugin=
 # --------------------------------------------------------------------------- #
 @plugin_command("nw", plugin_name)
 async def instalments_show(self, wallet=None, plugin=None):
-    """Show the table of the deliveries of the current wallet (staged inheritance).
+    """Show the table of the deliveries of the current wallet (inheritance in several deliveries).
 
     Without a table the wallet has one delivery (``staged`` false). With
     one: ``deliveries`` (each with ``delivery``, ``date``, ``locktime`` and
@@ -346,7 +346,7 @@ async def instalments_set(
     wallet=None,
     plugin=None,
 ):
-    """Write the table of the deliveries of the current wallet (staged inheritance).
+    """Write the table of the deliveries of the current wallet (inheritance in several deliveries).
 
     Two or three delivery dates, the same for every heir, at least 28 days
     apart; at each date each heir receives a share of the WHOLE estate; the
