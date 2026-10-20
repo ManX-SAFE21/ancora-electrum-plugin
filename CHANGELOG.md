@@ -11277,3 +11277,51 @@ unsigned children. The "no server" message after the date change was the
 owner's DNS failing at that moment.
 
 **Outcome:** DONE.
+
+## 171. The will export window works for a will too big for QR codes
+
+**Date:** 2026-10-20
+
+**Goal (owner's ZIP test of #170, 2026-10-20):** Tools > Export on the
+owner's will in several deliveries (about 244 transactions with all its
+versions) stopped with "BBQR transfer demands too many parts" and the
+window did not open: it prepared the animated QR codes at once, also for
+a file, and the BBQR format allows at most 1295 frames. Owner's decision:
+when the will is too big for the QR codes, the QR and audio choices
+disappear and only the file stays.
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`, `WillExportDialog`: the QR frames of the
+  selection are prepared in one place (`_refresh_transports`, at the
+  start and after a change of filter or of "Whole will"). When they do
+  not fit (`AnimatedQrError`), "QR Code" and "Audio" are hidden, "File"
+  is selected and a note says "This will is too big for QR codes and
+  audio: export it as a file. (The filter "Valid" makes it smaller.)";
+  when the selection fits again, they come back. `BalQrExportWidget`: a
+  QR size at which the will needs too many frames is not taken (the size
+  before stays). Owner, after trying it: the window starts on the filter
+  "Valid" (the will in force: what a copy, the offline signing or another
+  device need), "All" only when nothing is valid; in BASIC mode only
+  "File" is offered (QR and audio are ADVANCED tools; the guided offline
+  route of BASIC uses the file).
+- Catalogs: the note, in Italian and Spanish.
+
+**Tests:** `tests/test_gui_export_dialogs.py`: a will too big for the QR
+codes opens on "File" only, with the note, and QR and audio come back
+when the filter makes it fit; a QR size too small is not taken; the
+window starts on "Valid", else "All"; BASIC offers the file only.
+`tests/test_gui_qr_transfer.py`: the two filter tests start on "Valid".
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole `tests/` directory,
+normal order: 2773 passed (25 minutes). Golden files unchanged. Scenario
+harness: log identical to the #169 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-171-export-only-file.zip` (sha256
+`bf79e240...00d1`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2. Owner's ZIP test of the first version (2026-10-20): the
+window opens on his will (214 items), "File" only with the note; the
+filter "Valid" brings the QR codes back; the export file was written. Owner's ZIP test of this version: ADVANCED
+starts on "Valid" with File, QR and audio, "All" leaves the file only;
+BASIC offers the file only with both filters.
+
+**Outcome:** DONE.
