@@ -4513,8 +4513,19 @@ class BalQrExportWidget(QWidget):
 
     def _on_chunk_change(self, index):
         self._stop_auto()
+        previous = self.chunk_size
         self.chunk_size = CHUNK_PRESETS[index][1]
-        self._refresh_frames()
+        try:
+            self._refresh_frames()
+        except AnimatedQrError as e:
+            # #171: this will needs more QR frames than the format allows at
+            # this size: the size is not taken (the previous one stays).
+            _logger.info(f"QR size not taken: {e}")
+            self.chunk_size = previous
+            self.size_combo.blockSignals(True)
+            self.size_combo.setCurrentIndex(preset_index_for_chunk_size(previous))
+            self.size_combo.blockSignals(False)
+            self._refresh_frames()
         self._render()
         if self._on_size_change is not None:
             self._on_size_change(self.chunk_size)
@@ -4600,7 +4611,11 @@ class WillExportDialog(BalDialog):
         self.bal_plugin = bal_plugin
         self._source = will if will is not None else bal_window.willitems
         self._filters = export_filter_options()
-        self._filter_index = 0
+        # #171 (owner): the window starts on "Valid", the will in force (what
+        # a copy, the offline signing or another device need); "All" (the
+        # whole history) when nothing is valid.
+        self._filter_index = 1 if filter_willitems(
+            self._source, self._filters, 1) else 0
         try:
             chunk = int(bal_plugin.QR_CHUNK_SIZE.get())
         except Exception:
@@ -4616,6 +4631,7 @@ class WillExportDialog(BalDialog):
         filter_row.addWidget(QLabel(_("Export:")))
         self.filter_combo = QComboBox()
         self.filter_combo.addItems([label for label, _fn in self._filters])
+        self.filter_combo.setCurrentIndex(self._filter_index)
         self.filter_combo.currentIndexChanged.connect(self._on_filter_change)
         filter_row.addWidget(self.filter_combo)
         # Content scope: whole will items vs only the serialized transactions.
@@ -4651,6 +4667,17 @@ class WillExportDialog(BalDialog):
         self.stacked = QStackedWidget()
         self.file_page = self._build_file_page()
         self.stacked.addWidget(self.file_page)
+        # #171 (owner): a will in several deliveries can be too big for the
+        # QR codes (the BBQR format has at most 1295 frames): then only the
+        # file is offered, with this note.
+        self.too_big_label = QLabel(_(
+            "This will is too big for QR codes and audio: export it as a "
+            "file. (The filter \"Valid\" makes it smaller.)"))
+        self.too_big_label.setWordWrap(True)
+        self.too_big_label.setVisible(False)
+        vbox.addWidget(self.too_big_label)
+        self.too_big = False
+
         self.qr_page = BalQrExportWidget(
             chunk_size=chunk,
             on_size_change=self._remember_qr_size,
@@ -4680,9 +4707,44 @@ class WillExportDialog(BalDialog):
         (self.transport_file, self.transport_qr, self.transport_audio)[
             mode
         ].setChecked(True)
-        self.qr_page.set_tx_strings(self._payload_strings())
-        self._on_mode_clicked(mode)
+        self._refresh_transports()
+        self._on_mode_clicked(self.transport_group.checkedId())
         self._update_info()
+
+    def _basic(self):
+        """True in BASIC mode (#171: the file only); False when the plugin
+        cannot say."""
+        try:
+            return bool(self.bal_plugin.is_basic_mode())
+        except Exception:
+            return False
+
+    def _refresh_transports(self):
+        """Prepare the QR frames of the current selection (#171).
+
+        When the selection is too big for the QR codes (``AnimatedQrError``,
+        the owner's will in several deliveries: about 244 transactions),
+        the QR and audio choices disappear and only the file stays, with
+        the note; when it fits again (the filter "Valid", only the
+        transactions), they come back. Returns True when QR fits.
+        """
+        try:
+            self.qr_page.set_tx_strings(self._payload_strings())
+            fits = True
+        except AnimatedQrError as e:
+            _logger.info(f"export too big for QR codes: {e}")
+            fits = False
+        self.too_big = not fits
+        # #171 (owner): BASIC offers the file only (its guided offline route
+        # uses the file on a USB stick); QR and audio are ADVANCED tools.
+        basic = self._basic()
+        self.transport_qr.setVisible(fits and not basic)
+        self.transport_audio.setVisible(fits and not basic)
+        self.too_big_label.setVisible(not fits and not basic)
+        if (not fits or basic) and not self.transport_file.isChecked():
+            self.transport_file.setChecked(True)
+            self.stacked.setCurrentWidget(self.file_page)
+        return fits
 
     def _build_file_page(self):
         page = QWidget()
@@ -4786,18 +4848,18 @@ class WillExportDialog(BalDialog):
             self._filter_index = previous
             self.show_message(_("No will transaction matches the selected filter."))
             return
-        if self.transport_qr.isChecked():
-            self.qr_page.set_tx_strings(self._payload_strings())
+        self._refresh_transports()
         self._update_info()
 
     def _on_content_toggle(self, checked):
-        if self.transport_qr.isChecked():
-            self.qr_page.set_tx_strings(self._payload_strings())
+        self._refresh_transports()
         self._update_info()
 
     def _on_mode_clicked(self, mode):
+        if mode != self.MODE_FILE and (
+                not self._refresh_transports() or self._basic()):
+            mode = self.MODE_FILE
         if mode == self.MODE_QR:
-            self.qr_page.set_tx_strings(self._payload_strings())
             self.stacked.setCurrentWidget(self.qr_page)
         elif mode == self.MODE_AUDIO:
             self.stacked.setCurrentWidget(self.audio_page)
