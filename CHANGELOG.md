@@ -11630,3 +11630,82 @@ Seen, not changed here (owner, at the ZIP test):
   wallet's name.
 
 **Outcome:** DONE.
+
+## 176. A new delivery date uses a will-executor's new fee address; no more "Will-Executor excluded: Skipped"
+
+**Date:** 2026-10-21
+
+**Problem (the owner's ZIP test of #172, log 2026-10-21 07:16 UTC):** the
+Check showed a red row "Will-Executor excluded: Skipped", which named no
+will-executor and no reason.
+- `we.bitcoin-after.life` gave a new fee address (it changes with the
+  user's IP, #141) after it had received its copies.
+- The owner then moved the delivery date one day earlier (17 -> 16
+  October 2031): a new will.
+- The build kept the old fee address for that will-executor
+  (`Will.received_terms`, #141), because `Will.same_payments` compared
+  the coins and the outputs but not the date.
+- The new copies (new date, so new transactions, not received yet) had
+  the old address; the Check right after the build
+  (`check_willexecutors_and_heirs`) expects the new address for a copy
+  not received, raised `WillExecutorTermsChanged`, and the dialog wrote
+  its fixed text "Skipped" in red.
+- The flow went on anyway: it signed and sent the new copies with the
+  old address (the will-executor accepts every address it ever gave).
+  The red row was a false alarm, and the copies did not use the new
+  address as #141 says ("when the copy changes anyway, it is built again
+  with the will-executor's new data").
+
+**What changed:**
+
+- `bal/core/will.py` `Will.same_payments`: the same coins, the same
+  outputs **and the same date**. A new delivery date is a new copy, to
+  sign and send again, so it is built with the will-executor's new fee
+  address or fee; the build and the Check agree again. A received copy
+  whose date does not change is still kept as it is (#141, unchanged).
+- `bal/core/messages.py`: new `excluded_after_build_message(e)`, the text
+  of the "Will-Executor excluded" row right after a build: for a new fee
+  address or fee the owner's #141 sentence (`executor_terms_message`),
+  else "{host}: not in the will just prepared".
+- `bal/gui/qt/dialogs.py`: that row uses it, in orange (a warning: the
+  flow goes on and signs and sends) instead of "Skipped" in red. The
+  report already lists it among the warnings. With the fix above the row
+  should not show in normal use.
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; 1 new entry (Italian:
+  "{}: non è nel testamento appena preparato"; Spanish: "{}: no está en
+  el testamento recién preparado"). Texts and colour approved by the
+  owner (2026-10-21).
+
+**Tests:** `tests/test_executor_fee_address.py`, 4 new (14 in all; three
+fake will-executors, each with its own fee address):
+- the owner's case: every copy received, WE0 gives a new address, the
+  date moves 10 days earlier; no "excluded" row, the three copies have
+  the new date and are received, WE0's has its new address, WE1's its
+  own, and the next Check is clean;
+- `Will.same_payments` is False for the same coins and outputs on
+  another date;
+- the row's texts (both sentences, never "Skipped");
+- a will-executor still missing right after a build: one orange row
+  with its host, among the report's warnings.
+Mutation check: 4 of 4 deliberate faults caught (date ignored again,
+"Skipped" back, the #141 sentence lost, red again).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. The 67 test files near the
+change: 1675 passed (15 minutes). Whole `tests/` directory, normal
+order: 2839 passed (36 minutes). Golden files: none changed. Scenario
+harness: log identical to the #173 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-175-executor-terms.zip` (built before the
+step got its number): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-21), read in his Electrum log:** after Pings,
+`we.divinaly.support` gave a new fee address; the owner moved the
+delivery date one day earlier and pressed Check. Log: "will-executor
+copies changed anyway, built with the new payment data:
+['https://we.divinaly.support']", the will coherent right after the
+build, signed and sent to the five will-executors, the next Check
+clean; a second try the same. Seen: a message stayed on screen only
+half a second (which one is not in the log; not changed here).
+
+**Outcome:** DONE.

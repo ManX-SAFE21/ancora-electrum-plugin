@@ -75,6 +75,21 @@ def executor_terms_message(url, change):
     ).format(host)
 
 
+def excluded_after_build_message(e):
+    """The "Will-Executor excluded" row right after a build (#176).
+
+    ``e``: the ``WillExecutorNotPresent`` the Check raised on the will just
+    prepared (``str(e)`` is the URL). A new fee address or fee
+    (``WillExecutorTermsChanged``) gives :func:`executor_terms_message`;
+    any other case names the will-executor. Texts approved by the owner
+    (2026-10-21); before, the row read only "Skipped".
+    """
+    if isinstance(e, WillExecutorTermsChanged):
+        return executor_terms_message(str(e), e.change)
+    host = urlparse(str(e)).hostname or str(e)
+    return _("{}: not in the will just prepared").format(host)
+
+
 def no_valid_transaction(e):
     """True for the core's argument-less NotCompleteWillException.
 
