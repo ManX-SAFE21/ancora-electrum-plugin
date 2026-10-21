@@ -163,6 +163,21 @@ class Will:
 
     @staticmethod
     def normalize_will(will, wallet=None, others_inputs=None):
+        """Check every item of ``will`` on independent copies.
+
+        Each item is completed with the wallet and with the will itself
+        (``add_info_from_will``: an input that spends another item's
+        output gets that output's address, value and script), then copied.
+
+        CHANGELOG #177: the copy re-parses the transaction, so an input
+        that spends another unsigned item of the will (a later delivery
+        spending the change of the one before) lost that information
+        again, Electrum could not compute the copy's txid, and every build
+        of a will with more delivery dates logged five ERROR lines "txid is
+        none" per later delivery. The copies are now completed from the
+        will of copies too. A txid that still cannot be computed is logged
+        in one WARNING line.
+        """
         others_input = others_inputs if others_inputs is not None else {}
         to_delete = []
         to_add = {}
@@ -172,18 +187,17 @@ class Will:
             Will.add_info_from_will(will, wid, wallet)
             willitems[wid] = WillItem(will[wid], wallet=wallet)
         will = willitems
+        for wid in will:
+            Will.add_info_from_will(will, wid, wallet)
         errors = {}
         for wid in will:
 
             txid = will[wid].tx.txid()
 
             if txid is None:
-                _logger.error("##########")
-                _logger.error(wid)
-                _logger.error(will[wid])
-                _logger.error(will[wid].tx.to_json())
-
-                _logger.error("txid is none")
+                _logger.warning(
+                    f"normalize_will: the txid of {wid} cannot be computed "
+                    f"(an input without its previous output's data)")
                 will[wid].set_status("ERROR", True)
                 errors[wid] = will[wid]
                 continue
