@@ -11404,3 +11404,67 @@ separate local-history problem): owner's OK to commit with it covered by
 the tests only.
 
 **Outcome:** DONE.
+
+## 175. Saving an unsigned will in several deliveries no longer breaks the wallet's balance
+
+**Date:** 2026-10-21
+
+**Goal (owner's log, 2026-10-21 08:17:57Z, ZIP of #172, mainnet test
+wallet):** with "Save in the history" on (`bal_save_history`, default on),
+the save of the will into the local history logged 80 errors ("trying to add
+tx to db with inconsistent txid: ... != None", then "spending tx not in
+wallet db"), and from then on every refresh of the window failed with an
+AssertionError in Electrum's `get_balance`. Analysis, reproduced in a test:
+an unsigned transaction has a txid only while every input is known to be
+segwit; a later delivery spends an unsigned will transaction, and that
+knowledge is not in the text Electrum stores, so the stored copy has no txid
+(36 of the 39 transactions of a will in three deliveries with three
+will-executors). Electrum refused the copy only AFTER writing the spent
+coins and the outputs into the wallet index, so the index pointed at
+transactions the wallet did not have. The funds and the signed will were
+never touched (a signed transaction is never saved to the history), and
+Electrum clears such entries when it opens the wallet
+(`remove_local_transactions_we_dont_have`): with the option off, a restart
+repairs the wallet.
+
+**What changed:**
+
+- `bal/core/will.py`:
+  - `_survives_reparse(tx)`: True when the copy Electrum stores keeps the
+    txid (`tx_from_any(str(tx)).txid() == tx.txid()`).
+  - `save_valid_transactions_to_history`: a transaction that does not
+    survive is not given to Electrum; one INFO line counts them ("N
+    unsigned will transactions not saved to the local history: ..."). The
+    first delivery is saved as before.
+  - `_undo_partial_add(wallet, txid)`, safety net: when
+    `add_transaction` still fails, what Electrum already wrote for a txid
+    the wallet does not hold is removed (`adb.remove_transaction`, which
+    works without the transaction), then the error is raised as before.
+
+**Tests:** `tests/test_history_multiverse.py` (new, 4, three fake
+will-executors, throw-away testnet wallet): a will in three deliveries,
+unsigned, saved: no entry of the wallet index points at a missing
+transaction, the balance reads, no ERROR, the 36 later transactions are not
+stored and counted in the INFO line, the first delivery is stored; a will
+with one date is saved as before; an add refused half-way leaves no entry;
+`_survives_reparse` is True for the first delivery and False for the later
+one. Mutation check: 5 of 5 deliberate faults caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole `tests/`
+directory, normal order: 2794 passed (29 minutes). Golden files: none
+changed. Scenario harness: log identical to the #172 log (135 lines). Test
+ZIP `test-zips/ancora_0.8.0-TEST-175-history-reparse.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2. Owner's
+ZIP test (2026-10-21, the same mainnet test wallet): at the opening Electrum
+removed the 12 broken entries by itself; then several Checks with "Save in
+the history" on and off: no AssertionError, no "inconsistent txid", no
+traceback, the balance reads. The will there is fully signed, so the skip of
+unsigned later deliveries was not exercised in the ZIP: covered by the tests
+only.
+
+Seen, not changed here: at each rebuild `normalize_will` logs "txid is none"
+for 80 stored items of OLD versions of that will (later deliveries of
+invalidated or replaced versions, the same lost txid when read back); they
+are marked ERROR and skipped. Present before #172; a later step.
+
+**Outcome:** DONE.
