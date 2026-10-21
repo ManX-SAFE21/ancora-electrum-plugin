@@ -1913,7 +1913,9 @@ class Will:
         2. if the transaction is NOT complete, stores it via
            ``wallet.adb.add_transaction`` (merging signatures when an
            already-stored partial transaction is upgraded by a more complete
-           one) and tags it with the decoded label,
+           one) and tags it with the decoded label; a transaction whose
+           stored copy would lose its txid (``_survives_reparse``, #175) is
+           not stored, with one INFO line for all of them,
         3. if the transaction IS complete, does not store it: its matching
            local-history entry is removed by the cleanup below.
 
@@ -1935,6 +1937,7 @@ class Will:
         if not wallet or not getattr(wallet, "adb", None):
             return
         saved_txids = []
+        not_storable = []
         try:
             current_labels = {
                 history_label.replace(
@@ -1958,6 +1961,12 @@ class Will:
                 # when incomplete, so the txid() check alone is not enough.
                 if wi.tx.is_complete():
                     continue
+                # #175: a later delivery of a will in several deliveries
+                # spends an unsigned parent; its stored copy loses the txid
+                # and Electrum's half-done add broke the wallet's balance.
+                if not Will._survives_reparse(wi.tx):
+                    not_storable.append(wi._id)
+                    continue
                 try:
                     txid = wi.tx.txid()
                     label = history_label.replace(
@@ -1971,6 +1980,12 @@ class Will:
                     saved_txids.append(txid)
                 except Exception as e:
                     _logger.error(f"save to history failed for item {wi._id}: {e}")
+            if not_storable:
+                _logger.info(
+                    f"{len(not_storable)} unsigned will transactions not saved "
+                    "to the local history: they spend a will transaction not "
+                    "on the network yet, so the wallet cannot store them"
+                )
             # Delete stale wallet-local txs whose label matches a current valid
             # item but that are no longer among the saved ones. This removes
             # entries for fully-signed (complete) items and for rebuilt/replaced
@@ -2062,6 +2077,47 @@ class Will:
             _logger.error(f"save_db failed after {after}: {e}")
 
     @staticmethod
+    def _survives_reparse(tx):
+        """True when the wallet can store *tx*: its copy keeps the txid.
+
+        Electrum stores a transaction as its text and reads it back
+        (``WalletDB.add_transaction``), and refuses it when the txid read
+        back differs. An unsigned transaction has a txid only while every
+        input is known to be segwit; for an input that spends another
+        unsigned will transaction (a later delivery of a will in several
+        deliveries) that knowledge is not in the text, so the copy has no
+        txid (#175, owner's log 2026-10-21: 80 such transactions). The
+        refusal came AFTER Electrum had already written the spent coins and
+        the outputs into the wallet's index, so the index pointed at
+        transactions the wallet did not have and the balance failed with an
+        AssertionError at every refresh. Never raises.
+        """
+        try:
+            txid = tx.txid()
+            return bool(txid) and tx_from_any(str(tx), sanitize=False).txid() == txid
+        except Exception as e:
+            _logger.debug(f"reparse check failed: {e!r}")
+            return False
+
+    @staticmethod
+    def _undo_partial_add(wallet, txid):
+        """Remove what a failed ``add_transaction`` left in the wallet index.
+
+        Safety net of #175: when Electrum refuses a transaction half-way, the
+        spent coins and outputs it already wrote stay in the index. If the
+        wallet does not hold *txid*, ``adb.remove_transaction`` clears those
+        entries (Electrum does the same at start-up,
+        ``remove_local_transactions_we_dont_have``). A stored txid is left
+        alone. Never raises.
+        """
+        try:
+            if wallet.db.get_transaction(txid) is not None:
+                return
+            wallet.adb.remove_transaction(txid)
+        except Exception as e:
+            _logger.error(f"undo of a failed history add not done for {txid}: {e}")
+
+    @staticmethod
     def _add_transaction_to_history(wallet, tx, txid):
         """Store *tx* into the wallet's local history via ``adb``.
 
@@ -2082,6 +2138,9 @@ class Will:
         "new transaction" event is not raised. That event also cleared the
         wallet's tx-parents cache, so that is done here; the History tab is
         refreshed by the caller (``BalWindow._schedule_history_refresh``).
+
+        #175: when the add fails, ``_undo_partial_add`` clears what Electrum
+        already wrote into the wallet index, then the error is raised.
         """
         adb = wallet.adb
         existing = None
@@ -2103,6 +2162,7 @@ class Will:
                 except UnrelatedTransactionException:
                     adb.add_transaction(tx, allow_unrelated=True, is_new=False)
         except Exception as e:
+            Will._undo_partial_add(wallet, txid)
             raise RuntimeError(f"add_transaction failed for {txid}: {e}") from e
         try:
             wallet.clear_tx_parents_cache()
