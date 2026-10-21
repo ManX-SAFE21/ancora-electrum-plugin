@@ -298,9 +298,9 @@
   ],
   "window_events": [
    "waiting window: Check Transaction",
-   "waiting window text: Checking transactions 0/2 (0s / 20s)",
-   "waiting window text: Checking transactions 1/2 (0s / 20s)",
-   "waiting window text: Checking transactions 2/2 (0s / 20s)"
+   "waiting window text: Checking transactions\nCopies checked: 0 of 2 · 0 s (at most 20 s)",
+   "waiting window text: Checking transactions\nCopies checked: 1 of 2 · 0 s (at most 20 s)",
+   "waiting window text: Checking transactions\nCopies checked: 2 of 2 · 0 s (at most 20 s)"
   ]
  }
 ]

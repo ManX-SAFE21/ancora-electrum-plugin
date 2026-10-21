@@ -11325,3 +11325,82 @@ starts on "Valid" with File, QR and audio, "All" leaves the file only;
 BASIC offers the file only with both filters.
 
 **Outcome:** DONE.
+
+## 172. The Check asks the will-executors a few at a time
+
+**Date:** 2026-10-21
+
+**Goal (owner's ZIP test of #170, 2026-10-20):** on the owner's will in
+several deliveries (84 transactions, 4 will-executors) the Check sent one
+`searchtx` per transaction to every will-executor at once; the servers
+answered 429 Too Many Requests and only the 2nd or 3rd Check verified
+everything. Reading the code showed worse: a 429 was taken as "not
+received", so the copy was marked CHECK_FAIL and sent again. Owner's
+decisions: 3 requests at a time per will-executor; at most 2 minutes for a
+Check; a 429 never makes a copy "failed"; the waiting must be clearly
+visible and explained, so nobody worries.
+
+**What changed:**
+
+- `bal/core/willexecutors.py`:
+  - `check_transactions_parallel`: at most `CHECK_PER_SERVER` (3)
+    requests at a time to one will-executor (the next one leaves when one
+    answers), the will-executors in parallel, at most `CHECK_MAX_WORKERS`
+    (16) in all, sent in turn so a busy will-executor does not take every
+    worker. At the deadline the requests running AND the ones not sent yet
+    are reported as timed out. `on_busy(url, seconds)` reaches the calling
+    thread; `should_stop()` stops the waiting when the window is closed.
+  - `check_transaction`: a 429 (`busy_pause`) gives a pause (the server's
+    Retry-After, else 2 s, 4 s, 8 s; at most 10 s) and a new try, at most 3
+    times; still busy: `NO_ANSWER` (the copy stays sent, #147). Other
+    errors are raised as before.
+  - `check_deadline`: 20 s for a small will; 5 s for each round of
+    requests, the rounds being the larger of the busiest will-executor (3
+    at a time) and all the requests (16 at a time); at most 120 s. The
+    owner's will: 35 s.
+- `bal/engine/verify.py`: `verify_will` uses that deadline (or the one
+  given by the window) and passes `on_busy`.
+- `bal/engine/push.py`: the copies of a will-executor that answers
+  "already present" are checked with the same parallel check, no longer
+  one by one. Owner's test: we.divinaly.support answered "already
+  present" and no check, 31 copies x 16 s = 8 minutes with the window still
+  on "0 s / 20 s"; now at most the deadline (55 s for 31 copies), shown.
+- `bal/gui/qt/dialogs.py`: `check_wait_lines` (shared with the window):
+  "Copies checked: X of Y · N s (at most N s)" in bold, always; for a long
+  Check, in grey, "Many transactions: the will-executors are asked a few
+  at a time, so as not to overload them."; in orange, "<server> is busy:
+  new try in N s.". Shown under the Verification step and while the
+  "already present" copies are checked during the Sending step.
+- `bal/gui/qt/window.py`: the right click "check" shows the same lines,
+  with the grown deadline; its waiting text wraps at a normal width.
+- Catalogs: the new texts, in Italian and Spanish.
+
+**Tests:** `tests/test_check_throttle.py` (new, 17, three fake
+will-executors): never more than 3 at a time per will-executor; the
+deadline reports the running and the not sent; `on_busy` on the calling
+thread; 429 then an answer; still busy is `NO_ANSWER`, not a failure;
+Retry-After kept but capped; another error raised; `verify_will` with the
+real parallel check keeps a busy will-executor's copies sent; the deadline
+grows (owner's will 35 s, 10 x 30 copies 95 s, 30 x 1 copy 20 s, at most
+120 s); the Check window, a small will and the right click window show the
+lines; the "already present" copies are no longer checked one by one,
+closing the window stops them, the Sending step shows them.
+`tests/test_engine_push.py`, `tests/test_verify_in_dialog.py`,
+`tests/flowkit.py` (the fake waiting window has a `message_label`) and the
+golden file `copies/menus_prepare_sign_broadcast_check` follow the new
+texts. Mutation check: 12 of 12 deliberate faults caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole `tests/`
+directory, normal order: 2790 passed (32 minutes). Golden files: only the
+one above changed (the waiting window text). Scenario harness: log
+identical to the #171 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-172-check-throttle.zip`: `external_zip_test.py`
+and `smoke_test.py` pass on Electrum 4.8.2. Owner's ZIP test (2026-10-21,
+mainnet test wallet, 5 will-executors): 124 copies verified in one Check
+in about 33 s (limit 55 s); the servers answered 429 fourteen times, every
+new try succeeded; the waiting lines read clearly. The "already present"
+fix was not tried in the ZIP yet (the same test wallet then hit the
+separate local-history problem): owner's OK to commit with it covered by
+the tests only.
+
+**Outcome:** DONE.

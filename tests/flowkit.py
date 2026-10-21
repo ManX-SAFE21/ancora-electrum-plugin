@@ -491,6 +491,19 @@ class User:
         return None
 
 
+class _FakeLabel:
+    """The waiting window's ``message_label``: its layout calls do nothing.
+
+    #172: the right click "check" makes the text wrap at a normal width.
+    """
+
+    def setWordWrap(self, on):
+        """Wrapping is Qt's business; nothing to record."""
+
+    def setMinimumWidth(self, width):
+        """The width is Qt's business; nothing to record."""
+
+
 class FakeWaitingDialog:
     """``BalWaitingDialog`` without Qt (the "Please wait" window).
 
@@ -510,6 +523,7 @@ class FakeWaitingDialog:
         self.on_error = on_error
         self.on_cancel = on_cancel
         self._stopping = False
+        self.message_label = _FakeLabel()
         bal_window.events.append("waiting window: " + strip(message))
         if exe:
             self.exe()

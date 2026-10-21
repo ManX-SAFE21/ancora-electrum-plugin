@@ -92,12 +92,18 @@ def verify_targets(willitems, txids=None, *, recheck=False):
     return targets, skipped
 
 
-def verify_will(willitems, targets, *, on_answer=None, on_tick=None):
+def verify_will(willitems, targets, *, on_answer=None, on_tick=None,
+                on_busy=None, deadline=None):
     """Ask the will-executors for the copies *targets* and record the answers.
 
-    *targets* comes from :func:`verify_targets`. Every will-executor is asked
-    at once (``Willexecutors.check_transactions_parallel``, global deadline
-    ``CHECK_GLOBAL_DEADLINE``). Each answer is recorded with
+    *targets* comes from :func:`verify_targets`. The will-executors are
+    asked in parallel, a few requests at a time each
+    (``Willexecutors.check_transactions_parallel``, #172). The global
+    *deadline* (seconds) is ``Willexecutors.check_deadline(targets)`` when
+    not given: 20 s for a small will, more for many transactions, at most
+    2 minutes; a window that shows the seconds passes the same value.
+    ``on_busy(url, seconds)``: a will-executor answered 429 Too Many
+    Requests and is asked again in *seconds*. Each answer is recorded with
     ``WillItem.set_check_willexecutor``:
 
     * it holds exactly the copy that was sent: VERIFIED (CHECKED);
@@ -149,7 +155,10 @@ def verify_will(willitems, targets, *, on_answer=None, on_tick=None):
         _record(wid, url, Willexecutors.NO_ANSWER, True)
 
     if targets:
+        if deadline is None:
+            deadline = Willexecutors.check_deadline(targets)
         Willexecutors.check_transactions_parallel(
-            targets, on_each=on_each, on_timeout=on_timeout, on_tick=on_tick
+            targets, on_each=on_each, on_timeout=on_timeout, on_tick=on_tick,
+            on_busy=on_busy, deadline=deadline,
         )
     return outcomes

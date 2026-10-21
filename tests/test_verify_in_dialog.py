@@ -92,7 +92,9 @@ def test_verify_shows_progress_then_records_the_answers():
     assert live[0]["result"] == (
         "run",
         "Verifying your will with the will-executors… "
-        "waiting for: we0.test, we1.test",
+        "waiting for: we0.test, we1.test"
+        # #172: the copies and the seconds, always, on their own line.
+        "<br><b>Copies checked: 0 of 2 · 0 s (at most 20 s)</b>",
     )
     assert dict(live[0]["executors"]) == {
         WE0: ("verifying", None), WE1: ("verifying", None)}

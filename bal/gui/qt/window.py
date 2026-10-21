@@ -143,6 +143,7 @@ from .dialogs import (
     WillExportDialog,
     WillImportDialog,
     _complete_import,
+    check_wait_lines,
     decode_will_payload,
 )
 from .explainer import show_explainer
@@ -3444,23 +3445,34 @@ class BalWindow:
         (:func:`bal.engine.verify.verify_targets` with ``recheck``: the
         selected copies sent at least once, never the ones not sent, owner
         E1) and asks
-        (:func:`~bal.engine.verify.verify_will`: all at once, fast-fail
-        timeout, global deadline, #147 for no answer); this window shows the
-        count and the elapsed seconds. *targets* is the choice already made
+        (:func:`~bal.engine.verify.verify_will`: a few requests at a time
+        per will-executor, a new try after a 429, a deadline that grows
+        with the transactions, #172; #147 for no answer); this window shows
+        the count, the elapsed seconds and, for a long check, why it lasts. *targets* is the choice already made
         by :meth:`check_transactions`.
         """
         start = time.time()
         if targets is None:
             targets, _skipped = verify_targets(will, list(will), recheck=True)
         total = len(targets)
-        deadline = Willexecutors.CHECK_GLOBAL_DEADLINE
+        # #172: the deadline grows with the transactions (at most 2 minutes);
+        # the same value is shown and given to the engine.
+        deadline = Willexecutors.check_deadline(targets)
         done = {"count": 0}
+        busy = {}  # url -> time of its new try after a 429 (#172)
 
         def _status_line():
-            return "{} {}/{} ({}s / {}s)".format(
-                _("Checking transactions"), done["count"], total,
-                min(int(time.time() - start), deadline), deadline,
-            )
+            """The waiting text: what runs, the copies and seconds, why (#172)."""
+            now = time.time()
+            lines = check_wait_lines(
+                done["count"], total, now - start, deadline, busy, now)
+            return "\n".join(
+                [_("Checking transactions")] + [text for _kind, text in lines])
+
+        def on_busy(url, seconds):
+            """A will-executor answered 429: its new try, shown (#172)."""
+            busy[url] = time.time() + seconds
+            self.waiting_dialog.update(_status_line())
 
         def on_answer(wid, url, res, outcome, timed_out):
             """One answer, recorded by the engine: the counter."""
@@ -3476,7 +3488,8 @@ class BalWindow:
 
         if total:
             self.waiting_dialog.update(_status_line())
-            verify_will(will, targets, on_answer=on_answer, on_tick=on_tick)
+            verify_will(will, targets, on_answer=on_answer, on_tick=on_tick,
+                        on_busy=on_busy, deadline=deadline)
 
         if time.time() - start < 3:
             time.sleep(3 - (time.time() - start))
@@ -3519,6 +3532,10 @@ class BalWindow:
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
         )
+        # #172: the waiting text has several lines, some long; they wrap at
+        # a normal width instead of stretching the window past the screen.
+        self.waiting_dialog.message_label.setWordWrap(True)
+        self.waiting_dialog.message_label.setMinimumWidth(480)
         self.waiting_dialog.exe()
 
     def update_willexecutor_list_widget(self, parent, willexecutors):
