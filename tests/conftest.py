@@ -38,3 +38,15 @@ def regtest_net():
     network back after the test.
     """
     constants.net = constants.BitcoinRegtest
+
+
+@pytest.fixture
+def yes_to_basic(monkeypatch):
+    """Answer Yes to "Go back to BASIC mode?" (#174) without showing it.
+
+    For the tests written before the question that leave ADVANCED and check
+    what follows; ``tests/test_basic_mode_confirm.py`` tests the question.
+    """
+    from bal.gui.qt import common
+
+    monkeypatch.setattr(common, "confirm_basic_mode", lambda parent=None: True)

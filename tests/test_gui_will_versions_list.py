@@ -649,6 +649,7 @@ def _settings_dialog(user_type):
     return plugin, captured[0]
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 @pytest.mark.parametrize("user_type", ["basic", "advanced"])
 def test_settings_without_the_hide_options(user_type):
     """The list's "Show all history" replaces them; the config keys stay
