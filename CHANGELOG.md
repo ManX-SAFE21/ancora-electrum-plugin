@@ -11709,3 +11709,83 @@ clean; a second try the same. Seen: a message stayed on screen only
 half a second (which one is not in the log; not changed here).
 
 **Outcome:** DONE.
+
+## 177. No more "txid is none" in the log when a will with more delivery dates is built
+
+**Date:** 2026-10-21
+
+**Problem (the owner's Electrum logs, 20 and 21 October 2026):** every
+build of a will with more delivery dates wrote, for each later delivery,
+five ERROR lines ending with "txid is none" (360 lines in the session of
+21 October 17:42 UTC, from 20 October 11:55, when the tests of wills with
+more delivery dates began). The will was right: it was signed, sent and
+verified, and the next Check was clean; the lines were noise only.
+- A later delivery spends the change of the delivery before it, which is
+  not signed yet.
+- `Will.normalize_will` completes every item with the wallet and with the
+  will itself (`add_info_from_will`: an input that spends another item's
+  output gets that output's address, value and script), then checks a
+  COPY of each item.
+- The copy (`WillItem(...)`) re-parses the transaction, so that input lost
+  its data again; Electrum cannot compute the txid of an unsigned
+  transaction with such an input, and `normalize_will` logged the item
+  (`##########`, its key, the item, its transaction, "txid is none").
+- It happened twice per build (`Will.update_will` and
+  `engine/build._build_will` both call `normalize_will`): 72 lines for a
+  will of 3 + 9 + 27 items with three will-executors.
+- Not caused by deleting rows in the List: the lines came also for the
+  transactions just built, half a second after they were built.
+
+**What changed:**
+
+- `bal/core/will.py` `Will.normalize_will`: the copies are completed from
+  the will of copies too (`add_info_from_will` on each copy), so their
+  txid is computed and equals their key. A txid that still cannot be
+  computed (an input whose previous output is really missing) gives one
+  WARNING line with the item's key instead of the five ERROR lines.
+  Docstring added.
+- Seen, not changed: `normalize_will` works on its copies, so its branch
+  for an item whose txid differs from its key (`to_add`, `to_delete`)
+  never reaches the caller's will. No effect today (the items are stored
+  under their txid); a separate step if the owner wants it.
+
+**Tests:** new `tests/test_normalize_will_chain.py`, 4 tests (three fake
+will-executors, each with its own fee address; the will with three
+delivery dates of `test_multiverse_chain_rebuild.py`):
+- the first build logs no "txid is none" and no "cannot be computed";
+- a rebuild with the first date 30 days earlier: the same;
+- at each `normalize_will` of a build, every completed copy has the txid
+  of its key, also for the third delivery;
+- the 9 second deliveries whose first delivery is removed: one WARNING
+  line each, no ERROR line.
+Mutation check: 4 of 4 deliberate faults caught (copies not completed,
+the five ERROR lines back, ERROR instead of WARNING, no line at all).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_normalize_will_chain.py` and `tests/test_multiverse_chain_rebuild.py`:
+19 passed. The 74 test files near the change: 1743 passed (20 minutes).
+Whole `tests/` directory, normal order: 2843 passed (30 minutes). Golden
+files: none changed. Scenario harness: log identical to the #176 log
+(135 lines). Test ZIP `test-zips/ancora_0.8.0-TEST-177-normalize-txid.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-21, 21:06 UTC), read in his Electrum log:** a
+will with three delivery dates and five will-executors built, signed,
+sent and verified: no "txid is none" line and no `##########` block (72
+lines per build before). 24 WARNING lines "cannot be computed" remain,
+one per item: old later deliveries of a version built that morning whose
+first delivery is no longer in the will (orphans, maybe left by deleting
+rows in the List; the List does not log its deletions). They were hidden
+in the noise before; they are the open point D (orphan descendants), not
+changed here.
+
+Seen in the same test, not changed here (a separate step):
+`we.divinaly.support` got its copies but answers "503 Service Temporarily
+Unavailable" to every verification. After "Exclude" (the will-executor is
+deselected, the copies it got are kept, #93/#137) and after the owner
+deleted its 2031 transaction in the List, each Check verifies again one
+copy of it still in the will (`b3f3432c...`, probably a later delivery);
+nothing is sent again. The Exclude question says it "did not receive your
+will", which does not fit a will-executor that got its copies.
+
+**Outcome:** DONE.
