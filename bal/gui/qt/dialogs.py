@@ -672,6 +672,48 @@ class BalWizardLocktimeAndFeeWidget(BalWizardWidget):
         return widget
 
 
+#: #172: how the Check's window draws each kind of check_wait_lines line:
+#: the count in bold, the explanation in grey, a busy will-executor in the
+#: orange of the warnings (BuildReportView._RESULT_STYLE "warn").
+_WAIT_LINE_STYLE = {
+    "count": "<b>{}</b>",
+    "note": '<span style="color:#666666;">{}</span>',
+    "busy": '<span style="color:#b26a00;">{}</span>',
+}
+
+
+def check_wait_lines(answered, total, elapsed, deadline, busy, now):
+    """The lines that show a Check while it waits (#172), plain text.
+
+    Owner: the wait must be clearly visible and explained, so nobody
+    worries or thinks the plugin is stuck. ``[(kind, text)]``:
+
+    * ``"count"``, always: how many copies have an answer out of *total*,
+      the seconds passed and the most it can last (*deadline*);
+    * ``"note"``, when the *deadline* is above the usual 20 s (many
+      transactions): why it takes longer;
+    * ``"busy"``, one per will-executor that answered 429 and waits:
+      *busy* is ``{url: time of the new try}``, shown while that time is
+      after *now*.
+
+    The Check's window colours them, the right click "check" shows them as
+    they are. A module function, not a method of BalBuildWillDialog: the
+    window uses it too (and some tests replace that class in the window).
+    """
+    lines = [("count", _("Copies checked: {} of {} · {} s (at most {} s)").format(
+        answered, total, min(int(elapsed), deadline), deadline))]
+    if deadline > Willexecutors.CHECK_GLOBAL_DEADLINE:
+        lines.append(("note", _(
+            "Many transactions: the will-executors are asked a few at a "
+            "time, so as not to overload them."
+        )))
+    for url, until in sorted(busy.items()):
+        left = int(until - now + 0.999)
+        if left > 0:
+            lines.append(("busy", _("{} is busy: new try in {} s.").format(
+                urlparse(url).hostname or url, left)))
+    return lines
+
 
 class BalWaitingDialog(BalDialog):
     updatemessage = pyqtSignal([str], arguments=["message"])
@@ -1652,8 +1694,47 @@ class BalBuildWillDialog(BalDialog):
                     )
                 )
 
+            # #172: the checks of the "already present" copies, shown like the
+            # Verification step: the copies, the seconds, why, who is busy.
+            # Before, the window stood still on "0 s / 20 s" for minutes.
+            checks = {"total": 0, "answered": 0, "deadline": 0, "start": 0.0}
+            busy = {}  # url -> time of its new try after a 429
+
+            def _checks_progress():
+                """The step note and the sentence while the copies are checked."""
+                if self._stopping or not checks["total"]:
+                    return
+                now = time.time()
+                elapsed = min(int(now - checks["start"]), checks["deadline"])
+                report = self._report()
+                report.set_step("send", "run", "{}/{} · {} s / {} s".format(
+                    checks["answered"], checks["total"], elapsed,
+                    checks["deadline"]))
+                sentence = html.escape(
+                    _("Checking the copies the will-executors already had…"))
+                for kind, line in check_wait_lines(
+                        checks["answered"], checks["total"],
+                        now - checks["start"], checks["deadline"], busy, now):
+                    sentence += "<br>" + _WAIT_LINE_STYLE[kind].format(
+                        html.escape(line))
+                report.set_result("run", sentence)
+                self.updatemessage.emit()
+
+            def on_checks_begin(count, check_deadline):
+                """The copies to check, and the most it can last."""
+                checks.update(total=count, deadline=check_deadline,
+                              start=time.time())
+                _checks_progress()
+
+            def on_busy(url, seconds):
+                """A will-executor answered 429: its new try, shown."""
+                busy[url] = time.time() + seconds
+                _checks_progress()
+
             def on_check_done(url, wid, res):
                 """Its answer: the report line and the row, in colour."""
+                checks["answered"] += 1
+                _checks_progress()
                 checked = self.bal_window.willitems[wid].get_status("CHECKED")
                 if res is Willexecutors.NO_ANSWER:
                     # #147: it has the will, it did not answer the check.
@@ -1718,6 +1799,9 @@ class BalBuildWillDialog(BalDialog):
                 should_stop=lambda: self._stopping,
                 on_check_start=on_check_start_first,
                 on_check_done=on_check_done,
+                on_checks_begin=on_checks_begin,
+                on_check_tick=_checks_progress,
+                on_busy=on_busy,
             )
             if not summary_done["done"]:
                 # Final summary line with the total elapsed time.
@@ -1776,7 +1860,10 @@ class BalBuildWillDialog(BalDialog):
         # #147: urls that did not answer in time for an item (still sent).
         unanswered = set()
         total = len(left)
-        deadline = Willexecutors.CHECK_GLOBAL_DEADLINE
+        # #172: the deadline grows with the transactions (at most 2 minutes);
+        # the same value is shown and given to the engine.
+        deadline = Willexecutors.check_deadline(targets)
+        busy = {}       # url -> time of its new try after a 429 (#172)
         report = self._report()
         start = time.time()
 
@@ -1801,6 +1888,14 @@ class BalBuildWillDialog(BalDialog):
                 sentence += " " + html.escape(
                     _("waiting for: {}").format(", ".join(hosts[:3]))
                 )
+            # #172 (owner): the copies, the seconds, why it is longer and who
+            # is busy, each on its own line, so the wait reads clearly.
+            answered = len(items) - sum(len(wids) for wids in left.values())
+            now = time.time()
+            for kind, line in check_wait_lines(
+                    answered, len(items), now - start, deadline, busy, now):
+                sentence += "<br>" + _WAIT_LINE_STYLE[kind].format(
+                    html.escape(line))
             report.set_result("run", sentence)
             self.updatemessage.emit()
 
@@ -1808,7 +1903,8 @@ class BalBuildWillDialog(BalDialog):
             """Show one answer, already recorded by the engine, live.
 
             #147: no answer in time (``NO_ANSWER``, after the 15 s of the
-            request or the 20 s of the whole step) leaves the item sent, and
+            request, a will-executor still busy after its new tries, or the
+            deadline of the whole step, #172) leaves the item sent, and
             the executor reads "received, no answer to the check", not "not
             received".
             """
@@ -1845,13 +1941,20 @@ class BalBuildWillDialog(BalDialog):
             if not self._stopping:
                 _progress()
 
+        def on_busy(url, seconds):
+            """A will-executor answered 429: its new try, shown (#172)."""
+            busy[url] = time.time() + seconds
+            if not self._stopping:
+                _progress()
+
         self.msg_set_verifying()
         for url in left:
             report.set_executor(url, "verifying")
         _progress()
         verify_will(
             self.bal_window.willitems, targets,
-            on_answer=_answered, on_tick=on_tick,
+            on_answer=_answered, on_tick=on_tick, on_busy=on_busy,
+            deadline=deadline,
         )
         # The final word under the step is counted over every will-executor
         # of the will in _finish_report.

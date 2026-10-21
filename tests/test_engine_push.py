@@ -212,9 +212,8 @@ def test_already_present_check_error_goes_on():
     items = _items()
     order = []
 
-    def check(wid, url):
+    def check(wid, url, **kw):
         """we0's check raises; the others answer."""
-        order.append(url)
         if url == WE0:
             raise ConnectionError("down")
         return {"tx": "raw"}
@@ -232,7 +231,12 @@ def test_already_present_check_error_goes_on():
     assert items["T" + WE0[-6]].check_answers == [None]
     assert items["T" + WE1[-6]].check_answers == [{"tx": "raw"}]
     assert items["T" + WE2[-6]].check_answers == [{"tx": "raw"}]
-    assert order[:3] == [("start", WE0), WE0, ("done", WE0, None)]
+    # #172: every copy is announced first, then the answers (in any order:
+    # the copies are asked in parallel).
+    assert order[:3] == [("start", WE0), ("start", WE1), ("start", WE2)]
+    assert sorted(order[3:]) == sorted([
+        ("done", WE0, None), ("done", WE1, {"tx": "raw"}),
+        ("done", WE2, {"tx": "raw"})])
     assert len(result.checks) == 3
 
 

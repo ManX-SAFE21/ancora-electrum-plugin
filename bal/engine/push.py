@@ -133,7 +133,8 @@ def _mark(willitems, record, status):
 
 
 def push_will(willitems, selected, *, on_result=None, on_tick=None,
-              should_stop=None, on_check_start=None, on_check_done=None):
+              should_stop=None, on_check_start=None, on_check_done=None,
+              on_checks_begin=None, on_check_tick=None, on_busy=None):
     """Send the will to the *selected* will-executors and record the outcome.
 
     *selected* comes from :func:`select_push`. The will-executors are
@@ -152,11 +153,18 @@ def push_will(willitems, selected, *, on_result=None, on_tick=None,
     is called about once a second while waiting (the caller's counter).
 
     Then each transaction of an "already present" will-executor is checked
-    (``Willexecutors.check_transaction``, one by one) and the answer stored
-    with ``set_check_willexecutor``. An error is logged and stored as
-    ``None`` (not verified), and the next check goes on (D3).
-    ``on_check_start(url, txid)`` / ``on_check_done(url, txid, answer)``
-    surround each check; ``should_stop()`` True stops before the next one.
+    and the answer stored with ``set_check_willexecutor``. #172: with the
+    Check's verification (``Willexecutors.check_transactions_parallel``: a
+    few at a time per will-executor, a new try after a 429, the deadline of
+    ``Willexecutors.check_deadline``); no answer in time is ``NO_ANSWER``.
+    An error is logged and stored as ``None`` (not verified), and the other
+    checks go on (D3). ``on_checks_begin(count, deadline)`` comes first
+    (the window shows the count and the seconds), then
+    ``on_check_start(url, txid)`` for every copy; ``on_check_done(url,
+    txid, answer)`` for each answer, ``on_check_tick()`` about once a
+    second and ``on_busy(url, seconds)`` after a 429, all from the thread
+    that runs this function. ``should_stop()`` True stops the waiting (the
+    copies not answered yet stay as they were).
 
     Nothing is saved here: each caller saves as before. Returns a
     :class:`PushResult`.
@@ -198,21 +206,45 @@ def push_will(willitems, selected, *, on_result=None, on_tick=None,
         if url not in result.outcomes:
             on_timeout(url, record)
 
-    for url in already:
-        for wid in selected[url].get("txsids", []):
-            if should_stop is not None and should_stop():
-                result.stopped = True
-                return result
-            item = willitems[wid]
-            if on_check_start is not None:
-                on_check_start(url, wid)
-            try:
-                answer = Willexecutors.check_transaction(wid, item.we["url"])
-            except Exception as e:
-                _logger.error(f"check after already-present failed for {wid}: {e}")
-                answer = None
-            item.set_check_willexecutor(answer)
-            result.checks[wid] = answer
-            if on_check_done is not None:
-                on_check_done(url, wid, answer)
+    # #172 (owner's test 2026-10-21): these checks went one by one, 16 s
+    # each for a will-executor that does not answer them; 31 copies of a will
+    # in several deliveries kept the window still for 8 minutes. Now they go
+    # through the Check's own verification: a few at a time per
+    # will-executor, a new try after a 429, a deadline that grows with the
+    # copies (at most 2 minutes); not answered in time: NO_ANSWER (#147).
+    targets = [(wid, url) for url in already
+               for wid in selected[url].get("txsids", [])]
+    if not targets:
+        return result
+    if should_stop is not None and should_stop():
+        result.stopped = True
+        return result
+    deadline = Willexecutors.check_deadline(targets)
+    if on_checks_begin is not None:
+        on_checks_begin(len(targets), deadline)
+    if on_check_start is not None:
+        for wid, url in targets:
+            on_check_start(url, wid)
+
+    def record(wid, url, answer):
+        """Store one answer on its copy and tell the caller."""
+        willitems[wid].set_check_willexecutor(answer)
+        result.checks[wid] = answer
+        if on_check_done is not None:
+            on_check_done(url, wid, answer)
+
+    def on_answer(wid, url, answer, exc):
+        """An answer, or an error (stored as None: not verified, D3)."""
+        if exc is not None:
+            _logger.error(f"check after already-present failed for {wid}: {exc}")
+            answer = None
+        record(wid, url, answer)
+
+    Willexecutors.check_transactions_parallel(
+        targets, on_each=on_answer, deadline=deadline,
+        on_timeout=lambda wid, url: record(wid, url, Willexecutors.NO_ANSWER),
+        on_tick=on_check_tick, on_busy=on_busy, should_stop=should_stop,
+    )
+    if should_stop is not None and should_stop() and len(result.checks) < len(targets):
+        result.stopped = True
     return result

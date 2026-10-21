@@ -71,6 +71,27 @@ CHECK_RETRY_SLEEP = 1
 # Derived from the single shared NETWORK_DEADLINE constant above.
 CHECK_GLOBAL_DEADLINE = NETWORK_DEADLINE
 
+# #172: the Check of a will in several deliveries asks one searchtx per
+# transaction (21 per will-executor with 4 will-executors and 3 deliveries).
+# Sent all at once, the servers answered 429 Too Many Requests. So: at most
+# CHECK_PER_SERVER requests at a time to one will-executor (owner: 3), the
+# will-executors in parallel, at most CHECK_MAX_WORKERS requests in all.
+CHECK_PER_SERVER = 3
+CHECK_MAX_WORKERS = 16
+# A 429 means "busy, ask later", not "I do not hold it": a pause (the
+# server's Retry-After, else 2 s, 4 s, 8 s, never more than
+# CHECK_BUSY_MAX_SLEEP) and a new try, at most CHECK_BUSY_RETRIES times;
+# still busy: NO_ANSWER (the copy stays sent, #147), never CHECK_FAIL.
+CHECK_BUSY_RETRIES = 3
+CHECK_BUSY_SLEEP = 2
+CHECK_BUSY_MAX_SLEEP = 10
+# The deadline of a Check grows with the requests of the busiest
+# will-executor: CHECK_SECONDS_PER_ROUND for each round of CHECK_PER_SERVER
+# requests, never less than CHECK_GLOBAL_DEADLINE, never more than
+# CHECK_MAX_DEADLINE (owner: 2 minutes). See Willexecutors.check_deadline.
+CHECK_SECONDS_PER_ROUND = 5
+CHECK_MAX_DEADLINE = 120
+
 _logger = get_logger(__name__)
 
 
@@ -165,6 +186,13 @@ class Willexecutors:
     NO_ANSWER = NO_ANSWER
     CHECK_RETRY_SLEEP = CHECK_RETRY_SLEEP
     CHECK_GLOBAL_DEADLINE = CHECK_GLOBAL_DEADLINE
+    CHECK_PER_SERVER = CHECK_PER_SERVER
+    CHECK_MAX_WORKERS = CHECK_MAX_WORKERS
+    CHECK_BUSY_RETRIES = CHECK_BUSY_RETRIES
+    CHECK_BUSY_SLEEP = CHECK_BUSY_SLEEP
+    CHECK_BUSY_MAX_SLEEP = CHECK_BUSY_MAX_SLEEP
+    CHECK_SECONDS_PER_ROUND = CHECK_SECONDS_PER_ROUND
+    CHECK_MAX_DEADLINE = CHECK_MAX_DEADLINE
 
     @staticmethod
     def _stored_or_copy_of_default(bal_plugin):
@@ -845,9 +873,43 @@ class Willexecutors:
         return results
 
     @staticmethod
-    def check_transactions_parallel(items, *, on_each=None, max_workers=8,
+    def check_deadline(items, *, per_server=CHECK_PER_SERVER,
+                       max_workers=CHECK_MAX_WORKERS):
+        """The global deadline (seconds) of a Check of ``items`` (#172).
+
+        ``items``: the ``(wid, url)`` pairs to ask. CHECK_SECONDS_PER_ROUND
+        for each round of requests; the rounds are the larger of the two
+        limits of :meth:`check_transactions_parallel`: the will-executor
+        with the most requests (asked ``per_server`` at a time) and all the
+        requests (``max_workers`` at a time; owner's question: 10
+        will-executors with 30 transactions each need 19 rounds, not 10).
+        Never less than CHECK_GLOBAL_DEADLINE (a small will keeps its 20 s)
+        and never more than CHECK_MAX_DEADLINE (owner: 2 minutes). The 84
+        transactions of 4 will-executors and 3 deliveries: 21 for one
+        will-executor, 7 rounds, 35 s.
+        """
+        counts = {}
+        for _wid, url in items:
+            if url:
+                counts[url] = counts.get(url, 0) + 1
+        if not counts:
+            return CHECK_GLOBAL_DEADLINE
+        rounds = max(
+            -(-max(counts.values()) // max(1, per_server)),
+            -(-sum(counts.values()) // max(1, max_workers)),
+        )
+        return max(
+            CHECK_GLOBAL_DEADLINE,
+            min(CHECK_MAX_DEADLINE, rounds * CHECK_SECONDS_PER_ROUND),
+        )
+
+    @staticmethod
+    def check_transactions_parallel(items, *, on_each=None,
+                                    max_workers=CHECK_MAX_WORKERS,
+                                    per_server=CHECK_PER_SERVER,
                                     deadline=CHECK_GLOBAL_DEADLINE,
                                     on_timeout=None, on_tick=None,
+                                    on_busy=None, should_stop=None,
                                     tick_interval=1.0):
         """Check (searchtx) several will-executors concurrently.
 
@@ -856,27 +918,50 @@ class Willexecutors:
         transaction.  ``items`` is an iterable of ``(wid, url)`` pairs (one per
         will-item that has a will-executor).
 
-        Each server is contacted in parallel with a short fail-fast retry
-        (:meth:`check_transaction`), results are reported via
-        ``on_each(wid, url, result_or_None, exc)`` as they arrive, ``on_tick()``
-        is called periodically from the calling thread to refresh a counter, and
-        a global ``deadline`` guarantees the dialog never freezes behind one
-        unresponsive server (pending servers are reported via
-        ``on_timeout(wid, url)``).
+        #172: at most ``per_server`` requests at a time go to one
+        will-executor (the next one leaves when one answers), the
+        will-executors are asked in parallel, at most ``max_workers``
+        requests in all. Before, every request left at once and the servers
+        answered 429 Too Many Requests.
+
+        Each request is :meth:`check_transaction` (one attempt, a pause and
+        a new try after a 429). Results are reported via
+        ``on_each(wid, url, result_or_None, exc)`` as they arrive,
+        ``on_busy(url, seconds)`` when a will-executor answered 429 and is
+        asked again in ``seconds``, ``on_tick()`` periodically; all three
+        from the calling thread. A global ``deadline`` guarantees the
+        dialog never freezes behind one unresponsive server: the requests
+        still running and the ones not sent yet are reported via
+        ``on_timeout(wid, url)``. ``should_stop()`` True (the owner closed
+        the window) stops the waiting at the next tick; then nothing more is
+        reported (the copies not answered stay as they were).
 
         Returns ``{wid: (result_or_None, exception_or_None)}`` for the servers
         that answered in time.
         """
+        import queue
+        from collections import deque
         from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
         targets = [(wid, url) for wid, url in items if url]
         results = {}
         if not targets:
             return results
+        per_server = max(1, per_server)
+        waiting = {}  # url -> the wids not asked yet, in the given order
+        for wid, url in targets:
+            waiting.setdefault(url, deque()).append(wid)
+        running = {url: 0 for url in waiting}
+        # The workers only put the 429 notices here; the calling thread
+        # passes them on (callbacks never run on a worker thread).
+        busy_notices = queue.SimpleQueue()
+
+        def _busy(url, seconds):
+            busy_notices.put((url, seconds))
 
         def _check_one(wid, url):
             try:
-                res = Willexecutors.check_transaction(wid, url)
+                res = Willexecutors.check_transaction(wid, url, on_busy=_busy)
                 return wid, url, res, None
             except Exception as e:
                 return wid, url, None, e
@@ -888,26 +973,65 @@ class Willexecutors:
                 except Exception as cb_err:
                     _logger.error(f"check on_tick callback error: {cb_err}")
 
-        workers = max(1, min(max_workers, len(targets)))
+        def _pass_busy():
+            while True:
+                try:
+                    url, seconds = busy_notices.get_nowait()
+                except queue.Empty:
+                    return
+                if on_busy is not None:
+                    try:
+                        on_busy(url, seconds)
+                    except Exception as cb_err:
+                        _logger.error(f"check on_busy callback error: {cb_err}")
+
+        workers = max(1, min(
+            max_workers, sum(min(per_server, len(w)) for w in waiting.values())
+        ))
         # Manual pool (no ``with``): we must not block on a hung worker when the
         # global deadline elapses (see push_transactions_parallel for details).
         pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="bal-check")
-        fut_to_target = {pool.submit(_check_one, wid, url): (wid, url)
-                         for wid, url in targets}
+        fut_to_target = {}
+        pending = set()
+
+        def _send_more():
+            """Send the next requests, one will-executor after the other.
+
+            WHY in turn: a will-executor with many transactions must not take
+            every worker while the others wait.
+            """
+            sent = True
+            while sent:
+                sent = False
+                for url, wids in waiting.items():
+                    if wids and running[url] < per_server:
+                        wid = wids.popleft()
+                        fut = pool.submit(_check_one, wid, url)
+                        fut_to_target[fut] = (wid, url)
+                        pending.add(fut)
+                        running[url] += 1
+                        sent = True
+
         start = time.time()
+        stopped = False
         try:
-            pending = set(fut_to_target.keys())
+            _send_more()
             while pending:
                 if deadline is not None and (time.time() - start) >= deadline:
+                    break
+                if should_stop is not None and should_stop():
+                    stopped = True
                     break
                 slice_timeout = tick_interval
                 if deadline is not None:
                     remaining = deadline - (time.time() - start)
                     slice_timeout = max(0.0, min(tick_interval, remaining))
-                done, pending = wait(
+                done, pending_left = wait(
                     pending, timeout=slice_timeout, return_when=FIRST_COMPLETED
                 )
+                pending.intersection_update(pending_left)
                 for fut in done:
+                    running[fut_to_target[fut][1]] -= 1
                     try:
                         wid, url, res, exc = fut.result()
                     except Exception as e:
@@ -921,18 +1045,21 @@ class Willexecutors:
                             on_each(wid, url, res, exc)
                         except Exception as cb_err:
                             _logger.error(f"check on_each callback error: {cb_err}")
+                _send_more()
+                _pass_busy()
                 # Drive the elapsed-time counter from the calling thread.
                 _fire_tick()
-            # Any server still pending here hit the global deadline.
-            if pending:
+            # Any request still running, or not sent, hit the global deadline.
+            late = [fut_to_target[fut] for fut in pending]
+            late += [(wid, url) for url, wids in waiting.items() for wid in wids]
+            if late and not stopped:
                 elapsed = time.time() - start
                 _logger.warning(
                     f"check global deadline ({deadline}s) reached after "
-                    f"{elapsed:.1f}s; {len(pending)} server(s) "
-                    f"did not answer in time"
+                    f"{elapsed:.1f}s; {len(late)} request(s) "
+                    f"did not get an answer in time"
                 )
-                for fut in pending:
-                    wid, url = fut_to_target[fut]
+                for wid, url in late:
                     if wid in results:
                         continue
                     if on_timeout is not None:
@@ -1017,23 +1144,74 @@ class Willexecutors:
             return {}
 
     @staticmethod
+    def busy_pause(error, attempt):
+        """The pause (seconds) before asking again after ``error`` (#172).
+
+        ``None`` when ``error`` is not a 429 Too Many Requests (aiohttp's
+        ``ClientResponseError`` carries ``status`` and ``headers``). For a
+        429: the server's ``Retry-After`` seconds when it gives them, else
+        CHECK_BUSY_SLEEP doubled at each ``attempt`` (0, 1, 2: 2 s, 4 s,
+        8 s); never more than CHECK_BUSY_MAX_SLEEP, so one busy server
+        cannot hold the Check for minutes.
+        """
+        if getattr(error, "status", None) != 429:
+            return None
+        pause = CHECK_BUSY_SLEEP * (2 ** attempt)
+        headers = getattr(error, "headers", None)
+        try:
+            given = headers.get("Retry-After") if headers else None
+            if given is not None:
+                pause = max(0, int(float(given)))
+        except (TypeError, ValueError, AttributeError):
+            pass  # a date or junk: keep our own pause
+        return min(pause, CHECK_BUSY_MAX_SLEEP)
+
+    @staticmethod
     def check_transaction(txid, url, *, timeout=CHECK_TIMEOUT,
                           max_retries=CHECK_MAX_RETRIES,
-                          retry_sleep=CHECK_RETRY_SLEEP):
+                          retry_sleep=CHECK_RETRY_SLEEP,
+                          busy_retries=CHECK_BUSY_RETRIES, on_busy=None):
         """Ask the will-executor at ``url`` for the transaction ``txid``.
 
         Returns its answer (a dict, ``{"tx": ...}`` when it holds it), or
         ``None`` for an answer that is not a dict. #147: when every attempt
         timed out it returns :data:`NO_ANSWER`, so a slow will-executor is
-        not taken for one that does not hold the will. Other errors are
-        raised, as before.
+        not taken for one that does not hold the will.
+
+        #172: a 429 Too Many Requests means the will-executor is busy, not
+        that it lacks the transaction: after a pause (:meth:`busy_pause`,
+        told to ``on_busy(url, seconds)`` first) it is asked again, at most
+        ``busy_retries`` times; still busy, the answer is :data:`NO_ANSWER`
+        (the copy stays sent). Before, the 429 was an error and the copy
+        was marked failed and sent again. Other errors are raised, as before.
         """
         _logger.debug(f"{url}:{txid}")
+        attempt = 0
+        while True:
+            try:
+                w = Willexecutors.send_request(
+                    "post", url + "/searchtx", data=txid.encode("ascii"),
+                    timeout=timeout, max_retries=max_retries,
+                    retry_sleep=retry_sleep,
+                )
+                break
+            except Exception as e:
+                pause = Willexecutors.busy_pause(e, attempt)
+                if pause is None:
+                    _logger.error(f"error contacting {url} for checking txs {e}")
+                    raise e
+                if attempt >= busy_retries:
+                    _logger.info(
+                        f"{url} still busy (429) for {txid}: no answer this time"
+                    )
+                    return NO_ANSWER
+                _logger.info(f"{url} busy (429) for {txid}: new try in {pause} s")
+                if on_busy is not None:
+                    on_busy(url, pause)
+                if pause:
+                    time.sleep(pause)
+                attempt += 1
         try:
-            w = Willexecutors.send_request(
-                "post", url + "/searchtx", data=txid.encode("ascii"),
-                timeout=timeout, max_retries=max_retries, retry_sleep=retry_sleep,
-            )
             if w is None:
                 # send_request gives None only when every attempt timed out.
                 _logger.info(f"no answer in time from {url} for {txid}")
