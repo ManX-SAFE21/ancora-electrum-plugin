@@ -1705,6 +1705,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # will-executors, after the report (a lambda: Qt passes "checked").
         menu.addAction(_("How BAL PROTOCOL works"),
                        lambda: self.bal_window.show_explainer())
+        # #173 (owner): the command trace, the last entry under its own
+        # line, in BASIC and ADVANCED alike (read-only: it cannot do harm).
+        menu.addSeparator()
+        menu.addAction(_("CLI command trace…"),
+                       lambda: self.bal_window.show_trace())
         # Toolbar order (left -> right):
         #   Wizard | Delivery time | Check Alive | fee ... Check | Calendar
         # #161 (owner): the Check ("Verifica/Aggiorna" in Italian) on the

@@ -40,10 +40,11 @@ from datetime import datetime, timedelta, timezone
 from electrum.logging import get_logger
 from electrum.util import MyEncoder
 
-from ..core import checkalive, delivery, will_state
+from ..core import checkalive, delivery, trace, will_state
 from ..core.heirs import Heirs
+from ..core.messages import will_change_message
 from ..core.util import Util, copy_structure
-from ..core.will import NoHeirsException, Will, WillItem
+from ..core.will import NoHeirsException, NotCompleteWillException, Will, WillItem
 from ..core.willexecutors import Willexecutors
 from ..i18n import _
 from . import instalments
@@ -277,7 +278,11 @@ def check_will(host, undo_anticipation=False):
 
     #168: with a table of deliveries, the heirs compared are the rows of
     every delivery (:func:`bal.engine.instalments.effective_heirs`).
+
+    #173: the command trace gets ``bal_will_check`` and its outcome (the
+    reason when the will is not coherent, :func:`_trace_reason`).
     """
+    trace.command("bal_will_check")
     renames = []
     try:
         # #168: with a table the items carry the rows of every delivery
@@ -292,17 +297,38 @@ def check_will(host, undo_anticipation=False):
     host.heir_renames = renames
     host.anticipation_dropped = (
         drop_anticipation_leftover(host) if undo_anticipation else None)
-    return Will.is_will_valid(
-        host.willitems,
-        host.date_to_check,
-        host.will_settings["baltx_fees"],
-        available_utxos(host),
-        # After the leftover above: it may move delivery 1 back.
-        heirs=instalments.effective_heirs(host),
-        willexecutors=host.willexecutors,
-        self_willexecutor=host.no_willexecutor,
-        wallet=host.wallet,
-    )
+    try:
+        valid = Will.is_will_valid(
+            host.willitems,
+            host.date_to_check,
+            host.will_settings["baltx_fees"],
+            available_utxos(host),
+            # After the leftover above: it may move delivery 1 back.
+            heirs=instalments.effective_heirs(host),
+            willexecutors=host.willexecutors,
+            self_willexecutor=host.no_willexecutor,
+            wallet=host.wallet,
+        )
+    except Exception as e:
+        trace.add(trace.WARNING, _("not coherent: {}").format(_trace_reason(e)))
+        raise
+    trace.add(trace.OK, _("the will is coherent"))
+    return valid
+
+
+def _trace_reason(e):
+    """Why :func:`check_will` found the will not coherent, for the trace.
+
+    #173: the sentence of the command line's ``reason``
+    (``will_change_message``) when the will must be prepared again, else
+    the error's own text.
+    """
+    if isinstance(e, NotCompleteWillException):
+        try:
+            return will_change_message(e)
+        except Exception:
+            pass
+    return trace.reason(e)
 
 
 # --------------------------------------------------------------------------- #

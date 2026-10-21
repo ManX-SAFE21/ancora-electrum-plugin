@@ -27,10 +27,12 @@ import time
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.checkalive import resolve_date_to_check
-from ..core.util import Util, copy_structure
+from ..core.util import LOCKTIME_THRESHOLD, Util, copy_structure
 from ..core.will import NoWillExecutorNotPresent, Will, WillItem
 from ..core.willexecutors import Willexecutors
+from ..i18n import _
 from . import context, instalments
 
 _logger = get_logger(__name__)
@@ -70,7 +72,45 @@ def build_will(host, *, with_creation_date):
 
     Returns ``host.willitems`` (the whole live will), or ``{}`` when nothing
     was built. Exceptions are logged and raised again.
+
+    #173: the command trace gets ``bal_will_prepare`` and what was built
+    (:func:`_trace_built`), or the error.
     """
+    trace.command("bal_will_prepare")
+    try:
+        built = _build_will(host, with_creation_date=with_creation_date)
+    except Exception as e:
+        trace.add(trace.ERROR, _("not prepared: {}").format(trace.reason(e)))
+        raise
+    _trace_built(built)
+    return built
+
+
+def _trace_built(built):
+    """Write what :func:`build_will` built in the command trace (#173).
+
+    The valid transactions of the will and its first delivery date (UTC),
+    or that nothing was built. Never raises: a trace line must not stop
+    the build.
+    """
+    try:
+        valid = [w for w in built.values() if w.get_status("VALID")]
+        if not valid:
+            trace.add(trace.WARNING, _("no transaction built"))
+            return
+        locktime = Will.get_min_locktime(built)
+        if locktime and locktime >= LOCKTIME_THRESHOLD:
+            when = context.utc_day_text(locktime)
+        else:
+            when = _("block {}").format(locktime)
+        trace.add(trace.OK, _("{count} transactions in the will, delivery {date}").format(
+            count=len(valid), date=when))
+    except Exception as e:
+        _logger.debug(f"trace of the build failed: {e!r}")
+
+
+def _build_will(host, *, with_creation_date):
+    """The steps of :func:`build_will` (see its docstring)."""
     _logger.debug("building will...")
     Will.remove_stale_wallet_history(
         host.wallet, host.bal_plugin.HISTORY_LABEL.get()

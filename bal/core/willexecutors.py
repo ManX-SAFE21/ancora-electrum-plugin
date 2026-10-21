@@ -27,6 +27,7 @@ from electrum.logging import get_logger
 from electrum.network import Network
 
 from ..i18n import _
+from . import trace
 from .plugin_base import BalPlugin, get_version
 
 # Per-request timeout (seconds) for interactive operations (ping / info /
@@ -155,6 +156,75 @@ def is_tor_active():
     except Exception:
         return False
 
+
+
+def _seconds(value):
+    """*value* seconds with one decimal: ``"0.8"`` (#173)."""
+    return "{:.1f}".format(value)
+
+
+def _trace_is_detail(url):
+    """True when the requests to *url* are a "Full" detail of the trace.
+
+    #173: the copies' checks (``searchtx``) are many, one per transaction:
+    the window shows them only at the "Full" level; the sending
+    (``pushtxs``), the will-executors' information and the list always.
+    """
+    return "/searchtx" in str(url)
+
+
+def _trace_request(method, url, data, full):
+    """Write one request to a will-executor in the command trace (#173).
+
+    What is sent is never shown: for ``pushtxs`` only how many transactions
+    (one per line), for ``searchtx`` the shortened txid.
+    """
+    what = ""
+    try:
+        if "/pushtxs" in url and data is not None:
+            text = data.decode("ascii") if isinstance(data, bytes) else str(data)
+            count = len([line for line in text.splitlines() if line.strip()])
+            what = "  " + _("{} transactions").format(count)
+        elif "/searchtx" in url and data is not None:
+            text = data.decode("ascii") if isinstance(data, bytes) else str(data)
+            what = "  " + trace.short_txid(text.strip())
+    except Exception:
+        what = ""
+    trace.add(trace.REQUEST, "{} {}{}".format(
+        str(method).upper(), trace.short_url(url), what), full=full)
+
+
+def _trace_answer(response, seconds, full):
+    """Write the answer of a will-executor in the command trace (#173).
+
+    A short text answer ("thx", "already present") is shown as it is; a
+    transaction is never shown, only that the answer has one.
+    """
+    if response is None:
+        text = _("empty answer")
+    elif isinstance(response, str) and len(response) <= 40 and response.strip():
+        text = response.strip()
+    elif isinstance(response, dict) and response.get("tx"):
+        text = _("answer with a transaction")
+    else:
+        text = _("answer received")
+    trace.add(trace.ANSWER, "{}  {} s".format(text, _seconds(seconds)), full=full)
+
+
+def _trace_error(error, seconds, full):
+    """Write a failed request in the command trace (#173).
+
+    An HTTP error shows its code (429: busy); any other error its text.
+    """
+    status = getattr(error, "status", None)
+    if isinstance(status, int):
+        if status == 429:
+            text = _("busy (429)")
+        else:
+            text = _("error {}").format(status)
+    else:
+        text = str(error) or type(error).__name__
+    trace.add(trace.ERROR, "{}  {} s".format(text, _seconds(seconds)), full=full)
 
 
 class Willexecutors:
@@ -495,6 +565,11 @@ class Willexecutors:
           should pass ``max_retries=0`` so a dead server fails fast (one short
           timeout) instead of blocking the UI for minutes.  See
           :meth:`ping_servers_parallel`.
+
+        #173: every attempt and its answer (or error) go to the command
+        trace, with the seconds (:func:`_trace_request`,
+        :func:`_trace_answer`, :func:`_trace_error`); never the
+        transactions themselves.
         """
         network = Network.get_instance()
         if not network:
@@ -506,7 +581,10 @@ class Willexecutors:
         if not handle_response:
             handle_response = Willexecutors.handle_response
         attempts = max_retries + 1
+        full = _trace_is_detail(url)
         for attempt in range(attempts):
+            _trace_request(method, url, data, full)
+            started = time.monotonic()
             try:
                 if method == "get":
                     response = Network.send_http_on_proxy(
@@ -529,18 +607,26 @@ class Willexecutors:
                 else:
                     raise Exception(f"unexpected {method=!r}")
                 _logger.debug(f"--> {response}")
+                _trace_answer(response, time.monotonic() - started, full)
                 return response
             except TimeoutError:
+                seconds = time.monotonic() - started
                 if attempt < max_retries:
                     _logger.debug(
                         f"timeout({attempt}) error: "
                         f"retry in {retry_sleep} sec..."
                     )
+                    trace.add(trace.WARNING, _(
+                        "no answer in {seconds} s, new try in {pause} s"
+                    ).format(seconds=_seconds(seconds), pause=retry_sleep), full=True)
                     if retry_sleep:
                         time.sleep(retry_sleep)
                 else:
                     _logger.debug(f"Too many timeouts: {attempt}")
+                    trace.add(trace.ERROR, _("no answer in {} s").format(
+                        _seconds(seconds)), full=full)
             except Exception as e:
+                _trace_error(e, time.monotonic() - started, full)
                 raise e
         return None
 
@@ -697,12 +783,18 @@ class Willexecutors:
 
         Returns:
             The same ``willexecutors`` mapping, updated in place.
+
+        #173: the command trace gets ``bal_willexecutors_ping`` with how
+        many will-executors, then how many answered.
         """
         from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
         items = list(willexecutors.items())
         if not items:
             return willexecutors
+        trace.command("bal_willexecutors_ping",
+                      _("{} will-executors").format(len(items)))
+        answered = []
 
         def _ping_one(url, we):
             we = Willexecutors.get_info_task(
@@ -736,6 +828,8 @@ class Willexecutors:
                         _logger.error(f"ping_servers_parallel worker error: {e}")
                         continue
                     willexecutors[url] = we
+                    if ok:
+                        answered.append(url)
                     if on_each is not None:
                         try:
                             on_each(url, we, ok)
@@ -748,6 +842,9 @@ class Willexecutors:
                 pool.shutdown(wait=False, cancel_futures=True)
             except TypeError:
                 pool.shutdown(wait=False)
+        trace.add(trace.OK if len(answered) == len(items) else trace.WARNING,
+                  _("{answered} of {total} will-executors answered").format(
+                      answered=len(answered), total=len(items)))
         return willexecutors
 
     @staticmethod
@@ -1204,8 +1301,14 @@ class Willexecutors:
                     _logger.info(
                         f"{url} still busy (429) for {txid}: no answer this time"
                     )
+                    trace.add(trace.WARNING, _(
+                        "{url} still busy (429): no answer this time"
+                    ).format(url=trace.short_url(url)), full=True)
                     return NO_ANSWER
                 _logger.info(f"{url} busy (429) for {txid}: new try in {pause} s")
+                trace.add(trace.WARNING, _(
+                    "{url} busy (429), new try in {pause} s"
+                ).format(url=trace.short_url(url), pause=pause), full=True)
                 if on_busy is not None:
                     on_busy(url, pause)
                 if pause:

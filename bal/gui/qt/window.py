@@ -151,6 +151,7 @@ from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
 from .lists import HeirListWidget, PreviewList
 from .offline_sign import open_sign_offline
+from .trace_window import show_trace
 from .widgets import (
     MESSAGE_WARNING_STYLE,
     LockTimeWidget,
@@ -950,6 +951,12 @@ class BalWindow:
         explanation of the will-executors, opened by the Will tab's Tools
         menu and the "i" buttons next to "will-executor". Returns it."""
         return show_explainer(self, parent)
+
+    def show_trace(self, parent=None):
+        """The window "CLI command trace…" (#173): the plugin's steps
+        written as ``bal_*`` commands, read-only, opened by the Will tab's
+        Tools menu in BASIC and ADVANCED. Returns it."""
+        return show_trace(self, parent)
 
     def _after_executors_window(self):
         """The will-executor window closed (#134): the summary box and the

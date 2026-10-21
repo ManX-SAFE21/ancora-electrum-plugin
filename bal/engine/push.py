@@ -39,7 +39,9 @@ from dataclasses import dataclass, field
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.willexecutors import Willexecutors
+from ..i18n import _
 
 __all__ = [
     "ALREADY_PRESENT",
@@ -126,6 +128,27 @@ class PushResult:
         return any(o in (FAILED, TIMEOUT) for o in self.outcomes.values())
 
 
+def _traced(result):
+    """Write the outcomes of :func:`push_will` in the command trace; return
+    *result* (#173). Never raises: a trace line must not stop the sending."""
+    try:
+        counts = {kind: 0 for kind in (RECEIVED, ALREADY_PRESENT, FAILED, TIMEOUT)}
+        for outcome in result.outcomes.values():
+            counts[outcome] = counts.get(outcome, 0) + 1
+        text = _(
+            "received {received}, already present {already}, refused {failed}, "
+            "no answer {timeout}"
+        ).format(received=counts[RECEIVED], already=counts[ALREADY_PRESENT],
+                 failed=counts[FAILED], timeout=counts[TIMEOUT])
+        trace.add(trace.WARNING if result.any_failed else trace.OK, text)
+        for url, error in result.errors.items():
+            if error:
+                trace.add(trace.ERROR, "{}: {}".format(trace.short_url(url), error))
+    except Exception as e:
+        _logger.debug(f"trace of the sending failed: {e!r}")
+    return result
+
+
 def _mark(willitems, record, status):
     """Set *status* on every transaction of the will-executor *record*."""
     for wid in record.get("txsids", []):
@@ -168,7 +191,11 @@ def push_will(willitems, selected, *, on_result=None, on_tick=None,
 
     Nothing is saved here: each caller saves as before. Returns a
     :class:`PushResult`.
+
+    #173: the command trace gets ``bal_will_broadcast`` with how many
+    will-executors, then the count of each outcome (:func:`_traced`).
     """
+    trace.command("bal_will_broadcast", _("{} will-executors").format(len(selected)))
     result = PushResult()
     already = []
 
@@ -215,10 +242,10 @@ def push_will(willitems, selected, *, on_result=None, on_tick=None,
     targets = [(wid, url) for url in already
                for wid in selected[url].get("txsids", [])]
     if not targets:
-        return result
+        return _traced(result)
     if should_stop is not None and should_stop():
         result.stopped = True
-        return result
+        return _traced(result)
     deadline = Willexecutors.check_deadline(targets)
     if on_checks_begin is not None:
         on_checks_begin(len(targets), deadline)
@@ -247,4 +274,4 @@ def push_will(willitems, selected, *, on_result=None, on_tick=None,
     )
     if should_stop is not None and should_stop() and len(result.checks) < len(targets):
         result.stopped = True
-    return result
+    return _traced(result)
