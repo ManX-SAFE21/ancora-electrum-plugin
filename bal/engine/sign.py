@@ -47,7 +47,9 @@ No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.will import Will
+from ..i18n import _
 from .merge import merge_summary
 
 __all__ = [
@@ -216,9 +218,15 @@ def sign_will(wallet, willitems, password, txids=None, *, selected=None,
     not complete yet (``last_signed``: the txid signed just before, or
     ``None``). Nothing is saved here: each caller saves.
     Returns a :class:`SignResult`.
+
+    #173: the command trace gets ``bal_will_sign``, then how many were
+    signed now, or which one failed and why (the error's text: never the
+    password).
     """
     result = SignResult()
     targets = sign_targets(willitems, txids, selected)
+    # Not counted here: *targets* may be any iterable (read once below).
+    trace.command("bal_will_sign")
     last = None
     for txid in targets:
         if on_progress is not None and not willitems[txid].get_status("COMPLETE"):
@@ -237,4 +245,9 @@ def sign_will(wallet, willitems, password, txids=None, *, selected=None,
         Will.check_signatures({t: willitems[t] for t in targets}, wallet)
     except Exception as e:
         _logger.error(f"check_signatures after signing failed: {e}")
+    if result.error is not None:
+        trace.add(trace.ERROR, _("{txid} not signed: {reason}").format(
+            txid=trace.short_txid(result.failed), reason=trace.reason(result.error)))
+    else:
+        trace.add(trace.OK, _("{} signed now").format(len(result.signed)))
     return result

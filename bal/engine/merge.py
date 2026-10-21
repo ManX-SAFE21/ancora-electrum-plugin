@@ -31,9 +31,11 @@ No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.checkalive import resolve_date_to_check
 from ..core.util import Util
 from ..core.will import Will
+from ..i18n import _
 
 __all__ = [
     "MergeSummary",
@@ -146,7 +148,11 @@ def merge_will(host, imported):
     after the merge and again after the check. Returns
     ``(ids, error)``: the merged ids and the error of the check, if any
     (the merge itself is kept).
+
+    #173: the command trace gets ``bal_will_import_merge`` with how many
+    copies, then the outcome.
     """
+    trace.command("bal_will_import_merge", _("{} copies").format(_count(imported)))
     if getattr(host, "date_to_check", None) is None:
         host.date_to_check = resolve_date_to_check(
             host.bal_plugin.is_basic_mode(), host.will_settings
@@ -166,7 +172,20 @@ def merge_will(host, imported):
         _logger.error(f"merge: validity check failed: {e!r}")
         error = e
     host.save_willitems()
+    if error is None:
+        trace.add(trace.OK, _("{} copies merged").format(_count(ids)))
+    else:
+        trace.add(trace.WARNING, _("{count} copies merged, check failed: {reason}").format(
+            count=_count(ids), reason=trace.reason(error)))
     return ids, error
+
+
+def _count(items):
+    """How many *items* there are, for the trace; ``"?"`` when unknown (#173)."""
+    try:
+        return len(items)
+    except TypeError:
+        return "?"
 
 
 class MergeSummary:

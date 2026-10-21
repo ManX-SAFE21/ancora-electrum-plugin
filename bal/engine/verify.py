@@ -36,8 +36,10 @@ No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.will import Will
 from ..core.willexecutors import Willexecutors
+from ..i18n import _
 
 __all__ = [
     "FAILED",
@@ -120,6 +122,10 @@ def verify_will(willitems, targets, *, on_answer=None, on_tick=None,
     deadline, not the request's own limit). ``on_tick()`` is called about
     once a second while waiting. Nothing is saved here: each caller saves.
     Returns ``{txid: outcome}``.
+
+    #173: with copies to ask, the command trace gets
+    ``bal_will_check_executor`` with how many, then the count of each
+    outcome.
     """
     outcomes = {}
 
@@ -157,8 +163,30 @@ def verify_will(willitems, targets, *, on_answer=None, on_tick=None,
     if targets:
         if deadline is None:
             deadline = Willexecutors.check_deadline(targets)
+        trace.command("bal_will_check_executor", _(
+            "{count} copies, at most {seconds} s").format(
+                count=len(targets), seconds=deadline))
         Willexecutors.check_transactions_parallel(
             targets, on_each=on_each, on_timeout=on_timeout, on_tick=on_tick,
             on_busy=on_busy, deadline=deadline,
         )
+        _trace_outcomes(outcomes)
     return outcomes
+
+
+def _trace_outcomes(outcomes):
+    """Write the count of each outcome of :func:`verify_will` (#173).
+
+    Never raises: a trace line must not stop the check.
+    """
+    try:
+        counts = {kind: 0 for kind in (VERIFIED, FAILED, NO_ANSWER)}
+        for outcome in outcomes.values():
+            counts[outcome] = counts.get(outcome, 0) + 1
+        text = _("verified {verified}, failed {failed}, no answer {no_answer}").format(
+            verified=counts[VERIFIED], failed=counts[FAILED],
+            no_answer=counts[NO_ANSWER])
+        kind = trace.OK if counts[VERIFIED] == len(outcomes) else trace.WARNING
+        trace.add(kind, text)
+    except Exception as e:
+        _logger.debug(f"trace of the check failed: {e!r}")

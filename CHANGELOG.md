@@ -11533,3 +11533,100 @@ wallet. Each switch runs the window's full refresh over every stored will
 item (685 there, mostly old versions); not measured yet, a later step.
 
 **Outcome:** DONE.
+
+## 173. A read-only window shows the plugin's steps as command lines
+
+**Date:** 2026-10-21
+
+**Goal (owner's idea, 2026-10-21):** a window in the style of AutoCAD's
+command line that shows what the plugin is doing, written as the `bal_*`
+commands of the command line. Owner decisions: read-only (nothing can be
+typed: a command typed in Electrum's Console can overwrite a `bal_*`
+command, #148), black background, in BASIC and ADVANCED alike; the Tools
+entry reads "CLI command trace…" ("Comandi CLI…" in Italian), the subtitle
+"(CLI commands, view only)" ("(comandi CLI in sola visualizzazione)");
+last entry of Tools, under its own line; the trace lives only while
+Electrum is open ("Save to file…" keeps a copy).
+
+The GUI never runs the `bal_*` commands: the window and the command line
+call the same engine bricks, and each brick writes the line of the command
+that runs the same step.
+
+**What changed:**
+
+- `bal/core/trace.py` (new, no Qt): the trace. The last 5000 lines in
+  memory, numbered, thread-safe, never raises. Kinds: command, request,
+  answer, ok, warning, error; a "Full" flag for the details. Never a
+  secret: no password, seed, key or raw transaction is passed to it; a
+  full txid is shortened (`a1b2c3d4…9f0e`), and a long hex text or an
+  extended private key that would slip through is hidden. Plain text for
+  Copy / Save.
+- `bal/core/willexecutors.py`: `send_request` writes each request to a
+  will-executor (method, server and path; for `pushtxs` how many
+  transactions, for `searchtx` the shortened txid) and its answer with the
+  seconds: a short text answer as the server gives it ("thx", "already
+  present"), "answer with a transaction" (never the transaction), an HTTP
+  error with its code (429: busy), no answer in time and the new tries.
+  The copies' checks (`searchtx`) and the new tries are "Full" details.
+  `check_transaction` writes the busy (429) pauses; `ping_servers_parallel`
+  writes `bal_willexecutors_ping` and how many answered.
+- Engine bricks, each a command line then its outcome:
+  - `bal/engine/context.py` `check_will`: `bal_will_check`, then "the will
+    is coherent" or "not coherent:" with the command line's reason
+    (`will_change_message`);
+  - `bal/engine/build.py` `build_will`: `bal_will_prepare`, then the valid
+    transactions and the first delivery date (UTC), or the error;
+  - `bal/engine/sign.py` `sign_will`: `bal_will_sign`, then how many were
+    signed now, or which one failed and the error's text;
+  - `bal/engine/push.py` `push_will`: `bal_will_broadcast` with how many
+    will-executors, then the count of each outcome and each refusal;
+  - `bal/engine/verify.py` `verify_will`: `bal_will_check_executor` with
+    how many copies and the deadline, then the count of each outcome;
+  - `bal/engine/invalidate.py`: `bal_will_invalidate` for the build of the
+    invalidation, and Electrum's own `broadcast` (the plugin has no command
+    for it) for its sending;
+  - `bal/engine/merge.py` `merge_will`: `bal_will_import_merge`, then how
+    many copies were merged.
+- `bal/gui/qt/trace_window.py` (new): the window. Black, read-only, fixed
+  width font, colours by kind; reads the new lines every 0.3 s and follows
+  them when the view is at the bottom; Pause / Resume (the lines keep
+  coming and appear at Resume), Copy, Save to file… (plain text,
+  `ancora-cli-trace-<date>-<time>.txt`), Clear, Detail Normal / Full,
+  Close. One window per Electrum window.
+- `bal/gui/qt/window.py`: `BalWindow.show_trace`. `bal/gui/qt/lists.py`:
+  the Tools entry, last, under a line, in BASIC and ADVANCED.
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; 45 new entries
+  translated.
+
+**Tests:** `tests/test_cli_trace.py` (new, 30): the trace (numbers, the
+oldest lines dropped, clear, plain text, never a secret, never an error);
+the requests (`pushtxs` with the count and never the transactions,
+`searchtx` as a detail with the short txid, a busy will-executor and its
+new try, no answer in time, an HTTP error, the ping); a real Check on a
+throw-away testnet wallet with three fake will-executors (the five
+commands in order with their outcomes, then a second Check "coherent";
+neither the password nor a transaction in the trace) and the same
+`bal_will_check` line from the command line; the window (black,
+read-only, subtitle, colours, new lines, Pause, Detail, Copy, Save,
+Clear, the timer stops at Close, one window); the Tools entry in BASIC
+and ADVANCED; Italian. `tests/test_check_button.py`: the Tools order now
+ends with the line and the new entry. Mutation check: 14 of 14 deliberate
+faults caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. Whole `tests/` directory, normal
+order: 2835 passed (27 minutes). Golden files: none changed. Scenario
+harness: log identical to the #174 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-173-cli-trace.zip`: `external_zip_test.py`
+and `smoke_test.py` pass on Electrum 4.8.2. Owner's ZIP test
+(2026-10-21): OK.
+
+Seen, not changed here (owner, at the ZIP test):
+- the scroll bar shows only when the lines no longer fit the window (Qt's
+  default);
+- the button "Clear" reads "Cancella" in Italian, Electrum's own
+  translation of "Clear", which wins over the plugin's "Svuota";
+- with several wallets open their lines share one trace, without the
+  wallet's name.
+
+**Outcome:** DONE.
