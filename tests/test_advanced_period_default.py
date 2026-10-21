@@ -159,6 +159,7 @@ def test_the_engine_passes_the_mode_to_the_migration():
 
 # ------------------------------------------------------------ the wizard
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_switching_to_advanced_preselects_the_period(make, monkeypatch, phrase):
     """BASIC, no will: ADVANCED in the wizard gives the period form with N =
     the whole months to the stored date; "Fixed date" can still be chosen;
@@ -227,6 +228,7 @@ def qt_plugin(s, monkeypatch, bw):
                         raising=False)
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_settings_switch_on_a_wallet_never_checked(make, monkeypatch, phrase, caplog):
     """The owner's ZIP test (2026-10-15): a new wallet in BASIC, never
     checked, then ADVANCED from the plugin Settings: the period form, and

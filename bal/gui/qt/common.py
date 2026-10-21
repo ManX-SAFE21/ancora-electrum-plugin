@@ -93,6 +93,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -221,19 +222,65 @@ def confirm_advanced_mode(parent=None):
     return bool(ok) and text.strip().lower() == "at my risk"
 
 
+def confirm_basic_mode(parent=None):
+    """Ask "Go back to BASIC mode?" (Yes / No, No by default); True on Yes.
+
+    #174 (owner, 2026-10-21): in the Settings dialog, a turn of the mouse
+    wheel or a wrong click put ADVANCED back to BASIC without a word, and
+    the advanced tools disappeared. Leaving ADVANCED now asks first. Shared
+    by the Settings dialog, its reset buttons and the wizard's mode
+    selector (through :func:`switch_user_type`).
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(_("BASIC mode"))
+    box.setText(_("Go back to BASIC mode? The advanced tools will be hidden. "
+                  "The will does not change."))
+    yes = box.addButton(_("Yes"), QMessageBox.ButtonRole.YesRole)
+    no = box.addButton(_("No"), QMessageBox.ButtonRole.NoRole)
+    box.setDefaultButton(no)
+    box.setEscapeButton(no)
+    box.exec()
+    return box.clickedButton() is yes
+
+
+def is_advanced_mode(plugin):
+    """True when the stored mode (``USER_TYPE``) is ADVANCED."""
+    return str(plugin.USER_TYPE.get()).lower() == "advanced"
+
+
+class NoWheelComboBox(QComboBox):
+    """A combo box that the mouse wheel does not change (#174).
+
+    Scrolling the Settings dialog with the pointer over the "User type" box
+    changed the mode by mistake. The wheel event is ignored, so it goes to
+    the parent (the dialog scrolls instead); a click or the keyboard still
+    change the value.
+    """
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt name
+        """Leave the wheel to the parent widget."""
+        event.ignore()
+
+
 def switch_user_type(plugin, advanced, parent=None):
     """Set the plugin mode (``USER_TYPE``, every wallet); True when set as asked.
 
     ``advanced``: True for ADVANCED, which needs :func:`confirm_advanced_mode`
     first; when it is not confirmed the mode is set to BASIC and False is
-    returned (the caller puts its selector back). Switching to BASIC needs no
-    confirmation. Then the open windows follow at once: the per-mode editor
+    returned (the caller puts its selector back, on the mode in force:
+    :func:`is_advanced_mode`). #174: leaving ADVANCED for BASIC asks
+    :func:`confirm_basic_mode` first; on No nothing changes (ADVANCED stays,
+    the windows are not touched) and False is returned. From BASIC to BASIC
+    nothing is asked. Then the open windows follow at once: the per-mode editor
     default of the toolbars (``_apply_editor_default_on_toolbars``, only on
     a real change) and ``update_all``, when the plugin has them (the Qt
     ``Plugin``; a test plugin may not). Before them, the delivery form of
     every open wallet follows the mode (``context.follow_mode``, #146). One function for the Settings dialog
     and the wizard (#127), so both behave the same.
     """
+    if not advanced and is_advanced_mode(plugin) and not confirm_basic_mode(parent):
+        return False
     confirmed = (not advanced) or confirm_advanced_mode(parent)
     plugin.USER_TYPE.set("advanced" if (advanced and confirmed) else "basic")
     # #146 (owner): the delivery form of every open wallet follows the mode

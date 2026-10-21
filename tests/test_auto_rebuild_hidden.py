@@ -24,6 +24,7 @@ sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
 from unittest.mock import patch
 
+import pytest
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 _app = QApplication.instance() or QApplication(sys.argv)
@@ -100,6 +101,7 @@ def test_wallet_close_row_advanced_only():
     advanced.close()
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_reset_defaults_keeps_stored_auto_rebuild():
     """The Reset button does not rewrite a value stored by an older version."""
     plugin = _plugin("advanced")

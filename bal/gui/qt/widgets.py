@@ -65,6 +65,7 @@ from .common import (
     ColorScheme,
     Decimal,
     HelpButton,
+    NoWheelComboBox,
     Optional,
     QAbstractSpinBox,
     QButtonGroup,
@@ -99,6 +100,7 @@ from .common import (
     datetime,
     format_status_history,
     getSaveFileName,
+    is_advanced_mode,
     log_error,
     os,
     partial,
@@ -1068,7 +1070,8 @@ class DeliveryFormWidget(QWidget):
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel(_("Plugin mode (applies to every wallet)")))
-        self.mode_combo = QComboBox()
+        # #174: the mouse wheel does not change the mode.
+        self.mode_combo = NoWheelComboBox()
         self.mode_combo.addItems([_("BASIC"), _("ADVANCED")])
         mode_row.addWidget(self.mode_combo)
         mode_row.addStretch(1)
@@ -1224,11 +1227,19 @@ class DeliveryFormWidget(QWidget):
         working in BASIC); ADVANCED (owner, #146) preselects the period of
         :meth:`_initial_months` months, so the date stays about the same.
         "Fixed date" can still be chosen.
+
+        #174: "No" to "Go back to BASIC mode?" leaves everything as it was
+        (ADVANCED, the form untouched): the selector goes back and nothing
+        else runs.
         """
-        if not switch_user_type(self.bal_window.bal_plugin, index == 1, parent=self):
+        plugin = self.bal_window.bal_plugin
+        if not switch_user_type(plugin, index == 1, parent=self):
+            advanced = is_advanced_mode(plugin)
             self.mode_combo.blockSignals(True)
-            self.mode_combo.setCurrentIndex(0)
+            self.mode_combo.setCurrentIndex(1 if advanced else 0)
             self.mode_combo.blockSignals(False)
+            if advanced:
+                return
         # The form follows the mode (``context.follow_mode``; the shared
         # switch already did it for the windows the Qt plugin knows).
         engine_context.follow_mode(self.bal_window, months=self._initial_months())

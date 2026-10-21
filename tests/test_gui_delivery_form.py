@@ -131,6 +131,7 @@ def test_period_is_offered_only_in_advanced_mode(make, monkeypatch):
     assert box.months_box.isHidden()                # the fixed form
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_mode_selector_is_the_shared_setting_with_its_gate(make, monkeypatch, phrase):
     """The wizard's selector writes ``USER_TYPE`` (every wallet) through the
     same gate as the Settings dialog: the right phrase gives ADVANCED, a
@@ -209,6 +210,7 @@ def test_choosing_the_period_in_the_wizard(make, monkeypatch):
     assert period_shown(page) is None
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_locked_form_shows_the_sentence_and_disables_the_choice(make, monkeypatch):
     """A will signed and sent: both radios disabled, the lock sentence
     shown; switching to BASIC keeps a locked period form."""
@@ -229,6 +231,7 @@ def test_locked_form_shows_the_sentence_and_disables_the_choice(make, monkeypatc
     assert box.lock_label.isHidden()              # BASIC: no lock sentence
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_basic_in_the_wizard_sets_an_unlocked_period_back_to_fixed(make, monkeypatch):
     """No will in force: choosing BASIC in the wizard puts the fixed form
     back (the date stays)."""

@@ -213,6 +213,7 @@ def test_settings_rows_hidden_in_basic_visible_in_advanced(monkeypatch):
         dialog.close()
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_settings_boxes_store_once_keep_red_below_yellow_and_reset(monkeypatch):
     """No keyboard tracking (two digits are stored once); the red box can
     never reach the yellow value; Reset gives 12 and 6 back."""

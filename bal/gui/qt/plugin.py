@@ -27,6 +27,7 @@ from .common import (
     Buttons,
     EnterButton,
     HelpButton,
+    NoWheelComboBox,
     PasswordDialog,
     QComboBox,
     QGridLayout,
@@ -42,6 +43,7 @@ from .common import (
     _,
     _logger,
     add_widget,
+    is_advanced_mode,
     partial,
     read_QIcon_from_bytes,
     read_QPixmap_from_bytes,
@@ -596,8 +598,9 @@ class Plugin(BalPlugin, EventListener):
         # "Check Alive" field) and disables the check-alive postpone behaviour.
         # Changing it refreshes the open windows so the controls appear/disappear
         # immediately. It is kept in a named variable so the "Reset" button can
-        # restore its displayed value after a reset.
-        user_type_combo = QComboBox()
+        # restore its displayed value after a reset. #174: the mouse wheel
+        # does not change it (``NoWheelComboBox``).
+        user_type_combo = NoWheelComboBox()
         user_type_combo.addItems([_("BASIC"), _("ADVANCED")])
         # Map the stored string to the combo index (anything but "advanced"
         # falls back to BASIC, matching BalPlugin.is_basic_mode()).
@@ -614,15 +617,17 @@ class Plugin(BalPlugin, EventListener):
             must type a confirmation phrase ("at My Risk", case-insensitive).
             If the phrase is wrong or the dialog is cancelled, the combo goes
             back to BASIC and ADVANCED is NOT enabled. Switching back to
-            BASIC needs no confirmation. Since #127 the gate, the mode write
-            and the refresh of the windows are ``common.switch_user_type``,
-            shared with the wizard's mode selector.
+            BASIC asks "Go back to BASIC mode?" since #174 (on No ADVANCED
+            stays). Since #127 the gate, the mode write and the refresh of
+            the windows are ``common.switch_user_type``, shared with the
+            wizard's mode selector.
             """
             if not switch_user_type(self, idx == 1, parent=d):
-                # Revert to BASIC. Block the signal while we reset the combo
-                # index so this handler is not called again recursively.
+                # Put the combo back on the mode in force (BASIC after a
+                # wrong phrase, ADVANCED after "No" to BASIC). Block the
+                # signal so this handler is not called again recursively.
                 user_type_combo.blockSignals(True)
-                user_type_combo.setCurrentIndex(0)
+                user_type_combo.setCurrentIndex(1 if is_advanced_mode(self) else 0)
                 user_type_combo.blockSignals(False)
                 return
             # Show/hide the advanced-only rows.
@@ -682,7 +687,10 @@ class Plugin(BalPlugin, EventListener):
             btn.setFixedWidth(24)
             btn.setToolTip(_("Reset to default"))
             def reset():
-                cfg.set(cfg.default)
+                # #174: the user type is not written here: the combo's own
+                # handler writes it, after "Go back to BASIC mode?".
+                if kind != "user_type":
+                    cfg.set(cfg.default)
                 if kind == "check":
                     widget.setChecked(bool(cfg.default))
                 elif kind == "spin":
@@ -1003,7 +1011,11 @@ class Plugin(BalPlugin, EventListener):
             ]
             for cfg, widget, kind in resets:
                 # Persist the default value back into the Electrum config.
-                cfg.set(cfg.default)
+                # #174: not the user type: the combo's handler writes it,
+                # after "Go back to BASIC mode?" (on No ADVANCED stays and
+                # the other settings are still reset).
+                if kind != "user_type":
+                    cfg.set(cfg.default)
                 # Refresh the widget so the reset is immediately visible. The
                 # widgets' own signal handlers will re-persist the same default
                 # value, which is harmless.

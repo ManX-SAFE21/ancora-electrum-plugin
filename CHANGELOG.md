@@ -11468,3 +11468,68 @@ invalidated or replaced versions, the same lost txid when read back); they
 are marked ERROR and skipped. Present before #172; a later step.
 
 **Outcome:** DONE.
+
+## 174. Going back to BASIC asks first; the mouse wheel no longer changes the user type
+
+**Date:** 2026-10-21
+
+**Goal (owner's report, 2026-10-21):** with the plugin Settings window open
+in ADVANCED, scrolling with the pointer over "User Type" (or a wrong click)
+put the mode back to BASIC without a word, and the advanced tools
+disappeared. Owner decisions: the mouse wheel does not change the user type;
+leaving ADVANCED asks "Go back to BASIC mode? The advanced tools will be
+hidden. The will does not change." with Yes / No, No by default (and on
+Escape); on No nothing changes. The same in the Settings dialog, its reset
+buttons and the wizard.
+
+**What changed:**
+
+- `bal/gui/qt/common.py`:
+  - `confirm_basic_mode(parent)`: the question box; True on Yes.
+  - `is_advanced_mode(plugin)`: the mode in force.
+  - `NoWheelComboBox`: a combo that leaves the wheel to the window, so
+    scrolling over it scrolls the window.
+  - `switch_user_type`: from ADVANCED to BASIC it asks first; on No it
+    returns False and touches nothing (no windows refreshed, the delivery
+    form not changed). From BASIC to BASIC nothing is asked.
+- `bal/gui/qt/plugin.py` (Settings dialog): the "User Type" combo is a
+  `NoWheelComboBox`; on No it goes back to ADVANCED. Its reset button and
+  "Reset to Default Setting" no longer write the user type themselves: the
+  combo's handler writes it after the question, so on No ADVANCED stays and
+  the other settings are still reset.
+- `bal/gui/qt/widgets.py` (wizard): the mode selector is a
+  `NoWheelComboBox`; on No it goes back to ADVANCED and the delivery form is
+  left as it is (a fixed date chosen in ADVANCED stays fixed).
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; four new entries
+  translated ("BASIC mode", the question, "Yes", "No"). In Italian and
+  Spanish the question says BASE / BÁSICO, as the "User Type" combo does.
+
+**Tests:** `tests/test_basic_mode_confirm.py` (new, 11): the question box
+(text, Yes / No, No by default and on Escape); No keeps ADVANCED and touches
+nothing; BASIC to BASIC asks nothing; the wheel does not change "User Type"
+in either mode (and a plain combo did, the control); the Settings combo, its
+reset button and "Reset to Default Setting" with No then Yes; the wizard
+with No then Yes (three fake will-executors, throw-away testnet wallet); a
+fixed date chosen in ADVANCED stays on No. `tests/conftest.py`: fixture
+`yes_to_basic` (answers Yes without showing the box), used by 8 earlier
+tests that leave ADVANCED and check what follows (in
+`test_advanced_period_default`, `test_auto_rebuild_hidden`,
+`test_gui_delivery_colours`, `test_gui_delivery_form`,
+`test_gui_will_versions_list`). Mutation check: 10 of 10 deliberate faults
+caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. Whole `tests/` directory, normal
+order: 2804 passed (37 minutes; the eleventh new test was added after it
+and passes). Golden files: none changed. Scenario harness: log identical to
+the #175 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-174-basic-confirm.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2. Owner's
+ZIP test (2026-10-21): OK.
+
+Seen, not changed here (owner, at the ZIP test): switching between BASIC
+and ADVANCED takes a few seconds to redraw the window on the mainnet test
+wallet. Each switch runs the window's full refresh over every stored will
+item (685 there, mostly old versions); not measured yet, a later step.
+
+**Outcome:** DONE.
