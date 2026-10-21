@@ -39,7 +39,11 @@ import flowkit as fk
 from PyQt6.QtWidgets import QApplication
 
 from bal.core import will_changes
-from bal.core.messages import executor_terms_message, will_change_message
+from bal.core.messages import (
+    excluded_after_build_message,
+    executor_terms_message,
+    will_change_message,
+)
 from bal.core.will import Will, WillExecutorNotPresent, WillExecutorTermsChanged
 
 # Kept at module level: an unreferenced application object is destroyed at
@@ -225,6 +229,111 @@ def test_heir_added_uses_the_new_address(flow_session):
     assert s.bw.willitems[now[WE0][0]].we["address"] == NEW_ADDR[WE0]
     assert s.bw.willitems[now[WE1][0]].we["address"] == fk.WE_ADDR[1]
     _assert_clean(s)
+
+
+def _new_date(s, days):
+    """The delivery date moved ``days`` earlier, for the will and its heirs
+    (as the Will tab writes them)."""
+    s.set_date(fk.D0 - days * fk.DAY)
+    for name in list(s.bw.heirs.keys()):
+        row = s.bw.heirs[name]
+        s.bw.heirs[name] = [row[0], row[1], s.bw.will_settings["locktime"]]
+
+
+def _excluded_rows(dlg):
+    """The "Will-Executor excluded" rows of a Check."""
+    return [str(line) for line in dlg.history if "Will-Executor excluded" in str(line)]
+
+
+def test_new_date_after_new_address_uses_it(flow_session):
+    """CHANGELOG #176, the owner's ZIP test of #172: every copy received,
+    then WE0 gives a new address and the delivery date moves earlier. The
+    copies are new (new date), so WE0's is built with its new address; the
+    Check no longer calls WE0 "excluded: Skipped" right after the build,
+    and the next Check is clean."""
+    s = _sent_will(flow_session)
+    _move(s, WE0)
+    _new_date(s, 10)
+    dlg = s.check()
+    assert _excluded_rows(dlg) == [], dlg.history
+    now = _by_url(s)
+    for url in (WE0, WE1, WE2):
+        item = s.bw.willitems[now[url][0]]
+        assert int(item.tx.locktime) == fk.D0 - 10 * fk.DAY
+        assert Will.received(item)
+    assert s.bw.willitems[now[WE0][0]].we["address"] == NEW_ADDR[WE0]
+    assert s.bw.willitems[now[WE1][0]].we["address"] == fk.WE_ADDR[1]
+    _assert_clean(s)
+
+
+def test_same_payments_needs_the_same_date(flow_session):
+    """``Will.same_payments``: the same coins and outputs on another date
+    are not the copy the will-executor holds (#176)."""
+    s = _sent_will(flow_session)
+    w = _valid(s)[_by_url(s)[WE0][0]]
+    assert Will.same_payments(w.tx, s.bw.willitems, WE0)
+
+    class _Moved:
+        """``w.tx`` with another locktime."""
+
+        locktime = int(w.tx.locktime) - fk.DAY
+
+        def inputs(self):
+            """The same inputs."""
+            return w.tx.inputs()
+
+        def outputs(self):
+            """The same outputs."""
+            return w.tx.outputs()
+
+    assert not Will.same_payments(_Moved(), s.bw.willitems, WE0)
+
+
+def test_excluded_after_build_names_who_and_why():
+    """The row's text (owner, 2026-10-21): the owner's #141 sentence for a
+    new address or fee, else the host and "not in the will just
+    prepared"; never "Skipped"."""
+    e = WillExecutorTermsChanged("https://we.bitcoin-after.life", "address")
+    assert excluded_after_build_message(e) == executor_terms_message(
+        "https://we.bitcoin-after.life", "address")
+    assert excluded_after_build_message(WillExecutorTermsChanged(WE1, "fee")) == (
+        executor_terms_message(WE1, "fee"))
+    assert excluded_after_build_message(WillExecutorNotPresent(WE2)) == (
+        "we2.test: not in the will just prepared")
+
+
+def test_excluded_row_after_build_is_an_orange_warning(flow_session, monkeypatch):
+    """Should the Check still find a will-executor missing right after a
+    build, the row names it in orange (the flow goes on: it signs and
+    sends) and the report lists it among the warnings (#176)."""
+    s = _sent_will(flow_session)
+    _new_date(s, 10)
+    built = {"done": False}
+    build_will, check_will = s.bw.build_will, s.bw.check_will
+
+    def build_then_mark(*a, **kw):
+        """The real build, then the next check_will fails."""
+        out = build_will(*a, **kw)
+        built["done"] = True
+        return out
+
+    def check_after_build(*a, **kw):
+        """WE2 missing on the will just prepared, once."""
+        if built["done"]:
+            built["done"] = False
+            raise WillExecutorNotPresent(WE2)
+        return check_will(*a, **kw)
+
+    monkeypatch.setattr(s.bw, "build_will", build_then_mark)
+    monkeypatch.setattr(s.bw, "check_will", check_after_build)
+    dlg = s.check()
+    rows = _excluded_rows(dlg)
+    assert len(rows) == 1, dlg.history
+    assert "we2.test: not in the will just prepared" in rows[0]
+    assert "Skipped" not in rows[0]
+    assert dlg.COLOR_WARNING in rows[0] and dlg.COLOR_ERROR not in rows[0]
+    warnings = dlg._report().snapshot()["boxes"]["warnings"]
+    assert any("we2.test: not in the will just prepared" in str(w) for w in warnings), warnings
 
 
 # ---------------------------------------------------------------------------

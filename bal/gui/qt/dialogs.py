@@ -61,6 +61,7 @@ from ...core.messages import (
     amounts_message,
     build_failure_message,
     check_alive_message,
+    excluded_after_build_message,
     heir_label,
     no_valid_transaction,
     rebuild_reason_message,
@@ -1164,9 +1165,13 @@ class BalBuildWillDialog(BalDialog):
                     self._in_force_kept_report()
                 else:
                     self._build_success_report()
-            except WillExecutorNotPresent:
+            except WillExecutorNotPresent as e:
+                # CHANGELOG #176: the row names the will-executor and why,
+                # in orange: the flow goes on (signing, sending), so it is
+                # a warning, not an error. Before it read "Skipped" in red.
                 self.msg_set_status(
-                    _("Will-Executor excluded"), None, _("Skipped"), self.COLOR_ERROR
+                    _("Will-Executor excluded"), None,
+                    excluded_after_build_message(e), self.COLOR_WARNING,
                 )
 
             except NoWillExecutorNotPresent:

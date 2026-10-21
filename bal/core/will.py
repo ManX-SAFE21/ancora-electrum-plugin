@@ -2755,16 +2755,19 @@ class Will:
     @staticmethod
     def same_payments(new_tx, will, url):
         """True when ``new_tx`` spends and pays the same as a received copy
-        for ``url`` in ``will``, the date apart (#141).
+        for ``url`` in ``will``, on the same date (#141, #176).
 
-        The date may still be moved by ``update_will`` (anticipation); the
-        inputs and outputs tell whether the build with the kept payment
-        data gave the transaction the will-executor already holds.
+        The inputs, the outputs and the date tell whether the build with the
+        kept payment data gave the transaction the will-executor already
+        holds. CHANGELOG #176: a new delivery date is a new copy, to sign and
+        send again; before, the date was left out, so that copy kept the old
+        fee address and the Check, right after the build, called the
+        will-executor "excluded: Skipped".
         """
         def payments(tx):
             ins = sorted(i.prevout.to_str() for i in tx.inputs())
             outs = sorted((o.scriptpubkey.hex(), o.value) for o in tx.outputs())
-            return ins, outs
+            return ins, outs, int(tx.locktime)
 
         target = payments(new_tx)
         for w in Will.only_valid_list(will).values():
