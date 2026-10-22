@@ -32,7 +32,7 @@ from ...core import datetext, heir_notes, will_state, will_versions
 from ...core.heirs import message_names, message_text, shared_addresses
 from ...core.messages import protected_executor_message
 from ...core.report import executor_fee
-from ...core.summary import executor_states
+from ...core.summary import executor_states, is_excluded
 from .calendar import BalCalendarButton
 from .common import (
     N_,
@@ -1164,30 +1164,44 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             parts.append(self._sent_text(version))
         return number, head, " · ".join(parts)
 
+    def _selected_now(self):
+        """The URLs of the will-executors selected now (#134, #178), or None.
+
+        ``BalWindow.selected_willexecutors``; anything that is not a set (a
+        window built another way, a test double, an error) means "no rule".
+        """
+        try:
+            selected = self.bal_window.selected_willexecutors()
+        except Exception:
+            return None
+        return selected if isinstance(selected, (set, frozenset)) else None
+
     def _sent_text(self, version):
         """"sent and verified 3 of 3 · 2 deselected" (#134).
 
         The will in force follows the rule of the will summary
         (``summary.executor_states`` with the will-executors selected now):
         a deselected will-executor that never received the will is not
-        counted, and is named after the count. The other versions are
-        history: their own counts, as built (#129).
+        counted, and is named after the count; so is (#178) an excluded one
+        (deselected after it received the will, no longer verified). The
+        other versions are history: their own counts, as built (#129).
         """
         plain = _("sent and verified {} of {}").format(
             version.executors_verified, version.executors_total)
         if version.state != will_versions.VERSION_IN_FORCE:
             return plain
-        try:
-            selected = self.bal_window.selected_willexecutors()
-        except Exception:
-            selected = None
-        if not isinstance(selected, (set, frozenset)):
+        selected = self._selected_now()
+        if selected is None:
             return plain
         will = getattr(self.bal_window, "willitems", None) or {}
         items = {wid: will[wid] for wid in version.items if wid in will}
         states = executor_states(items, selected)
-        deselected = sum(1 for st in states.values() if st == "deselected")
-        counted = [st for st in states.values() if st != "deselected"]
+        # #178: an excluded will-executor (deselected after it received the
+        # will, no longer verified) is named with the deselected ones.
+        deselected = sum(1 for st in states.values()
+                         if st in ("deselected", "excluded"))
+        counted = [st for st in states.values()
+                   if st not in ("deselected", "excluded")]
         if not deselected or not counted:
             return plain
         text = _("sent and verified {} of {}").format(
@@ -1282,7 +1296,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # CHANGELOG #83: what this row is for the will today, coherent with
         # its colour (where its will-executor stands); the executor and the
         # whole history are in the tooltip.
-        labels[self.Columns.STATUS] = will_status_text(item, in_force=in_force)
+        # #178: a copy of the will in force held by an excluded
+        # will-executor reads "In force, excluded", in grey.
+        excluded = in_force and is_excluded(item, getattr(self, "_selected", None))
+        labels[self.Columns.STATUS] = will_status_text(
+            item, in_force=in_force, excluded=excluded)
         # #170 (owner): in a will in deliveries each level steps right by two
         # digit widths in every column (the tree indents only the first
         # one), so the steps of the chain read at a glance. Display only:
@@ -1294,7 +1312,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # The status had no copy value of its own (its text was copied).
         full[self.Columns.STATUS] = labels[self.Columns.STATUS]
         tips[self.Columns.STATUS] = ""
-        colour = QColor(status_color(item, in_force=in_force))
+        colour = QColor(status_color(item, in_force=in_force, excluded=excluded))
         for cell in items:
             cell.setEditable(False)
             cell.setBackground(colour)
@@ -1479,6 +1497,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         current = self._row_info(self.selectionModel().currentIndex())
         scroll = self.verticalScrollBar().value()
         will = self._will_items()
+        # #178: the will-executors selected now, read once per redraw for
+        # the rows of an excluded will-executor (None: no rule).
+        self._selected = self._selected_now()
         wallet = getattr(self.bal_window, "wallet", None)
         try:
             self.history = will_versions.build_history(will, wallet)

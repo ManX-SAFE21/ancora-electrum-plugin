@@ -2696,6 +2696,8 @@ class BuildReportView(QWidget):
         "to_sign": ("–", "#8a8a8a"),
         "to_send": ("–", "#8a8a8a"),
         "deselected": ("–", "#8a8a8a"),
+        # #178: excluded after it received the will; no longer asked.
+        "excluded": ("–", "#8a8a8a"),
     }
 
     #: States of a will-executor that did not get the will (#93).
@@ -2744,6 +2746,7 @@ class BuildReportView(QWidget):
             "to_sign": _("to sign"),
             "to_send": _("to send"),
             "deselected": _("deselected: not sent"),
+            "excluded": _("excluded: has the will, no longer verified"),
         }.get(state, "")
 
     def _clear(self):

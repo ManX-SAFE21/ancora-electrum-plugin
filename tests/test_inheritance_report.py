@@ -215,17 +215,22 @@ def test_report_only_for_a_verified_will_in_force():
                   "check_alive", "expired", "still_active", "none", None):
         assert core_report.report_block_reason({"state": state} if state else None)
     # Sent but not verified yet: the menu entries are grey, the reason shown.
+    # #178: its will-executor is selected (one not selected that has the
+    # will is "excluded" and no longer verified: it does not lock it).
     item = _item("COMPLETE", "PUSHED")
     bw = _fake_window({item._id: item})
-    menu = report_actions.report_menu(bw, QWidget())
-    actions = menu.actions()
-    assert actions[0].isVisible() and "verified by every will-executor" in actions[0].text()
-    assert not any(a.isEnabled() for a in actions)
-    # And the actions refuse too (a defence: the menu is checked on opening).
-    with patch.object(report_actions, "getSaveFileName") as ask:
-        report_actions.save_report_pdf(bw)
-        report_actions.print_report(bw)
-    assert not ask.called and bw.show_warning.call_count == 2
+    url = item.we["url"]
+    with patch.object(report_actions.Willexecutors, "get_willexecutors",
+                      lambda *a, **k: {url: {"url": url, "selected": True}}):
+        menu = report_actions.report_menu(bw, QWidget())
+        actions = menu.actions()
+        assert actions[0].isVisible() and "verified by every will-executor" in actions[0].text()
+        assert not any(a.isEnabled() for a in actions)
+        # And the actions refuse too (a defence: the menu is checked on opening).
+        with patch.object(report_actions, "getSaveFileName") as ask:
+            report_actions.save_report_pdf(bw)
+            report_actions.print_report(bw)
+        assert not ask.called and bw.show_warning.call_count == 2
 
 
 def _fake_window(willitems):

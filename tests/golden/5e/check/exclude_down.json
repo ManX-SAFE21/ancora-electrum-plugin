@@ -533,12 +533,25 @@
      "VALID"
     ],
     "tx": "T3"
+   },
+   {
+    "executor": "https://we1.test",
+    "fee": 14,
+    "label": "Safe21 Heartbeat backup transaction",
+    "locktime": "2032-09-22",
+    "statuses": [
+     "COMPLETE",
+     "PUSH_FAIL",
+     "VALID"
+    ],
+    "tx": "T4"
    }
   ],
   "labels": {
    "T1": "Safe21 Heartbeat backup transaction",
    "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction"
+   "T3": "Safe21 Heartbeat backup transaction",
+   "T4": "Safe21 Heartbeat backup transaction"
   },
   "popups": [],
   "pushed": [],
@@ -559,6 +572,13 @@
      "https://we0.test",
      [
       "verified",
+      null
+     ]
+    ],
+    [
+     "https://we1.test",
+     [
+      "deselected",
       null
      ]
     ]
@@ -628,6 +648,11 @@
     "CHECKED",
     "COMPLETE",
     "PUSHED",
+    "VALID"
+   ],
+   "T4": [
+    "COMPLETE",
+    "PUSH_FAIL",
     "VALID"
    ]
   },

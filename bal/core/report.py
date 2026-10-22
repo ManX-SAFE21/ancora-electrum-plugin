@@ -50,6 +50,8 @@ _EXECUTOR_TEXTS = {
     "failed": N_("not received"),
     # #134: a deselected will-executor that never received the will.
     "deselected": N_("deselected: not sent"),
+    # #178: excluded after it received the will; the Check no longer asks it.
+    "excluded": N_("excluded: has the will, no longer verified"),
 }
 
 # The reserved name prefix of the will-executor pseudo-heirs (their fee
@@ -358,10 +360,12 @@ def report_block_reason(summary, willitems=None, selected=None):
     to be verified"). A will with only a backup transaction (no
     will-executor) is allowed once signed, and the report says that nobody
     else holds it. ``selected`` (#134): a deselected will-executor that never
-    received the will is not required.
+    received the will is not required; nor (#178) an excluded one, which
+    the Check no longer asks (the report would stay locked for ever).
     """
     states = executor_states(Will.only_valid_list(willitems or {}), selected)
-    verified = all(state in ("verified", "deselected") for state in states.values())
+    verified = all(state in ("verified", "deselected", "excluded")
+                   for state in states.values())
     if summary and summary.get("state") == "ok" and verified:
         return None
     return _(

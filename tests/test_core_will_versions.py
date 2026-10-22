@@ -192,12 +192,19 @@ def test_exclude_keeps_one_version_with_two_copies(make):
     ]
     s.redo(lambda dlg: dlg._exclude_executor("https://we1.test"))
     history = _history(s)
+    # #178 (owner): Exclude keeps every copy sent at least once; we1's copy
+    # was sent (no answer: PUSH_FAIL), it may be on its server, so it
+    # stays in the version in force (before: dropped, 2 copies).
     assert _summary(s, history) == [
-        (2, "in_force", 2, "2027-02-26"),
+        (2, "in_force", 3, "2027-02-26"),
         (1, "replaced_held", 3, "2027-02-27"),
     ]
     current = history.by_vid()[history.current]
-    assert _urls(s, current) == ["https://we0.test", "https://we2.test"]
+    assert _urls(s, current) == ["https://we0.test", "https://we1.test",
+                                 "https://we2.test"]
+    pushed_to_we1 = [w for w in current.roots
+                     if s.bw.willitems[w].we["url"] == "https://we1.test"]
+    assert [s.bw.willitems[w].get_status("PUSH_FAIL") for w in pushed_to_we1] == [True]
 
 
 def test_an_executor_added_later_does_not_split_the_version(make):

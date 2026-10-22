@@ -63,12 +63,17 @@ NO_ANSWER = "no_answer"
 _EVER_SENT = ("PUSHED", "CHECKED", "CHECK_FAIL", "PUSH_FAIL")
 
 
-def _ever_sent(w):
-    """True when the copy *w* has a will-executor and was sent at least once."""
+def ever_sent(w):
+    """True when the copy *w* has a will-executor and was sent at least once.
+
+    Also #178's rule for "Exclude" (``BalWindow.exclude_willexecutor``): a
+    copy sent even once may be held by its will-executor (a failed check or
+    a sending without an answer does not say it is not), so it is kept.
+    """
     return bool(w.we) and any(w.get_status(s) for s in _EVER_SENT)
 
 
-def verify_targets(willitems, txids=None, *, recheck=False):
+def verify_targets(willitems, txids=None, *, recheck=False, selected=None):
     """The copies to ask, as ``[(txid, url)]``, and the ones skipped.
 
     Returns ``(targets, skipped)``. Without *recheck* (the Check, the
@@ -78,18 +83,27 @@ def verify_targets(willitems, txids=None, *, recheck=False):
     whatever its state now (E1). *txids* limits the choice to those ids
     (``None``: every copy). ``skipped`` lists the ids of *txids* never sent
     (or with no will-executor): the ones the message "not sent yet" names.
+
+    *selected* (#178, owner): the URLs of the will-executors selected now
+    (``summary.selected_urls``), or None (no rule). Without *recheck*, a
+    copy of a will-executor not selected is not asked: after "Exclude" a
+    will-executor that never answered the check (no answer in time keeps
+    the copy sent, #147) was asked again at every Check, for ever. Its
+    copies stay in the will (it holds them, #129); the summary calls it
+    "excluded". The right click still asks it: the user asks for it.
     """
     targets, skipped = [], []
     for wid, w in willitems.items():
         if txids is not None and wid not in txids:
             continue
         if recheck:
-            ask = _ever_sent(w)
+            ask = ever_sent(w)
         else:
-            ask = Will.needs_server_check(w)
+            ask = Will.needs_server_check(w) and (
+                selected is None or (w.we or {}).get("url") in selected)
         if ask:
             targets.append((wid, w.we["url"]))
-        elif txids is not None and not _ever_sent(w):
+        elif txids is not None and not ever_sent(w):
             skipped.append(wid)
     return targets, skipped
 

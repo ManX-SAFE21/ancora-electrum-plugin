@@ -73,7 +73,7 @@ from ...engine.push import (
     select_push,
 )
 from ...engine.sign import sign_will, sign_will_item
-from ...engine.verify import verify_targets, verify_will
+from ...engine.verify import ever_sent, verify_targets, verify_will
 from .common import (
     IMPORT_FILE_FILTER,
     N_,
@@ -1137,25 +1137,39 @@ class BalWindow:
         executor stays in the list and can be selected again. Returns False
         (nothing done) when it is not allowed (:meth:`can_exclude_willexecutor`).
 
-        The copies of the will meant for it that it never got (VALID, not
-        sent) are dropped: they exist only here, and a deselected executor's
-        copy stays VALID (BAL only ignores it), so the summary kept saying
-        "1 will-executor did not receive it" and the report stayed locked
-        (found with the scenario harness). Copies it did get are kept.
+        The copies of the will meant for it that were NEVER sent (VALID,
+        not one sending, ``engine.verify.ever_sent``) are dropped: they
+        exist only here (#93: the summary kept saying "1 will-executor did
+        not receive it" and the report stayed locked, found with the
+        scenario harness). Every copy sent at least once is kept: it may be
+        on its server (#129); the Check no longer asks it and the summary
+        calls it "excluded" (#178).
+
+        #178, owner's ZIP test (2026-10-22): the rule was "not PUSHED".
+        we.divinaly.support accepted its copies ("pushed: thx"), then
+        answered "503 Service Temporarily Unavailable" to the check of 25 of
+        them, which cleared PUSHED (CHECK_FAIL): Exclude dropped those 25
+        copies it holds. A failed check or a sending without an answer does
+        not say that the will-executor does not have the copy.
+
+        #178 (owner): Exclude is the USER's choice, like a deselection in
+        the Will-Executor tab: it lasts until the user selects it again. With
+        #137 it was the plugin's deselection, undone as soon as the
+        will-executor answered the ping: we.divinaly.support answers the
+        ping but not the check, so it came back at every download.
         """
         if not self.can_exclude_willexecutor(url):
             return False
-        # #137: Exclude is the plugin's deselection of a will-executor that
-        # did not answer (selected again when it answers): never a user
-        # deselection. The user's list is seeded first, as it was.
-        Willexecutors.user_deselected(self.bal_plugin)
+        # Recorded as the user's deselection (seeds the user's list first,
+        # as #137 asks): the automatic selection leaves it deselected.
+        Willexecutors.set_user_choice(self.bal_plugin, [url], False)
         self.willexecutors[url]["selected"] = False
         Willexecutors.save(self.bal_plugin, self.willexecutors)
         unsent = [
             wid for wid, w in self.willitems.items()
             if w.get_status("VALID")
             and (w.we or {}).get("url") == url
-            and not w.get_status("PUSHED")
+            and not ever_sent(w)
         ]
         for wid in unsent:
             del self.willitems[wid]
@@ -3813,10 +3827,11 @@ class BalWindow:
             """After the ping (answer or failure): select and save.
 
             #137: who answers is selected, except the will-executors the
-            user deselected on purpose (they stay deselected); one the
-            plugin deselected before (no answer, Exclude) is selected
-            again when it answers; the new ones that answer are selected
-            and remembered for the summary ("new in the network").
+            user deselected on purpose (they stay deselected; since #178
+            "Exclude" is one of them); one the plugin deselected before (no
+            answer) is selected again when it answers; the new ones that
+            answer are selected and remembered for the summary ("new in the
+            network").
             """
             if select_responding:
                 self.new_willexecutors = Willexecutors.select_after_ping(

@@ -263,7 +263,11 @@ def test_cli_check_deadline_keeps_the_item_sent():
         "b": _item("COMPLETE", "PUSHED", url=WE1),
         "c": _item("COMPLETE", "PUSHED", url=WE2),
     }
-    host = SimpleNamespace(willitems=willitems, save_willitems=lambda: None)
+    # #178: the controller asks only the will-executors selected now, as the
+    # real one holds them (``BalController.willexecutors``).
+    host = SimpleNamespace(
+        willitems=willitems, save_willitems=lambda: None,
+        willexecutors={url: {"url": url, "selected": True} for url in (WE0, WE1, WE2)})
     fake = _parallel({"a": "deadline", "b": "no_answer", "c": "other"}, willitems)
     with patch.object(Willexecutors, "check_transactions_parallel", fake):
         out = BalController.check_transactions(host)

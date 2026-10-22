@@ -292,7 +292,7 @@
     [
      "https://we1.test",
      [
-      "verified",
+      "excluded",
       null
      ]
     ]
@@ -326,7 +326,7 @@
     [
      "verify",
      "ok",
-     "2/2"
+     "1/1"
     ]
    ],
    "will_now": null

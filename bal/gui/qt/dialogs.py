@@ -1852,7 +1852,9 @@ class BalBuildWillDialog(BalDialog):
         """
         if self._stopping:
             return
-        targets, _skipped = verify_targets(self.bal_window.willitems)
+        # #178: the will-executors not selected (Exclude) are not asked.
+        targets, _skipped = verify_targets(
+            self.bal_window.willitems, selected=self._selected_willexecutors())
         items = {wid: self.bal_window.willitems[wid] for wid, _url in targets}
         if not items:
             # Nothing sent that is not verified yet: the step then shows what
@@ -3159,9 +3161,16 @@ class BalBuildWillDialog(BalDialog):
 
         self.msg_set_pushing()
         have_to_push = False
+        # #178: only the copies of the will-executors selected now: the
+        # sending skips the others (``Willexecutors.get_willexecutor_
+        # transactions``), so a signed, unsent copy of an excluded one (kept
+        # since #178: its sending got no answer) made a "Broadcasting 0/0"
+        # run and "Sending 1/1" instead of "not needed". None: no rule.
+        selected = self._selected_willexecutors()
         for wid in Will.only_valid(self.bal_window.willitems):
             w = self.bal_window.willitems[wid]
-            if w.we and w.get_status("COMPLETE") and not w.get_status("PUSHED"):
+            if (w.we and w.get_status("COMPLETE") and not w.get_status("PUSHED")
+                    and (selected is None or w.we.get("url") in selected)):
                 have_to_push = True
         if not have_to_push:
             self.msg_set_pushing(_("Nothing to do"))
@@ -3970,7 +3979,6 @@ class BalBuildWillDialog(BalDialog):
             bw = self.bal_window
             self._quiet_shares_line(report)
             executors = self._merge_executors_and_send_note()
-            total = len(executors)
             if report.step("send")[0] == "skip" and any(
                 st == "to_sign" for st, _sec in executors.values()
             ):
@@ -3982,6 +3990,9 @@ class BalBuildWillDialog(BalDialog):
             # Counted over every will-executor of the will, like the sending
             # (#84b-2): a verification that ran and got no confirmation is an
             # error; one that never ran (nothing sent yet) is still "to do".
+            # #178: an excluded will-executor is not asked: not counted here
+            # (it is in the sending's count: it received the will).
+            total = sum(1 for st, _sec in executors.values() if st != "excluded")
             verify_state = report.step("verify")[0]
             if total and verify_state != "skip":
                 if verified == total:
@@ -3995,6 +4006,12 @@ class BalBuildWillDialog(BalDialog):
                     report.set_step("verify", "todo", _("to do"))
                 else:
                     report.set_step("verify", "err", "{}/{}".format(verified, total))
+            elif any(st == "excluded" for st, _sec in executors.values()):
+                # #178: every will-executor of the will is excluded (all
+                # deselected after they received it): nobody to verify, so
+                # "not needed" like the other steps with nothing to do (the
+                # step stayed grey with no word, as if never reached).
+                report.set_step("verify", "skip")
             if report.step("prepare")[0] == "ok":
                 report.set_heirs(heir_shares(bw.willitems, bw.heirs))
             summary = will_summary(
@@ -4090,10 +4107,11 @@ class BalBuildWillDialog(BalDialog):
         # but are left out of the counts.
         executors = {u: v for u, v in executors.items() if v[0] != "deselected"}
         total = len(executors)
+        # #178: an excluded will-executor received the will too.
         received = sum(
             1 for st, _sec in executors.values()
             if st in ("received", "verifying", "verified", "to_verify",
-                      "no_check_answer")
+                      "no_check_answer", "excluded")
         )
         failed = sum(
             1 for st, _sec in executors.values() if st in ("failed", "timeout")

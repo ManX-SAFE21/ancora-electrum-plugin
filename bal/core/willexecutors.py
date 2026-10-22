@@ -380,7 +380,8 @@ class Willexecutors:
         network's entry is seeded ONCE from the saved list (its URLs with
         ``selected`` False) and then only the user's actions change it
         (:meth:`set_user_choice`): idempotent, and a will-executor the
-        plugin deselects later (no answer, Exclude) is never added. The
+        plugin deselects later (no answer) is never added; since #178
+        "Exclude" is the user's choice and is added. The
         callers ask it BEFORE any automatic deselection, so the seed sees
         the list as it was. Returns a set (empty when the setting is not
         available, e.g. an old plugin object).
@@ -439,9 +440,10 @@ class Willexecutors:
 
         1. new on the network (not in ``known``) and answering: selected;
         2. deselected by the user: stays deselected, even when it answers;
+           since #178 (owner) "Exclude" counts as the user's deselection;
         3. otherwise (known; deselected before by the plugin because it did
-           not answer, or by Exclude): selected when it answers, deselected
-           when it does not.
+           not answer): selected when it answers, deselected when it does
+           not.
 
         Returns the URLs of case 1 (the wizard's summary says "new in the
         network").

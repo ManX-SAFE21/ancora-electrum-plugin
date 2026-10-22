@@ -285,14 +285,14 @@
     [
      "https://we0.test",
      [
-      "verified",
+      "excluded",
       null
      ]
     ],
     [
      "https://we1.test",
      [
-      "verified",
+      "excluded",
       null
      ]
     ]
@@ -325,8 +325,8 @@
     ],
     [
      "verify",
-     "ok",
-     "2/2"
+     "skip",
+     "not needed"
     ]
    ],
    "will_now": null
