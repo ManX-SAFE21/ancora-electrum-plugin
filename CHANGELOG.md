@@ -12049,3 +12049,58 @@ List. ZIP `test-zips/ancora_0.8.0-TEST-179-list-delete-rule.zip` (b0cdd815...) l
 **Owner's ZIP test (2026-10-22):** an old "Discarded draft" version (its copies "Invalidated", never sent) was deleted ("Elimina" in Italian); every other row, divinaly's copy too, had "delete" grey and nothing else was deleted.
 
 **Outcome:** DONE.
+
+## 180. A 503 to the check is "no answer", not a failure
+
+**Date:** 2026-10-22
+
+**Problem (the owner's ZIP test of #178, 2026-10-22):**
+`we.divinaly.support` accepted its copies ("pushed: thx"), then answered
+"503 Service Temporarily Unavailable" to the check (`searchtx`) of 25 of
+them. `Willexecutors.check_transaction` raised the error like any other, so
+`WillItem.set_check_willexecutor` marked the copies `CHECK_FAIL` and no
+longer `PUSHED`: the next Check sent them again, though the will-executor
+holds them. A 429 still busy already gave `NO_ANSWER` (#172).
+
+**Owner's decision (2026-10-22):** choice B, a 503 is "no answer" at once,
+with no new try (a new try within seconds rarely helps a server that is
+down, and with 25 copies it would hold the Check up to its 2-minute
+deadline). Only the 503: the 502 and 504 and the other errors stay
+failures.
+
+**What changed:**
+
+- `bal/core/willexecutors.py`: new `CHECK_UNAVAILABLE = 503` with the WHY;
+  `check_transaction` returns `NO_ANSWER` for a 503, logs it and writes
+  "{url} unavailable (503): no answer this time" in the command trace (no
+  pause, no `on_busy`). The copy stays sent and to be verified, the summary
+  reads "received, no answer to the check" and the next Check asks again.
+  `_trace_error` shows "unavailable (503)" instead of "error 503".
+  Docstrings updated.
+- `bal/locale`: the two new texts, translated in Italian and Spanish.
+- New `tests/test_check_unavailable.py` (3 tests; the real
+  `check_transaction` on a fake `send_request`; flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`): a 503 is `NO_ANSWER` at once (one
+  request, no pause, no busy notice); a 500 is still raised; a
+  will-executor answering 503 to every check keeps its 13 copies sent (no
+  `CHECK_FAIL`), the others are verified, the next Check calls it "no
+  answer to the check" and sends nothing to it again.
+
+**Verification:** `ruff check bal/ tests/` clean; affected tests 103
+passed (19 s); mutation run (without the 503 rule) 2/3 caught as expected
+(the 500 test passes both ways); whole suite 2859 passed (29 min). Scenario harness
+not run: no scenario answers 503. ZIP
+`test-zips/ancora_0.8.0-TEST-180-503-no-answer.zip` (fca93c85...) loads as
+an external plugin and passes the smoke test on Electrum 4.8.2; the new
+rule and the Italian text checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-22, the three-date will, five will-executors,
+divinaly selected again after #178's Exclude):** seven Checks from several
+IP addresses. `we.divinaly.support` never answered 503 this time: it gave
+the right copy or no answer in time. The copies without an answer stayed
+sent (no `CHECK_FAIL`), nothing was sent to it again, and the last Check
+read "received and verified" for all five, Verification 5/5. The 503 branch
+itself is covered by the automatic tests only.
+
+**Outcome:** DONE.
