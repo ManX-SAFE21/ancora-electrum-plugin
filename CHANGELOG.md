@@ -12104,3 +12104,62 @@ read "received and verified" for all five, Verification 5/5. The 503 branch
 itself is covered by the automatic tests only.
 
 **Outcome:** DONE.
+
+## 181. "Exclude" next to "received, no answer to the check"
+
+**Date:** 2026-10-22
+
+**Problem (the owner's ZIP tests of #178-#180, 2026-10-22):**
+`we.divinaly.support` received the will, then did not answer the check.
+The Check window showed "received, no answer to the check" (⚠) with no
+button: "Exclude" and "Retry" (#93) were offered only for a will-executor
+that did not get the will. The only way to drop it was the Will-Executor
+tab.
+
+**Owner's decision (2026-10-22):** offer "Exclude" there too, with its own
+question (the #93 text "did not receive your will" would be false), plus
+"You can also press Retry later"; keep the two texts distinct. Text
+approved by the owner.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py` `BuildReportView`: new `EXCLUDE_STATES` (the
+  #93 `FAILED_STATES` plus `no_check_answer`); the will-executors box
+  offers "Exclude" next to those rows and "Retry" under the box.
+  `FAILED_STATES` itself is unchanged.
+- `bal/gui/qt/dialogs.py` `_exclude_executor`: for a will-executor with no
+  answer to the check the question reads: "<host>" received your will, but
+  did not answer the check. / If you exclude it, it is no longer checked
+  and your next wills are no longer sent to it. The copies it already
+  received stay with it. You can select it again in the Will-Executor tab.
+  / You can also press Retry later. / Exclude it? The #93 question for a
+  will-executor that did not get the will is unchanged. After "Yes" the
+  #178 Exclude runs as before (deselected by the user, the copies sent
+  kept, the check runs again, "excluded" in the summary).
+- `bal/locale`: the three new texts in Italian and Spanish.
+- New `tests/test_exclude_no_check_answer.py` (5 tests; flowkit, three
+  fake will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`): the box offers "Exclude" and "Retry"
+  for the "no answer to the check" row only once asked, nothing when all
+  are verified; its own question; the #93 question unchanged for "failed"
+  and "timeout"; the whole way (a will-executor never answering the check,
+  its button, "Yes": deselected, its 13 copies kept, the next Check does
+  not ask it, sends it nothing and calls it "excluded").
+
+**Verification:** `ruff check bal/ tests/` clean; affected tests 133
+passed (38 s); mutation run 2/2 caught (the button only for the #93
+states; the #93 question for every state); whole suite 2864 passed (34 min).
+Scenario harness not run: the Exclude flow is covered by flowkit. ZIP
+`test-zips/ancora_0.8.0-TEST-181-exclude-no-check-answer.zip`
+(f70bd69b...) loads as an external plugin and passes the smoke test on
+Electrum 4.8.2; the new rule and the Italian text checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-22):** the ZIP loads; every Check (several IP
+addresses, also with the Wi-Fi off) read "received and verified" for all
+five will-executors, so no row offered "Exclude", as expected. The "no
+answer to the check" case could not be seen live: a copy verified once is
+never asked again by the Check (`Will.needs_server_check`), which the owner
+found to be a limit (next step #182). Owner: close #181 on the automatic
+tests.
+
+**Outcome:** DONE.

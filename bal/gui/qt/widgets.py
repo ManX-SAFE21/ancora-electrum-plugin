@@ -2702,6 +2702,11 @@ class BuildReportView(QWidget):
 
     #: States of a will-executor that did not get the will (#93).
     FAILED_STATES = ("failed", "timeout")
+    #: #181: the states that offer "Exclude" and "Retry": the will did not
+    #: reach it (#93), or it received the will and did not answer the check
+    #: (#147). Owner: before, only the Will-Executor tab could drop a
+    #: will-executor that never answers the check (we.divinaly.support).
+    EXCLUDE_STATES = FAILED_STATES + ("no_check_answer",)
 
     def __init__(self, format_amount=None, parent=None):
         super().__init__(parent)
@@ -3057,7 +3062,7 @@ class BuildReportView(QWidget):
                     (host, "{} {}".format(symbol, self.executor_text(state, seconds)),
                      colour)
                 )
-                if state in self.FAILED_STATES:
+                if state in self.EXCLUDE_STATES:
                     failed = True
                     if self.on_exclude:
                         actions[len(rows) - 1] = self._small_button(
