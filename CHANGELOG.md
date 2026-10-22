@@ -11990,3 +11990,62 @@ Exclude offered next to "received, no answer to the check", with its own
 question; the word under each step of the Check window more readable.
 
 **Outcome:** DONE.
+
+## 179. The Will tab list deletes only the old versions never sent
+
+**Date:** 2026-10-22
+
+**Problem (the owner's ZIP test of #178, 2026-10-22, a will with three
+delivery dates and five will-executors):** the owner deleted
+`we.divinaly.support`'s 2031 transaction (delivery 1) in the List. The
+Check looks for each will-executor in the copies of every delivery
+together (`Will.check_willexecutors_and_heirs`): divinaly's copies of
+deliveries 2-3, under the other will-executors' copies of delivery 1, hid
+the missing one, so nothing was rebuilt or sent for it and divinaly stayed
+without its delivery 1 (the owner healed it with a new will). Read in the
+code, the same hole comes from deleting ONE draft copy of delivery 1 (the
+password window closed): the next Check signs and sends the will without
+it. And the copies with a failed check (`CHECK_FAIL`: divinaly answered
+"pushed: thx", then "503" to the check) or a sending without an answer
+(`PUSH_FAIL`) could be deleted, though the will-executor may hold them.
+
+**Owner's decision (2026-10-22, "remove the ways to make mistakes, not
+add logic"; no delete of the later-delivery copies, no presence check per
+delivery):** the List deletes only what no will-executor can have and is
+not part of the will being prepared or in force. Choice B: also the drafts
+are not deleted by hand (the next Check drops them when the change is
+undone, #128/#135). The way to stop using a will-executor is "Exclude".
+No new text: the "delete" entry is grey, as before, when nothing selected
+may be deleted (owner: no explanation).
+
+**What changed:**
+
+- `bal/gui/qt/lists.py` `_can_delete`: not deletable, besides the #129
+  rules (PUSHED or CHECKED; a backup transaction in force), a copy sent at
+  least once (`engine.verify.ever_sent`: also `PUSH_FAIL` and
+  `CHECK_FAIL`) and every VALID copy (draft, partially signed, signed and
+  not sent yet), in every delivery. Deletable: the old versions (no longer
+  VALID: replaced, invalidated) never sent. A mixed selection still deletes
+  only the rows that may be deleted. Docstring rewritten with the WHY.
+- `tests/test_gui_will_menu.py`: the delete cases follow the rule (drafts,
+  partially signed, signed not sent, PUSH_FAIL, CHECK_FAIL: not deletable;
+  old versions never sent: deletable; old versions with PUSH_FAIL or
+  CHECK_FAIL: not deletable); the fake item gets `we = None`.
+- `tests/test_gui_will_versions_list.py`
+  `test_draft_on_top_unnumbered_and_not_deletable` (was
+  `..._and_deletable`): the draft row's "delete" is grey.
+- New `tests/test_list_delete_rule.py` (3 tests, flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`, 39 items): no copy of a sent will is
+  deleted, also after a 503 (CHECK_FAIL); a draft copy of delivery 1 is not
+  deleted and the next Check signs and sends the whole chain (3 + 9 + 27);
+  an old version never sent is deleted, and only it.
+
+**Verification:** `ruff check bal/ tests/` clean; affected tests 49 passed
+(16 s); mutation run 3/3 caught (the old rule; only `ever_sent`; only
+VALID); whole suite 2856 passed (30 min). Scenario harness not run: no scenario deletes in the
+List. ZIP `test-zips/ancora_0.8.0-TEST-179-list-delete-rule.zip` (b0cdd815...) loads as an external plugin and passes the smoke test on Electrum 4.8.2; the new rule checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-22):** an old "Discarded draft" version (its copies "Invalidated", never sent) was deleted ("Elimina" in Italian); every other row, divinaly's copy too, had "delete" grey and nothing else was deleted.
+
+**Outcome:** DONE.

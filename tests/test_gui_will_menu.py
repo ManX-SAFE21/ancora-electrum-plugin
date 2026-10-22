@@ -3,7 +3,8 @@ Tests for the Will-tab context menu and Will-Executor bulk-selection helpers
 in ``bal.gui.qt.lists``.
 
 Covers ``_can_sign`` / ``_can_broadcast`` / ``_can_delete`` (CHANGELOG
-#129: never a transaction sent to its will-executor) and
+#129: never a transaction sent to its will-executor; #179: never one sent
+at least once, never a copy of the will being prepared or in force) and
 ``_apply_select_all`` (the pure logic behind the new context-menu actions and
 the "Select All" dropdown).
 
@@ -25,6 +26,8 @@ from bal.gui.qt.lists import (
 
 class FakeWillItem:
     """Minimal stand-in for ``bal.core.will.WillItem`` (get_status only)."""
+
+    we = None
 
     def __init__(self, **status_flags):
         self._status = dict(status_flags)
@@ -77,8 +80,9 @@ def test_can_delete_invalid():
     assert _can_delete(FakeWillItem(VALID=False, COMPLETE=True)) is True
 
 
-def test_can_delete_unsigned():
-    assert _can_delete(FakeWillItem(VALID=True)) is True
+def test_can_delete_unsigned_false():
+    """#179: a draft of the will being prepared is not deleted by hand."""
+    assert _can_delete(FakeWillItem(VALID=True)) is False
 
 
 def test_can_delete_invalid_and_unsigned():
@@ -100,10 +104,15 @@ def _signed_valid(we="https://we.example", **flags):
     return item
 
 
-def test_can_delete_signed_but_never_received_by_executor():
-    """Push failed / "Not on server": the executor does not hold it."""
-    assert _can_delete(_signed_valid(PUSH_FAIL=True, CHECK_FAIL=True)) is True
-    assert _can_delete(_signed_valid()) is True  # signed, never sent
+def test_can_delete_signed_not_sent_or_failed_false():
+    """#179 (owner): a push without an answer or a failed check does not
+    say the executor lacks it (we.divinaly.support: "pushed: thx", then
+    503); a signed copy not sent yet is part of the will in force (in a
+    will in several deliveries its delete left a hole nobody rebuilt)."""
+    assert _can_delete(_signed_valid(PUSH_FAIL=True, CHECK_FAIL=True)) is False
+    assert _can_delete(_signed_valid(CHECK_FAIL=True)) is False
+    assert _can_delete(_signed_valid(PUSH_FAIL=True)) is False
+    assert _can_delete(_signed_valid()) is False  # signed, never sent
 
 
 def test_can_delete_signed_and_pushed_false():
@@ -138,8 +147,14 @@ def test_can_delete_sent_replaced_or_invalidated_false():
 def test_can_delete_replaced_never_sent():
     """Never sent: only this wallet has it, deleting it is free (#129)."""
     assert _can_delete(_old(REPLACED=True)) is True
-    assert _can_delete(_old(REPLACED=True, PUSH_FAIL=True)) is True
     assert _can_delete(_old(INVALIDATED=True)) is True
+
+
+def test_can_delete_old_version_sent_once_false():
+    """#179: an old version whose push got no answer or whose check failed
+    may be on the will-executor's server: kept (before, deletable)."""
+    assert _can_delete(_old(REPLACED=True, PUSH_FAIL=True)) is False
+    assert _can_delete(_old(INVALIDATED=True, CHECK_FAIL=True)) is False
 
 
 def test_can_delete_replaced_backup_still_in_force_false():
@@ -148,10 +163,15 @@ def test_can_delete_replaced_backup_still_in_force_false():
     assert _can_delete(_old(we=None, REPLACED=True)) is False
 
 
-def test_can_delete_draft_and_partially_signed():
-    """Drafts and partially signed ones were never sent."""
-    assert _can_delete(FakeWillItem(VALID=True)) is True
-    assert _can_delete(FakeWillItem(VALID=True, PARTIALLY_SIGNED=True)) is True
+def test_can_delete_draft_and_partially_signed_false():
+    """#179 (owner, choice B): drafts and partially signed copies belong to
+    the will being prepared: the Check drops or completes them (before,
+    deletable)."""
+    assert _can_delete(FakeWillItem(VALID=True)) is False
+    assert _can_delete(FakeWillItem(VALID=True, PARTIALLY_SIGNED=True)) is False
+    draft = FakeWillItem(VALID=True)
+    draft.we = {"url": "https://we.example", "selected": True}
+    assert _can_delete(draft) is False
 
 
 # ------------------------------------------------------------------ #
