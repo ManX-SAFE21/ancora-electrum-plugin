@@ -514,7 +514,7 @@ def test_menu_of_a_version_row_acts_on_all_its_transactions(make):
     assert force is True and sorted(txids) == sorted(s.bw.willitems)
 
 
-def test_draft_on_top_unnumbered_and_deletable(make):
+def test_draft_on_top_unnumbered_and_not_deletable(make):
     s = make()
     s.check()
     s.set_fee(22)
@@ -545,7 +545,9 @@ def test_draft_on_top_unnumbered_and_deletable(make):
     draft_row = m.index(1, 0, m.index(0, 0))
     menu = lst.build_menu(draft_row)   # kept: its actions die with it
     actions = {a.text(): a for a in menu.actions() if a.text()}
-    assert actions["delete"].isEnabled() and actions["sign"].isEnabled()
+    # #179 (owner, choice B): a draft is part of the will being prepared:
+    # signed by the Check or dropped by it, never deleted by hand.
+    assert not actions["delete"].isEnabled() and actions["sign"].isEnabled()
     sent_row = m.index(1, 0, m.index(1, 0))
     menu = lst.build_menu(sent_row)
     actions = {a.text(): a for a in menu.actions() if a.text()}

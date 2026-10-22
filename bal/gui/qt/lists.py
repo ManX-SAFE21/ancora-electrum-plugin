@@ -33,6 +33,7 @@ from ...core.heirs import message_names, message_text, shared_addresses
 from ...core.messages import protected_executor_message
 from ...core.report import executor_fee
 from ...core.summary import executor_states, is_excluded
+from ...engine.verify import ever_sent
 from .calendar import BalCalendarButton
 from .common import (
     N_,
@@ -123,13 +124,30 @@ def _can_delete(will_item):
           will-executor can hold: the backup transaction (no executor), as
           before.
 
-    Deletable: the drafts, the partially signed ones, and the transactions
-    never sent (a signed copy whose push failed or was never made; an old
-    one never sent).
+    #179 (owner, 2026-10-22: "remove the ways to make mistakes"), also not
+    deletable:
+        * a transaction sent at least once (``engine.verify.ever_sent``:
+          also a push without an answer, PUSH_FAIL, or a failed check,
+          CHECK_FAIL). WHY: the will-executor may hold it all the same
+          (we.divinaly.support answered "pushed: thx", then 503 to the
+          check). The way to stop using a will-executor is "Exclude";
+        * every copy of the will being prepared or in force (VALID: draft,
+          partially signed, signed and not sent yet). WHY: the Check looks
+          for each will-executor in the copies of every delivery together.
+          In a will in several deliveries the copies of deliveries 2-3 hide
+          a deleted copy of delivery 1: the Check rebuilds nothing and that
+          will-executor stays without it (owner's ZIP test of #178). The
+          drafts need no delete: the next Check drops them when the change
+          is undone.
+
+    Deletable: the old versions (no longer VALID: replaced, invalidated)
+    never sent.
     """
     if not will_item:
         return False
     if will_item.get_status("PUSHED") or will_item.get_status("CHECKED"):
+        return False
+    if ever_sent(will_item) or will_item.get_status("VALID"):
         return False
     if will_state.classify(will_item) == will_state.IN_FORCE:
         return bool(getattr(will_item, "we", None))
