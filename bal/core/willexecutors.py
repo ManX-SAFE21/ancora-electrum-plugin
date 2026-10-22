@@ -83,6 +83,13 @@ CHECK_MAX_WORKERS = 16
 # server's Retry-After, else 2 s, 4 s, 8 s, never more than
 # CHECK_BUSY_MAX_SLEEP) and a new try, at most CHECK_BUSY_RETRIES times;
 # still busy: NO_ANSWER (the copy stays sent, #147), never CHECK_FAIL.
+# #180: a 503 Service Unavailable to the check is NO_ANSWER at once, with no
+# new try (owner's choice B): we.divinaly.support accepted its copies
+# ("pushed: thx"), then answered 503 to the check of 25 of them; taken for a
+# failure, they were marked not sent and sent again. A new try within
+# seconds rarely helps a server that is down, and would hold the Check up to
+# its deadline. Only 503 (owner): the other errors stay failures.
+CHECK_UNAVAILABLE = 503
 CHECK_BUSY_RETRIES = 3
 CHECK_BUSY_SLEEP = 2
 CHECK_BUSY_MAX_SLEEP = 10
@@ -214,12 +221,15 @@ def _trace_answer(response, seconds, full):
 def _trace_error(error, seconds, full):
     """Write a failed request in the command trace (#173).
 
-    An HTTP error shows its code (429: busy); any other error its text.
+    An HTTP error shows its code (429: busy; 503: unavailable, #180); any
+    other error its text.
     """
     status = getattr(error, "status", None)
     if isinstance(status, int):
         if status == 429:
             text = _("busy (429)")
+        elif status == CHECK_UNAVAILABLE:
+            text = _("unavailable (503)")
         else:
             text = _("error {}").format(status)
     else:
@@ -1282,7 +1292,12 @@ class Willexecutors:
         told to ``on_busy(url, seconds)`` first) it is asked again, at most
         ``busy_retries`` times; still busy, the answer is :data:`NO_ANSWER`
         (the copy stays sent). Before, the 429 was an error and the copy
-        was marked failed and sent again. Other errors are raised, as before.
+        was marked failed and sent again.
+
+        #180: a 503 Service Unavailable gives :data:`NO_ANSWER` at once, no
+        new try (see CHECK_UNAVAILABLE): the will-executor is down for now,
+        which does not say that it lacks the copy. Other errors are raised,
+        as before.
         """
         _logger.debug(f"{url}:{txid}")
         attempt = 0
@@ -1295,6 +1310,14 @@ class Willexecutors:
                 )
                 break
             except Exception as e:
+                if getattr(e, "status", None) == CHECK_UNAVAILABLE:
+                    _logger.info(
+                        f"{url} unavailable (503) for {txid}: no answer this time"
+                    )
+                    trace.add(trace.WARNING, _(
+                        "{url} unavailable (503): no answer this time"
+                    ).format(url=trace.short_url(url)), full=True)
+                    return NO_ANSWER
                 pause = Willexecutors.busy_pause(e, attempt)
                 if pause is None:
                     _logger.error(f"error contacting {url} for checking txs {e}")
