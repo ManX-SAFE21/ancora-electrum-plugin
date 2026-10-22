@@ -11789,3 +11789,204 @@ nothing is sent again. The Exclude question says it "did not receive your
 will", which does not fit a will-executor that got its copies.
 
 **Outcome:** DONE.
+
+## 178. An excluded will-executor is no longer verified; Exclude lasts until the user selects it again
+
+**Date:** 2026-10-21
+
+**Problem (the owner's ZIP test of #177, 2026-10-21 21:06 UTC, a will
+with three delivery dates and five will-executors):**
+`we.divinaly.support` accepted its copies ("pushed: thx"), then never
+answered the check in time (later "503 Service Temporarily
+Unavailable"). The owner pressed "Exclude" and, after more Checks,
+deleted its 2031 transaction in the List; every Check still asked it
+again: "received, verifying...", "Copies verified: 0 of 1".
+- "No answer in time" keeps a copy sent and to be verified (#147), so
+  the Check (`engine/verify.verify_targets`) asked it at every run.
+- "Exclude" keeps the copies a will-executor already got (it holds them
+  on its server; deleting them only here is what #129 forbids), and the
+  Check asked the copies of every will-executor, selected or not: the
+  copy `b3f3432c...` never answered in time, so it was asked for ever
+  and the summary kept "received, to be verified".
+- "Exclude" was the plugin's deselection (#137, case 3): selected again
+  as soon as the will-executor answered the ping, which divinaly does.
+- Nothing was sent again (one sending only, at 21:08 UTC): the Checks
+  only verified.
+
+**Owner's decisions (2026-10-21):** the copies of an excluded
+will-executor stay in the will (safety: they can be broadcast at the
+date; the plugin must know they exist), the Check no longer asks it, the
+box says "excluded"; "Exclude" lasts until the user selects it again.
+
+**What changed:**
+
+- `bal/gui/qt/window.py` `exclude_willexecutor`: recorded as the user's
+  deselection (`Willexecutors.set_user_choice`), like a deselection in
+  the Will-Executor tab: the automatic selection after a download and a
+  ping (`Willexecutors.select_after_ping`, #137 case 2) leaves it
+  deselected; the user selects it again in the Will-Executors window.
+  Exclude now drops only the copies NEVER sent (`engine.verify.ever_sent`,
+  made public: no PUSHED, CHECKED, CHECK_FAIL or PUSH_FAIL). Owner's ZIP
+  test 2026-10-22 07:14 UTC: divinaly accepted its copies ("pushed: thx"),
+  answered "503 Service Temporarily Unavailable" to the check of 25 of
+  them (CHECK_FAIL clears PUSHED), and Exclude, which dropped the copies
+  "not PUSHED" (#93), forgot 25 copies divinaly holds. A copy sent at
+  least once may be on the will-executor's server: it stays.
+  A will-executor the plugin deselects because it does not answer the
+  ping still comes back when it answers (#137 case 3, unchanged).
+  Docstrings of `select_after_ping`, `user_deselected` and
+  `download_and_select_willexecutors` updated.
+- `bal/engine/verify.py` `verify_targets`: new `selected` (the URLs
+  selected now); without `recheck`, a copy of a will-executor not
+  selected is not asked. The Check (`dialogs.py`, verification step) and
+  the command line `check_transactions` with no ids pass it; the right
+  click "check" and `check_transactions` with named ids still ask (the
+  user asks for them).
+- `bal/core/summary.py` `executor_states`: new state `excluded`, a
+  will-executor not selected that received the will, verified before or
+  not (before: "to_verify" for ever, or "verified" from an old check:
+  owner's ZIP test 2026-10-22 05:02 UTC, divinaly excluded read "received
+  and verified", which is no longer true once nobody asks it). It is not
+  counted in "x of N" (as
+  "deselected", #134): the Will tab summary, the "complete the sending"
+  note, the deselected line; it counts as having the will ("No
+  will-executor received your will" is not said when it holds it).
+- `bal/core/report.py`: its text "excluded: has the will, no longer
+  verified"; the report is no longer locked by it
+  (`report_block_reason`). `bal/core/build_report.py`: the state is
+  known.
+- `bal/gui/qt/dialogs.py`: the Sending runs only for the copies of the
+  will-executors selected now (the sending already skipped the others):
+  a signed, unsent copy of an excluded one, kept since this step, made a
+  "Broadcasting 0/0" run and "Sending 1/1" instead of "not needed". The
+  Sending step counts an excluded will-executor as received; the
+  Verification step does not count it ("2/2", not "2/3"); when every
+  will-executor is excluded (all deselected by hand after they received
+  the will; Exclude never leaves none) the Verification step says "not
+  needed" (Italian "non serviva", the word of the other steps with
+  nothing to do; owner's choice) instead of staying grey with no word.
+- `bal/gui/qt/widgets.py`: the box shows it grey with "–" and the text;
+  `bal/gui/qt/future_view.py`: in the legend's grey states;
+  `bal/gui/qt/lists.py`: the row of the will in force names it with the
+  deselected ones ("sent and verified 2 of 2 · 1 deselected", no new
+  text); the row of each of its copies of the will in force reads "In
+  force, excluded" on grey (`theme.EXCLUDED_COLOR` #d6d6d6) instead of
+  "In force, to be verified" on teal (owner's ZIP test). New
+  `summary.is_excluded` (the same rule, copy by copy); the selection is
+  read once per redraw (`WillList._selected_now`, also used by the
+  version row). The rows of older versions are history: unchanged. The
+  copies under an excluded will-executor's copy stay green when their
+  will-executors verified them (owner's question: each row is the copy
+  held by one will-executor; the branch matters only if that copy is
+  the one broadcast).
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; 2 new entries
+  (Italian: "escluso: ha il testamento, non più verificato", "In vigore,
+  escluso"; Spanish: "excluido: tiene el testamento, ya no se verifica",
+  "En vigor, excluido"). Texts approved by the owner.
+
+The same rule covers a will-executor deleted from the Will-Executors list
+after it received the will: it is not selected, so its copies stay and
+are "excluded", no longer verified (before: verified at every Check).
+
+Not in this step (next steps, agreed with the owner): deleting a copy
+in the List together with the copies of the later deliveries that spend
+it (#179); the text of the Exclude question for a will-executor that got
+its copies (#180); the old orphans (D).
+
+Note for the owner's wallet: divinaly was excluded there with the old
+rule (the plugin's deselection); after this version it may come back
+selected at the first ping: exclude it again, or deselect it in the
+Will-Executor window.
+
+**Golden files regenerated (owner OK, 2026-10-22), only these lines:**
+- `tests/golden/5e/check/executor_deselected.json` (we1 deselected after
+  the will was sent and verified): we1 "verified" -> "excluded",
+  Verification "2/2" -> "1/1";
+- `tests/golden/5e/copies/all_executors_deselected_after_sent.json`
+  (every will-executor deselected after the will was sent and verified):
+  we0 and we1 "verified" -> "excluded", Verification "ok 2/2" -> "not
+  needed".
+- `tests/golden/5e/check/exclude_down.json` (we1 down at the sending,
+  then Exclude): its copy (PUSH_FAIL) stays, T4 added; we1 "deselected"
+  in the box; every step unchanged (Sending "not needed").
+Every other golden file unchanged.
+
+**Tests:** new `tests/test_exclude_received.py`, 9 tests (three fake
+will-executors, each with its own fee address; the will with three
+delivery dates, 3 + 9 + 27 items; `we2` gets its 13 copies and never
+answers the check in time):
+- after Exclude the next Check asks it nothing and sends it nothing, its
+  13 copies stay; the box says "excluded", Verification "2/2"; the
+  summary is green, "2 of 2 received and verified it"; the report is
+  available; one more Check asks nothing;
+- the owner's ZIP test: copies verified before, then Exclude: "excluded",
+  Verification "2/2", summary "2 of 2", nothing asked or sent;
+- the owner's ZIP test: no answer in time for half of its copies, an
+  error (503) for the other half, then Exclude: all 13 copies stay,
+  nothing sent to it again, "excluded", Verification "2/2";
+- every will-executor deselected after it received the will: all
+  "excluded", nobody asked, Verification "not needed", will in force;
+- selected again by the user: the next Check asks its 13 copies;
+- `check_transactions` with no ids skips it, with two named ids asks
+  them;
+- the texts: the box, the Future legend, the List row of the version
+  ("2 of 2 · 1 deselected") and the row of its copy ("In force,
+  excluded", grey; an older version's row unchanged);
+- the rule of `executor_states` and of `verify_targets` on their own.
+`tests/test_executor_selection.py`: `test_exclude_then_back_is_selected_again`
+became `test_exclude_lasts_until_the_user_selects_it_again` (two downloads
+leave it deselected; selected again by the user, it stays selected); the
+module docstring follows the new case 2. Two test doubles now hold their
+will-executor as selected, as the real objects do:
+`tests/test_check_no_answer.py` (`test_cli_check_deadline_keeps_the_item_sent`:
+the controller's `willexecutors`) and `tests/test_inheritance_report.py`
+(`test_report_only_for_a_verified_will_in_force`: the plugin's list);
+without it their copy read "excluded" and the test lost its point.
+`tests/test_failed_executor.py`: `test_exclude_deselects_saves_and_drops_the_unsent_copies`
+became `test_exclude_deselects_saves_and_drops_only_the_copies_never_sent`
+(a copy with PUSH_FAIL or CHECK_FAIL stays, a copy never sent is dropped);
+the module docstring follows. `tests/test_core_will_versions.py`
+(`test_exclude_keeps_one_version_with_two_copies`): the version in force
+keeps 3 copies (we1's, PUSH_FAIL, stays), not 2.
+Mutation check: 19 of 19 deliberate faults caught (the Sending counts
+every will-executor, Exclude drops the
+copies not PUSHED again, the List row ignores the exclusion, is not
+grey, keeps the old text, the selection not read at the redraw, a
+verified copy of a deselected will-executor stays "verified", the Verification step grey
+when every will-executor is excluded, the Check asks every
+will-executor, `verify_targets` ignores the selection, no "excluded"
+state, Exclude back to the plugin's deselection, the Verification step
+or the summary row or the List row counts it, the report locked by it,
+the command line asks every will-executor, the box text or the legend
+entry missing).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. Whole `tests/` directory, normal
+order: 2852 passed (34 minutes). Golden files: only the 3 above changed.
+Scenario harness: log identical to the #177 log (135 lines; A20, the
+Exclude flow, unchanged). Test ZIPs
+`test-zips/ancora_0.8.0-TEST-178-exclude-sticky.zip`, `-v2.zip`, `-v3.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2; the
+v3 changes and both translations checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-22, read in his Electrum logs):**
+- v1 (05:02 UTC): divinaly excluded read "received and verified" (its
+  copies verified before) -> v2: "excluded" also then.
+- v2 (07:09 UTC): deselected -> "excluded", Verification 4/4. A new will
+  (4 October 2031, five will-executors) healed the missing 2031 copy.
+  divinaly answered 503 to 25 copies, Exclude dropped them -> v3: Exclude
+  keeps every copy sent once; the List row "In force, to be verified" ->
+  v3: "In force, excluded", grey.
+- v3 (11:41 UTC): divinaly selected, no answer to the check: the Check
+  ends with the warning "received, no answer to the check", 4/5 (no
+  freeze; no Exclude offered for that state: next step). Deselected
+  (11:44 UTC): "excluded", Verification 4/4, Sending "not needed", the
+  summary "4 of 4", the List row "In force, excluded" grey; no check and
+  no sending to divinaly in the log.
+
+**Next steps (agreed with the owner):** #179 the List deletes only drafts
+and old versions never sent; #180 a 503 to the check is "no answer";
+Exclude offered next to "received, no answer to the check", with its own
+question; the word under each step of the Check window more readable.
+
+**Outcome:** DONE.

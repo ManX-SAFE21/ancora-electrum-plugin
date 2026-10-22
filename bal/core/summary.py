@@ -29,14 +29,27 @@ _DAY = 86400
 # Where a will-executor stands with the will in force, worst first: the
 # summary reports an executor by its worst copy (a will usually has one tx
 # per executor, but several coins can give several txs).
-_EXECUTOR_ORDER = ("failed", "to_sign", "to_send", "to_verify", "verified",
-                   "deselected")
+_EXECUTOR_ORDER = ("failed", "to_sign", "to_send", "to_verify", "excluded",
+                   "verified", "deselected")
 
 #: The states a DESELECTED will-executor's copy turns into "deselected"
 #: (#134): it never received the will, and the sending skips it
 #: (``Willexecutors.get_willexecutor_transactions``), so it is not "to
-#: send". A copy it already received keeps its state.
+#: send". A copy it already received is "excluded" (#178, below).
 _NOT_RECEIVED = ("failed", "to_sign", "to_send")
+
+#: #178 (owner): a DESELECTED will-executor (Exclude) that received the
+#: will is "excluded": it holds the will, and the Check no longer asks it
+#: (``engine.verify.verify_targets``). Not "to verify" (before, a
+#: will-executor that never answered the check stayed "to verify" for
+#: ever), and not "verified" either: owner's ZIP test, divinaly excluded
+#: read "received and verified" from an old check, which is no longer
+#: true once nobody asks it.
+_EXCLUDED_FROM = ("to_verify", "verified")
+
+#: The states left out of the counts "x of N" (#134 deselected, #178
+#: excluded): neither is waited for.
+_NOT_COUNTED = ("deselected", "excluded")
 
 
 def selected_urls(willexecutors):
@@ -170,15 +183,29 @@ def _executor_state(w):
     return "to_sign"
 
 
+def is_excluded(w, selected):
+    """True for a copy ``w`` of a will-executor not selected that received
+    the will: the "excluded" of :func:`executor_states` (#178), copy by
+    copy (the List's rows). ``selected``: :func:`selected_urls`, or None
+    (no selection rule: False)."""
+    if selected is None:
+        return False
+    url = (w.we or {}).get("url")
+    return bool(url) and url not in selected and _executor_state(w) in _EXCLUDED_FROM
+
+
 def executor_states(valid, selected=None):
     """``{url: state}`` for the VALID items ``valid``, at each executor's worst copy.
 
     States: ``failed``, ``to_sign``, ``to_send``, ``to_verify``,
-    ``verified`` and (#134) ``deselected``: with ``selected`` (the URLs
+    ``verified``, (#134) ``deselected``: with ``selected`` (the URLs
     selected now, :func:`selected_urls`), a copy for a will-executor not
-    selected that never received the will. None: no selection rule (as
-    before #134). Items without a will-executor (backup transactions) are
-    left out. Also used by the Building Will dialog (#84b).
+    selected that never received the will, and (#178) ``excluded``: a copy
+    for a will-executor not selected that received it, verified before or
+    not (the Check no longer asks it). None: no selection rule (as before
+    #134).
+    Items without a will-executor (backup transactions) are left out. Also
+    used by the Building Will dialog (#84b).
     """
     worst = {}
     for w in valid.values():
@@ -186,8 +213,11 @@ def executor_states(valid, selected=None):
         if not url:
             continue
         state = _executor_state(w)
-        if selected is not None and url not in selected and state in _NOT_RECEIVED:
-            state = "deselected"
+        if selected is not None and url not in selected:
+            if state in _NOT_RECEIVED:
+                state = "deselected"
+            elif state in _EXCLUDED_FROM:
+                state = "excluded"
         old = worst.get(url)
         if old is None or _EXECUTOR_ORDER.index(state) < _EXECUTOR_ORDER.index(old):
             worst[url] = state
@@ -210,9 +240,10 @@ def _executors_row(counts):
     """The "Will-Executor" line: who received and verified the will.
 
     The deselected will-executors (#134) are not counted: they are told
-    apart by their own line (:func:`deselected_text`).
+    apart by their own line (:func:`deselected_text`). Nor the excluded
+    ones (#178): nobody waits for them.
     """
-    counts = {k: v for k, v in counts.items() if k != "deselected"}
+    counts = {k: v for k, v in counts.items() if k not in _NOT_COUNTED}
     total = sum(counts.values())
     label = _("Will-Executor")
     if total == 0:
@@ -380,7 +411,7 @@ def _with_deselected(summary, willitems, selected):
     count = 0
     if selected is not None and summary.get("state") not in ("busy", "none"):
         counts = executor_counts(Will.only_valid_list(willitems), selected)
-        if any(v for k, v in counts.items() if k != "deselected"):
+        if any(v for k, v in counts.items() if k not in _NOT_COUNTED):
             count = counts["deselected"]
     summary["deselected"] = count
     summary["deselected_text"] = deselected_text(count) if count else ""
@@ -479,10 +510,11 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         rows.append(check_row)
 
     counts = executor_counts(valid, selected)
-    if counts["deselected"] and not any(
-            v for k, v in counts.items() if k != "deselected"):
-        # Every will-executor is deselected: nothing would be counted, so
-        # the will reads as before (the rule only tells apart SOME).
+    if any(counts[k] for k in _NOT_COUNTED) and not any(
+            v for k, v in counts.items() if k not in _NOT_COUNTED):
+        # Every will-executor is deselected (or excluded, #178): nothing
+        # would be counted, so the will reads as before (the rule only
+        # tells apart SOME).
         counts = executor_counts(valid)
     rows.append(_executors_row(counts))
     rows.append(_heirs_row(heirs_count))
@@ -554,7 +586,8 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         )
     failed = counts["failed"]
     if failed:
-        received = counts["verified"] + counts["to_verify"]
+        # #178: an excluded will-executor holds the will too.
+        received = counts["verified"] + counts["to_verify"] + counts["excluded"]
         if not received:
             return _summary(
                 "none_received", "warn",
@@ -619,8 +652,9 @@ def _complete_send_note(counts):
     """"3 of 5 will-executors received and verified it. Send it to the
     other 2 too, for more safety." (#134). The others: those still to send
     and those whose sending failed."""
-    # The deselected will-executors (#134) are not part of "of m".
-    total = sum(v for k, v in counts.items() if k != "deselected")
+    # The deselected (#134) and excluded (#178) will-executors are not part
+    # of "of m".
+    total = sum(v for k, v in counts.items() if k not in _NOT_COUNTED)
     verified = counts["verified"]
     others = counts["to_send"] + counts["failed"]
     first = (

@@ -197,7 +197,7 @@ def _executor_legend(executors):
         out.append((_EXECUTOR_COLOURS["verified"], executor_state_text("verified")))
     grey = [
         executor_state_text(state)
-        for state in ("to_verify", "to_send", "to_sign", "deselected")
+        for state in ("to_verify", "excluded", "to_send", "to_sign", "deselected")
         if state in present
     ]
     if grey:

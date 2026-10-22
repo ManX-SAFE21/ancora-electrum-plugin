@@ -50,6 +50,8 @@ EXECUTOR_STATES = (
     "to_sign", "to_send", "to_verify", "deselected",
     # #147: sent and received, but no answer to the check in time.
     "no_check_answer",
+    # #178: excluded after it received the will, no longer asked.
+    "excluded",
 )
 
 

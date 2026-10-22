@@ -1426,9 +1426,12 @@ class BalController(BalSettingsController):
         (the sent copies not verified yet) and the asking are the engine's
         (:func:`bal.engine.verify.verify_targets` /
         :func:`~bal.engine.verify.verify_will`), shared with the Check and
-        the right click "check".
+        the right click "check". #178: without ``txids`` (every copy) the
+        will-executors not selected are not asked, as by the Check; named
+        ``txids`` are asked: the user asks for them.
         """
-        targets, _skipped = verify_targets(self.willitems, txids)
+        selected = selected_urls(self.willexecutors) if txids is None else None
+        targets, _skipped = verify_targets(self.willitems, txids, selected=selected)
         verify_will(self.willitems, targets)
 
         self.save_willitems()
