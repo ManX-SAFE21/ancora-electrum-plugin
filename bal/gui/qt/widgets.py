@@ -2768,6 +2768,13 @@ class BuildReportView(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
 
+    #: #183 (owner, preview approved): the word or counter under a step
+    #: ("ok", "4/5", "0/5 · 27 s / 45 s") was 11 px and grey, hard to read
+    #: on the coloured cells: now 13 px in the step's own colour, a darker
+    #: grey for the steps not reached or not needed.
+    STEP_WORD_SIZE = 13
+    STEP_WORD_GREY = "#444444"
+
     def _steps_bar(self, steps):
         """The five steps with their state and word, joined by arrows."""
         from ...core.build_report import step_label
@@ -2793,7 +2800,9 @@ class BuildReportView(QWidget):
             column.addWidget(top)
             sub = QLabel(note or " ")
             sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            sub.setStyleSheet("color:#555555;font-size:11px;")
+            sub.setStyleSheet("color:{};font-size:{}px;".format(
+                self.STEP_WORD_GREY if state in ("todo", "skip") else fg,
+                self.STEP_WORD_SIZE))
             column.addWidget(sub)
             row.addWidget(cell, 1)
             if i < len(steps) - 1:
