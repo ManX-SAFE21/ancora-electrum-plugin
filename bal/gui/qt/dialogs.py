@@ -2880,6 +2880,12 @@ class BalBuildWillDialog(BalDialog):
         Owner (#93): deselecting it in the Will-Executor tab and pressing
         Check again was the way out, but hard to find. Asks first, never
         for the last selected executor, then checks again without it.
+
+        #181: also offered for a will-executor that received the will and
+        did not answer the check ("no_check_answer"). Its own question: it
+        HAS the will (the #93 text "did not receive your will" would be
+        false), its copies stay with it (#178), and pressing Retry later is
+        the other way (owner: keep the two texts distinct).
         """
         host = urlparse(url).hostname or url
         if not self.bal_window.can_exclude_willexecutor(url):
@@ -2893,18 +2899,30 @@ class BalBuildWillDialog(BalDialog):
             if u != url and state in ("verified", "to_verify", "received",
                                       "no_check_answer")
         ]
-        text = _('"{}" did not receive your will.').format(host)
-        if others:
-            text += " " + (
-                _("1 other will-executor has it.")
-                if len(others) == 1
-                else _("The other {} will-executors have it.").format(len(others))
+        state = self._report().executors().get(url, (None, None))[0]
+        if state == "no_check_answer":
+            text = _(
+                '"{}" received your will, but did not answer the check.'
+            ).format(host)
+            text += "\n\n" + _(
+                "If you exclude it, it is no longer checked and your next wills "
+                "are no longer sent to it. The copies it already received stay "
+                "with it. You can select it again in the Will-Executor tab."
             )
-        text += "\n\n" + _(
-            "If you exclude it, your will is no longer sent to it and the check "
-            "runs again without it. You can select it again in the "
-            "Will-Executor tab."
-        )
+            text += "\n\n" + _("You can also press Retry later.")
+        else:
+            text = _('"{}" did not receive your will.').format(host)
+            if others:
+                text += " " + (
+                    _("1 other will-executor has it.")
+                    if len(others) == 1
+                    else _("The other {} will-executors have it.").format(len(others))
+                )
+            text += "\n\n" + _(
+                "If you exclude it, your will is no longer sent to it and the check "
+                "runs again without it. You can select it again in the "
+                "Will-Executor tab."
+            )
         text += "\n\n" + _("Exclude it?")
         if not self.question(text):
             return
