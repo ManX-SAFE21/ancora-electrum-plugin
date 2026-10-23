@@ -12313,3 +12313,84 @@ checked inside the ZIP.
 **Owner's ZIP test (2026-10-23):** OK, the words under the steps read well.
 
 **Outcome:** DONE.
+
+## 184. The Will tab has a "Graph" view of the will
+
+**Date:** 2026-10-23
+
+**Owner's idea (2026-10-20, draft approved; previews of 2026-10-23 in
+`safe21-ancora/previews/185-*` and `186-*`):** a third view next to "List"
+and "Future", to see a will in several deliveries at a glance: which copy
+holds which, where a will-executor did not receive or confirm its copy.
+
+**Owner's decisions (2026-10-23):**
+
+- time from left to right, one column per delivery with its date and, in
+  green, who receives what ("luca 10% · john 10%");
+- one box per transaction with the will-executor's NAME inside and the
+  colour of its STATE (the colours of the Check window's steps): verified,
+  no answer / to be verified, not received, draft not signed (dashed),
+  disabled or excluded (grey); one legend of the states (no colour per
+  will-executor, no number: the name is written);
+- curved links from each copy to its children; [+] / [−] open and close a
+  branch, "Expand all" / "Collapse all"; when the view appears the first
+  branch is open (owner's ZIP test);
+- the mouse over a box: the path from the wallet in green, the copies of
+  the same will-executor outlined, a tooltip (delivery, txid, will-executor
+  and fee, state and verification time); a click opens Electrum's
+  transaction window, as the List does; the copies in the blockchain keep
+  their path green;
+- the replaced versions hidden, shown in grey on demand;
+- owner's ZIP test: the bar in the middle with bigger buttons, and an
+  adjustable zoom (30 % to 150 %, also Ctrl + wheel) with "Fit" for the
+  whole open graph; boxes, links and texts scale together;
+- every row is a possible future (owner, preview approved): at each
+  delivery only one will-executor publishes its copy, the first to arrive,
+  so every path to the last delivery is one future (3 x 3 x 3 = 27 with
+  three will-executors and three deliveries); the rows on bands light and
+  darker in turn, "Future n" at the right of each row ("Futures 10–18"
+  for a closed branch, instead of "n hidden"), green on the path under the
+  mouse, and a sentence over the graph that says what a row means;
+- light colours like the rest of the Will tab; not in the PDF report.
+
+**What changed:**
+
+- New `bal/core/graph.py` (no Qt): `build_graph` (the tree from the will
+  items: a copy is the child of the copy whose output it spends; children
+  in the order of the Will-Executor tab), `node_state` (states and
+  details), `shown`, `column_dates`, `column_shares` (the delivery table,
+  or the heirs of a one-delivery will), `future_ranges` (the possible
+  futures under each node).
+- New `bal/gui/qt/graph_view.py`: `GraphView` (drawing, branches, hover,
+  tooltip, click, zoom, fit) and `GraphPanel` (the bar and the scroll
+  area). Display only: nothing builds, signs, sends or changes a date.
+- `bal/gui/qt/future_view.py` `WillViewSwitch`: a third button "Graph"
+  (`VIEW_GRAPH`, stored in `bal_will_view` like the others; without a
+  graph widget the switch is as before). `bal/gui/qt/window.py`: the panel
+  in the Will tab, refreshed with the will summary (only while shown).
+- `bal/locale`: the new texts in Italian and Spanish.
+- New `tests/test_graph_view.py` (15 tests; flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`): the tree (3 + 9 + 27, the tab's
+  order, the depths, the dates, the shares), the states, a draft, one
+  delivery, the first branch open then branches open and close, expand /
+  collapse all, the hover path and tooltip, a click opening the
+  transaction window, painting, the replaced versions on demand, the
+  switch's third button, the zoom (sizes and clicks), "Fit", the bar and
+  Ctrl + wheel, the futures (1 to 27, the groups of the closed branches,
+  one delivery) and the sentence.
+
+**Verification:** `ruff check bal/ tests/` clean; graph tests 15 passed
+(11 s); related tests (Future view, translations, i18n, the List, the Will
+menu) 269 passed (29 s); whole suite 2898 passed (38 min). ZIP
+`test-zips/ancora_0.8.0-TEST-184-graph-view.zip` (87c4f339...) loads as an
+external plugin and passes the smoke test on Electrum 4.8.2; the new files
+and the Italian texts checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-23):** first ZIP: "molto bene", asked for the
+bar in the middle with more visible buttons, an adjustable zoom and the
+first branch open; second ZIP: OK ("stupendo"); third ZIP, with the
+futures: OK. The view reopens on the
+last tab chosen (List, Future or Graph), as before: owner OK.
+
+**Outcome:** DONE.

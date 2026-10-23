@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-23 14:17+0200\n"
+"POT-Creation-Date: 2026-10-23 18:20+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -156,7 +156,7 @@ msgstr ""
 msgid "After signing: {}"
 msgstr ""
 
-#: bal/core/datetext.py:143 bal/core/summary.py:687 bal/gui/qt/widgets.py:2965
+#: bal/core/datetext.py:143 bal/core/summary.py:687 bal/gui/qt/widgets.py:2983
 #, python-brace-format
 msgid "delivery {}"
 msgstr ""
@@ -443,7 +443,7 @@ msgstr ""
 msgid "new copy"
 msgstr ""
 
-#: bal/core/explainer.py:124 bal/gui/qt/window.py:1804
+#: bal/core/explainer.py:124 bal/gui/qt/window.py:1815
 msgid "heirs"
 msgstr ""
 
@@ -468,7 +468,7 @@ msgstr ""
 #: bal/gui/qt/basic_wizard.py:1201 bal/gui/qt/dialogs.py:519
 #: bal/gui/qt/dialogs.py:3017 bal/gui/qt/dialogs.py:4418
 #: bal/gui/qt/offline_sign.py:931 bal/gui/qt/report_pages.py:535
-#: bal/gui/qt/widgets.py:3060
+#: bal/gui/qt/widgets.py:3078
 msgid "Heirs"
 msgstr ""
 
@@ -539,11 +539,11 @@ msgstr ""
 msgid "Play from the start"
 msgstr ""
 
-#: bal/core/future.py:148 bal/gui/qt/widgets.py:1082
+#: bal/core/future.py:148 bal/gui/qt/widgets.py:1081
 msgid "Fixed date"
 msgstr ""
 
-#: bal/core/future.py:149 bal/gui/qt/widgets.py:1083
+#: bal/core/future.py:149 bal/gui/qt/widgets.py:1082
 msgid "Period (renewable)"
 msgstr ""
 
@@ -588,8 +588,8 @@ msgstr ""
 msgid "{} years"
 msgstr ""
 
-#: bal/core/future.py:211 bal/core/summary.py:101 bal/gui/qt/future_view.py:248
-#: bal/gui/qt/future_view.py:249 bal/gui/qt/future_view.py:397
+#: bal/core/future.py:211 bal/core/summary.py:101 bal/gui/qt/future_view.py:250
+#: bal/gui/qt/future_view.py:251 bal/gui/qt/future_view.py:399
 msgid "(today)"
 msgstr ""
 
@@ -627,7 +627,7 @@ msgstr ""
 msgid "The delivery date has passed"
 msgstr ""
 
-#: bal/core/future.py:423 bal/core/summary.py:651 bal/gui/qt/window.py:2398
+#: bal/core/future.py:423 bal/core/summary.py:651 bal/gui/qt/window.py:2409
 msgid "Your will is in force"
 msgstr ""
 
@@ -879,7 +879,7 @@ msgstr ""
 msgid "There is already a message in the will: edit that one."
 msgstr ""
 
-#: bal/core/messages.py:592 bal/gui/qt/window.py:1592
+#: bal/core/messages.py:592 bal/gui/qt/window.py:1603
 msgid "Write a name for the heir."
 msgstr ""
 
@@ -932,31 +932,31 @@ msgstr ""
 msgid "Àncòra - Will execution of $wallet_name"
 msgstr ""
 
-#: bal/core/report.py:46 bal/gui/qt/widgets.py:2749
+#: bal/core/report.py:46 bal/gui/qt/widgets.py:2752
 msgid "received and verified"
 msgstr ""
 
-#: bal/core/report.py:47 bal/gui/qt/widgets.py:2750
+#: bal/core/report.py:47 bal/gui/qt/widgets.py:2753
 msgid "received, to be verified"
 msgstr ""
 
-#: bal/core/report.py:48 bal/gui/qt/widgets.py:2753
+#: bal/core/report.py:48 bal/gui/qt/widgets.py:2756
 msgid "to send"
 msgstr ""
 
-#: bal/core/report.py:49 bal/gui/qt/widgets.py:2752
+#: bal/core/report.py:49 bal/gui/qt/widgets.py:2755
 msgid "to sign"
 msgstr ""
 
-#: bal/core/report.py:50 bal/gui/qt/widgets.py:2751
+#: bal/core/report.py:50 bal/gui/qt/graph_view.py:89 bal/gui/qt/widgets.py:2754
 msgid "not received"
 msgstr ""
 
-#: bal/core/report.py:52 bal/gui/qt/widgets.py:2754
+#: bal/core/report.py:52 bal/gui/qt/widgets.py:2757
 msgid "deselected: not sent"
 msgstr ""
 
-#: bal/core/report.py:54 bal/gui/qt/widgets.py:2755
+#: bal/core/report.py:54 bal/gui/qt/widgets.py:2758
 msgid "excluded: has the will, no longer verified"
 msgstr ""
 
@@ -979,7 +979,7 @@ msgid "Less than {} months to the delivery."
 msgstr ""
 
 #: bal/core/summary.py:161 bal/gui/qt/basic_wizard.py:1200
-#: bal/gui/qt/future_view.py:280 bal/gui/qt/future_view.py:385
+#: bal/gui/qt/future_view.py:282 bal/gui/qt/future_view.py:387
 #: bal/gui/qt/offline_sign.py:958 bal/gui/qt/report_pages.py:374
 msgid "Delivery to the heirs"
 msgstr ""
@@ -995,10 +995,10 @@ msgid "next check from {when}"
 msgstr ""
 
 #: bal/core/summary.py:286 bal/core/summary.py:751 bal/gui/qt/dialogs.py:1180
-#: bal/gui/qt/dialogs.py:2946 bal/gui/qt/future_view.py:312
+#: bal/gui/qt/dialogs.py:2946 bal/gui/qt/future_view.py:314
 #: bal/gui/qt/lists.py:746 bal/gui/qt/report_pages.py:385
 #: bal/gui/qt/report_pages.py:535 bal/gui/qt/theme.py:173
-#: bal/gui/qt/widgets.py:3105
+#: bal/gui/qt/widgets.py:3123
 msgid "Will-Executor"
 msgstr ""
 
@@ -1103,9 +1103,9 @@ msgstr ""
 msgid "Check"
 msgstr ""
 
-#: bal/core/summary.py:547 bal/gui/qt/future_view.py:292
-#: bal/gui/qt/future_view.py:297 bal/gui/qt/future_view.py:399
-#: bal/gui/qt/report_pages.py:383 bal/gui/qt/window.py:2014
+#: bal/core/summary.py:547 bal/gui/qt/future_view.py:294
+#: bal/gui/qt/future_view.py:299 bal/gui/qt/future_view.py:401
+#: bal/gui/qt/report_pages.py:383 bal/gui/qt/window.py:2025
 msgid "Check Alive"
 msgstr ""
 
@@ -1118,7 +1118,7 @@ msgstr ""
 msgid "If you do not renew it, your will stays valid and will be delivered on {}."
 msgstr ""
 
-#: bal/core/summary.py:575 bal/gui/qt/window.py:2016
+#: bal/core/summary.py:575 bal/gui/qt/window.py:2027
 msgid "Renew"
 msgstr ""
 
@@ -1168,8 +1168,8 @@ msgstr ""
 msgid "In force, but {} will-executors did not receive it"
 msgstr ""
 
-#: bal/core/summary.py:650 bal/gui/qt/future_view.py:295
-#: bal/gui/qt/future_view.py:299 bal/gui/qt/report_pages.py:382
+#: bal/core/summary.py:650 bal/gui/qt/future_view.py:297
+#: bal/gui/qt/future_view.py:301 bal/gui/qt/report_pages.py:382
 msgid "from that day the wallet asks you to renew it"
 msgstr ""
 
@@ -1374,7 +1374,7 @@ msgstr ""
 msgid "The percentages you wrote add up to {}: the will always spends the whole balance, so the shares are recalculated in proportion."
 msgstr ""
 
-#: bal/core/will_changes.py:525 bal/gui/qt/widgets.py:3045
+#: bal/core/will_changes.py:525 bal/gui/qt/widgets.py:3063
 msgid "Real shares"
 msgstr ""
 
@@ -1394,7 +1394,7 @@ msgid "removed: {}"
 msgstr ""
 
 #: bal/core/will_changes.py:538 bal/gui/qt/basic_wizard.py:1205
-#: bal/gui/qt/window.py:1703
+#: bal/gui/qt/window.py:1714
 msgid "Message"
 msgstr ""
 
@@ -1458,7 +1458,7 @@ msgstr ""
 msgid "error {}"
 msgstr ""
 
-#: bal/core/willexecutors.py:546 bal/gui/qt/window.py:3124
+#: bal/core/willexecutors.py:546 bal/gui/qt/window.py:3135
 msgid "Waiting..."
 msgstr ""
 
@@ -1472,12 +1472,12 @@ msgstr ""
 msgid "no answer in {} s"
 msgstr ""
 
-#: bal/core/willexecutors.py:698 bal/gui/qt/window.py:573
-#: bal/gui/qt/window.py:3132
+#: bal/core/willexecutors.py:698 bal/gui/qt/window.py:574
+#: bal/gui/qt/window.py:3143
 msgid "Success"
 msgstr ""
 
-#: bal/core/willexecutors.py:708 bal/gui/qt/window.py:3134
+#: bal/core/willexecutors.py:708 bal/gui/qt/window.py:3145
 msgid "Failed"
 msgstr ""
 
@@ -1605,12 +1605,12 @@ msgstr ""
 msgid "{} signed now"
 msgstr ""
 
-#: bal/engine/verify.py:193
+#: bal/engine/verify.py:195
 #, python-brace-format
 msgid "{count} copies, at most {seconds} s"
 msgstr ""
 
-#: bal/engine/verify.py:212
+#: bal/engine/verify.py:214
 #, python-brace-format
 msgid "verified {verified}, failed {failed}, no answer {no_answer}"
 msgstr ""
@@ -1830,7 +1830,7 @@ msgstr ""
 msgid "<b>No will-executor answers.</b><br>Check your internet connection and press «Retry»."
 msgstr ""
 
-#: bal/gui/qt/basic_wizard.py:1111 bal/gui/qt/widgets.py:3096
+#: bal/gui/qt/basic_wizard.py:1111 bal/gui/qt/widgets.py:3114
 msgid "Retry"
 msgstr ""
 
@@ -1891,7 +1891,7 @@ msgstr ""
 msgid "Save"
 msgstr ""
 
-#: bal/gui/qt/calendar.py:73 bal/gui/qt/widgets.py:1767
+#: bal/gui/qt/calendar.py:73 bal/gui/qt/widgets.py:1766
 msgid "No reminders were saved: the delivery date is too close (or already passed)"
 msgstr ""
 
@@ -1908,18 +1908,18 @@ msgstr ""
 msgid "Enter the application command:"
 msgstr ""
 
-#: bal/gui/qt/calendar.py:138 bal/gui/qt/widgets.py:1785
+#: bal/gui/qt/calendar.py:138 bal/gui/qt/widgets.py:1784
 msgid "Save calendar reminder (.ics)"
 msgstr ""
 
-#: bal/gui/qt/calendar.py:150 bal/gui/qt/widgets.py:1805
+#: bal/gui/qt/calendar.py:150 bal/gui/qt/widgets.py:1804
 #, python-brace-format
 msgid ""
 "Calendar file saved to:\n"
 "{}"
 msgstr ""
 
-#: bal/gui/qt/calendar.py:155 bal/gui/qt/widgets.py:1801
+#: bal/gui/qt/calendar.py:155 bal/gui/qt/widgets.py:1800
 #, python-brace-format
 msgid "Could not save the calendar file: {}"
 msgstr ""
@@ -2001,12 +2001,12 @@ msgstr ""
 
 #: bal/gui/qt/deliveries.py:303 bal/gui/qt/dialogs.py:493
 #: bal/gui/qt/dialogs.py:2226 bal/gui/qt/dialogs.py:5939
-#: bal/gui/qt/window.py:756
+#: bal/gui/qt/window.py:757
 msgid "Cancel"
 msgstr ""
 
 #: bal/gui/qt/deliveries.py:358 bal/gui/qt/deliveries.py:411
-#: bal/gui/qt/future_view.py:385 bal/gui/qt/report_pages.py:633
+#: bal/gui/qt/future_view.py:387 bal/gui/qt/report_pages.py:633
 #, python-brace-format
 msgid "Delivery {}"
 msgstr ""
@@ -2314,13 +2314,13 @@ msgstr ""
 
 #: bal/gui/qt/dialogs.py:1684 bal/gui/qt/dialogs.py:1937
 #: bal/gui/qt/dialogs.py:3566 bal/gui/qt/dialogs.py:3942
-#: bal/gui/qt/flow_adapter.py:102 bal/gui/qt/window.py:3885
+#: bal/gui/qt/flow_adapter.py:102 bal/gui/qt/window.py:3896
 msgid "Ok"
 msgstr ""
 
 #: bal/gui/qt/dialogs.py:1684 bal/gui/qt/dialogs.py:1941
 #: bal/gui/qt/dialogs.py:1969 bal/gui/qt/dialogs.py:3946
-#: bal/gui/qt/window.py:3887
+#: bal/gui/qt/window.py:3898
 msgid "Ko"
 msgstr ""
 
@@ -2330,7 +2330,7 @@ msgid "checking {} - {}"
 msgstr ""
 
 #: bal/gui/qt/dialogs.py:1698 bal/gui/qt/dialogs.py:3517
-#: bal/gui/qt/dialogs.py:3894 bal/gui/qt/window.py:3165
+#: bal/gui/qt/dialogs.py:3894 bal/gui/qt/window.py:3176
 msgid "Waiting"
 msgstr ""
 
@@ -2409,7 +2409,7 @@ msgid ""
 "After the invalidation is confirmed, press the Check button to finish the will."
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:2601 bal/gui/qt/window.py:2241
+#: bal/gui/qt/dialogs.py:2601 bal/gui/qt/window.py:2252
 msgid "Check Alive must be after today and before the delivery date, please update it"
 msgstr ""
 
@@ -2495,7 +2495,7 @@ msgstr ""
 msgid "🔮 Wizard"
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:3129 bal/gui/qt/widgets.py:1873
+#: bal/gui/qt/dialogs.py:3129 bal/gui/qt/widgets.py:1872
 #, python-brace-format
 msgid "(reminder {idx}/{total})"
 msgstr ""
@@ -2534,7 +2534,7 @@ msgstr ""
 msgid "Next step (manual): press 'Sign' to sign your will."
 msgstr ""
 
-#: bal/gui/qt/dialogs.py:3352 bal/gui/qt/window.py:2393
+#: bal/gui/qt/dialogs.py:3352 bal/gui/qt/window.py:2404
 msgid "Next step (manual): press 'Broadcast will' to send your will to the will-executors."
 msgstr ""
 
@@ -2782,7 +2782,7 @@ msgid "Export…"
 msgstr ""
 
 #: bal/gui/qt/dialogs.py:4931 bal/gui/qt/dialogs.py:5172
-#: bal/gui/qt/window.py:3281 bal/gui/qt/window.py:3294
+#: bal/gui/qt/window.py:3292 bal/gui/qt/window.py:3305
 msgid "Audio MODEM plugin is not available."
 msgstr ""
 
@@ -3010,7 +3010,7 @@ msgid ""
 msgstr ""
 
 #: bal/gui/qt/dialogs.py:6041 bal/gui/qt/offline_sign.py:1030
-#: bal/gui/qt/window.py:3024
+#: bal/gui/qt/window.py:3035
 #, python-brace-format
 msgid "Could not sign the transaction: {}"
 msgstr ""
@@ -3045,72 +3045,156 @@ msgid ""
 "Your settings require an adjustment of the amounts"
 msgstr ""
 
-#: bal/gui/qt/flow_adapter.py:161 bal/gui/qt/window.py:2235
+#: bal/gui/qt/flow_adapter.py:161 bal/gui/qt/window.py:2246
 #, python-brace-format
 msgid "Will-executor fee too high: {}"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:286 bal/gui/qt/report_pages.py:377
+#: bal/gui/qt/future_view.py:288 bal/gui/qt/report_pages.py:377
 msgid "Delivery form"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:316 bal/gui/qt/report_pages.py:604
+#: bal/gui/qt/future_view.py:318 bal/gui/qt/report_pages.py:604
 msgid "Will-executors keep a copy of your will and broadcast it on the delivery date."
 msgstr ""
 
-#: bal/gui/qt/future_view.py:322
+#: bal/gui/qt/future_view.py:324
 #, python-brace-format
 msgid "If the will is no longer checked or renewed, on {} the bitcoin will go to: {}"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:342 bal/gui/qt/theme.py:157
+#: bal/gui/qt/future_view.py:344 bal/gui/qt/theme.py:157
 #: bal/gui/qt/theme.py:185
 msgid "Draft"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:400
+#: bal/gui/qt/future_view.py:402
 msgid "next delivery"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:402
+#: bal/gui/qt/future_view.py:404
 msgid "later deliveries"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:404
+#: bal/gui/qt/future_view.py:406
 msgid "time left"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:428
+#: bal/gui/qt/future_view.py:430
 msgid "Current situation at the will-executors"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:431
+#: bal/gui/qt/future_view.py:433
 #, python-brace-format
 msgid "This is what the will-executors hold today (delivery {held}). The prepared will (delivery {prepared}) is not signed and sent yet: when you sign and send it, this view is in colour again with the new date."
 msgstr ""
 
-#: bal/gui/qt/future_view.py:438
+#: bal/gui/qt/future_view.py:440
 msgid "prepared, not sent"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:493
+#: bal/gui/qt/future_view.py:495
 msgid "NOT SENT TO THE WILL-EXECUTORS YET"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:494
+#: bal/gui/qt/future_view.py:496
 msgid "Until you send it, nothing happens on the date."
 msgstr ""
 
-#: bal/gui/qt/future_view.py:524
+#: bal/gui/qt/future_view.py:526
 msgid "Will signed, not sent yet"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:1504
+#: bal/gui/qt/future_view.py:1512
 msgid "List"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:1504
+#: bal/gui/qt/future_view.py:1512
 msgid "Future"
+msgstr ""
+
+#: bal/gui/qt/future_view.py:1514
+msgid "Graph"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:87
+msgid "verified"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:88
+msgid "no answer / to be verified"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:90
+msgid "draft not signed"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:91
+msgid "disabled or excluded"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:98
+msgid "delivered: in the blockchain"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:100
+msgid "replaced version"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:242
+#, python-brace-format
+msgid "Future {n}"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:243
+#, python-brace-format
+msgid "Futures {first}–{last}"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:249
+msgid "Each row is a possible future. At each delivery only one will-executor publishes its copy, the first to arrive; the copies of the next delivery depend on it. Whichever way it goes, the heirs receive their shares."
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:254
+msgid "Each row is a possible future: only one will-executor publishes its copy, the first to arrive. Whichever it is, the heirs receive their shares."
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:398 bal/gui/qt/graph_view.py:519
+#, python-brace-format
+msgid "Delivery {n}"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:410
+#, python-brace-format
+msgid "fee {}"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:456
+msgid "No will to draw yet."
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:476
+msgid "Wallet funds"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:577 bal/gui/qt/graph_view.py:622
+msgid "backup"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:648
+msgid "Expand all"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:649
+msgid "Collapse all"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:650
+msgid "Show the replaced versions"
+msgstr ""
+
+#: bal/gui/qt/graph_view.py:659
+msgid "Fit"
 msgstr ""
 
 #: bal/gui/qt/lists.py:183
@@ -3123,16 +3207,16 @@ msgstr ""
 msgid "There are {} messages in the will: only one is allowed. Delete the others (right click, Delete)."
 msgstr ""
 
-#: bal/gui/qt/lists.py:207 bal/gui/qt/window.py:1494
+#: bal/gui/qt/lists.py:207 bal/gui/qt/window.py:1505
 msgid "Name"
 msgstr ""
 
-#: bal/gui/qt/lists.py:209 bal/gui/qt/window.py:1499
+#: bal/gui/qt/lists.py:209 bal/gui/qt/window.py:1510
 msgid "Bitcoin address"
 msgstr ""
 
 #: bal/gui/qt/lists.py:210 bal/gui/qt/report_pages.py:479
-#: bal/gui/qt/window.py:1385
+#: bal/gui/qt/window.py:1396
 msgid "Amount"
 msgstr ""
 
@@ -3162,7 +3246,7 @@ msgid "On the blockchain"
 msgstr ""
 
 #: bal/gui/qt/lists.py:463 bal/gui/qt/lists.py:578 bal/gui/qt/lists.py:749
-#: bal/gui/qt/widgets.py:2337
+#: bal/gui/qt/widgets.py:2336
 msgid "Status"
 msgstr ""
 
@@ -3175,7 +3259,7 @@ msgid "Version"
 msgstr ""
 
 #: bal/gui/qt/lists.py:744 bal/gui/qt/report_pages.py:729
-#: bal/gui/qt/widgets.py:2322
+#: bal/gui/qt/widgets.py:2321
 msgid "Locktime"
 msgstr ""
 
@@ -3292,7 +3376,7 @@ msgstr ""
 msgid "Inheritance in several deliveries…"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1696 bal/gui/qt/window.py:485
+#: bal/gui/qt/lists.py:1696 bal/gui/qt/window.py:486
 msgid "Sign the will offline…"
 msgstr ""
 
@@ -3304,7 +3388,7 @@ msgstr ""
 msgid "Wizard - Build your will"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1721 bal/gui/qt/window.py:752
+#: bal/gui/qt/lists.py:1721 bal/gui/qt/window.py:753
 msgid "Check your will"
 msgstr ""
 
@@ -3327,7 +3411,7 @@ msgstr ""
 msgid "CLI command trace…"
 msgstr ""
 
-#: bal/gui/qt/lists.py:1819 bal/gui/qt/widgets.py:1355
+#: bal/gui/qt/lists.py:1819 bal/gui/qt/widgets.py:1354
 msgid "Export reminder dates to your calendar (.ics)"
 msgstr ""
 
@@ -3424,7 +3508,7 @@ msgstr ""
 msgid "Deselect only invalid"
 msgstr ""
 
-#: bal/gui/qt/lists.py:2428 bal/gui/qt/window.py:1296
+#: bal/gui/qt/lists.py:2428 bal/gui/qt/window.py:1307
 #, python-brace-format
 msgid "Edit: {}"
 msgstr ""
@@ -3472,7 +3556,7 @@ msgstr ""
 msgid "Base fee in satoshis"
 msgstr ""
 
-#: bal/gui/qt/lists.py:2572 bal/gui/qt/widgets.py:2385
+#: bal/gui/qt/lists.py:2572 bal/gui/qt/widgets.py:2384
 msgid "Address"
 msgstr ""
 
@@ -3921,11 +4005,11 @@ msgstr ""
 msgid "Settings"
 msgstr ""
 
-#: bal/gui/qt/plugin.py:604 bal/gui/qt/widgets.py:1076
+#: bal/gui/qt/plugin.py:604 bal/gui/qt/widgets.py:1075
 msgid "BASIC"
 msgstr ""
 
-#: bal/gui/qt/plugin.py:604 bal/gui/qt/widgets.py:1076
+#: bal/gui/qt/plugin.py:604 bal/gui/qt/widgets.py:1075
 msgid "ADVANCED"
 msgstr ""
 
@@ -4186,7 +4270,7 @@ msgstr ""
 msgid "Total to the heirs"
 msgstr ""
 
-#: bal/gui/qt/report_pages.py:535 bal/gui/qt/widgets.py:311
+#: bal/gui/qt/report_pages.py:535 bal/gui/qt/widgets.py:310
 msgid "Date"
 msgstr ""
 
@@ -4371,105 +4455,105 @@ msgstr ""
 msgid "Could not save the file: {}"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:144
+#: bal/gui/qt/widgets.py:143
 msgid "Mining fee rate in sat/vByte used for the will transactions"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:161
+#: bal/gui/qt/widgets.py:160
 msgid ""
 "mining fees expressed in sats/vbyte to be used in the Bitcoin transaction.\n"
 "Higher value ensure your transaction will be confirmed"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:165
+#: bal/gui/qt/widgets.py:164
 msgid "Miner fee, click for more information"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:277
+#: bal/gui/qt/widgets.py:276
 msgid ""
 "if you choose Raw, you can insert various options based on suffix:\n"
 " - d: number of days after current day(ex: 1d means tomorrow)\n"
 " - y: number of years after currrent day(ex: 1y means one year from today)\n"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:311
+#: bal/gui/qt/widgets.py:310
 msgid "Raw"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:796
+#: bal/gui/qt/widgets.py:795
 msgid "<b>CHECK ALIVE</b><br><br>How many days before the delivery date the plugin asks if you are still here.<br><br>From that day on, when you open the wallet or press Check, the plugin asks you to <b>renew</b> the will: the old will is invalidated (one miner fee) and a new one is prepared with a later delivery date.<br>If you do not renew, nothing changes: at the delivery date the transactions are delivered to your heirs.<br><br>Default for a new wallet: 365 days (one year). The date next to the field is the resulting Check Alive date; it turns red when it is already past.<br>"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:810
+#: bal/gui/qt/widgets.py:809
 msgid "Check Alive: days before the delivery date"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:831
+#: bal/gui/qt/widgets.py:830
 msgid "days"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:884
+#: bal/gui/qt/widgets.py:883
 #, python-brace-format
 msgid "(≈ {} months)"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:886
+#: bal/gui/qt/widgets.py:885
 msgid "(≈ 1 month)"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:889
+#: bal/gui/qt/widgets.py:888
 msgid "before the delivery"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:931
+#: bal/gui/qt/widgets.py:930
 msgid "This Check Alive date has already passed"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:960
+#: bal/gui/qt/widgets.py:959
 msgid "<b>DELIVERY TIME</b><br><br>Set Locktime for transactions.<br>Any time is needed transaction will be anticipated by 1day<br><br>(ONLY IN ADVANCED MODE)<br>if you choose Raw, you can insert various options based on suffix:<br> - d: number of days after current day(ex: 1d means tomorrow)<br> - y: number of years after currrent day(ex: 1y means one year from today)<br><br><b>Note:</b> the date/time is expressed in your computer's <b>Local time</b> (not UTC time).<br>"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:977
+#: bal/gui/qt/widgets.py:976
 msgid "Delivery Time, click for more information"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1027
+#: bal/gui/qt/widgets.py:1026
 msgid "The delivery form cannot change while a will is in force. To change it, invalidate the will (Invalidate, miner fee); when the invalidation is confirmed, choose the new form here and prepare the new will."
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1073
+#: bal/gui/qt/widgets.py:1072
 msgid "Plugin mode (applies to every wallet)"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1086
+#: bal/gui/qt/widgets.py:1085
 msgid "Several deliveries"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1087
+#: bal/gui/qt/widgets.py:1086
 msgid "Edit the deliveries…"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1483
+#: bal/gui/qt/widgets.py:1482
 msgid ""
 "Enter the date on which you want the inheritance (or backup)\n"
 "of your Electrum wallet to take effect."
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1514
+#: bal/gui/qt/widgets.py:1513
 msgid ""
 "Please note: Do not reduce the miner fees\n"
 "unless you know what you’re doing"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1940
+#: bal/gui/qt/widgets.py:1939
 msgid "Delivery date of the will in force"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:1942
+#: bal/gui/qt/widgets.py:1941
 msgid "Delivery date of the will that will be prepared"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2110
+#: bal/gui/qt/widgets.py:2109
 msgid ""
 "A short text written in the will transaction (OP_RETURN), at most 80 bytes.\n"
 "It is written on the blockchain only at the delivery, when the will transaction is broadcast;\n"
@@ -4481,389 +4565,389 @@ msgid ""
 "“To Marco and Giulia: everything I have is yours. With love, dad”"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2128
+#: bal/gui/qt/widgets.py:2127
 msgid "The message will be public forever on the blockchain, and the will-executors can read it before the delivery. Do not write private data."
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2199
+#: bal/gui/qt/widgets.py:2198
 #, python-brace-format
 msgid "{} / {} bytes"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2323
+#: bal/gui/qt/widgets.py:2322
 msgid "Creation Time"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2333
+#: bal/gui/qt/widgets.py:2332
 msgid "Transaction fees"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2343
+#: bal/gui/qt/widgets.py:2342
 msgid "Heirs:"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2371
+#: bal/gui/qt/widgets.py:2370
 msgid "Willexecutor:"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2452
+#: bal/gui/qt/widgets.py:2451
 msgid "What changes compared with the will in force"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2538 bal/gui/qt/widgets.py:2900
+#: bal/gui/qt/widgets.py:2537 bal/gui/qt/widgets.py:2918
 msgid "Open Will-Executors"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2738
+#: bal/gui/qt/widgets.py:2741
 #, python-brace-format
 msgid "no answer ({} s)"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2739
+#: bal/gui/qt/widgets.py:2742
 msgid "no answer"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2743
+#: bal/gui/qt/widgets.py:2746
 #, python-brace-format
 msgid "received, no answer to the check ({} s)"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2744
+#: bal/gui/qt/widgets.py:2747
 msgid "received, no answer to the check"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2746
+#: bal/gui/qt/widgets.py:2749
 msgid "waiting…"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2747
+#: bal/gui/qt/widgets.py:2750
 msgid "received"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2748
+#: bal/gui/qt/widgets.py:2751
 msgid "received, verifying…"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2936
+#: bal/gui/qt/widgets.py:2954
 msgid "Amount moved"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2942 bal/gui/qt/widgets.py:2945
+#: bal/gui/qt/widgets.py:2960 bal/gui/qt/widgets.py:2963
 msgid "Destination"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2943
-#, python-brace-format
-msgid "an address that is NOT of this wallet: {}"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2945
-#, python-brace-format
-msgid "a new address of your wallet: {}"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2947
-msgid "your bitcoin stay yours: they come back to this wallet"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2949
-msgid "Network fee"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2950
-#, python-brace-format
-msgid "{} sat"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2951
-#, python-brace-format
-msgid "{} sat/vB"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2958
-msgid "the will"
-msgstr ""
-
-#: bal/gui/qt/widgets.py:2960
-msgid "1 copy at the will-executors"
 msgstr ""
 
 #: bal/gui/qt/widgets.py:2961
 #, python-brace-format
-msgid "{} copies at the will-executors"
+msgid "an address that is NOT of this wallet: {}"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2962
-msgid "Wills it makes useless"
+#: bal/gui/qt/widgets.py:2963
+#, python-brace-format
+msgid "a new address of your wallet: {}"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2965
+msgid "your bitcoin stay yours: they come back to this wallet"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2967
+msgid "Network fee"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2968
+#, python-brace-format
+msgid "{} sat"
 msgstr ""
 
 #: bal/gui/qt/widgets.py:2969
+#, python-brace-format
+msgid "{} sat/vB"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2976
+msgid "the will"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2978
+msgid "1 copy at the will-executors"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2979
+#, python-brace-format
+msgid "{} copies at the will-executors"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2980
+msgid "Wills it makes useless"
+msgstr ""
+
+#: bal/gui/qt/widgets.py:2987
 msgid "and 1 older version"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:2970
+#: bal/gui/qt/widgets.py:2988
 #, python-brace-format
 msgid "and {} older versions"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3005
+#: bal/gui/qt/widgets.py:3023
 msgid "Check the list: by signing, this becomes your will. If something is wrong, press Cancel at the password request: nothing else changes (the new names are already saved)."
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3009
+#: bal/gui/qt/widgets.py:3027
 msgid "Check the list: by signing, this becomes your will. If something is wrong, press Cancel at the password request: nothing changes."
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3021
+#: bal/gui/qt/widgets.py:3039
 msgid "Show the transaction"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3025
+#: bal/gui/qt/widgets.py:3043
 msgid "Invalidation of the old will"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3033
+#: bal/gui/qt/widgets.py:3051
 msgid "What changed"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3035
+#: bal/gui/qt/widgets.py:3053
 msgid "Attention"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3036
+#: bal/gui/qt/widgets.py:3054
 msgid "What went wrong"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3083
+#: bal/gui/qt/widgets.py:3101
 #, python-brace-format
 msgid "received and verified on {when}"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3092
+#: bal/gui/qt/widgets.py:3110
 msgid "Exclude"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3102
+#: bal/gui/qt/widgets.py:3120
 #, python-brace-format
 msgid "Next check from {when}"
 msgstr ""
 
-#: bal/gui/qt/widgets.py:3110
+#: bal/gui/qt/widgets.py:3128
 msgid "Your will now"
 msgstr ""
 
-#: bal/gui/qt/window.py:289
+#: bal/gui/qt/window.py:290
 msgid "This QR code does not contain a Bitcoin address."
 msgstr ""
 
-#: bal/gui/qt/window.py:307
+#: bal/gui/qt/window.py:308
 msgid "The message changes: the will must be signed again."
 msgstr ""
 
-#: bal/gui/qt/window.py:309
+#: bal/gui/qt/window.py:310
 msgid "You are changing who receives: the will must be signed again."
 msgstr ""
 
-#: bal/gui/qt/window.py:311
+#: bal/gui/qt/window.py:312
 msgid "The share changes: the will must be signed again."
 msgstr ""
 
-#: bal/gui/qt/window.py:313 bal/gui/qt/window.py:1618
+#: bal/gui/qt/window.py:314 bal/gui/qt/window.py:1629
 msgid "Only the name changes: no need to sign."
 msgstr ""
 
-#: bal/gui/qt/window.py:468
+#: bal/gui/qt/window.py:469
 msgid "&Heirs"
 msgstr ""
 
-#: bal/gui/qt/window.py:474
+#: bal/gui/qt/window.py:475
 msgid "&Will"
 msgstr ""
 
-#: bal/gui/qt/window.py:478
+#: bal/gui/qt/window.py:479
 msgid "&Will-Executors"
 msgstr ""
 
-#: bal/gui/qt/window.py:572
+#: bal/gui/qt/window.py:573
 #, python-brace-format
 msgid "Please restart Electrum to activate the {} plugin"
 msgstr ""
 
-#: bal/gui/qt/window.py:659
+#: bal/gui/qt/window.py:660
 #, python-brace-format
 msgid "Your delivery date is now fixed: {}."
 msgstr ""
 
-#: bal/gui/qt/window.py:664
+#: bal/gui/qt/window.py:665
 #, python-brace-format
 msgid "The shared setting (possibly changed from another wallet) was {old}; this wallet keeps the date of its will, {new}."
 msgstr ""
 
-#: bal/gui/qt/window.py:672
+#: bal/gui/qt/window.py:673
 #, python-brace-format
 msgid "Your will was changed by another program. The delivery date now follows the will in force: {new} (before: {old})."
 msgstr ""
 
-#: bal/gui/qt/window.py:679
+#: bal/gui/qt/window.py:680
 msgid "To use the later date again, choose it and press 'Check your will': first the old will needs an invalidation transaction (your bitcoin stay yours, you only pay the network fee)."
 msgstr ""
 
-#: bal/gui/qt/window.py:720
+#: bal/gui/qt/window.py:721
 #, python-brace-format
 msgid "The will prepared for {keep} is not signed and sent yet. The shared setting (possibly changed from another wallet) asked for a later date: {later}. Which date do you want?"
 msgstr ""
 
-#: bal/gui/qt/window.py:724
+#: bal/gui/qt/window.py:725
 #, python-brace-format
 msgid "Keep {} (the will already prepared, no fee)"
 msgstr ""
 
-#: bal/gui/qt/window.py:728
+#: bal/gui/qt/window.py:729
 #, python-brace-format
 msgid "Use {} (later: needs an invalidation transaction, you only pay the network fee)"
 msgstr ""
 
-#: bal/gui/qt/window.py:809
+#: bal/gui/qt/window.py:810
 msgid "Open the table of the deliveries now?"
 msgstr ""
 
-#: bal/gui/qt/window.py:833
+#: bal/gui/qt/window.py:834
 msgid "The inheritance in several deliveries is available in ADVANCED mode only."
 msgstr ""
 
-#: bal/gui/qt/window.py:836
+#: bal/gui/qt/window.py:837
 msgid "This wallet uses a renewable period, which has one delivery date. Choose \"Fixed date\" first (Build / Edit Your Will)."
 msgstr ""
 
-#: bal/gui/qt/window.py:840
+#: bal/gui/qt/window.py:841
 msgid "There are no heirs: add them first."
 msgstr ""
 
-#: bal/gui/qt/window.py:930 bal/gui/qt/window.py:3043
+#: bal/gui/qt/window.py:931 bal/gui/qt/window.py:3054
 msgid "Signing transactions..."
 msgstr ""
 
-#: bal/gui/qt/window.py:1255
+#: bal/gui/qt/window.py:1266
 msgid "The heirs changed: the table of the deliveries must be updated before the will can be prepared. Open it now?"
 msgstr ""
 
-#: bal/gui/qt/window.py:1294
+#: bal/gui/qt/window.py:1305
 msgid "New heir"
 msgstr ""
 
-#: bal/gui/qt/window.py:1317
+#: bal/gui/qt/window.py:1328
 msgid "% Percentage"
 msgstr ""
 
-#: bal/gui/qt/window.py:1318
+#: bal/gui/qt/window.py:1329
 msgid "Fixed amount"
 msgstr ""
 
-#: bal/gui/qt/window.py:1332
+#: bal/gui/qt/window.py:1343
 msgid "Percentage: a share of the wallet balance (e.g. 30). The heirs' percentages are weights: together they share, in proportion, what is left after the fees and the fixed amounts (e.g. two heirs at 30 and no others: half each). Fixed amount: an exact amount in the wallet's unit, paid first. If no heir has a percentage, what is left over is shared among the heirs with a fixed amount, in proportion: the wallet is always emptied completely."
 msgstr ""
 
-#: bal/gui/qt/window.py:1342
+#: bal/gui/qt/window.py:1353
 msgid "One single address of the heir (e.g. bc1q…), taken from Receive in the heir's wallet. Not an xpub/zpub."
 msgstr ""
 
-#: bal/gui/qt/window.py:1368
+#: bal/gui/qt/window.py:1379
 msgid "A share of the wallet balance (e.g. 30). The heirs' percentages share, in proportion, what is left after the fixed amounts."
 msgstr ""
 
-#: bal/gui/qt/window.py:1372
+#: bal/gui/qt/window.py:1383
 #, python-brace-format
 msgid "An exact amount in {}, paid first. If no heir has a percentage, what is left over is shared among the heirs in proportion: the wallet is always emptied completely."
 msgstr ""
 
-#: bal/gui/qt/window.py:1386
+#: bal/gui/qt/window.py:1397
 msgid "OP_RETURN Message"
 msgstr ""
 
-#: bal/gui/qt/window.py:1485
+#: bal/gui/qt/window.py:1496
 msgid "Add another heir"
 msgstr ""
 
-#: bal/gui/qt/window.py:1496
+#: bal/gui/qt/window.py:1507
 msgid "Unique name or description about heir"
 msgstr ""
 
-#: bal/gui/qt/window.py:1501
+#: bal/gui/qt/window.py:1512
 msgid "Bitcoin address or OP_RETURN: prefix + hex data"
 msgstr ""
 
-#: bal/gui/qt/window.py:1521
+#: bal/gui/qt/window.py:1532
 msgid "With the inheritance in several deliveries this amount is not used: the shares are in the table of the deliveries."
 msgstr ""
 
-#: bal/gui/qt/window.py:1546
+#: bal/gui/qt/window.py:1557
 msgid "Notes"
 msgstr ""
 
-#: bal/gui/qt/window.py:1549
+#: bal/gui/qt/window.py:1560
 msgid "Private notes for you, kept only in this wallet; never sent to the will-executors or written on the blockchain."
 msgstr ""
 
-#: bal/gui/qt/window.py:1586 bal/gui/qt/window.py:1713
+#: bal/gui/qt/window.py:1597 bal/gui/qt/window.py:1724
 msgid "OP_RETURN message"
-msgstr ""
-
-#: bal/gui/qt/window.py:1627
-#, python-brace-format
-msgid "The notes are too long: at most {} characters."
-msgstr ""
-
-#: bal/gui/qt/window.py:1633
-#, python-brace-format
-msgid "An heir named {} already exists."
 msgstr ""
 
 #: bal/gui/qt/window.py:1638
 #, python-brace-format
+msgid "The notes are too long: at most {} characters."
+msgstr ""
+
+#: bal/gui/qt/window.py:1644
+#, python-brace-format
+msgid "An heir named {} already exists."
+msgstr ""
+
+#: bal/gui/qt/window.py:1649
+#, python-brace-format
 msgid "An heir name cannot contain the sign {}."
 msgstr ""
 
-#: bal/gui/qt/window.py:1654
+#: bal/gui/qt/window.py:1665
 #, python-brace-format
 msgid "This address is already used by the heir {}."
 msgstr ""
 
-#: bal/gui/qt/window.py:1695
+#: bal/gui/qt/window.py:1706
 msgid "A message in the will"
 msgstr ""
 
-#: bal/gui/qt/window.py:1716
+#: bal/gui/qt/window.py:1727
 #, python-brace-format
 msgid "In the heirs list it is called \"{}\": the name is only for you, it is not written in the transaction."
 msgstr ""
 
-#: bal/gui/qt/window.py:1737
+#: bal/gui/qt/window.py:1748
 msgid "Write the message."
 msgstr ""
 
-#: bal/gui/qt/window.py:1797
+#: bal/gui/qt/window.py:1808
 #, python-brace-format
 msgid "Not imported: {}. There is already a message in the will: only one is allowed."
 msgstr ""
 
-#: bal/gui/qt/window.py:2017
+#: bal/gui/qt/window.py:2028
 msgid "Not now"
 msgstr ""
 
-#: bal/gui/qt/window.py:2230
+#: bal/gui/qt/window.py:2241
 #, python-brace-format
 msgid "In the inheritance process, the entire wallet will always be fully emptied. Your settings require an adjustment of the amounts.{}"
 msgstr ""
 
-#: bal/gui/qt/window.py:2251
+#: bal/gui/qt/window.py:2262
 msgid "locktime is lower than threshold"
 msgstr ""
 
-#: bal/gui/qt/window.py:2265
+#: bal/gui/qt/window.py:2276
 msgid " no backup transaction or willexecutor selected"
 msgstr ""
 
-#: bal/gui/qt/window.py:2305
+#: bal/gui/qt/window.py:2316
 msgid ""
 "This inheritance was already signed/sent to will-executors and you are postponing it.\n"
 "\n"
@@ -4872,11 +4956,11 @@ msgid ""
 "Please sign and broadcast the invalidation transaction now, then press 'Prepare' again to create the new (postponed) inheritance."
 msgstr ""
 
-#: bal/gui/qt/window.py:2376
+#: bal/gui/qt/window.py:2387
 msgid "Please, check your heirs, locktime and threshold!"
 msgstr ""
 
-#: bal/gui/qt/window.py:2403
+#: bal/gui/qt/window.py:2414
 msgid ""
 "Your will has been rebuilt and now needs to be signed again.\n"
 "\n"
@@ -4884,7 +4968,7 @@ msgid ""
 "  1. Press 'Sign' to sign the new transaction."
 msgstr ""
 
-#: bal/gui/qt/window.py:2410
+#: bal/gui/qt/window.py:2421
 msgid ""
 "Your will has been rebuilt and now needs to be signed and re-sent to the will-executors.\n"
 "\n"
@@ -4893,138 +4977,138 @@ msgid ""
 "  2. Press 'Broadcast will' to send it to the will-executors."
 msgstr ""
 
-#: bal/gui/qt/window.py:2447
+#: bal/gui/qt/window.py:2458
 msgid "Electrum was unable to deserialize the transaction:"
 msgstr ""
 
-#: bal/gui/qt/window.py:2461
+#: bal/gui/qt/window.py:2472
 msgid "no tx"
 msgstr ""
 
-#: bal/gui/qt/window.py:2486
+#: bal/gui/qt/window.py:2497
 msgid "Please sign and broadcast this transaction to invalidate current will"
 msgstr ""
 
-#: bal/gui/qt/window.py:2493
+#: bal/gui/qt/window.py:2504
 msgid "No transactions to invalidate"
 msgstr ""
 
-#: bal/gui/qt/window.py:2501
+#: bal/gui/qt/window.py:2512
 msgid "Calculating Transactions"
 msgstr ""
 
-#: bal/gui/qt/window.py:2530
+#: bal/gui/qt/window.py:2541
 #, python-brace-format
 msgid "signed: {}"
 msgstr ""
 
-#: bal/gui/qt/window.py:2532
+#: bal/gui/qt/window.py:2543
 #, python-brace-format
 msgid "signing: {}"
 msgstr ""
 
-#: bal/gui/qt/window.py:3065
+#: bal/gui/qt/window.py:3076
 msgid "Some transaction was not broadcasted"
 msgstr ""
 
-#: bal/gui/qt/window.py:3069
+#: bal/gui/qt/window.py:3080
 msgid "All transactions are broadcasted to respective Will-Executors"
 msgstr ""
 
-#: bal/gui/qt/window.py:3088
+#: bal/gui/qt/window.py:3099
 msgid "Selecting Will-Executors"
 msgstr ""
 
-#: bal/gui/qt/window.py:3127
+#: bal/gui/qt/window.py:3138
 msgid "excluded: fee above the maximum"
 msgstr ""
 
-#: bal/gui/qt/window.py:3129
+#: bal/gui/qt/window.py:3140
 msgid "excluded: not a valid will-executor"
 msgstr ""
 
-#: bal/gui/qt/window.py:3133
+#: bal/gui/qt/window.py:3144
 msgid "checking..."
 msgstr ""
 
-#: bal/gui/qt/window.py:3135
+#: bal/gui/qt/window.py:3146
 msgid "no answer in time"
 msgstr ""
 
-#: bal/gui/qt/window.py:3140
+#: bal/gui/qt/window.py:3151
 msgid "Broadcasting Transactions to Will-Executors:"
 msgstr ""
 
-#: bal/gui/qt/window.py:3164
+#: bal/gui/qt/window.py:3175
 #, python-brace-format
 msgid "checking {} - {} : {}"
 msgstr ""
 
-#: bal/gui/qt/window.py:3172
+#: bal/gui/qt/window.py:3183
 #, python-brace-format
 msgid "checked {} - {} : {}"
 msgstr ""
 
-#: bal/gui/qt/window.py:3330
+#: bal/gui/qt/window.py:3341
 #, python-brace-format
 msgid "Merge done: {} transaction(s) signed, {} still to sign."
 msgstr ""
 
-#: bal/gui/qt/window.py:3335
+#: bal/gui/qt/window.py:3346
 #, python-brace-format
 msgid "{} transaction(s) have only {} of {} signatures: another signer must sign them."
 msgstr ""
 
-#: bal/gui/qt/window.py:3344 bal/gui/qt/window.py:3399
-#: bal/gui/qt/window.py:3423
+#: bal/gui/qt/window.py:3355 bal/gui/qt/window.py:3410
+#: bal/gui/qt/window.py:3434
 #, python-brace-format
 msgid "Invalid will file: {}"
 msgstr ""
 
-#: bal/gui/qt/window.py:3368
+#: bal/gui/qt/window.py:3379
 msgid "Open will file"
 msgstr ""
 
-#: bal/gui/qt/window.py:3431
+#: bal/gui/qt/window.py:3442
 msgid "will"
 msgstr ""
 
-#: bal/gui/qt/window.py:3491
+#: bal/gui/qt/window.py:3502
 msgid "Checking transactions"
 msgstr ""
 
-#: bal/gui/qt/window.py:3532
+#: bal/gui/qt/window.py:3543
 #, python-brace-format
 msgid "{} selected transaction(s) not sent yet: nothing to verify."
 msgstr ""
 
-#: bal/gui/qt/window.py:3535
+#: bal/gui/qt/window.py:3546
 msgid "Nothing to verify."
 msgstr ""
 
-#: bal/gui/qt/window.py:3552
+#: bal/gui/qt/window.py:3563
 msgid "Check Transaction"
 msgstr ""
 
-#: bal/gui/qt/window.py:3666
+#: bal/gui/qt/window.py:3677
 msgid ""
 "Could not download the will-executors list.\n"
 "\n"
 "This is usually caused by your internet connection or a firewall, not by the plugin. Please check your connection (a VPN often helps) and try again."
 msgstr ""
 
-#: bal/gui/qt/window.py:3676
+#: bal/gui/qt/window.py:3687
 msgid ""
 "Could not download the will-executors list over Tor.\n"
 "\n"
 "Electrum is connected through Tor and the connection is taking too long. Your Tor connection may be slow. Please try again, or use a VPN (or temporarily disable Tor) for a faster connection."
 msgstr ""
 
-#: bal/gui/qt/window.py:3686
+#: bal/gui/qt/window.py:3697
 msgid "Downloading will-executors list..."
 msgstr ""
 
-#: bal/gui/qt/window.py:3748
+#: bal/gui/qt/window.py:3759
 #, python-brace-format
 msgid ""
 "No active will-executor servers found for the {chain} network.\n"
@@ -5032,7 +5116,7 @@ msgid ""
 "The welist server at {url} responded but returned no will-executors for this chain."
 msgstr ""
 
-#: bal/gui/qt/window.py:3756
+#: bal/gui/qt/window.py:3767
 #, python-brace-format
 msgid ""
 "Could not reach the configured welist server.\n"
@@ -5043,20 +5127,20 @@ msgid ""
 "Please verify the welist server URL in the plugin settings."
 msgstr ""
 
-#: bal/gui/qt/window.py:3766
+#: bal/gui/qt/window.py:3777
 #, python-brace-format
 msgid "No active will-executor found for the {chain} network."
 msgstr ""
 
-#: bal/gui/qt/window.py:3875
+#: bal/gui/qt/window.py:3886
 msgid "Ping Will-Executors:"
 msgstr ""
 
-#: bal/gui/qt/window.py:3889
+#: bal/gui/qt/window.py:3900
 msgid "waiting..."
 msgstr ""
 
-#: bal/gui/qt/window.py:3935
+#: bal/gui/qt/window.py:3946
 msgid "Ping Will-Executors"
 msgstr ""
 
