@@ -157,6 +157,16 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -324,6 +334,16 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": "The Check Alive date has passed — Delivery to the heirs: 9 December 2026, 00:00 UTC\nThe Check Alive date (9 November 2026, 00:00 UTC) has passed. Your delivery is a fixed date: choose a later delivery date to renew your will. Until then your current will stays valid."
   },
   "rows": [

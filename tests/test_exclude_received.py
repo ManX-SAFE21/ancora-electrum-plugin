@@ -132,7 +132,9 @@ def test_excluded_is_no_longer_asked_and_reads_excluded(make, monkeypatch):
     assert steps["verify"] == ("ok", "2/2")
     smr = _summary(s)
     assert smr["state"] == "ok"
-    assert _row(smr, "Will-Executor")["text"] == "2 of 2 received and verified it"
+    # #182: then the time of the last check.
+    assert _row(smr, "Will-Executor")["text"].startswith(
+        "2 of 2 received and verified it · last check ")
     assert smr["deselected"] == 0
     assert report_block_reason(smr, s.bw.willitems,
                                s.bw.selected_willexecutors()) is None
@@ -199,7 +201,8 @@ def test_excluded_after_it_verified_reads_excluded(make):
     assert dict(snap["executors"])[SILENT][0] == "excluded"
     steps = {name: (state, word) for name, state, word in snap["steps"]}
     assert steps["verify"] == ("ok", "2/2")
-    assert _row(_summary(s), "Will-Executor")["text"] == "2 of 2 received and verified it"
+    assert _row(_summary(s), "Will-Executor")["text"].startswith(
+        "2 of 2 received and verified it · last check ")
     # flowkit's world.verified holds the asks of the last Check only.
     assert not [u for u, _w in s.world.verified if u == SILENT]
     assert not [u for u, _w, _r in s.world.pushed[pushed:] if u == SILENT]

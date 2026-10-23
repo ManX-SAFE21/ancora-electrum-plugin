@@ -90,7 +90,9 @@ def test_deselected_are_not_to_send(make):
     assert s.bw.selected_willexecutors() == set(WE[:3])
     smr = summary(s)
     assert (smr["state"], smr["kind"], smr["action"]) == ("ok", "ok", None)
-    assert row(smr, "Will-Executor")["text"] == "3 of 3 received and verified it"
+    # #182: then the time of the last check.
+    assert row(smr, "Will-Executor")["text"].startswith(
+        "3 of 3 received and verified it · last check ")
     assert smr["deselected"] == 2
     assert smr["deselected_text"] == (
         "2 will-executors are deselected, so they did not receive the will. To "

@@ -236,12 +236,50 @@ def executor_counts(valid, selected=None):
     return counts
 
 
-def _executors_row(counts):
+def verified_times(valid, selected=None, url=None):
+    """``(last, next)``: when the will was last verified, and from when the
+    Check asks again (#182). Seconds, or None.
+
+    ``last``: the oldest verification of the VALID verified copies
+    (``Will.last_verified``), only those of ``url`` when given, else of the
+    will-executors selected (``selected``, None: all). ``next``: ``last``
+    plus ``Will.reverify_period`` for a will in several deliveries; None for
+    a will with one delivery (asked again at every Check) or when ``last``
+    is unknown.
+    """
+    items = {
+        k: w for k, w in valid.items()
+        if url is not None or selected is None
+        or (w.we or {}).get("url") in selected
+    }
+    last = Will.last_verified(items, url)
+    if last is None:
+        return None, None
+    period = Will.reverify_period(valid)
+    return last, (last + period if period else None)
+
+
+def verified_text(last, next_check=None):
+    """``"last check 22 Oct 2026, 19:23"``, with ``" · next check from
+    …"`` when ``next_check`` is given (#182, owner: "write it"). Local
+    time of the computer, the short form (owner's ZIP test: the long one
+    did not fit). "" without ``last``."""
+    if last is None:
+        return ""
+    text = _("last check {when}").format(when=datetext.local_short(last))
+    if next_check is not None:
+        text += " · " + _("next check from {when}").format(
+            when=datetext.local_short(next_check))
+    return text
+
+
+def _executors_row(counts, verified=""):
     """The "Will-Executor" line: who received and verified the will.
 
     The deselected will-executors (#134) are not counted: they are told
     apart by their own line (:func:`deselected_text`). Nor the excluded
-    ones (#178): nobody waits for them.
+    ones (#178): nobody waits for them. #182: ``verified``
+    (:func:`verified_text`) follows "received and verified it".
     """
     counts = {k: v for k, v in counts.items() if k not in _NOT_COUNTED}
     total = sum(counts.values())
@@ -254,6 +292,8 @@ def _executors_row(counts):
             if total == 1
             else _("{} of {} received and verified it").format(total, total)
         )
+        if verified:
+            text += " · " + verified
         return _row(label, text=text)
     if counts["to_sign"] == total:
         text = (
@@ -516,7 +556,7 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         # would be counted, so the will reads as before (the rule only
         # tells apart SOME).
         counts = executor_counts(valid)
-    rows.append(_executors_row(counts))
+    rows.append(_executors_row(counts, verified_text(*verified_times(valid, selected))))
     rows.append(_heirs_row(heirs_count))
     deselected = counts["deselected"]
     unsigned = [w for w in valid.values() if not w.get_status("COMPLETE")

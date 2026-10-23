@@ -197,12 +197,14 @@ def test_the_server_pause_is_kept_but_never_too_long():
 
 
 def test_another_error_is_raised_as_before(monkeypatch):
+    """#182: no connection (a ConnectionError) is now "no answer"
+    (tests/test_reverify.py); any other error is still raised."""
     calls = []
     monkeypatch.setattr(Willexecutors, "send_request", staticmethod(
-        _send([ConnectionError("down")], calls)))
+        _send([ValueError("bad answer")], calls)))
     try:
         Willexecutors.check_transaction("abc", WE0)
-    except ConnectionError:
+    except ValueError:
         pass
     else:
         raise AssertionError("the error was not raised")
