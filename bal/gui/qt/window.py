@@ -149,6 +149,7 @@ from .dialogs import (
 from .explainer import show_explainer
 from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
+from .graph_view import GraphPanel
 from .lists import HeirListWidget, PreviewList
 from .offline_sign import open_sign_offline
 from .trace_window import show_trace
@@ -1004,9 +1005,12 @@ class BalWindow:
         self.future_area = make_future_area(self.future_view)
         index = layout.indexOf(self.will_list_widget)
         layout.insertWidget(index + 1, self.future_area, 1)
+        # CHANGELOG #184: the third view, the will as a graph.
+        self.graph_panel = GraphPanel(self)
+        layout.insertWidget(index + 2, self.graph_panel, 1)
         self.will_view_switch = WillViewSwitch(
             self.bal_plugin.WILL_VIEW, self.will_list_widget,
-            self.future_area, self.future_view,
+            self.future_area, self.future_view, graph_widget=self.graph_panel,
         )
         layout.insertWidget(index, self.will_view_switch)
         self.update_will_summary()
@@ -1028,6 +1032,13 @@ class BalWindow:
                 future.refresh()
             except Exception as e:
                 _logger.warning(f"future view refresh failed: {e!r}")
+        # #184: and the Graph view (it recomputes only while it is shown).
+        graph = getattr(self, "graph_panel", None)
+        if graph is not None:
+            try:
+                graph.refresh()
+            except Exception as e:
+                _logger.warning(f"graph view refresh failed: {e!r}")
         widget = getattr(self, "will_summary_widget", None)
         if widget is None:
             return
