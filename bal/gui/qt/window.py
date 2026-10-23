@@ -1512,36 +1512,123 @@ class BalWindow:
         grid.addWidget(HelpButton(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
         grid.addWidget(address_help, 3, 1)
 
-        grid.addWidget(op_return_amount_label, 4, 0)
-        grid.addWidget(amount_row, 4, 1)
-        grid.addWidget(amount_help_button, 4, 2)
-        grid.addWidget(amount_help, 5, 1)
+        # #185: row 4 is the shares of a table (below), the amount follows.
+        grid.addWidget(op_return_amount_label, 5, 0)
+        grid.addWidget(amount_row, 5, 1)
+        grid.addWidget(amount_help_button, 5, 2)
+        grid.addWidget(amount_help, 6, 1)
 
-        grid.addWidget(op_return_message_label, 4, 0, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(op_return_message, 4, 1)
+        grid.addWidget(op_return_message_label, 5, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(op_return_message, 5, 1)
         # #140: in the cells of the amount's "?" and grey line, hidden in
         # the OP_RETURN mode (and these hidden in the payee mode).
-        grid.addWidget(message_help_button, 4, 2, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(message_info, 5, 1)
+        grid.addWidget(message_help_button, 5, 2, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(message_info, 6, 1)
         _show_message_rows(is_op_return_address(heir_address.text()))
 
         # #170: with a table of deliveries the amount of an heir is not used
         # (the shares are in the table; it counts again without the table,
         # as on the command line): said under the amount.
-        table_note = QLabel(_(
-            "With the inheritance in several deliveries this amount is not "
-            "used: the shares are in the table of the deliveries."))
+        # #185 (owner, "B grey"): the shares of the table on a row of their
+        # own ABOVE the amount, with the dates; an heir already saved shows
+        # its amount grey and locked (it counts only without the table, then
+        # it can be changed): the shares are changed only in the window of
+        # the deliveries. A new heir writes its amount (it must be above 0,
+        # ``Heirs.validate_amount``; the table has no share for it yet).
+        staged = instalments.has_table(self)
+        locked = staged and heir is not None
+        edit_deliveries = None
+        if not self.bal_plugin.is_basic_mode():
+            # The window of the deliveries is ADVANCED only (#170).
+            edit_deliveries = QPushButton(_("Edit the deliveries…"))
+        # The sentence under the amount, in the grid (a wrapped label inside
+        # the nested shares box was cut: Qt gave it the height of one line).
+        table_note = QLabel("")
+        if not locked:
+            text = _("With the inheritance in several deliveries this amount "
+                     "counts only if you go back to one delivery.")
+            if edit_deliveries is not None:
+                text += " " + _("After OK you will be asked to open the table "
+                                "of the deliveries to give the heir a share.")
+            table_note.setText(text)
         table_note.setWordWrap(True)
         table_note.setStyleSheet("color:#6A737D;")
-        grid.addWidget(table_note, 6, 1)
-        staged = instalments.has_table(self)
+        grid.addWidget(table_note, 7, 1)
+        shares_label = QLabel(_("Shares"))
+        shares_box = QWidget()
+        shares_layout = QVBoxLayout(shares_box)
+        shares_layout.setContentsMargins(0, 0, 0, 0)
+        shares_text = QLabel("")
+        shares_text.setStyleSheet("font-weight:600;")
+        # One line per delivery, never wrapped (a wrap broke "Delivery 2 /
+        # (10/03/2031)" in two).
+        shares_dates = QLabel("")
+        shares_dates.setStyleSheet("color:#6A737D;")
+        shares_layout.addWidget(shares_text)
+        shares_layout.addWidget(shares_dates)
+        if edit_deliveries is not None:
+            shares_layout.addWidget(edit_deliveries, 0, Qt.AlignmentFlag.AlignLeft)
+        shares_help = HelpButton(_(
+            "With the inheritance in several deliveries each heir receives a "
+            "share of the whole estate at each delivery. The shares are changed "
+            "in the window \"Inheritance in several deliveries\" (Tools in the "
+            "Will tab)."))
+        # Row 4, above the amount (rows 5-6 since #185).
+        grid.addWidget(shares_label, 4, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(shares_box, 4, 1)
+        grid.addWidget(shares_help, 4, 2, Qt.AlignmentFlag.AlignTop)
+
+        def _fill_shares():
+            """The shares of this heir in the table (``person_shares``); a
+            new heir has none yet ("0% + 0% + 0%")."""
+            from .deliveries import person_shares
+
+            found = person_shares(self.will_settings, heir_key)
+            if not found:
+                return
+            shares_text.setText(found[0])
+            shares_dates.setText(found[1])
+
+        if edit_deliveries is not None:
+            def _open_deliveries():
+                """The window of the deliveries over this one; then the
+                shares shown again."""
+                self.open_deliveries_editor(d)
+                _fill_shares()
+
+            edit_deliveries.clicked.connect(_open_deliveries)
+        if locked:
+            # Shown, never changed here: OK saves the stored amount as it is.
+            # The grey line under it says why (instead of what a percentage
+            # means: the mode cannot be changed here).
+            heir_amount.setReadOnly(True)
+            heir_amount.setStyleSheet("QLineEdit{background-color:#f0f0f0;color:#999999;}")
+            for button in (percentage_button, fixed_button):
+                button.setEnabled(False)
+            op_return_amount_label.setStyleSheet("color:#999999;")
+            amount_help.setText(_(
+                "With the inheritance in several deliveries this amount is not "
+                "used: it counts only if you go back to one delivery, and then "
+                "you can change it."))
 
         def _show_table_note():
-            """The note of the table, for a payee only (a message has no
-            amount)."""
-            table_note.setVisible(
-                staged and not is_op_return_address(heir_address.text()))
+            """The note and the shares of the table, for a payee only (a
+            message has no amount)."""
+            shown = staged and not is_op_return_address(heir_address.text())
+            widgets = [shares_label, shares_box, shares_help]
+            if not locked:
+                widgets.append(table_note)
+            else:
+                table_note.setVisible(False)
+            for widget in widgets:
+                # As ``_show_payee_rows``: a widget not yet in the dialog is
+                # only hidden, never shown (it would open as a window).
+                if shown and widget.parentWidget() is None:
+                    continue
+                widget.setVisible(shown)
 
+        if staged:
+            _fill_shares()
         _show_table_note()
         heir_address.textChanged.connect(_show_table_note)
 
@@ -1554,11 +1641,11 @@ class BalWindow:
         notes.setFixedWidth(32 * char_width_in_lineedit())
         notes.setFixedHeight(4 * QFontMetrics(notes.font()).height() + 12)
         notes.setPlainText(heir_notes.get(self.wallet, heir_key) if heir_key else "")
-        grid.addWidget(QLabel(_("Notes")), 7, 0, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(notes, 7, 1)
+        grid.addWidget(QLabel(_("Notes")), 8, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(notes, 8, 1)
         grid.addWidget(HelpButton(_(
             "Private notes for you, kept only in this wallet; never sent to the "
-            "will-executors or written on the blockchain.")), 7, 2,
+            "will-executors or written on the blockchain.")), 8, 2,
             Qt.AlignmentFlag.AlignTop)
 
         vbox.addLayout(grid)
@@ -3983,6 +4070,14 @@ class BalWindow:
 
             self.will_list_widget.update_will(self.willitems)
             self.heirs_tab.update()
+            # #185 (owner's ZIP test): ``heirs_tab`` is Electrum's plain tab
+            # widget, its update() only repaints. The list itself is rebuilt
+            # here, so a table of the deliveries saved or removed shows in
+            # its Amount column without reopening the wallet.
+            try:
+                self.heir_list_widget.update()
+            except Exception as e:
+                _logger.debug(f"heirs list not refreshed: {e!r}")
             self.will_tab.update()
             self.will_list_widget.update()
 

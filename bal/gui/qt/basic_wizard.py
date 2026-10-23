@@ -1306,9 +1306,11 @@ class SummaryPage(_StepPage):
             selected = selected_urls(wes)
             old = will_changes.side_from_items(engine_context.in_force_items(bw), selected)
             settings = bw.will_settings or {}
+            # #185: with a table the shares are the table's.
             new = will_changes.side_from_settings(
                 bw.heirs or {}, settings.get("locktime"), selected,
-                settings.get("baltx_fees"))
+                settings.get("baltx_fees"),
+                table=will_changes.settings_table(settings))
             # #137: the will-executors new on the network, selected by the
             # download of page 3, are said so.
             return will_changes.change_rows(

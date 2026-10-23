@@ -1160,7 +1160,11 @@ def drop_anticipation_leftover(host):
         new = will_changes.side_from_settings(
             instalments.first_delivery_heirs(host) or {}, stored, sorted(selected) if selected is not None
             else list(old.executors), (host.will_settings or {}).get("baltx_fees"))
-        changes = will_changes.will_changes(old, new)
+        # #185: staged=False: delivery 1 alone, as above (the delivery by
+        # delivery comparison is for the box the owner reads). A precaution:
+        # with a table the drafts of deliveries 2-3 carry other dates, so
+        # the test just above already returns None.
+        changes = will_changes.will_changes(old, new, staged=False)
         if not changes or [c.kind for c in changes] != [will_changes.DELIVERY]:
             return None
         for wid in drafts:
