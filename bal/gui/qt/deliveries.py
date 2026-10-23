@@ -102,6 +102,20 @@ def _pct(value):
     return _number_text(value) + "%"
 
 
+def shown_percent(text):
+    """A stored percentage as the owner reads it (#185, owner's ZIP test):
+    "16.5%" is "16,5%" in Italian, as in the "What changes" box; the
+    stored text never changes. A text that is not a percentage is given
+    back as it is."""
+    text = str(text).strip()
+    if not text.endswith("%"):
+        return text
+    share = delivery.as_share(text)
+    if share is not None:
+        return _pct(share)
+    return text.replace(".", number_separators()[0])
+
+
 def _read_cell(text):
     """The text of a cell as the rules read it: empty is 0; "11,33" (the
     decimal comma) is 11.33. Anything else is passed on as it is, so the
@@ -763,8 +777,16 @@ def confirm_back_to_one(bal_window, parent):
                 "(delivery 1), instead of {} by that date: the rest would "
                 "arrive earlier."
             ).format(_day_text(date), _pct(before)) + "\n\n" + _earlier_cost_text() + "\n\n"
-    text += _("Then the amounts of the heirs count again: check them before "
-              "the next Check.") + "\n\n" + _("Go back to one delivery?")
+    amounts = heir_amounts_text(bal_window)
+    if amounts:
+        # #185 (owner, B grey): the heir window shows these amounts grey and
+        # locked while there is a table; the question names them all.
+        text += _("Then the amounts of the heirs count again ({}): check them "
+                  "before the next Check.").format(amounts)
+    else:
+        text += _("Then the amounts of the heirs count again: check them before "
+                  "the next Check.")
+    text += "\n\n" + _("Go back to one delivery?")
     if not ask(parent, text):
         return False
     try:
@@ -776,6 +798,29 @@ def confirm_back_to_one(bal_window, parent):
         return False
     _after_change(bal_window)
     return bool(removed)
+
+
+def heir_amounts_text(bal_window):
+    """"Erede fortunato 70%, prova erede x 9%": each heir's own amount, the
+    one that counts without a table (#185); a fixed amount in the wallet's
+    unit; the message rows left out. "" when there is none."""
+    parts = []
+    for name, value in (getattr(bal_window, "heirs", None) or {}).items():
+        if delivery.is_message_row(value):
+            continue
+        try:
+            amount = str(value[1])
+        except (IndexError, TypeError, KeyError):
+            continue
+        if amount.strip().endswith("%"):
+            shown = shown_percent(amount)
+        else:
+            try:
+                shown = bal_window.window.format_amount_and_units(int(amount))
+            except Exception:
+                shown = amount
+        parts.append("{} {}".format(name, shown))
+    return ", ".join(parts)
 
 
 def staged_field_text(settings):
@@ -798,6 +843,36 @@ def staged_field_text(settings):
         return _("{date} (+1 delivery)").format(date=day)
     return _("{date} (+{n} deliveries)").format(date=day, n=more)
 
+
+
+def person_shares(settings, name):
+    """``(text, tooltip)`` of heir ``name`` in the Heirs tab's Amount column
+    with a table (#185, owner's preview): ``"10% + 10% + 30%"``, the
+    person's cell at each delivery ("0%" where it is empty, or where the
+    person is not in the table yet), and one line per delivery, "Delivery 1
+    (10/03/2030): 10%". The decimal separator of the language ("16,5%").
+    None without a table, or when it cannot be read (the column then shows
+    the amount as before). Also the heir window's "Shares" (#185, B grey).
+    """
+    try:
+        rows = delivery.table_rows(settings)
+    except ValueError:
+        return None
+    if len(rows) < 2:
+        return None
+    cells, lines = [], []
+    for n, row in enumerate(rows, 1):
+        row = row if isinstance(row, dict) else {}
+        raw = (row.get("shares") or {}).get(name, 0)
+        share = delivery.as_share(raw)
+        # The language's decimal separator ("16,5%"), as the box (#185).
+        cell = _pct(share) if share is not None else str(raw)
+        cells.append(cell)
+        locktime = delivery.as_delivery(row.get("locktime"))
+        day = _day_text(locktime) if locktime is not None else "?"
+        lines.append(_("Delivery {n} ({date}): {share}").format(
+            n=n, date=day, share=cell))
+    return " + ".join(cells), "\n".join(lines)
 
 
 def staged_field_tip():

@@ -12394,3 +12394,116 @@ futures: OK. The view reopens on the
 last tab chosen (List, Future or Graph), as before: owner OK.
 
 **Outcome:** DONE.
+
+## 185. The texts of a will in several deliveries: "What changes", the version row, the Heirs tab, the heir window
+
+**Date:** 2026-10-23
+
+**Goal (step M4b of `context/MULTIVERSE-PLAN.md`, owner's plan of
+2026-10-23, preview `safe21-ancora/previews/189-m4b-testi-consegne.html`
+approved):** three places read a will in several deliveries as if it had
+one date. M4b is split in three steps (owner): this one (#185), the
+low-fee warning for every will, the message help text and BASIC with a
+table (option (a): the table kept, the BASIC summary shows the
+deliveries read-only).
+
+**What changed:**
+
+- `bal/core/will_changes.py`: the "What changes" box compared delivery 1
+  alone and recalculated its shares inside it (10 % + 10 % read 50 % +
+  50 %: the owner's "Real shares 33% → 50%", seen in the #172 ZIP test).
+  Now a side may hold its deliveries (`WillSide.deliveries`: the date and
+  the shares of the WHOLE estate of each delivery, from the will items or,
+  with `table=`, from the wallet's table: `settings_table`). When a side
+  is a will in several deliveries the box has "Deliveries: one delivery →
+  3 deliveries" when the number changes, then one row per delivery whose
+  date or shares changed ("Delivery 2: 10 Mar 2032 (new): luca 10% · john
+  10%", "luca 50% → 10%", "removed (it was …)"), the note "The
+  percentages are shares of the whole estate." on the last one and the
+  note of the delivery row (earlier: free; later: invalidation) on
+  delivery 1; no "Real shares" row. An heir added is written with its new
+  share only, one removed only in the Heirs row. `will_changes(...,
+  staged=False)` keeps the comparison of delivery 1 alone.
+- `bal/engine/context.py`: `drop_anticipation_leftover` passes
+  `staged=False` (a precaution: with a table its date test already stops
+  before, see below).
+- `bal/gui/qt/dialogs.py` (the box before the paid invalidation) and
+  `bal/gui/qt/basic_wizard.py` (the summary's box): the settings side
+  reads the table (before, the heirs' amounts, not used with a table).
+- `bal/core/will_versions.py`: each heir row of a version carries its
+  delivery. `bal/gui/qt/lists.py`: the version row of a will in several
+  deliveries reads "Delivery 10 Mar 2030, 00:00 UTC (+2 deliveries)" and
+  names each person once, "luca 10% + 10% + 30% · john 10% + 10% + 30%"
+  ("0%" where the person receives nothing); one date: unchanged.
+- `bal/gui/qt/deliveries.py` `person_shares` and `bal/gui/qt/lists.py`:
+  with a table the Heirs tab's Amount column shows "10% + 10% + 30%" (the
+  amount is not used), one line per delivery in the tooltip, "Delivery 1
+  (10/03/2030): 10%"; no table: unchanged.
+- After the owner's first ZIP test (2026-10-23):
+  - `bal/gui/qt/window.py` `update_all`: the Heirs list is rebuilt too.
+    `heirs_tab` is Electrum's plain tab widget, its `update()` only
+    repaints: the Amount column kept "70%" after the table was saved, until
+    the wallet was opened again (the test had rebuilt the list by hand).
+  - The language's decimal separator: "16,5%" in the version row, the
+    Amount column and its tooltip (`deliveries.shown_percent`); the stored
+    "16.5%" is unchanged (the box already wrote "16,5%").
+  - The heir window, owner's choice "B grey" (previews `190-*`, `191-*`,
+    the real window `192-*`): with a table a row "Shares" over the amount
+    ("16,5% + 16,5% + 17%", one line per delivery with its date, "Edit the
+    deliveries…" in ADVANCED, opening the window of the deliveries over
+    this one); an heir already saved shows its amount grey and locked, the
+    mode buttons off, with "it counts only if you go back to one delivery,
+    and then you can change it": OK saves the stored amount as it is. A
+    new heir writes its amount (`Heirs.validate_amount` wants more than 0
+    and the table has no share for it yet), "0% + 0% + 0%" and "After OK
+    you will be asked to open the table of the deliveries". The amount
+    and message rows move one row down.
+  - `bal/gui/qt/deliveries.py` `confirm_back_to_one`: the question names
+    the amounts that count again ("luca 50%, john 50%",
+    `heir_amounts_text`).
+- Catalogs: 13 new texts in Italian and Spanish ("Deliveries", "one
+  delivery", "{} deliveries", "{} (new)", "removed (it was {})", the
+  note, the tooltip line, "Shares", the two sentences of the heir
+  window, its "?", "After OK…", the question's new sentence).
+
+**Tests:** new `tests/test_staged_texts.py` (17 tests; the core with will
+items, then flowkit with three fake will-executors, each with its own fee
+address, and the owner's table 10/10, 10/10, 30/30 %): one date to three
+deliveries, identical, one delivery changed, dates moved and a delivery
+removed, back to one date, an heir added and one removed, `staged=False`,
+the settings side from the table, one date unchanged; the Check window's
+box, the box before the invalidation of a later delivery 3, the wizard
+summary's box; the version row (+2 deliveries, a 0 % cell, one date); the
+Heirs tab column and its tooltip. On the code before this step 14 of the
+17 fail (the 3 others check what must not change).
+
+**Seen in passing (not changed here, owner informed):** with a will in
+several deliveries, a change cancelled at the password and then undone
+(e.g. the fee) makes the next Check ask to sign again:
+`drop_anticipation_leftover` was written for one date and stops when a
+draft is not on delivery 1's day, which is always so with deliveries 2-3.
+Proposed as the next step.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the box, the versions list, the deliveries window, the graph, the
+BASIC wizard, the heirs and the heir window, translations, the golden-file
+tests) 548 passed (8.5 minutes). Whole `tests/` directory: 2922 passed (32
+minutes). Golden files unchanged. The real heir windows rendered offscreen
+in Italian and checked (a wrapped line was cut: fixed). Test ZIPs
+`test-zips/ancora_0.8.0-TEST-185-staged-texts.zip` (`e64b4ddd...1c41`)
+and `...-185-staged-texts-2.zip` (`860418ac...d757`):
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2; the
+Italian texts checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-23):** first ZIP: the box and the version
+row as in the preview; seen: "16.5%" with a dot, the Heirs tab still
+"70%" until Electrum was restarted, and the heir window showing only the
+amount not used; the owner chose "B grey". Second ZIP: OK, commit and push asked.
+Seen there, for a later step: in BASIC with a table a new heir shows "0% +
+0% + 0%"; adding or deleting an heir in BASIC leaves a table that no
+longer fits the heirs and the Check stops (its window is ADVANCED only).
+Owner's choice (1): in BASIC, with a will in several deliveries, "New
+heir" and "Delete" do not go on and explain why (the step "BASIC with a
+table").
+
+**Outcome:** DONE.

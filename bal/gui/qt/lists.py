@@ -320,10 +320,18 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
             else:
                 labels[self.Columns.ADDRESS] = heir[0]
             # #140: a message receives nothing: no "0.00000000" amount.
+            staged = None
             if is_op_return_address(heir[0]):
                 labels[self.Columns.AMOUNT] = ""
             else:
-                labels[self.Columns.AMOUNT] = Util.decode_amount(
+                # #185 (owner's preview): with a table the amount is not
+                # used; the column shows the person's share at each
+                # delivery ("10% + 10% + 30%"), the dates in the tooltip.
+                from .deliveries import person_shares
+
+                staged = person_shares(
+                    getattr(self.bal_window, "will_settings", None), key)
+                labels[self.Columns.AMOUNT] = staged[0] if staged else Util.decode_amount(
                     heir[1], self.decimal_point
                 )
 
@@ -336,6 +344,8 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
                 # #140 (owner's ZIP test): the column shows 40 characters;
                 # the whole message in the tooltip.
                 items[self.Columns.ADDRESS].setToolTip(message_text(heir[0]))
+            if staged:
+                items[self.Columns.AMOUNT].setToolTip(staged[1])
             # #135: not editable in place (see __init__).
             for item in items:
                 item.setEditable(False)
@@ -1142,18 +1152,46 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         except Exception:
             return self._format_sats(sats)
 
+    def _spec_text(self, spec):
+        """An amount as set: ``"60%"`` with the language's decimal
+        separator ("16,5%", #185, owner's ZIP test), sats in the wallet's
+        unit."""
+        spec = str(spec).strip()
+        if spec.endswith("%"):
+            from .deliveries import shown_percent
+
+            return shown_percent(spec)
+        try:
+            spec = self._format_sats(int(spec))
+        except (TypeError, ValueError):
+            pass
+        return spec
+
+    @staticmethod
+    def _deliveries_of(version):
+        """How many deliveries ``version`` has (1 for a will with one date;
+        #185: the highest delivery of its heir rows)."""
+        return max((h[3] for h in version.heirs), default=1)
+
     def _heirs_text(self, version):
-        """``"alice 60%, bob 40%"``: each heir with the amount as set."""
-        parts = []
-        for name, spec, _sats in version.heirs:
-            spec = str(spec).strip()
-            if not spec.endswith("%"):
-                try:
-                    spec = self._format_sats(int(spec))
-                except (TypeError, ValueError):
-                    pass
-            parts.append("{} {}".format(name, spec))
-        return ", ".join(parts)
+        """``"alice 60%, bob 40%"``: each heir with the amount as set.
+
+        #185 (owner's preview): a will in several deliveries names each
+        person once with the share of each delivery, in order:
+        ``"luca 10% + 10% + 30% · john 10% + 10% + 30%"`` ("0%" where the
+        person receives nothing at that delivery).
+        """
+        count = self._deliveries_of(version)
+        if count <= 1:
+            return ", ".join("{} {}".format(name, self._spec_text(spec))
+                             for name, spec, _sats, _n in version.heirs)
+        people = {}
+        for name, spec, _sats, n in version.heirs:
+            people.setdefault(name, {})[n] = self._spec_text(spec)
+        return " · ".join(
+            "{} {}".format(name, " + ".join(shares.get(n, "0%")
+                                            for n in range(1, count + 1)))
+            for name, shares in people.items())
 
     def _version_texts(self, version):
         """``(number, headline, second line)`` of a version row.
@@ -1166,7 +1204,15 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         if version.state == will_versions.VERSION_OTHER:
             head = _("Other transactions")
         elif version.locktime:
-            head = "{} {}".format(_("Delivery"), _delivery_text(version.locktime))
+            date = _delivery_text(version.locktime)
+            # #185 (owner's preview): "(+2 deliveries)", the texts of the
+            # date fields with a table (``deliveries.staged_field_text``).
+            more = self._deliveries_of(version) - 1
+            if more == 1:
+                date = _("{date} (+1 delivery)").format(date=date)
+            elif more > 1:
+                date = _("{date} (+{n} deliveries)").format(date=date, n=more)
+            head = "{} {}".format(_("Delivery"), date)
         else:
             head = version_state_text(version.state)
         parts = []

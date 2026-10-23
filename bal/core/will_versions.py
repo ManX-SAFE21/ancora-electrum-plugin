@@ -62,7 +62,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from . import will_state
-from .delivery import person_name
+from .delivery import instalment_number, person_name
 from .heirs import (
     HEIR_ADDRESS,
     HEIR_AMOUNT,
@@ -313,7 +313,9 @@ def _descendants(root, children):
 
 
 def _heir_rows(items):
-    """``[(name, amount as set, resolved sats or None)]`` of the version.
+    """``[(name, amount as set, resolved sats or None, delivery)]`` of the
+    version (``delivery``: 1, 2, 3; #185, the version row of a will in
+    several deliveries names each person once).
 
     The first time a name appears wins (every executor copy carries the
     same heirs; multiverse instalments add theirs). OP_RETURN messages are
@@ -337,7 +339,8 @@ def _heir_rows(items):
             except (TypeError, ValueError):
                 sats = None
             # #168: shown under the person's name ("Luca" for "Luca§2").
-            rows[name] = (person_name(name), str(row[HEIR_AMOUNT]), sats)
+            rows[name] = (person_name(name), str(row[HEIR_AMOUNT]), sats,
+                          instalment_number(name))
     return [rows[name] for name in rows]
 
 

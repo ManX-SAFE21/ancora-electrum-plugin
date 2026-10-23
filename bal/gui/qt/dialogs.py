@@ -2064,9 +2064,11 @@ class BalBuildWillDialog(BalDialog):
                     engine_context.prepared_items(bw, in_force), selected)
             else:
                 settings = bw.will_settings or {}
+                # #185: with a table the shares are the table's.
                 new = will_changes.side_from_settings(
                     bw.heirs or {}, settings.get("locktime"), selected or [],
-                    settings.get("baltx_fees"))
+                    settings.get("baltx_fees"),
+                    table=will_changes.settings_table(settings))
             changes = will_changes.with_renames(
                 will_changes.will_changes(old, new), self._heir_renames())
             # #135: a rename is already saved; the sentence about Cancel
