@@ -73,7 +73,8 @@ def ever_sent(w):
     return bool(w.we) and any(w.get_status(s) for s in _EVER_SENT)
 
 
-def verify_targets(willitems, txids=None, *, recheck=False, selected=None):
+def verify_targets(willitems, txids=None, *, recheck=False, selected=None,
+                   now=None):
     """The copies to ask, as ``[(txid, url)]``, and the ones skipped.
 
     Returns ``(targets, skipped)``. Without *recheck* (the Check, the
@@ -91,15 +92,28 @@ def verify_targets(willitems, txids=None, *, recheck=False, selected=None):
     the copy sent, #147) was asked again at every Check, for ever. Its
     copies stay in the will (it holds them, #129); the summary calls it
     "excluded". The right click still asks it: the user asks for it.
+
+    #182 (owner): without *recheck*, a copy already verified is asked again
+    too (``Will.needs_reverify``): at every Check for a will with one
+    delivery, once its verification is a day old for a will in several
+    deliveries (``Will.reverify_period``). Before, a copy verified once was
+    never asked again: "received and verified" stayed true for years, even
+    with no connection. *now*: seconds (default ``Will.now_seconds``).
     """
     targets, skipped = [], []
+    if not recheck:
+        if now is None:
+            now = Will.now_seconds()
+        # Only a will with a verified copy needs the period.
+        period = (Will.reverify_period(willitems)
+                  if any(w.get_status("CHECKED") for w in willitems.values()) else 0)
     for wid, w in willitems.items():
         if txids is not None and wid not in txids:
             continue
         if recheck:
             ask = ever_sent(w)
         else:
-            ask = Will.needs_server_check(w) and (
+            ask = (Will.needs_server_check(w) or Will.needs_reverify(w, now, period)) and (
                 selected is None or (w.we or {}).get("url") in selected)
         if ask:
             targets.append((wid, w.we["url"]))

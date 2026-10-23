@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-from aiohttp import ClientResponse
+from aiohttp import ClientConnectionError, ClientResponse
 from electrum import bitcoin, constants
 from electrum.bitcoin import COIN, TOTAL_COIN_SUPPLY_LIMIT_IN_BTC
 from electrum.logging import get_logger
@@ -90,6 +90,11 @@ CHECK_MAX_WORKERS = 16
 # seconds rarely helps a server that is down, and would hold the Check up to
 # its deadline. Only 503 (owner): the other errors stay failures.
 CHECK_UNAVAILABLE = 503
+# #182 (owner): no connection at all (Wi-Fi off, the server's name or
+# address not reachable, the connection dropped) is NO_ANSWER too: the Check
+# now asks again the copies already verified, and offline every one of them
+# was marked failed and sent again. An HTTP answer (other than 429 or 503)
+# stays a failure.
 CHECK_BUSY_RETRIES = 3
 CHECK_BUSY_SLEEP = 2
 CHECK_BUSY_MAX_SLEEP = 10
@@ -585,7 +590,9 @@ class Willexecutors:
         """
         network = Network.get_instance()
         if not network:
-            raise Exception("You are offline.")
+            # #182: a ConnectionError, so the check reads it as "no
+            # connection" (Willexecutors.no_connection); same message.
+            raise ConnectionError("You are offline.")
         _logger.debug(f"<-- {method} {url} {data}")
         headers = {}
         headers["user-agent"] = f"BalPlugin v:{get_version()}"
@@ -1276,6 +1283,18 @@ class Willexecutors:
         return min(pause, CHECK_BUSY_MAX_SLEEP)
 
     @staticmethod
+    def no_connection(error):
+        """True when ``error`` says the will-executor was not reached (#182).
+
+        No network (``send_request``'s "You are offline."), a name or
+        address not reachable, a connection refused or dropped: an
+        ``OSError`` (``ConnectionError`` among them) or aiohttp's
+        ``ClientConnectionError``. Not an HTTP answer such as a 500
+        (``ClientResponseError``): the server did answer.
+        """
+        return isinstance(error, (OSError, ClientConnectionError))
+
+    @staticmethod
     def check_transaction(txid, url, *, timeout=CHECK_TIMEOUT,
                           max_retries=CHECK_MAX_RETRIES,
                           retry_sleep=CHECK_RETRY_SLEEP,
@@ -1296,8 +1315,8 @@ class Willexecutors:
 
         #180: a 503 Service Unavailable gives :data:`NO_ANSWER` at once, no
         new try (see CHECK_UNAVAILABLE): the will-executor is down for now,
-        which does not say that it lacks the copy. Other errors are raised,
-        as before.
+        which does not say that it lacks the copy. #182: so is no connection
+        at all (:meth:`no_connection`). Other errors are raised, as before.
         """
         _logger.debug(f"{url}:{txid}")
         attempt = 0
@@ -1316,6 +1335,12 @@ class Willexecutors:
                     )
                     trace.add(trace.WARNING, _(
                         "{url} unavailable (503): no answer this time"
+                    ).format(url=trace.short_url(url)), full=True)
+                    return NO_ANSWER
+                if Willexecutors.no_connection(e):
+                    _logger.info(f"{url} not reached for {txid}: {e!r}")
+                    trace.add(trace.WARNING, _(
+                        "{url} not reached: no answer this time"
                     ).format(url=trace.short_url(url)), full=True)
                     return NO_ANSWER
                 pause = Willexecutors.busy_pause(e, attempt)

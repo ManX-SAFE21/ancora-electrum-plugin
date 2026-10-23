@@ -141,6 +141,9 @@ class BuildReport:
             self._steps = {s: ["todo", ""] for s in STEPS}
             self._boxes = {b: {} for b in BOXES}
             self._executors = {}
+            # #182: url -> (last, next) verification times, shown next to
+            # "received and verified".
+            self._verified = {}
             self._heirs = None
             self._will_now = None
             self._result = None
@@ -202,6 +205,14 @@ class BuildReport:
                 if live and live[0] == "no_check_answer" and state == "to_verify":
                     continue
                 self._executors[url] = (state, None)
+
+    def set_verified(self, times):
+        """``{url: (last, next)}``: when each will-executor's copies were
+        last verified and from when the Check asks again (#182,
+        ``summary.verified_times``); a None ``last`` is left out."""
+        with self._lock:
+            self._verified = {u: tuple(t) for u, t in (times or {}).items()
+                              if t and t[0] is not None}
 
     def set_heirs(self, heirs):
         """``[(name, satoshi, percent)]`` of the will just prepared, or None."""
@@ -274,6 +285,10 @@ class BuildReport:
                 "heirs": list(self._heirs) if self._heirs else None,
                 "executors": sorted(self._executors.items()),
                 "will_now": self._will_now,
+                # #182: only when known, so the snapshots (and the golden
+                # files) without a verification time are unchanged.
+                **({"verified": {u: list(t) for u, t in self._verified.items()}}
+                   if self._verified else {}),
                 # #135: only when shown, so the snapshots (and the golden
                 # files) of the dialogs without the box are unchanged.
                 **({"changes": [list(r) for r in self._changes],

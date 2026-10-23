@@ -74,7 +74,7 @@ from ...core.qrtransfer import (
     preset_index_for_chunk_size,
 )
 from ...core.reminders import build_ics_reminders
-from ...core.summary import executor_states, will_summary
+from ...core.summary import executor_states, verified_times, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
 from ...engine import instalments as engine_instalments
@@ -4120,6 +4120,12 @@ class BalBuildWillDialog(BalDialog):
         selected = self._selected_willexecutors()
         report.merge_executors(executor_states(valid, selected))
         executors = report.executors()
+        # #182: when each verified will-executor was last verified (and the
+        # next check of a will in several deliveries), shown on its row.
+        report.set_verified({
+            u: verified_times(valid, url=u)
+            for u, (st, _sec) in executors.items() if st == "verified"
+        })
         # A will-executor selected again since gets its real state ("to
         # send") from the merge above. The deselected ones stay in the box
         # but are left out of the counts.

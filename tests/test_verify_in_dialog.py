@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QWidget
 # The helpers of the #84b-1 tests: a dialog without Qt set-up and will items.
 from test_build_report import _dialog, _item, _steps
 
+from bal.core.will import Will
 from bal.core.willexecutors import Willexecutors
 from bal.gui.qt import dialogs as dialogs_mod
 from bal.gui.qt import lists as lists_mod
@@ -135,10 +136,13 @@ def test_verify_all_confirmed():
 
 
 def test_nothing_to_verify_asks_nobody():
-    d = _dialog({
-        "a": _item("COMPLETE", "PUSHED", "CHECKED", url=WE0),   # verified before
-        "b": _item("COMPLETE", url=WE1),                        # never sent
-    })
+    """#182: a copy verified less than a day ago, in a will in several
+    deliveries, is not asked again; one never sent never."""
+    a = _item("COMPLETE", "PUSHED", "CHECKED", url=WE0)          # verified now
+    c = _item("COMPLETE", "PUSHED", "CHECKED", url=WE1)          # a later delivery
+    c.tx.locktime = a.tx.locktime + 365 * 24 * 60 * 60
+    a.checked_time = c.checked_time = Will.now_seconds()
+    d = _dialog({"a": a, "b": _item("COMPLETE", url=WE1), "c": c})
     fake = MagicMock()
     with patch.object(Willexecutors, "check_transactions_parallel", fake):
         d.loop_verify()

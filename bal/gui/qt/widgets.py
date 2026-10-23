@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QPlainTextEdit
 
-from ...core import delivery
+from ...core import datetext, delivery
 from ...core.checkalive import (
     CHECK_ALIVE_DEFAULT_DAYS,
     CHECK_ALIVE_MAX_DAYS,
@@ -2700,6 +2700,10 @@ class BuildReportView(QWidget):
         "excluded": ("–", "#8a8a8a"),
     }
 
+    #: #182: a right-hand text of a box up to this width (pixels) stays on
+    #: one line; a longer one wraps (see :meth:`_group`).
+    VALUE_ONE_LINE = 360
+
     #: States of a will-executor that did not get the will (#93).
     FAILED_STATES = ("failed", "timeout")
     #: #181: the states that offer "Exclude" and "Retry": the will did not
@@ -2820,12 +2824,20 @@ class BuildReportView(QWidget):
         row.addWidget(label, 1)
         return frame
 
-    def _group(self, title, rows, accent="#777777", actions=None, footer=None):
+    def _group(self, title, rows, accent="#777777", actions=None, footer=None,
+               note=None):
         """A titled white box; ``rows``: ``[(left, right or None, colour)]``.
 
         The texts are plain and escaped here. ``actions``: ``{row: widget}``
         put at the end of that row; ``footer``: a widget under the rows
-        (#93: the "Exclude" and "Retry" buttons).
+        (#93: the "Exclude" and "Retry" buttons); ``note``: a grey line
+        under the rows (#182: the next check).
+
+        #182 (owner's ZIP tests): the right-hand texts wrap, so a long one no
+        longer pushes the row's button out of a narrow window; up to
+        :data:`VALUE_ONE_LINE` pixels they stay on one line (wrapped
+        labels otherwise broke "verified on 23 Oct 2026, 13:52" with room
+        to spare).
         """
         frame = QFrame()
         frame.setObjectName("balGroup")
@@ -2850,12 +2862,23 @@ class BuildReportView(QWidget):
             grid.addWidget(text, r, 0)
             if right is not None:
                 value = QLabel(html.escape(right))
+                value.setWordWrap(True)
+                value.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                value.setMinimumWidth(min(
+                    value.fontMetrics().horizontalAdvance(right) + 4,
+                    self.VALUE_ONE_LINE))
                 if colour:
                     value.setStyleSheet("color:{};".format(colour))
-                grid.addWidget(value, r, 1, Qt.AlignmentFlag.AlignRight)
+                grid.addWidget(value, r, 1)
             if actions and r in actions:
                 grid.addWidget(actions[r], r, 2, Qt.AlignmentFlag.AlignRight)
         column.addLayout(grid)
+        if note:
+            line = QLabel(html.escape(note))
+            line.setWordWrap(True)
+            line.setStyleSheet("color:#555555;")
+            column.addWidget(line)
         if footer is not None:
             if isinstance(footer, QPushButton):
                 column.addWidget(footer, 0, Qt.AlignmentFlag.AlignRight)
@@ -3055,13 +3078,22 @@ class BuildReportView(QWidget):
             rows = []
             actions = {}
             failed = False
+            verified = snapshot.get("verified") or {}
+            next_checks = []
             for url, (state, seconds) in executors:
                 symbol, colour = self._EXECUTOR_STYLE.get(state, ("", None))
                 host = urlparse(url).hostname or url
-                rows.append(
-                    (host, "{} {}".format(symbol, self.executor_text(state, seconds)),
-                     colour)
-                )
+                text = self.executor_text(state, seconds)
+                if state == "verified" and url in verified:
+                    # #182 (owner): when it was last verified, short, so the
+                    # "Exclude" button keeps its place; the next check of a
+                    # will in several deliveries once, under the box.
+                    last, next_check = verified[url]
+                    text = _("received and verified on {when}").format(
+                        when=datetext.local_short(last))
+                    if next_check is not None:
+                        next_checks.append(next_check)
+                rows.append((host, "{} {}".format(symbol, text), colour))
                 if state in self.EXCLUDE_STATES:
                     failed = True
                     if self.on_exclude:
@@ -3074,8 +3106,13 @@ class BuildReportView(QWidget):
             deselected = sum(1 for _url, (st, _s) in executors if st == "deselected")
             if deselected:
                 footer = self._deselected_footer(deselected, footer)
+            note = None
+            if next_checks:
+                note = _("Next check from {when}").format(
+                    when=datetext.local_short(min(next_checks)))
             self.box.addWidget(
-                self._group(_("Will-Executor"), rows, actions=actions, footer=footer)
+                self._group(_("Will-Executor"), rows, actions=actions,
+                            footer=footer, note=note)
             )
         if snapshot.get("will_now"):
             self.box.addWidget(

@@ -162,6 +162,16 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -361,6 +371,16 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": "Your will is in force — Delivery to the heirs: 23 September 2032, 00:00 UTC"
   },
   "rows": [
@@ -414,6 +434,13 @@
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b>Wait</b>",
+   "Verifying your will with the executors:\t<b>Verifying 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 1/2 (0s / 20s) — waiting for: we1.test</b>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 2/2 (0s / 20s)</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -507,6 +534,16 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -514,6 +551,9 @@
    "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -537,7 +577,16 @@
     "VALID"
    ]
   },
-  "verified": [],
+  "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ]
+  ],
   "window_events": [
    "history-refresh"
   ]

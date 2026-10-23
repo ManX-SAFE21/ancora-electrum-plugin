@@ -157,6 +157,16 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -247,9 +257,13 @@
    "Broadcasting your will to executors:\t<b>1/1 (0s)</b>",
    "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Verifying your will with the executors:\t<b>Wait</b>",
-   "Verifying your will with the executors:\t<b>Verifying 0/1 (0s / 20s) — waiting for: we2.test</b>",
+   "Verifying your will with the executors:\t<b>Verifying 0/3 (0s / 20s) — waiting for: we0.test, we1.test, we2.test</b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 1/3 (0s / 20s) — waiting for: we1.test, we2.test</b>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 2/3 (0s / 20s) — waiting for: we2.test</b>",
    "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
-   "Verifying your will with the executors:\t<b>Verifying 1/1 (0s / 20s)</b>",
+   "Verifying your will with the executors:\t<b>Verifying 3/3 (0s / 20s)</b>",
    "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
@@ -391,6 +405,20 @@
      "3/3"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ],
+    "https://we2.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -403,6 +431,8 @@
    "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "https://we2.test : <font color='#05ad05'><b>Ok</b></font>",
    "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
    "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
@@ -434,6 +464,14 @@
    ]
   },
   "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ],
    [
     "https://we2.test",
     "T3"

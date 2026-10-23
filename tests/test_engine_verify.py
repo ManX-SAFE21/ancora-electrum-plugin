@@ -102,8 +102,10 @@ def _parallel(answers, willitems, asked=None):
 # ------------------------------------------------------------ the choice
 
 def test_targets_check_and_cli_ask_the_sent_not_verified():
+    """#182: the verified copy is asked again too (verified before #182:
+    no time, so due); never the unsent nor the replaced one."""
     targets, skipped = verify_targets(_will())
-    assert targets == [("sent", WE0), ("sent2", WE2)]
+    assert targets == [("sent", WE0), ("verified", WE1), ("sent2", WE2)]
     assert skipped == []
 
 
@@ -205,12 +207,15 @@ def test_a_verified_copy_that_fails_is_no_longer_verified():
     assert not will["v"].get_status("PUSHED")
 
 
-def test_a_verified_copy_with_no_answer_stays_verified():
+def test_a_verified_copy_with_no_answer_is_no_longer_verified():
+    """#182 (owner): "no answer to the check", still sent, not sent again
+    (before #182 it stayed verified)."""
     will = {"v": _item("COMPLETE", "PUSHED", "CHECKED", url=WE1)}
     fake = _parallel({"v": "deadline"}, will)
     with patch.object(Willexecutors, "check_transactions_parallel", fake):
         assert verify_will(will, [("v", WE1)]) == {"v": NO_ANSWER}
-    assert will["v"].get_status("CHECKED")
+    assert not will["v"].get_status("CHECKED")
+    assert will["v"].get_status("PUSHED") and not will["v"].get_status("CHECK_FAIL")
 
 
 def test_no_target_no_request():
@@ -277,10 +282,12 @@ def test_cli_limits_to_the_txids_and_saves():
     saved = []
     host = SimpleNamespace(willitems=will, save_willitems=lambda: saved.append(1))
     asked = []
-    fake = _parallel({"sent": "same", "sent2": "same"}, will, asked)
+    fake = _parallel({"sent": "same", "sent2": "same", "verified": "same"},
+                     will, asked)
     with patch.object(Willexecutors, "check_transactions_parallel", fake):
         out = BalController.check_transactions(host, ["sent2", "verified", "unsent"])
-    assert asked == [("sent2", WE2)]
+    # #182: the verified copy is asked again too.
+    assert asked == [("verified", WE1), ("sent2", WE2)]
     assert out["sent2"]["checked"] and saved == [1]
 
 

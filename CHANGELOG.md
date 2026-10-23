@@ -12163,3 +12163,121 @@ found to be a limit (next step #182). Owner: close #181 on the automatic
 tests.
 
 **Outcome:** DONE.
+
+## 182. The Check asks again the copies already verified
+
+**Date:** 2026-10-23
+
+**Problem (the owner's ZIP test of #181, 2026-10-22):** every Check, from
+several IP addresses and also with the Wi-Fi off, read "received and
+verified" 5/5. A copy verified once was never asked again
+(`Will.needs_server_check`): a will-executor that lost a copy (a server
+rebuilt) or closed would read "verified" for years, and with no
+connection the window still said "Verification 5/5".
+
+**Owner's decisions (2026-10-22):**
+
+- a will in several deliveries: its verified copies are asked again once
+  their verification is a day old (13 copies per will-executor with three
+  dates: every Check would be slow and bring 429 answers); a will with one
+  delivery, basic or advanced mode: at every Check;
+- a copy verified before that gets no answer now: "received, no answer to
+  the check" (no longer verified, with "Exclude" of #181), never sent
+  again;
+- no connection at all is "no answer" too, like the 503 of #180 (else,
+  offline, every copy asked again would be marked failed and sent again);
+- the time of the last verification is written, with the next one for a
+  will in several deliveries.
+
+**What changed:**
+
+- `bal/core/will.py`: `REVERIFY_SECONDS_MULTI` (one day) with the WHY;
+  `WillItem.checked_time` (saved as `checked_time` only when known: the
+  copies verified before keep their saved form, older plugins ignore it),
+  set by `set_check_willexecutor` when the will-executor confirms the copy;
+  `NO_ANSWER` on a verified copy clears CHECKED (PUSHED kept). New
+  `Will.now_seconds`, `Will.reverify_period` (one day when the sent copies
+  carry more than one date, else 0), `Will.needs_reverify`,
+  `Will.last_verified`.
+- `bal/engine/verify.py` `verify_targets`: without `recheck` (the Check,
+  the command line) it also asks the verified copies due again
+  (`Will.needs_reverify`), never those of an excluded will-executor (#178).
+  The right click "check" is unchanged.
+- `bal/core/willexecutors.py`: `Willexecutors.no_connection` (an
+  `OSError` or aiohttp's `ClientConnectionError`, not an HTTP answer);
+  `check_transaction` returns `NO_ANSWER` for it and writes "{url} not
+  reached: no answer this time" in the command trace. `send_request`'s
+  "You are offline." is now a `ConnectionError` (same text).
+- `bal/core/datetext.py` `local_short` ("23 Oct 2026, 13:52", local time
+  of the computer): owner's ZIP test, the long dates did not fit and
+  pushed "Exclude" and "Retry" out of the window.
+- `bal/core/summary.py`: `verified_times`, `verified_text`; the Will tab
+  line reads "5 of 5 received and verified it · last check 23 Oct 2026,
+  13:52 · next check from 24 Oct 2026, 13:52", the last part only for a
+  will in several deliveries.
+- `bal/core/build_report.py` `set_verified` and the snapshot's `verified`
+  (only when known); `bal/gui/qt/dialogs.py` fills it;
+  `bal/gui/qt/widgets.py`: the Check window's row reads "received and
+  verified on 23 Oct 2026, 13:52"; the next check of a will in several
+  deliveries once, a grey line under the box ("Next check from …"); the
+  right-hand texts of the boxes wrap, so the row's button stays in a
+  narrow window, and stay on one line up to `VALUE_ONE_LINE` (360 px):
+  owner's ZIP test, the first version wrapped "verified on …, 13:52" with
+  room to spare.
+- `bal/locale`: the five new texts in Italian and Spanish.
+- Golden files regenerated (33 in `tests/golden/5e/check`, 32 in
+  `tests/golden/5e/copies`): a Check of a one-delivery will now asks the
+  verified copies again (its rows), and the snapshots carry the
+  verification times. Nothing else changed in them.
+- Tests that held the old rule, updated with the reason:
+  `test_check_throttle.py` ("another error" is a `ValueError`: a
+  `ConnectionError` is "no answer"), `test_engine_verify.py` (the verified
+  copy is asked again; no answer: no longer verified),
+  `test_verify_in_dialog.py` (nothing to verify: a will in several
+  deliveries verified now), `test_exclude_received.py` and
+  `test_deselected_executors.py` (the Will tab line now ends with the last
+  check).
+- New `tests/test_reverify.py` (18 tests; flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py` and a one-date will): the time kept
+  and saved; the saved form of an old copy unchanged; no answer on a
+  verified copy; one delivery asked at every Check; several deliveries
+  after a day (39 copies asked again after a day, none within it); a copy
+  verified before #182 asked; excluded, drafts and replaced copies never;
+  no connection (offline, name not resolved, connection dropped) is no
+  answer, a 500 still raised; the texts; the Check window's row and its
+  "Next check" line (none for one delivery); "Exclude" and "Retry" inside
+  a 600 px window, the row texts wrapping; the longest rows in English,
+  Italian and Spanish (the real catalogs) whole on one line at 1000 px,
+  inside the window with both buttons at 600 px; offline,
+  a verified one-date will reads "no answer to the check" for the three
+  will-executors, nothing marked failed nor sent again, and back online
+  all verified.
+
+**Verification:** `ruff check bal/ tests/` clean; related tests 131
+passed (1 min 48 s); mutation run 5/5 caught (never ask a verified copy again; no day
+for several deliveries; no answer keeps verified; no connection a failure
+again; no time saved); whole suite 2880 passed and 1 failed (37 min): the Will tab line of
+`test_deselected_executors.py`, expected (the last check now follows),
+updated and its file rerun, 8 passed. After the one-line fix (look
+only, owner: no new whole-suite run): related tests 60 passed (10 s), the
+Check goldens and the Will menu 63 passed (10 s), the one-line width
+mutation caught. Scenario harness not run:
+the flows are covered by flowkit. ZIP
+`test-zips/ancora_0.8.0-TEST-182-reverify.zip` (34ddbc25...) loads as an
+external plugin and passes the smoke test on Electrum 4.8.2; the new rules
+and the Italian texts checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-23, the three-date will, five
+will-executors):** the first Check asked every copy again (98 of 114 on
+the way); `we.divinaly.support` did not answer: "received, no answer to
+the check (15 s)" with "Exclude" and "Retry" (#181 seen live), then
+"excluded", Verification 4/4. The first version's long dates pushed the
+buttons out of the window and then wrapped with room to spare: fixed
+(short dates, the next check once under the box, one line up to 360
+px); the last ZIP showed every row whole on one line and "Next check
+from 24 Oct 2026, 13:52" under the box. In basic mode the will (three
+deliveries) is not asked again within the day, as decided. The Wi-Fi off
+test is left for later (owner).
+
+**Outcome:** DONE.

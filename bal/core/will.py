@@ -61,6 +61,13 @@ MIN_BLOCK = 1
 # deliberately high rate reserved for inheritance txs that may be broadcast
 # years from now. 2 blocks is Electrum's own default target (owner decision).
 INVALIDATION_FEE_ETA_BLOCKS = 2
+# #182 (owner, 2026-10-22): the Check asks the will-executors again for the
+# copies they already confirmed: one may lose a copy (a server rebuilt) or
+# close, and "verified" must not stay true for years. A will in several
+# deliveries has many copies per will-executor (13 with three dates): asked
+# again at most once a day, so a Check stays quick and the servers do not
+# answer 429. A will with one delivery: at every Check (period 0).
+REVERIFY_SECONDS_MULTI = 24 * 60 * 60
 _logger = get_logger(__name__)
 
 
@@ -128,6 +135,62 @@ class Will:
             and w.get_status("PUSHED")
             and not w.get_status("CHECKED")
         )
+
+    @staticmethod
+    def now_seconds():
+        """Now, in seconds since the epoch (#182).
+
+        Read through this module's ``datetime`` so the tests' clock
+        (``tests/flowkit.py`` ``install_clock``) applies.
+        """
+        return datetime.now(timezone.utc).timestamp()
+
+    @staticmethod
+    def reverify_period(willitems):
+        """How old a verification may be before the Check asks again (#182).
+
+        :data:`REVERIFY_SECONDS_MULTI` (one day) when the copies sent to the
+        will-executors (VALID, sent) carry more than one date: a will in
+        several deliveries. Otherwise 0: a will with one delivery is asked
+        again at every Check (owner, basic and advanced mode alike).
+        """
+        dates = {
+            w.tx.locktime for w in willitems.values()
+            if w.get_status("VALID") and w.we and w.get_status("PUSHED")
+        }
+        return REVERIFY_SECONDS_MULTI if len(dates) > 1 else 0
+
+    @staticmethod
+    def needs_reverify(w, now, period):
+        """True when the verified copy ``w`` is to be asked again (#182).
+
+        VALID, sent and verified, and its verification (``checked_time``) is
+        at least ``period`` seconds old at ``now``, or of unknown time (a copy
+        verified before #182). Never a copy not verified yet: that is
+        :meth:`needs_server_check`.
+        """
+        if not (w.get_status("VALID") and w.we and w.get_status("PUSHED")
+                and w.get_status("CHECKED")):
+            return False
+        checked = getattr(w, "checked_time", None)
+        return checked is None or now - checked >= period
+
+    @staticmethod
+    def last_verified(willitems, url=None):
+        """When the oldest verification of the will was made (#182), or None.
+
+        Over the VALID verified copies (only those of ``url`` when given);
+        None when there is none, or one has no time (verified before #182):
+        the date shown is then left out rather than made up.
+        """
+        times = [
+            getattr(w, "checked_time", None) for w in willitems.values()
+            if w.get_status("VALID") and w.we and w.get_status("CHECKED")
+            and (url is None or w.we.get("url") == url)
+        ]
+        if not times or any(t is None for t in times):
+            return None
+        return min(times)
 
     @staticmethod
     def get_tx_from_any(x):
@@ -3208,6 +3271,9 @@ class WillItem(Logger):
         self.sigs_have = int(w.get("sigs_have", 0))
         self.father = w.get("Father", None)
         self.children = w.get("Children", None)
+        # #182: when its will-executor last confirmed this copy (seconds),
+        # or None (never, or before #182).
+        self.checked_time = w.get("checked_time", None)
         self.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
         for s in self.STATUS:
             self.STATUS[s][1] = w.get(s, WillItem.STATUS_DEFAULT[s][1])
@@ -3268,6 +3334,10 @@ class WillItem(Logger):
             "Father": self.father,
             "Children": self.children,
         }
+        if self.checked_time is not None:
+            # #182: only when known, so the items verified before keep the
+            # same saved form.
+            out["checked_time"] = self.checked_time
         for key in self.STATUS:
             try:
                 out[key] = self.STATUS[key][1]
@@ -3316,24 +3386,35 @@ class WillItem(Logger):
                     iw = inp[1]
                     self.set_anticipate(iw)
 
-    def set_check_willexecutor(self,resp):
+    def set_check_willexecutor(self, resp, now=None):
         """Record the will-executor's answer ``resp`` to the check (searchtx).
 
-        It holds exactly our transaction: PUSHED and CHECKED. Any other
-        answer, or ``None`` (no usable answer): CHECK_FAIL and no longer
-        PUSHED, so the copy is sent again. #147: ``Willexecutors.NO_ANSWER``
-        (it did not answer in time) changes nothing: the copy stays sent and
-        to be verified, and the next check asks again. Returns True for an
-        answer, False otherwise.
+        It holds exactly our transaction: PUSHED and CHECKED, and (#182) the
+        time ``now`` (default: :meth:`Will.now_seconds`) in
+        ``checked_time``. Any other answer, or ``None`` (no usable answer):
+        CHECK_FAIL and no longer PUSHED, so the copy is sent again. #147:
+        ``Willexecutors.NO_ANSWER`` (it did not answer in time) leaves the
+        copy sent and to be verified, and the next check asks again. #182: a
+        copy verified before that gets no answer now loses CHECKED (owner:
+        "no answer to the check", not "verified" any more); it is not sent
+        again. Returns True for an answer, False otherwise.
         """
         if resp is Willexecutors.NO_ANSWER:
-            _logger.info(f"no answer to the check for {self._id}: left as it was")
+            if self.get_status("CHECKED"):
+                _logger.info(
+                    f"no answer to the check for {self._id}: no longer verified"
+                )
+                self.set_status("CHECKED", False)
+            else:
+                _logger.info(f"no answer to the check for {self._id}: left as it was")
             return False
         try:
             if resp :
                 if "tx" in resp and resp["tx"] == str(self.tx):
                     self.set_status("PUSHED")
                     self.set_status("CHECKED")
+                    self.checked_time = int(
+                        Will.now_seconds() if now is None else now)
                 else:
                     self.set_status("CHECK_FAIL")
                     self.set_status("PUSHED", False)
