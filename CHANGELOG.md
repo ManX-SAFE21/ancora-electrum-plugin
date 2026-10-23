@@ -12281,3 +12281,35 @@ deliveries) is not asked again within the day, as decided. The Wi-Fi off
 test is left for later (owner).
 
 **Outcome:** DONE.
+
+## 183. The word under each step of the Check window is easier to read
+
+**Date:** 2026-10-23
+
+**Problem (owner):** under the five step names of the Check window, the
+word or counter ("ok", "not needed", "4/5", "0/5 · 27 s / 45 s") was small
+(11 px) and grey (#555555), hard to read on the coloured cells.
+
+**Owner's decision (2026-10-23):** a preview of three versions, drawn with
+the plugin's own code in Italian (today; A: 12 px in the step's colour;
+B: 13 px in the step's colour): proposal B. Look only.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py` `BuildReportView`: `STEP_WORD_SIZE = 13` and
+  `STEP_WORD_GREY = "#444444"` with the WHY; `_steps_bar` writes the word
+  in the step's own colour (green, orange, red, blue), the darker grey for
+  the steps not reached or not needed.
+- New `tests/test_step_words.py` (1 test): 13 px everywhere, the colour of
+  a warning and of a running step, the grey of a step to do.
+
+**Verification (look-only step, owner's rule: no whole suite):** `ruff
+check bal/ tests/` clean; the Check window tests and goldens 110 passed
+(27 s); mutation run (11 px) caught. ZIP
+`test-zips/ancora_0.8.0-TEST-183-step-words.zip` (00875fa2...) loads as an
+external plugin and passes the smoke test on Electrum 4.8.2; the new size
+checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-23):** OK, the words under the steps read well.
+
+**Outcome:** DONE.
