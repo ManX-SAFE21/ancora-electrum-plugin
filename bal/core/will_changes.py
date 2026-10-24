@@ -110,6 +110,9 @@ class Change:
     same_address: list = field(default_factory=list)
     # #185: the delivery number of an INSTALMENT row (1, 2, 3).
     number: int = 0
+    # #186 (review R-5): the decimals of the shares of an INSTALMENT row:
+    # 2 when both sides are tables (the table's precision), else 1.
+    decimals: int = 1
 
 
 def _message_of(address):
@@ -199,6 +202,11 @@ def side_from_items(items, selected=None):
     URLs of the copies, without those deselected now that never received
     the will (``summary.executor_states`` with ``selected``, the #134 rule);
     the delivery is the earliest date. None for no items.
+
+    A will in several deliveries (#185): :attr:`WillSide.deliveries`, read
+    along the chain of the copies (#186, :func:`_item_deliveries`); its
+    heirs are the persons of every delivery (#186, independent review F3:
+    an heir with 0 % at delivery 1 is an heir all the same).
     """
     if not items:
         return None
@@ -238,13 +246,34 @@ def side_from_items(items, selected=None):
     states = executor_states(first_items, selected)
     side.executors = sorted(u for u, st in states.items() if st != "deselected")
     side.terms = _terms(first_items)
-    side.deliveries = _item_deliveries(items, side.delivery, first)
+    side.deliveries, read = _item_deliveries(items, side.delivery, first_items)
+    if side.deliveries is not None:
+        # Each address under the names of the FIRST delivery that pays it
+        # (review R-3: a rename is written in the copies that still match,
+        # delivery 1, while a delivery whose shares changed keeps "luca§2":
+        # both names on one address read as "removed luca").
+        merged, seen = {}, set()
+        for item in read:
+            rows = {}
+            for name, value in item.heirs.items():
+                if str(name).startswith(_EXECUTOR_HEIR):
+                    continue
+                address = str(value[HEIR_ADDRESS])
+                if address not in seen:
+                    # "Luca" for the row "Luca§2" (#168).
+                    rows[delivery.person_name(name)] = value
+            for name, value in rows.items():
+                merged.setdefault(name, value)
+            seen.update(str(v[HEIR_ADDRESS]) for v in rows.values())
+        side.heirs, side.messages = _heir_maps(merged)
+        side.all_names = _all_names(merged)
     return side
 
 
-def _delivery_number(item):
+def delivery_number(item):
     """The delivery of ``item`` (1, 2, 3) from its heir rows ("Luca§2" is
-    delivery 2, #168); 1 for an item without person rows."""
+    delivery 2, #168); 1 for an item without person rows. Also used by
+    ``engine.context.drop_anticipation_leftover`` (#186)."""
     for name in (getattr(item, "heirs", None) or {}):
         if not str(name).startswith(_EXECUTOR_HEIR):
             return delivery.instalment_number(name)
@@ -269,33 +298,71 @@ def _written_shares(heirs):
     return out
 
 
-def _item_deliveries(items, first_date, first):
-    """:attr:`WillSide.deliveries` of the will items ``items`` (#185).
+def _parents(item):
+    """The txids whose outputs ``item`` spends; None when its transaction
+    cannot be read."""
+    try:
+        return {txin.prevout.txid.hex() for txin in item.tx.inputs()}
+    except Exception:
+        return None
+
+
+def _item_deliveries(items, first_date, first_items):
+    """``(deliveries, read)``: :attr:`WillSide.deliveries` of the will
+    items ``items`` (#185) and the copy read for each delivery.
 
     Each item pays the rows of ONE delivery ("Luca", "Luca§2"...), each
     written as a share of the whole estate (seen in a flowkit will in
     three deliveries: delivery 1 "luca 10%", delivery 3 "luca§3 30%").
-    Delivery 1 is the side's own (``first_date`` and ``first``: its date
-    and the copy read); a later one is read from its first copy in
-    ``items`` (the drafts come first in the prepared will,
-    ``engine.context.prepared_items``), with that copy's date. None for a
-    will with one delivery, or when a delivery is missing (nothing
-    invented).
+    Delivery 1 is the side's own (``first_date``, ``first_items``: the
+    copies at the earliest date). #186 (independent review F1, confirmed in
+    flowkit): a later delivery is read along the CHAIN, the copies that
+    spend an output of the delivery before, and of those the ones with the
+    earliest date, the copies that would really be published. Before, the
+    first copy of the delivery in ``items`` was read: the will in force
+    keeps older generations (a delivery 3 rebuilt one day earlier and
+    signed leaves the old delivery 3 in force, pre-empted; after going back
+    to one date the old deliveries 2-3 hang on a replaced delivery 1), and
+    the old copy was read. ``(None, [])`` for a will with one delivery, or
+    when a transaction cannot be read (nothing invented).
+
+    Known limit (review R-1, a step of its own): copies kept by a
+    will-executor excluded after it received the will may hold a branch
+    with older shares that nothing pre-empts; the earliest copies of a
+    level are the ones read, not every branch.
     """
-    picked = {}
-    for item in items.values():
-        n = _delivery_number(item)
-        if n >= 2 and n not in picked and item.heirs:
-            picked[n] = item
-    if not picked or first is None:
-        return None
+    first = next((w for w in first_items.values() if w.heirs), None)
+    if first is None:
+        return None, []
     out = [(first_date, _written_shares(first.heirs))]
-    for n in range(2, max(picked) + 1):
-        item = picked.get(n)
+    read = [first]
+    level = set(first_items)
+    n = 2
+    while True:
+        children = {}
+        for wid, item in items.items():
+            if wid in level:
+                continue
+            parents = _parents(item)
+            if parents is None:
+                return None, []
+            if parents & level and delivery_number(item) == n:
+                children[wid] = item
+        dates = [d for d in (_date_of(w) for w in children.values()) if d is not None]
+        if not dates:
+            break
+        date = min(dates)
+        level = {wid for wid, w in children.items() if _date_of(w) == date}
+        item = next((children[wid] for wid in children
+                     if wid in level and children[wid].heirs), None)
         if item is None:
-            return None
-        out.append((_date_of(item), _written_shares(item.heirs)))
-    return out
+            return None, []
+        out.append((date, _written_shares(item.heirs)))
+        read.append(item)
+        n += 1
+    if len(out) < 2:
+        return None, []
+    return out, read
 
 
 def _table_deliveries(heirs, table, first_date):
@@ -400,13 +467,18 @@ def _as_deliveries(side):
     return [(side.delivery, side.shares)]
 
 
-def _same_shares(a, b):
-    """True when two ``{address: percent}`` read the same with one decimal
-    (a share of 0 % counts as absent; None, unknown, equals only None)."""
+def same_shares(a, b, decimals=1):
+    """True when two ``{address: percent}`` read the same with ``decimals``
+    decimals (a share of 0 % counts as absent; None, unknown, equals only
+    None). One decimal: what the box writes. ``decimals=2``: exact, the
+    precision of the table (#186, review F5:
+    ``engine.context.drop_anticipation_leftover`` must not read 30.04 % as
+    30 %)."""
     if a is None or b is None:
         return a is b
     keys = set(a) | set(b)
-    return all(_same_share(a.get(k, 0.0), b.get(k, 0.0)) for k in keys)
+    return all(round(a.get(k, 0.0), decimals) == round(b.get(k, 0.0), decimals)
+               for k in keys)
 
 
 def _instalment_changes(old, new):
@@ -426,16 +498,20 @@ def _instalment_changes(old, new):
     # The heirs no longer in the will: the Heirs row says "removed", their
     # shares are not repeated as "→ 0%".
     gone = [a for a in old.heirs if a not in new.heirs]
+    # #186 (review R-5): two tables are compared at their own precision
+    # (30.04 % is not 30 %); a side with one date keeps one decimal.
+    decimals = 2 if old.deliveries is not None and new.deliveries is not None else 1
     out = []
     if len(was) != len(now):
         out.append(Change(DELIVERY_COUNT, len(was), len(now)))
     for i in range(max(len(was), len(now))):
         a = was[i] if i < len(was) else None
         b = now[i] if i < len(now) else None
-        if a is not None and b is not None and a[0] == b[0] and _same_shares(a[1], b[1]):
+        if (a is not None and b is not None and a[0] == b[0]
+                and same_shares(a[1], b[1], decimals)):
             continue
         out.append(Change(INSTALMENT, a, b, names=names, removed=gone,
-                          number=i + 1))
+                          number=i + 1, decimals=decimals))
     return out
 
 
@@ -449,8 +525,9 @@ def will_changes(old, new, staged=True):
     #185: when a side is a will in several deliveries, the date and the
     shares are compared delivery by delivery (:func:`_instalment_changes`)
     instead of the DELIVERY and SHARES rows. ``staged`` False keeps the
-    comparison of delivery 1 alone: ``engine.context.cancelled_postpone_date``
-    compares the first delivery on purpose.
+    comparison of delivery 1 alone: the one-date branch of
+    ``engine.context.drop_anticipation_leftover`` compares the first
+    delivery on purpose.
     """
     if old is None or new is None:
         return None
@@ -542,6 +619,11 @@ def with_renames(changes, renames):
             at += 1
         out.insert(at, heirs)
     heirs.names_only = list(renames)
+    # #186 (second review): a will in several deliveries may still name the
+    # old person in the copies of a delivery being rebuilt ("luca§2" next to
+    # "marco§3"): the comparison then finds the same rename; said once.
+    said = {tuple(pair) for pair in renames}
+    heirs.renamed = [pair for pair in heirs.renamed if tuple(pair) not in said]
     return out
 
 
@@ -571,7 +653,13 @@ def _heirs_change(old, new):
             continue
         for n in names:
             if n not in before:
-                same.append((n, next(b for b in names if b != n)))
+                # Review R-4: the only name left at the address (the others
+                # removed) is an heir added, not one "at the same address".
+                other = next((b for b in names if b != n), None)
+                if other is None:
+                    added.append(n)
+                else:
+                    same.append((n, other))
         removed.extend(n for n in before if n not in names)
     for address, names in old_names.items():
         if address not in new_names:
@@ -584,13 +672,14 @@ def _heirs_change(old, new):
 
 # ----------------------------------------------------------------- texts
 
-def _pct(value):
+def _pct(value, decimals=1):
     """``38.5%`` with the language's decimal comma (``38,5%``); a whole
-    number without decimals (``60%``)."""
+    number without decimals (``60%``). ``decimals=2`` (#186, review R-5):
+    the table's precision, "30.04%", trailing zeros left out."""
     decimal, _thousands = number_separators()
-    text = "{:.1f}".format(value)
-    if text.endswith(".0"):
-        text = text[:-2]
+    text = "{:.{}f}".format(value, decimals)
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
     return (text + "%").replace(".", decimal)
 
 
@@ -668,12 +757,19 @@ def _instalment_value(c):
     date moved reads "old → <b>new</b>". A share that is not on the old
     side (an heir added, or fixed amounts before) is written only with its
     new value; an heir no longer in the will (``c.removed``) is left out:
-    the Heirs row says "removed".
+    the Heirs row says "removed". The shares at ``c.decimals`` (#186). New
+    shares not known (fixed amounts, one date: review R-6): the date only.
     """
     old, new = c.old, c.new
+    places = c.decimals
+
+    def pct(value):
+        """A share at the row's precision."""
+        return _pct(value, places)
+
     if new is None:
-        shares = " · ".join("{} {}".format(c.names.get(a, a), _pct(p))
-                            for a, p in (old[1] or {}).items() if round(p, 1))
+        shares = " · ".join("{} {}".format(c.names.get(a, a), pct(p))
+                            for a, p in (old[1] or {}).items() if round(p, places))
         text = _day(old[0]) + (": " + shares if shares else "")
         # Its own text: "removed: {}" (the message row) is masculine in
         # Italian, a delivery is feminine ("tolta").
@@ -684,23 +780,25 @@ def _instalment_value(c):
         day = "{} → <b>{}</b>".format(_day(old[0]), _day(new[0]))
     else:
         day = _day(new[0])
+    if new[1] is None:
+        return day
     was = old[1] if old is not None else None
-    now = new[1] or {}
+    now = new[1]
     parts = []
     for address in list(now) + [a for a in (was or {}) if a not in now]:
         name = c.names.get(address, address)
         b = now.get(address, 0.0)
         a = (was or {}).get(address, 0.0)
-        if address in c.removed and not round(b, 1):
+        if address in c.removed and not round(b, places):
             continue
         if was is None or address not in was:
-            if round(b, 1):
-                parts.append("{} <b>{}</b>".format(name, _pct(b)))
-        elif _same_share(a, b):
-            if round(b, 1):
-                parts.append("{} {}".format(name, _pct(b)))
+            if round(b, places):
+                parts.append("{} <b>{}</b>".format(name, pct(b)))
+        elif round(a, places) == round(b, places):
+            if round(b, places):
+                parts.append("{} {}".format(name, pct(b)))
         else:
-            parts.append("{} {} → <b>{}</b>".format(name, _pct(a), _pct(b)))
+            parts.append("{} {} → <b>{}</b>".format(name, pct(a), pct(b)))
     return day + (": " + " · ".join(parts) if parts else "")
 
 
