@@ -12638,3 +12638,118 @@ warning before a will in several deliveries is made (owner decided); the
 anticipation keeps ONE day (owner decided); R-1 to fix in its own step.
 
 **Outcome:** DONE.
+
+## 187. A will in several deliveries is always redone from delivery 1, and the Check verifies its possible futures
+
+**Date:** 2026-10-24
+
+**Owner's study (2026-10-24, `context/STUDY-2026-10-24-staged-will-safety.md`,
+R-1; re-verified in flowkit with 13 variants, each run on its own):** a
+will-executor excluded, deselected or removed after it received the will
+keeps copies nobody can recall. The build makes new copies only for the
+selected will-executors, and a later delivery was dated only against its
+own parent: after a change of delivery 3's shares, deliveries 1 and 2 were
+kept (same txids) and that will-executor's copies (its delivery 1; its
+delivery 2 under everyone's delivery 1) kept OLD subtrees nothing
+pre-empted. Counting every possible future (at each delivery only a copy
+with the earliest date can be mined first): **15 of 23 paid the old
+shares** with three will-executors, **6 of 7 with two**; the Check said
+"will ok", and selecting the will-executor again changed nothing. The
+owner's choices: every change redoes the whole chain (the future of 12
+deliveries is set aside); the Check verifies the futures and rebuilds by
+itself; the anticipation stays one day.
+
+**What changed:**
+
+- New `bal/core/futures.py` (no Qt): `possible_futures` (the tree from
+  the copies' inputs; only the earliest-dated delivery-1 copies start a
+  future, at each level only the earliest-dated children go on, as the
+  Graph view counts them), `plan_of_rows` / `rows_paid` (what each
+  delivery pays: address and amount as written, names left out),
+  `futures_off_plan`, `future_text`.
+- `bal/core/will.py` `date_chain`, rule 1: after delivery 1 is dated,
+  `_pre_empt_whole_chain`: when the rebuild does not keep every VALID copy
+  of the will in force as it is (other shares, another date, a
+  will-executor no longer selected), delivery 1 is dated one day before
+  the earliest delivery 1 in force, of ANY will-executor (the backup copy
+  too), so the whole old tree dies when the new delivery 1 is mined; the
+  later deliveries keep their dates on the new parents. Only the copies
+  somebody HOLDS count (`_held_branch`, after the independent review:
+  received by their will-executor, or the backup copy, and every copy they
+  hang on held too): a copy never received (a sending that failed, #141)
+  exists only in this wallet and is simply redone, no day lost; with a
+  will-executor excluded or removed that still holds copies, any later
+  change (a will-executor added too) redates the chain, the new delivery 1
+  pre-empts them. A will-executor added later with every copy in force held
+  and kept: nothing moves. Then
+  `_check_futures`, rule 2's safety net: every possible future of the will
+  in force plus the new chain must pay the new plan, else
+  `WillChainError` (nothing saved).
+- `bal/core/will.py` `is_will_valid`, rule 2: with a plan of two
+  deliveries or more, every possible future of the VALID copies must pay
+  it, else the new `FuturesOffPlanException` ("a new will must be
+  prepared", the first such future and the count in the log): the Check
+  rebuilds from delivery 1 by itself. One date: untouched.
+- `bal/core/messages.py`: the sentence of the Check ("A copy of the will
+  held by a will-executor no longer selected could still deliver the old
+  shares (15 of 23 possible ways): preparing a new will, dated one day
+  earlier."), Italian and Spanish.
+- Gone with rule 1: U1 and R-8 of the #186 reviews (a day taken by a later
+  delivery in a cancelled round; a leftover of delivery 1 carried into a
+  later change).
+
+**Tests:** new `tests/test_staged_futures.py` (21 tests): the core
+(plan, a full tree of 27 futures, only the earliest copies start a future,
+a subtree with old shares, a missing level, strange copies); flowkit with
+three fake will-executors, each with its own fee address: delivery 3
+changed without exclusion (the whole chain one day earlier, 39 copies, a
+clean second Check), with a will-executor excluded / deselected / removed,
+delivery 2 changed, twice, two will-executors, with the backup copy, the
+fee, one date then three deliveries, a will-executor added later (no day
+lost), the Check finding an old future in a wallet left as before #187
+(rules off while the change was signed) and healing, a will with one date
+not checked; after the review: a new fee address of a copy never received
+costs no day, a will-executor added while another is excluded redates the
+chain. On the code before: 9 fail. Mutation checks: rule 1 off (9
+caught), rule 2 off (1 caught), both off (9 caught). Updated, with the
+reason in their docstrings: `test_multiverse_chain_rebuild.py` (two tests
+of #168/#169 said "delivery 1 is the signed one, not sent again": now
+the whole chain, 39 copies, delivery 1 one day earlier) and
+`test_staged_leftover.py` (seven tests said a later delivery's table date
+moved: now delivery 1's date; the leftover rule of #186 unchanged) and
+`test_engine_instalments.py` (one test of #169, "delivery 1 stays the
+signed one" when delivery 2 is moved earlier: now one day earlier too).
+
+**Reviews:** an independent review (read-only) found nothing unsafe and
+three cases where rule 1 cost a day for nothing (a copy never received
+redone for a new fee address or fee; a partial signature left over): fixed
+with `_held_branch`; a second review of that refinement found the "kept"
+comparison reading the txids of deliveries 2+ as the build set them,
+before the first delivery was dated (a day lost for nothing when the
+stored date lags the one in force; not reachable through the plugin's own
+flows, which keep the stored date on the one in force): the children are
+now relinked to their parents' current txids first. Noted for later: when
+the safety net refuses a chain (`WillChainError`), its text is technical;
+a friendlier sentence is a small step of its own.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the futures, the chain rebuilds, the leftover rule, the #141 fee
+address, the deliveries window, the golden-file tests) 823 passed (10
+minutes). Whole `tests/` directory: 2972 passed in the normal order (52
+minutes) and in the reverse file order (47 minutes); the one failure of
+those runs, the #169 test above, was then updated and its file run again
+(a test-only change). Golden files unchanged. Scenario harness (full
+matrix, the 2-coin scenarios 6 times, warn_matrix synced and not): log
+identical to the #186 log (135 lines, 74 s). Test ZIP
+`test-zips/ancora_0.8.0-TEST-187-staged-futures.zip` (sha256
+`f8286060...8cf9`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2; the new module, the rules and the Italian sentence checked
+inside the ZIP.
+
+**Owner's ZIP test (2026-10-24, test wallet, a will in three deliveries):**
+a will-executor excluded, delivery 3's shares changed and signed: the log
+says "chain: the will in force changes, the first delivery is dated one
+day before the earliest one in force (#187)", the copies signed and sent,
+the next Check "will ok"; no error in the log. Owner: "tutto ok".
+
+**Outcome:** DONE.

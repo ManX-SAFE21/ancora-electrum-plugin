@@ -307,12 +307,14 @@ def test_later_delivery_share_changed(make):
     _second_build_changes_nothing(s)
 
 
-def test_later_deliveries_shares_moved_keep_the_first(make):
+def test_later_deliveries_shares_moved_redo_the_whole_chain(make):
     """5 % of luca's moved from delivery 3 to delivery 2 (the table stays
-    at 100 %, delivery 1 unchanged): delivery 1 is the signed one (not
-    sent again); delivery 2 one day earlier and delivery 3 rebuilt on it.
-    #168 (F1): the table follows the earlier dates, and the next Check
-    finds the will in force."""
+    at 100 %): #187 (owner's study, R-1), every change redoes the WHOLE
+    chain, delivery 1 one day earlier than the one in force, so the old
+    tree dies as a whole when the new delivery 1 is mined (before, delivery
+    1 was kept and only delivery 2 went one day earlier: a copy held by a
+    will-executor no longer selected kept an old subtree). Deliveries 2
+    and 3 keep their dates; the next Check finds the will in force."""
     s = make()
     levels = _first(s, "three_dates")
     firsts = {k for k in _valid(s) if _level(k, s.bw.willitems) == 1}
@@ -325,12 +327,12 @@ def test_later_deliveries_shares_moved_keep_the_first(make):
     pushed = len(s.world.pushed)
     s.check()
     audit(s, levels, pushed)
-    assert {k for k in _valid(s) if _level(k, s.bw.willitems) == 1} == firsts
-    assert len(s.world.pushed) - pushed == 36
+    assert not ({k for k in _valid(s) if _level(k, s.bw.willitems) == 1} & firsts)
+    assert len(s.world.pushed) - pushed == 39
     dates = _dates(s)
-    assert dates[1] == {"2030-03-01"} and dates[2] == {"2033-02-28"}
+    assert dates[1] == {"2030-02-28"} and dates[2] == {"2033-03-01"}
     table = [fk.fmt(r["locktime"]) for r in delivery.table_rows(s.bw.will_settings)]
-    assert table == ["2030-03-01", "2033-02-28", min(dates[3])]
+    assert table == ["2030-02-28", "2033-03-01", min(dates[3])]
     _second_build_changes_nothing(s)
     s.clock.travel(1)
     pushed = len(s.world.pushed)
@@ -341,11 +343,12 @@ def test_later_deliveries_shares_moved_keep_the_first(make):
 
 @pytest.mark.parametrize("which,expected", [
     ("1", {1: {"2030-01-30"}, 2: {"2033-03-01"}, 3: {"2036-03-01"}}),
-    ("2", {1: {"2030-03-01"}, 2: {"2033-01-30"}, 3: {"2036-03-01"}}),
+    ("2", {1: {"2030-02-28"}, 2: {"2033-01-30"}, 3: {"2036-03-01"}}),
 ])
 def test_one_delivery_earlier(make, which, expected):
-    """One delivery 30 days earlier: only that delivery and the later ones
-    are new; the earlier ones stay the signed ones."""
+    """One delivery 30 days earlier: that delivery moves; #187: delivery 1
+    goes one day earlier as well (the whole chain is redone), unless it is
+    the one moved."""
     s = make()
     levels = _first(s, "three_dates")
     s.clock.travel(1)
