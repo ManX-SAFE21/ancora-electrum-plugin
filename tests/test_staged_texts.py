@@ -56,13 +56,26 @@ def day(ts):
 
 # ------------------------------------------------------------- the core
 
-class Item:
-    """A will item as the core reads it: heirs, date, will-executor, fee."""
+#: The wallet's own coin the copies of delivery 1 spend.
+COIN = "{:064x}".format(999)
 
-    def __init__(self, heirs, locktime, url):
-        """``heirs``: ``{row name: [address, written, date, real sats]}``."""
+
+def txid(n, i):
+    """The txid of the copy of delivery ``n`` for will-executor ``i``."""
+    return "{:064x}".format(100 * n + i)
+
+
+class Item:
+    """A will item as the core reads it: heirs, date, will-executor, fee,
+    and the transaction whose output it spends (#186: a later delivery is
+    read along the chain)."""
+
+    def __init__(self, heirs, locktime, url, parent=COIN):
+        """``heirs``: ``{row name: [address, written, date, real sats]}``;
+        ``parent``: the txid of the output spent."""
         self.heirs = heirs
-        self.tx = SimpleNamespace(locktime=locktime)
+        prevout = SimpleNamespace(prevout=SimpleNamespace(txid=bytes.fromhex(parent)))
+        self.tx = SimpleNamespace(locktime=locktime, inputs=lambda: [prevout])
         self.we = {"url": url}
         self.tx_fees = 2
         self.flags = {"VALID", "COMPLETE", "PUSHED", "CHECKED"}
@@ -76,13 +89,14 @@ def one_date(luca=50, john=50, date=D1):
     """The side of a will with one date (one copy per will-executor)."""
     heirs = {"luca": [L, "{}%".format(luca), date, luca * 1000],
              "john": [J, "{}%".format(john), date, john * 1000]}
-    return wc.side_from_items({str(i): Item(heirs, date, u) for i, u in enumerate(WE)})
+    return wc.side_from_items({txid(1, i): Item(heirs, date, u) for i, u in enumerate(WE)})
 
 
 def staged(*deliveries):
     """The side of a will in several deliveries: ``(date, luca %, john %)``
     per delivery; one copy per will-executor and delivery (the rows of
-    delivery n named "luca§n", as the build names them)."""
+    delivery n named "luca§n", as the build names them), each spending the
+    copy of the delivery before of its will-executor."""
     items = {}
     for n, (date, luca, john) in enumerate(deliveries, 1):
         heirs = {}
@@ -91,7 +105,8 @@ def staged(*deliveries):
                 key = name if n == 1 else "{}§{}".format(name, n)
                 heirs[key] = [address, "{}%".format(pct), date, pct * 1000]
         for i, u in enumerate(WE):
-            items["{}-{}".format(n, i)] = Item(heirs, date, u)
+            parent = COIN if n == 1 else txid(n - 1, i)
+            items[txid(n, i)] = Item(heirs, date, u, parent)
     return wc.side_from_items(items)
 
 
@@ -168,8 +183,8 @@ def test_an_heir_added_and_one_removed():
 
 
 def test_staged_false_compares_delivery_one_only():
-    """``engine.context.cancelled_postpone_date`` compares delivery 1 on
-    purpose: with ``staged=False`` the rows are those of before #185."""
+    """The one-date branch of ``engine.context.drop_anticipation_leftover``
+    compares delivery 1 on purpose: with ``staged=False`` the rows are those of before #185."""
     kinds = [c.kind for c in wc.will_changes(
         staged(*OWNER), staged((D1 - fk.DAY, 10, 10), (D2, 10, 10), (D3, 30, 30)),
         staged=False)]
@@ -512,3 +527,119 @@ def test_back_to_one_delivery_names_the_amounts(make, monkeypatch, answers):
     (question,) = answers.asked
     assert ("Then the amounts of the heirs count again (luca 50%, john 50%): "
             "check them before the next Check.") in question
+
+
+# ------------------------------- the box after the review of #186
+
+def test_two_names_on_one_address_then_one_renamed():
+    """Review R-4: anna and luca share an address; anna deleted and luca
+    renamed marco. The box must not disappear (before: StopIteration)."""
+    old = wc.WillSide(delivery=D1, heirs={L: "anna + luca"},
+                      all_names={L: ["anna", "luca"]}, executors=list(WE))
+    new = wc.WillSide(delivery=D1, heirs={L: "marco"}, all_names={L: ["marco"]},
+                      executors=list(WE))
+    out = rows(old, new)
+    assert out == [("Heirs", "added <b>marco</b> · removed <b>anna</b>, <b>luca</b>",
+                    None)]
+
+
+def test_hundredths_of_a_table_are_shown():
+    """Review R-5: the table allows two decimals: 30 / 30 % in force, the
+    settings 30.04 / 29.96 %: a change, written with its hundredths."""
+    heirs = {"luca": [L, "50%", D1], "john": [J, "50%", D1]}
+    table = [{"locktime": D1, "shares": {"luca": "10%", "john": "10%"}},
+             {"locktime": D2, "shares": {"luca": "10%", "john": "10%"}},
+             {"locktime": D3, "shares": {"luca": "30.04%", "john": "29.96%"}}]
+    new = wc.side_from_settings(heirs, D1, WE, 2, table=table)
+    assert rows(staged(*OWNER), new) == [
+        ("Delivery 3", "{}: luca 30% → <b>30.04%</b> · john 30% → <b>29.96%</b>".format(
+            day(D3)), WHOLE)]
+
+
+def test_back_to_one_date_with_fixed_amounts():
+    """Review R-6: the table removed and fixed amounts written: the real
+    shares of delivery 1 are not known before the build; no "→ 0%"."""
+    heirs = {"luca": [L, "100000", D1], "john": [J, "200000", D1]}
+    out = rows(staged(*OWNER), wc.side_from_settings(heirs, D1, WE, 2))
+    first = next(r for r in out if r[0] == "Delivery 1")
+    assert first[1] == day(D1)
+    assert "0%" not in first[1]
+
+
+def test_an_heir_only_at_delivery_2_removed():
+    """john had only a share at delivery 2 and is removed: the Heirs row
+    says so, the delivery row neither repeats it nor shows an address."""
+    out = rows(staged((D1, 60, 0), (D2, 0, 40)), staged((D1, 60, 0), (D2, 40, 0)))
+    heirs = next(r for r in out if r[0] == "Heirs")
+    assert heirs[1] == "removed <b>john</b>"
+    second = next(r for r in out if r[0] == "Delivery 2")
+    assert "john" not in second[1] and "tb1" not in second[1]
+    assert "luca <b>40%</b>" in second[1]
+
+
+def test_a_strange_copy_does_not_break_the_chain():
+    """A copy spending its own id and one dated by block height are not read
+    as a delivery (no loop, no crash): the deliveries stay as they are."""
+    side = staged(*OWNER)
+    items = {}
+    for n, (date, luca, john) in enumerate(OWNER, 1):
+        heirs = {}
+        for name, address, pct in (("luca", L, luca), ("john", J, john)):
+            key = name if n == 1 else "{}§{}".format(name, n)
+            heirs[key] = [address, "{}%".format(pct), date, pct * 1000]
+        for i, u in enumerate(WE):
+            items[txid(n, i)] = Item(heirs, date, u, COIN if n == 1 else txid(n - 1, i))
+    loop = txid(9, 9)
+    items[loop] = Item({"luca§2": [L, "77%", D2, 1]}, D2 - fk.DAY, WE[0], loop)
+    items[txid(9, 8)] = Item({"luca§2": [L, "88%", D2, 1]}, 800000, WE[0], txid(1, 0))
+    assert wc.side_from_items(items).deliveries == side.deliveries
+
+
+def test_box_of_a_rename_and_a_share_of_delivery_2(make):
+    """Review R-3: in one Check luca renamed marco and delivery 2's shares
+    changed. The copies of delivery 2 in force still name "luca§2": the box
+    says the rename once and never "removed luca"."""
+    from bal.engine import instalments
+
+    s = make()
+    tgd.owner_table(s.bw)
+    s.check()
+    s.bw.heirs["marco"] = list(s.bw.heirs["luca"])
+    del s.bw.heirs["luca"]
+    s.bw.heirs.save()
+    instalments.rename_heir(s.bw, "luca", "marco")
+    rows_ = tgd.stored(s.bw)
+    rows_[1]["shares"] = {"marco": "5%", "john": "15%"}
+    context.set_instalments(s.bw, rows_)
+    snap = s.check(cancel_on=SIGN)._report().snapshot()
+    values = " | ".join(r[1] for r in snap["changes"])
+    assert "removed" not in values, snap["changes"]
+    assert "Delivery 2" in [r[0] for r in snap["changes"]]
+    heirs = [r[1] for r in snap["changes"] if r[0] == "Heirs"]
+    assert len(heirs) == 1 and heirs[0].count("renamed") == 1, heirs
+
+
+def test_box_of_a_rename_of_an_heir_paid_later(make):
+    """Second review: luca has nothing at delivery 1; renamed marco while
+    delivery 2's shares change. The copies of delivery 2 in force keep
+    "luca§2", those of delivery 3 are renamed "marco§3": the rename is said
+    once (the name only, already saved), never twice."""
+    from bal.engine import instalments
+
+    s = make()
+    tgd.owner_table(s.bw, [{"locktime": D1, "shares": {"luca": "0%", "john": "20%"}},
+                           {"locktime": D2, "shares": {"luca": "20%", "john": "10%"}},
+                           {"locktime": D3, "shares": {"luca": "30%", "john": "20%"}}])
+    s.check()
+    s.bw.heirs["marco"] = list(s.bw.heirs["luca"])
+    del s.bw.heirs["luca"]
+    s.bw.heirs.save()
+    instalments.rename_heir(s.bw, "luca", "marco")
+    rows_ = tgd.stored(s.bw)
+    rows_[1]["shares"] = {"marco": "15%", "john": "15%"}
+    context.set_instalments(s.bw, rows_)
+    snap = s.check(cancel_on=SIGN)._report().snapshot()
+    heirs = [r[1] for r in snap["changes"] if r[0] == "Heirs"]
+    assert len(heirs) == 1, snap["changes"]
+    assert heirs[0].count("renamed") == 1, heirs
+    assert "removed" not in heirs[0] and "added" not in heirs[0], heirs

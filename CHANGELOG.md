@@ -12507,3 +12507,134 @@ heir" and "Delete" do not go on and explain why (the step "BASIC with a
 table").
 
 **Outcome:** DONE.
+
+## 186. A change undone in a will in several deliveries no longer asks to sign again
+
+**Date:** 2026-10-24
+
+**Seen in #185 (owner informed; plan of 2026-10-24 approved, then "do all
+the tests needed until the solution is robust and safe", with
+independent reviews, judges and critics):** with one date, a change
+cancelled at the password and then undone (e.g. the fee changed and put
+back) brings the will in force back, nothing to sign (#135,
+`engine.context.drop_anticipation_leftover`). With a table of deliveries
+every Check asked to sign again: the rebuild dates ONE day earlier only
+the deliveries it changes (seen in flowkit: the fee anticipates delivery 1
+only, the drafts of deliveries 2-3 keep their dates; delivery 3's shares
+rebuild only its 27 copies, its table date one day earlier), and the rule,
+written for one date, wanted every draft on delivery 1's day.
+
+**What changed:**
+
+- `bal/engine/context.py`: `drop_anticipation_leftover` sends a will in
+  several deliveries (a table in force or in the settings) to the new
+  `_drop_staged_leftover`; the one-date branch is unchanged. The rule,
+  all of it must hold: the settings (Heirs tab, the table, the
+  will-executors selected now, the fee) compared with the will in force
+  delivery by delivery (#185) differ ONLY by deliveries exactly one day
+  earlier with exactly the same shares (two decimals); every draft is on
+  the stored date of its delivery; every delivery moved has drafts on that
+  day; no signed copy spends a draft's output. Then the dates go back to
+  the will in force's first (delivery 1 through the validated write and
+  read back, the later ones in the table, replaced whole), and only then
+  are the drafts dropped (unsigned, only in this wallet: free). Signed or
+  sent items are never touched; when in doubt the rule does nothing and the
+  will is asked to sign, as before.
+- `bal/core/will_changes.py` (also the "What changes" box of #185):
+  - the will in force keeps older generations of copies (a delivery
+    rebuilt one day earlier and signed leaves the old copies in force,
+    pre-empted; after going back to one date the old deliveries 2-3 hang
+    on a replaced delivery 1). A later delivery is now read along the
+    chain: the copies that spend an output of the delivery before, of
+    those the ones with the earliest date (`_item_deliveries`, `_parents`);
+    before, the first copy found was read (often the old one);
+  - the persons of the will in force are read from every delivery (an
+    heir with 0 % at delivery 1 was read as "added"), each address under
+    the names of the first delivery that pays it (a rename next to a
+    rebuilt delivery read "removed luca");
+  - two tables are compared and written with two decimals ("30.04%");
+    no "→ 0%" when the new shares are not known (fixed amounts after the
+    table removed); no error when the only name left at an address is new
+    (`_heirs_change`); a rename already said is not repeated
+    (`with_renames`);
+  - `delivery_number` and `same_shares(decimals=)` public (the engine
+    uses them).
+
+**Reviews:** a first independent review found 5 problems, 3 confirmed in
+flowkit (old generations read, the one-date rule no longer firing after
+going back to one date, an heir with 0 % at delivery 1); a multi-agent
+review (9 agents, read-only) found 3 more problems of the box and confirmed
+the design; a second independent review found no serious bug, 3 test
+gaps; judges and critics (9 agents, 4 new angles) found nothing that could
+change what is paid, lose data or move a date silently, and 6 test gaps.
+All fixed, each with a test written first and seen failing.
+
+**Seen, not changed here (for the owner, separate steps):**
+
+- R-1 (confirmed in flowkit, pre-existing): a will-executor excluded after
+  it received the will keeps a branch with the OLD shares: after a change
+  of delivery 3's shares, 5 of the 9 delivery-2 copies still in force have
+  only delivery-3 children with the old shares; if the excluded
+  will-executor's delivery 1 is published first, delivery 3 pays the old
+  shares.
+- R-2 (confirmed in flowkit, pre-existing, rare): going back to one date
+  when the heirs' own amounts equal delivery 1's cells keeps delivery 1's
+  date (no day earlier): the old will and the new one are both valid that
+  day. With other amounts the new will is one day earlier (checked).
+- U1 (pre-existing): a fee change cancelled and put back, then a real
+  change of a later delivery: delivery 1 keeps the day (all copies to
+  sign, shown in the box).
+- U2 (pre-existing, old wallets only): two heirs on one address, the
+  second paid only from delivery 2: the rule does nothing.
+- R-7/R-8: a delivery the owner moved exactly one day earlier himself
+  and whose rebuild he cancelled is put back (the limit of #135); a
+  later delivery's day left by a cancelled round goes with the next real
+  change. R-9: a will with one date, a table added then removed: one extra
+  signature. R-11: the command line never runs the rule (as before).
+
+**Tests:** new `tests/test_staged_leftover.py` (22 tests; flowkit, three
+fake will-executors each with its own fee address, the owner's table
+10/10, 10/10, 30/30 %): the fee and the shares of delivery 2 or 3 changed,
+cancelled and put back (nothing to sign, the will in force kept, the
+wallet file and a second clean Check); twice in a row; a new will in force
+never dropped; two deliveries moved back together; what is NOT a leftover
+(a change kept, other shares, two days earlier, the table removed, a
+draft off its delivery's date, hundredths, a refused or silently refused
+date write, drafts signed after the Cancel, a delivery without drafts, a
+will with one date and a table added then removed), each checked as a
+decision of the rule (not an error swallowed); after a later delivery was
+signed; after going back to one date; an heir with 0 % at delivery 1.
+`tests/test_staged_texts.py`: the fakes carry the chain; 7 more box tests
+(two names on one address, hundredths, fixed amounts, an heir only at
+delivery 2, a strange copy, a rename with a share of delivery 2, a rename
+of an heir paid later). On the code before the fixes the new tests fail;
+mutation checks (each guard removed in turn: read-back, two decimals,
+moved deliveries with drafts, draft dates, signed copies) are each caught
+by their test. The new tests 5 times in a row: always 64 passed.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the leftover rules, the box, the deliveries, the chain, the
+versions list, the wizard, the golden-file tests) 561 passed (10
+minutes). Whole `tests/` directory: 2951 passed in the normal order (37
+minutes) and 2951 passed in the reverse file order (31 minutes). Golden
+files unchanged. Scenario harness (full matrix, the 2-coin scenarios 6
+times, warn_matrix synced and not): log identical to the #178 log (135
+lines, 65 s). Test ZIP `test-zips/ancora_0.8.0-TEST-186-staged-leftover.zip`
+(sha256 `8c615967...6bde`): `external_zip_test.py` and `smoke_test.py`
+pass on Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-24, test wallet, a will in three deliveries
+at four will-executors):** the fee changed, Cancel, put back: nothing
+asked (the log: "84 unsigned drafts dropped, deliveries [1] back to the
+will in force's dates: ['2032-10-02']", 4 + 16 + 64 copies); delivery 3's
+shares changed, Cancel, put back: nothing asked ("64 unsigned drafts
+dropped, deliveries [3] ... ['2034-10-03']"); a change not undone: asked to
+sign. "will ok" after each; no error in the log. Owner: OK.
+
+**Studied with the owner afterwards (decisions and open points in
+`context/STUDY-2026-10-24-staged-will-safety.md`):** going back from
+several deliveries to one will need the on-chain invalidation, with a
+warning before a will in several deliveries is made (owner decided); the
+anticipation keeps ONE day (owner decided); R-1 to fix in its own step.
+
+**Outcome:** DONE.

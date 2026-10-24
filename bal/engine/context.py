@@ -1132,6 +1132,11 @@ def drop_anticipation_leftover(host):
     is kept and asked to sign as before. Runs before the check, never on
     the drafts of the build of the same Check. Returns ``(the day dropped,
     the will in force's day)`` or None. Never raises (logged).
+
+    #186: a will in several deliveries (a table, in force or in the
+    settings) follows :func:`_drop_staged_leftover`: there the rebuild
+    anticipates only the deliveries it changes, so the drafts of the
+    others keep their dates and the test of one date below never held.
     """
     try:
         from ..core import will_changes
@@ -1151,7 +1156,14 @@ def drop_anticipation_leftover(host):
         if not isinstance(selected, (set, frozenset)):
             selected = None
         old = will_changes.side_from_items(in_force, selected)
-        if old is None or old.delivery is None or old.delivery - stored != _ANTICIPATION_STEP:
+        if old is None or old.delivery is None:
+            return None
+        # #186: a table in force or in the settings. A will with one date in
+        # force while a table was added then removed again (review R-9) is
+        # not recognized: one Check asks to sign, then it heals itself.
+        if old.deliveries is not None or instalments.has_table(host):
+            return _drop_staged_leftover(host, willitems, drafts, stored, old, selected)
+        if old.delivery - stored != _ANTICIPATION_STEP:
             return None
         if any(delivery.as_delivery(willitems[w].tx.locktime) != stored for w in drafts):
             return None
@@ -1160,10 +1172,8 @@ def drop_anticipation_leftover(host):
         new = will_changes.side_from_settings(
             instalments.first_delivery_heirs(host) or {}, stored, sorted(selected) if selected is not None
             else list(old.executors), (host.will_settings or {}).get("baltx_fees"))
-        # #185: staged=False: delivery 1 alone, as above (the delivery by
-        # delivery comparison is for the box the owner reads). A precaution:
-        # with a table the drafts of deliveries 2-3 carry other dates, so
-        # the test just above already returns None.
+        # #185: staged=False: delivery 1 alone, as above (a will in several
+        # deliveries never comes here since #186: _drop_staged_leftover).
         changes = will_changes.will_changes(old, new, staged=False)
         if not changes or [c.kind for c in changes] != [will_changes.DELIVERY]:
             return None
@@ -1186,6 +1196,112 @@ def drop_anticipation_leftover(host):
     except Exception as e:
         _logger.error(f"anticipation leftover not checked: {e!r}")
         return None
+
+
+def _drop_staged_leftover(host, willitems, drafts, stored, old, selected):
+    """:func:`drop_anticipation_leftover` for a will in several deliveries
+    (#186, owner's plan of 2026-10-24).
+
+    Seen in a flowkit will in three deliveries: a change cancelled at the
+    password leaves drafts in which only the deliveries the rebuild changed
+    are dated ONE day earlier (the fee: delivery 1, the stored date one day
+    earlier; delivery 3's shares: delivery 3, its table date one day
+    earlier); the drafts of the other deliveries keep their dates. Once the
+    change was undone, every Check asked to sign them.
+
+    The rule, all of it must hold: the settings (Heirs tab, the table,
+    will-executors selected now, fee: ``side_from_settings`` with the
+    table) compared with the will in force delivery by delivery
+    (``will_changes``, #185) differ ONLY by deliveries exactly one day
+    earlier with exactly the same shares (two decimals, review F5; no other
+    row: heirs, message, will-executors, fee, number of deliveries; the
+    settings side has no will-executor fee terms, review R-10: a new fee
+    address shows only in the Check's own build); every draft carries the
+    stored date of its delivery; and
+    every delivery moved has drafts on that day (review F2: a delivery the
+    owner moved one day on purpose, with no draft, is the owner's date,
+    never put back); and no signed copy spends a draft's output (judges'
+    review U3: drafts partly signed after the Cancel). Then the dates go
+    back to the will in force's FIRST
+    (review F4: a refused write leaves everything as it was; delivery 1
+    through ``locktime``, read back; the later ones in the table, replaced
+    whole as ``instalments.sync_later_deliveries`` writes it) and only then
+    are the drafts dropped (unsigned, only in this wallet: free). Signed or
+    sent items are never touched. Returns ``(the day dropped, the will in
+    force's day)`` of the first delivery moved, or None.
+
+    The limit of the one-date rule (review R-7): a delivery the owner moved
+    exactly one day earlier himself, whose rebuild he then cancelled, is
+    put back as well (it cannot be told from the plugin's step without a
+    new wallet key); the date can be chosen again.
+    """
+    from ..core import will_changes
+
+    settings = host.will_settings or {}
+    new = will_changes.side_from_settings(
+        host.heirs or {}, stored,
+        sorted(selected) if selected is not None else list(old.executors),
+        settings.get("baltx_fees"), table=will_changes.settings_table(settings))
+    moved = {}
+    for change in will_changes.will_changes(old, new) or []:
+        if (change.kind != will_changes.INSTALMENT or change.old is None
+                or change.new is None or change.old[0] is None
+                or change.new[0] is None):
+            return None
+        if not will_changes.same_shares(change.old[1], change.new[1], decimals=2):
+            return None
+        if change.old[0] - change.new[0] != _ANTICIPATION_STEP:
+            return None
+        moved[change.number] = (change.new[0], change.old[0])
+    if not moved or new.deliveries is None:
+        return None
+    dates = [date for date, _shares in new.deliveries]
+    with_drafts = set()
+    for wid in drafts:
+        n = will_changes.delivery_number(willitems[wid])
+        if n > len(dates) or delivery.as_delivery(willitems[wid].tx.locktime) != dates[n - 1]:
+            return None
+        with_drafts.add(n)
+    if not set(moved) <= with_drafts:
+        return None
+    # Judges' review U3: a copy signed after the Cancel (e.g. the drafts of
+    # delivery 2 signed from the Will tab) that spends a draft's output:
+    # nothing is touched (the rule never decides around signed copies).
+    draft_ids = set(drafts)
+    for wid, item in willitems.items():
+        if wid in draft_ids:
+            continue
+        try:
+            spent = {txin.prevout.txid.hex() for txin in item.tx.inputs()}
+        except Exception:
+            return None
+        if spent & draft_ids:
+            return None
+    if 1 in moved:
+        store = getattr(host, "store_will_setting", None)
+        if store is not None:
+            store("locktime", moved[1][1])
+        else:
+            set_will_setting(host, "locktime", moved[1][1])
+        # The window's write logs a refusal instead of raising: read back.
+        if delivery.as_delivery(settings.get("locktime")) != moved[1][1]:
+            return None
+    later = {n: back for n, (_day, back) in moved.items() if n >= 2}
+    if later:
+        rows = delivery.instalments_of(settings)
+        for n, back in later.items():
+            rows[n - 1]["locktime"] = back
+        settings[delivery.INSTALMENTS_KEY] = rows
+    for wid in drafts:
+        del willitems[wid]
+    init_heirs_to_locktime(host)
+    first = min(moved)
+    _logger.info(
+        "anticipation leftover: {} unsigned drafts dropped, deliveries {} "
+        "back to the will in force's dates: {}".format(
+            len(drafts), sorted(moved),
+            [utc_day_text(moved[n][1]) for n in sorted(moved)]))
+    return moved[first]
 
 
 def revert_cancelled_postpone(host):
