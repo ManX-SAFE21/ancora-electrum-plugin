@@ -137,16 +137,17 @@ def test_fee_changed_cancelled_and_put_back(make):
     (3, {"luca": "20%", "john": "40%"}),
 ])
 def test_shares_of_a_later_delivery_changed_and_put_back(make, n, changed):
-    """Delivery n's shares changed (only its copies rebuilt, its table date
-    one day earlier), Cancel, the shares put back: the drafts dropped, the
-    table's date back, nothing to sign."""
+    """Delivery n's shares changed, Cancel, the shares put back: the drafts
+    dropped, the date back, nothing to sign. #187: every change redoes the
+    whole chain from delivery 1, one day earlier (before, only delivery
+    n's copies, its table date one day earlier)."""
     s, first, dates = will_in_deliveries(make)
     before = tgd.stored(s.bw)[n - 1]["shares"]
     set_shares(s, n, changed)
     s.check(cancel_on=SIGN)
-    assert drafts(s)
-    assert table_dates(s)[n - 1] == dates[n - 1] - fk.DAY
-    assert s.bw.will_settings["locktime"] == dates[0]
+    assert len(drafts(s)) == 39
+    assert s.bw.will_settings["locktime"] == dates[0] - fk.DAY
+    assert table_dates(s)[1:] == dates[1:]
     set_shares(s, n, before)
     s.check(cancel_on=SIGN)
     nothing_to_sign(s)
@@ -197,7 +198,7 @@ def test_shares_changed_differently_are_kept(make, caplog):
     # The rule itself (second review: the rebuild would hide a wrong drop).
     refused(s, caplog)
     assert drafts(s) == pending
-    assert table_dates(s)[2] == dates[2] - fk.DAY
+    assert s.bw.will_settings["locktime"] == dates[0] - fk.DAY      # #187
     s.check(cancel_on=SIGN)
     assert [q for q in last_step(s)["questions"] if q[0] == "password"]
     assert drafts(s)
@@ -257,11 +258,12 @@ def box_rows(dialog):
 
 
 def test_after_a_later_delivery_was_signed(make):
-    """F1: delivery 3's shares changed and SIGNED (new copies of delivery 3
-    one day earlier; the old ones stay in force, pre-empted). The in-force
-    side must read the copies that would really be published (the new
-    ones): then a fee changed, cancelled and put back is a leftover again,
-    and the box of the fee change does not show delivery 3 as changed."""
+    """F1: delivery 3's shares changed and SIGNED (#187: the whole chain
+    redone one day earlier; the old copies stay in force, pre-empted). The
+    in-force side must read the copies that would really be published (the
+    new ones): then a fee changed, cancelled and put back is a leftover
+    again, and the box of the fee change does not show delivery 3 as
+    changed."""
     s, _first, dates = will_in_deliveries(make)
     set_shares(s, 3, {"luca": "20%", "john": "40%"})
     s.check()
@@ -274,7 +276,7 @@ def test_after_a_later_delivery_was_signed(make):
     s.set_fee(2)
     s.check(cancel_on=SIGN)
     nothing_to_sign(s)
-    kept_in_force(s, second, dates[:2] + [dates[2] - fk.DAY])
+    kept_in_force(s, second, [dates[0] - fk.DAY] + dates[1:])
 
 
 def test_back_to_one_date_then_a_leftover(make):
@@ -317,10 +319,10 @@ def test_an_heir_with_nothing_at_delivery_1(make):
 
 
 def test_a_delivery_without_drafts_is_not_moved_back(make):
-    """F2: delivery 3's shares changed (drafts of delivery 3, one day
-    earlier), Cancel, put back; meanwhile the owner moves delivery 2 exactly
-    one day earlier on purpose. Delivery 2 has no draft: it is the owner's
-    date, kept, and the will is asked to sign."""
+    """F2: delivery 3's shares changed (#187: the whole chain, delivery 1
+    one day earlier), Cancel, put back; meanwhile the owner moves delivery 2
+    exactly one day earlier on purpose. The drafts of delivery 2 are not on
+    that day: it is the owner's date, kept, and the will is asked to sign."""
     s, _first, dates = will_in_deliveries(make)
     before = tgd.stored(s.bw)[2]["shares"]
     set_shares(s, 3, {"luca": "20%", "john": "40%"})
@@ -332,9 +334,9 @@ def test_a_delivery_without_drafts_is_not_moved_back(make):
     s.check(cancel_on=SIGN)
     assert [q for q in last_step(s)["questions"] if q[0] == "password"]
     assert table_dates(s)[1] == dates[1] - fk.DAY
-    # Review R-8 (known, for the owner): the day delivery 3 took in the
-    # cancelled round stays, and goes with the next will signed.
-    assert table_dates(s)[2] == dates[2] - fk.DAY
+    # Review R-8 is gone with #187: a later delivery never takes a day in a
+    # cancelled round (only delivery 1 does).
+    assert table_dates(s)[2] == dates[2]
 
 
 def test_shares_differing_by_hundredths_are_a_change(make, caplog):
@@ -424,7 +426,9 @@ def test_a_draft_off_its_delivery_date_is_kept(make, caplog):
 
 def _two_rounds(make):
     """U5: delivery 3's shares changed (Cancel), then the fee (Cancel), both
-    put back: deliveries 1 and 3 one day earlier, each with its drafts."""
+    put back. #187: each round redoes the whole chain, delivery 1 one day
+    earlier (the same day both times: the drafts are dropped first and the
+    will in force is the reference)."""
     s, first, dates = will_in_deliveries(make)
     before = tgd.stored(s.bw)[2]["shares"]
     set_shares(s, 3, {"luca": "20%", "john": "40%"})
@@ -440,7 +444,7 @@ def test_two_deliveries_moved_back_together(make):
     """U5 (a): both put back; nothing to sign."""
     s, first, dates = _two_rounds(make)
     assert table_dates(s)[0] == dates[0] - fk.DAY
-    assert table_dates(s)[2] == dates[2] - fk.DAY
+    assert table_dates(s)[1:] == dates[1:]
     s.check(cancel_on=SIGN)
     nothing_to_sign(s)
     kept_in_force(s, first, dates)
@@ -448,13 +452,13 @@ def test_two_deliveries_moved_back_together(make):
 
 def test_two_deliveries_and_a_refused_write(make, monkeypatch, caplog):
     """U5 (b): the write of delivery 1's date refused without an error:
-    nothing dropped, delivery 3's date not put back either."""
+    nothing dropped, the dates untouched."""
     s, _first, dates = _two_rounds(make)
     pending = drafts(s)
     monkeypatch.setattr(s.bw, "store_will_setting", lambda field, value: None)
     refused(s, caplog)
     assert drafts(s) == pending
-    assert table_dates(s)[2] == dates[2] - fk.DAY
+    assert table_dates(s) == [dates[0] - fk.DAY] + dates[1:]
 
 
 def _sign(s, ids):

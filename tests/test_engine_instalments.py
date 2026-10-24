@@ -381,8 +381,11 @@ def test_postponing_delivery_2_asks_the_paid_invalidation(make):
 
 
 def test_anticipating_delivery_2_is_free(make):
-    """An earlier date of delivery 2: delivery 1 stays the signed one,
-    deliveries 2 and 3 are new; nothing to invalidate."""
+    """An earlier date of delivery 2: nothing to invalidate. #187 (owner's
+    study, R-1): every change redoes the WHOLE chain, delivery 1 one day
+    earlier than the signed one (before, delivery 1 stayed the signed one
+    and a copy held by a will-executor no longer selected could keep an old
+    subtree); deliveries 2 and 3 are new on it."""
     s = _sent_owner_will(make)
     firsts = {id(w) for w in _by_level(s)[1]}
     s.clock.travel(1)
@@ -393,7 +396,8 @@ def test_anticipating_delivery_2_is_free(make):
     s.check(cancel_on=("invalidat",))
     assert not any("nvalidat" in a[1] for a in s.user.asked)
     levels = _by_level(s)
-    assert {id(w) for w in levels[1]} == firsts
+    assert not ({id(w) for w in levels[1]} & firsts)
+    assert sorted({int(w.tx.locktime) for w in levels[1]}) == [D1 - fk.DAY]
     assert sorted({int(w.tx.locktime) for w in levels[2]}) == [D2 - 30 * fk.DAY]
     assert all(w.get_status("PUSHED") for w in _valid(s).values())
 

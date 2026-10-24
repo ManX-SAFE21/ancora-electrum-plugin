@@ -23,6 +23,7 @@ from ..i18n import _, number_separators
 from .delivery import instalment_number, person_name
 from .plugin_base import BalTimestamp
 from .will import (
+    FuturesOffPlanException,
     HeirChangeException,
     HeirNotFoundException,
     NotCompleteWillException,
@@ -131,6 +132,14 @@ def will_change_message(e):
             'Will-executor "{}" is not covered by the current will: '
             "a new will must be prepared."
         ).format(str(e))
+    if isinstance(e, FuturesOffPlanException):
+        # #187: a copy nobody can recall (a will-executor excluded or
+        # removed after it received the will) still leads to old shares.
+        return _(
+            "A copy of the will held by a will-executor no longer selected "
+            "could still deliver the old shares ({} of {} possible ways): "
+            "preparing a new will, dated one day earlier."
+        ).format(e.count, e.total)
     if isinstance(e, SameDateCopiesException):
         # CHANGELOG #91: the state left by wills built before the fix.
         return _(

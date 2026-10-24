@@ -46,7 +46,7 @@ from electrum.util import (
 )
 
 from ..i18n import N_, _
-from . import will_state
+from . import futures, will_state
 from .delivery import instalment_number
 from .heirs import WillExecutorFeeTooHighException, address_key, is_op_return_address
 from .util import Util, copy_structure
@@ -691,6 +691,19 @@ class Will:
            could be executed wrongly: see :meth:`_check_chain`.
         4. The dict is re-keyed once by the final txids, in the same order
            (parents before children), and each item's ``_id`` follows.
+
+        #187 (owner's study of 2026-10-24, R-1): after the first delivery is
+        dated, :meth:`_pre_empt_whole_chain`: when the rebuild does not keep
+        every VALID copy of the will in force as it is, the first delivery
+        is dated one day before the earliest first delivery in force, of
+        ANY will-executor (also one excluded or removed, whose copies cannot
+        be recalled), so the whole old tree dies when the new first delivery
+        is mined; the later deliveries are then dated on the new parents.
+        Before, a change of delivery 3 kept deliveries 1 and 2 (same txids)
+        and the copies of a will-executor no longer selected kept old
+        subtrees nothing pre-empted. Then :meth:`_check_futures`: every
+        possible future of the will in force plus the new chain must pay
+        the new plan, else the chain is refused (the safety net).
         """
         for _child, txin, parent, idx in links:
             Will._fill_chain_input(txin, parent.tx.outputs()[idx])
@@ -714,8 +727,13 @@ class Will:
                     break
             else:
                 raise WillChainError("chain: the delivery dates do not settle")
+            if g == 0:
+                # #187: the parents' txids may change here; the children
+                # are relinked to them at the next generation.
+                Will._pre_empt_whole_chain(items, gen, references, old_will, links)
         Will._check_chain(new_will, links, references, old_will, ref_inputs,
                           link_parent_outputs, gen)
+        Will._check_futures(items, gen, references)
         new_will.clear()
         for item in items:
             txid = item.tx.txid()
@@ -723,6 +741,121 @@ class Will:
                 raise WillChainError("chain: two transactions with one txid")
             item._id = txid
             new_will[txid] = item
+
+    @staticmethod
+    def _pre_empt_whole_chain(items, gen, references, old_will, links):
+        """Date the first delivery of the new chain one day before the
+        earliest first delivery in force when the rebuild changes anything
+        of the will in force (#187, rule 1). Returns True when it moved.
+
+        ``items``: the new chain (dated at generation 0); ``gen``: their
+        generations; ``references``: the items the chain is dated against
+        (the will in force and the partially signed copies); ``old_will``:
+        the will so far; ``links``: the chain links (:meth:`chain_links`),
+        so the children are first pointed at their parents' CURRENT txids
+        (second review of #187: read as the build set them, a first
+        delivery moved by its dating pass made every later copy look new,
+        a day lost for nothing when the stored date lags the one in force). "Changes anything": a VALID reference that
+        somebody HOLDS (received by its will-executor, :meth:`received`, or
+        the backup copy without one, given to the heirs) whose txid is not
+        among the new chain's txids (a copy that is not kept as it is: other
+        shares, another date, a will-executor no longer selected). A copy
+        never received (a sending that failed, #141; a partial signature)
+        exists only in this wallet: nothing to pre-empt, it is simply
+        redone (independent review of #187); so is a copy under it (a
+        received copy of delivery 2 spending the output of a first delivery
+        nobody received can never be mined: :meth:`_held_branch`). A
+        will-executor added later
+        keeps every copy in force: nothing moves, as with one date; with a
+        will-executor excluded or removed that still holds copies, any
+        later change (a will-executor added too) redates the chain: those
+        copies cannot be recalled, the new first delivery pre-empts them.
+        The first deliveries in force are the references that spend no
+        output of the will (the copies of any will-executor, the backup copy
+        too); a first delivery already dated earlier stays.
+        """
+        for g in range(1, max(gen.values()) + 1):
+            for child, txin, parent, idx in links:
+                if gen[id(child)] == g:
+                    Will._relink(child, txin, parent, idx)
+        new_ids = {it.tx.txid() for it in items}
+        kept = all(
+            r.tx.txid() in new_ids
+            for r in references.values()
+            if r.get_status("VALID") and Will._held_branch(r, references)
+        )
+        if kept:
+            return False
+        roots = []
+        for r in references.values():
+            spent = futures.spent_ids(r)
+            if spent is not None and not (spent & set(old_will)):
+                roots.append(int(r.tx.locktime))
+        if not roots:
+            return False
+        target = int(Util.anticipate_locktime(min(roots), days=1))
+        moved = False
+        for item in items:
+            if gen[id(item)] == 0 and int(item.tx.locktime) > target:
+                item.tx.locktime = target
+                moved = True
+        if moved:
+            _logger.info(
+                "chain: the will in force changes, the first delivery is dated "
+                "one day before the earliest one in force (#187)")
+        return moved
+
+    @staticmethod
+    def _held_branch(item, references):
+        """True when somebody holds ``item`` and every copy it hangs on
+        (#187): received by its will-executor (:meth:`received`) or the
+        backup copy without one, and so is each parent in ``references``
+        (the copy whose output it spends), up to the wallet's coins. A
+        branch broken by a copy nobody received can never be mined. A
+        loop or an unreadable transaction counts as not held."""
+        by_id = {}
+        for r in references.values():
+            txid = r.tx.txid()
+            if txid:
+                by_id[txid] = r
+        seen = set()
+        node = item
+        while True:
+            if not (Will.received(node) or not node.we):
+                return False
+            spent = futures.spent_ids(node)
+            if spent is None:
+                return False
+            parents = [by_id[p] for p in spent if p in by_id]
+            if not parents:
+                return True
+            if len(parents) > 1 or id(parents[0]) in seen:
+                return False
+            seen.add(id(node))
+            node = parents[0]
+
+    @staticmethod
+    def _check_futures(items, gen, references):
+        """Refuse the chain when a possible future of the will in force
+        plus the new chain would pay another plan (#187, rule 2: the safety
+        net of :meth:`_pre_empt_whole_chain`; :mod:`bal.core.futures`).
+        Raises :class:`WillChainError`."""
+        combined = {}
+        for r in references.values():
+            txid = r.tx.txid()
+            if txid:
+                combined[txid] = r
+        plan = {}
+        for item in items:
+            combined[item.tx.txid()] = item
+            plan.setdefault(gen[id(item)], futures.rows_paid(item.heirs))
+        levels = [plan[g] for g in sorted(plan)]
+        off = futures.futures_off_plan(combined, levels)
+        if off:
+            raise WillChainError(
+                "chain: a possible future would pay another plan ({} of {}: {})".format(
+                    len(off), len(futures.possible_futures(combined)),
+                    futures.future_text(off[0], combined)))
 
     @staticmethod
     def _date_chain_pass(new_will, members, ref_inputs, link_parent_outputs, g):
@@ -2401,6 +2534,23 @@ class Will:
             ):
                 raise NotCompleteWillException()
 
+        # #187 (rule 2): a will in several deliveries: every possible
+        # future of the VALID copies must pay the plan (a copy held by a
+        # will-executor no longer selected may keep an old subtree). The
+        # VALID copies, not the will in force: after the build of the same
+        # Check the new chain (earlier) is what counts.
+        plan = futures.plan_of_rows(heirs) if heirs else []
+        if len(plan) >= 2:
+            valid_items = {wid: w for wid, w in will.items() if w.get_status("VALID")}
+            off = futures.futures_off_plan(valid_items, plan)
+            if off:
+                total = len(futures.possible_futures(valid_items))
+                _logger.info(
+                    "futures off plan: {} of {} (e.g. {})".format(
+                        len(off), total, futures.future_text(off[0], valid_items)))
+                raise FuturesOffPlanException(
+                    futures.future_text(off[0], valid_items), len(off), total)
+
         all_inputs = Will.get_all_inputs(will, only_valid=True)
 
         _logger.info("check all utxo in wallet are spent")
@@ -3520,6 +3670,23 @@ class WillPostponedException(NotCompleteWillException):
 
 class WillexecutorChangeException(NotCompleteWillException):
     pass
+
+
+class FuturesOffPlanException(NotCompleteWillException):
+    """A possible future of the will in force pays another plan (#187).
+
+    ``bal.core.futures``: a copy kept by a will-executor no longer selected
+    (it cannot be recalled) has a subtree with old shares that nothing
+    pre-empts. The will is prepared again from delivery 1, one day earlier.
+    ``str(e)``: the first such future, for the log; ``count`` / ``total``:
+    how many of the possible futures.
+    """
+
+    def __init__(self, text, count, total):
+        """``text``: the future (``futures.future_text``)."""
+        super().__init__(text)
+        self.count = count
+        self.total = total
 
 
 class SameDateCopiesException(NotCompleteWillException):
