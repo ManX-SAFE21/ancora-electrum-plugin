@@ -373,18 +373,24 @@ async def instalments_set(
 
 
 @plugin_command("nw", plugin_name)
-async def instalments_clear(self, confirm_earlier=None, wallet=None, plugin=None):
+async def instalments_clear(self, confirm_earlier=None, confirm_invalidation=None,
+                            wallet=None, plugin=None):
     """Remove the table of the deliveries: one delivery date again.
 
     Every heir then receives everything at the wallet's delivery date (the
     date of delivery 1), with the amounts of the heirs (bal_heirs_list),
     which the table had replaced: check them before bal_will_prepare. The
     later deliveries then arrive earlier: ``--confirm_earlier true`` is
-    needed. Returns ``removed`` and the heirs, with a ``message``.
+    needed. With a will in several deliveries in force, going back to one
+    delivery needs its invalidation on the blockchain first (network fee):
+    ``--confirm_invalidation true`` is needed. Returns ``removed`` and the
+    heirs, with a ``message``.
 
     arg:bool:confirm_earlier:true confirms that the heirs may receive the rest of the estate at delivery 1.
+    arg:bool:confirm_invalidation:true confirms that the will in several deliveries will be invalidated on the blockchain (network fee).
     """
-    return await _call_off_loop(plugin, wallet, "instalments_clear", confirm_earlier)
+    return await _call_off_loop(plugin, wallet, "instalments_clear", confirm_earlier,
+                                confirm_invalidation)
 
 
 # --------------------------------------------------------------------------- #

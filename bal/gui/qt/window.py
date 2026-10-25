@@ -50,6 +50,7 @@ from ...core.heirs import (
 from ...core.messages import (
     check_alive_message,
     heir_error_message,
+    staged_removed_message,
     will_change_message,
 )
 from ...core.summary import busy_summary, selected_urls, will_summary
@@ -102,6 +103,7 @@ from .common import (
     QTimer,
     QVBoxLayout,
     SerializationError,
+    StagedWillRemovedException,
     Transaction,
     TxDialog,
     TxFeesChangedException,
@@ -2398,6 +2400,14 @@ class BalWindow:
                     "signed/sent tx -> must invalidate on-chain first (real fee)"
                 )
                 _logger.info(f"will postponed: {e}")
+                if isinstance(e, StagedWillRemovedException):
+                    # #188: back to one delivery: the same road, its words.
+                    self.show_message(
+                        staged_removed_message(e.deliveries) + "\n\n" + _(
+                            "Please sign and broadcast the invalidation "
+                            "transaction now, then press 'Prepare' again."))
+                    self.invalidate_will()
+                    return
                 self.show_message(
                     _(
                         "This inheritance was already signed/sent to "
@@ -2831,6 +2841,13 @@ class BalWindow:
                 # Expired ("too late to anticipate") or a postpone on a
                 # signed/sent will: the old coins must be invalidated on-chain
                 # first.
+                if isinstance(e, StagedWillRemovedException):
+                    # #188 (Opus' review): back to one delivery is the
+                    # owner's choice, asked in the Check; a Cancel there puts
+                    # nothing back, so this road would invalidate (a fee)
+                    # after he said no. Never on its own.
+                    _logger.info("auto rebuild: back to one delivery -> the Check asks")
+                    return False
                 _logger.info(
                     "auto rebuild: {} -> invalidate".format(type(e).__name__)
                 )
@@ -2872,6 +2889,9 @@ class BalWindow:
             try:
                 self.check_will()
             except (WillExpiredException, WillPostponedException) as e:
+                if isinstance(e, StagedWillRemovedException):
+                    # #188: see above: never on its own.
+                    return False
                 _logger.info(
                     "auto rebuild: anticipated locktime crossed threshold "
                     "({}) -> invalidate old will".format(type(e).__name__)

@@ -12753,3 +12753,153 @@ day before the earliest one in force (#187)", the copies signed and sent,
 the next Check "will ok"; no error in the log. Owner: "tutto ok".
 
 **Outcome:** DONE.
+
+## 188. Back to one delivery needs the invalidation on the blockchain
+
+**Date:** 2026-10-25
+
+**Owner decision (2026-10-24, `context/STUDY-2026-10-24-staged-will-safety.md`,
+section 5):** going back from several deliveries to one is a change of the
+TYPE of will, not a routine update: the copies in several deliveries held
+by the will-executors are invalidated on the blockchain first (a network
+fee; the coins spent together), then the one-date will is prepared. Before,
+a one-date will dated one day earlier was built over them (the Check even
+said "heir luca (delivery 2) removed"): pre-empted by one day only, and in
+the R-2 case (the heirs' own amounts equal to delivery 1's cells) not even
+that, two wills valid the same day. The owner must be warned BEFORE a will
+in several deliveries is made: going back is not free. Going from one to
+several deliveries stays free (the pre-emption of delivery 1, #187); from
+three to two deliveries stays a normal change.
+
+**What changed:**
+
+- `bal/core/will.py`: new `StagedWillRemovedException`, a
+  `WillPostponedException` (the Check and the command line already know
+  that road: invalidation first, then the new will). `is_will_valid` →
+  `check_staged_will_removed`, BEFORE the heirs check (which read the
+  table's removal as heirs removed and built a one-date will over the
+  copies in force): the rows the build uses have one delivery while copies
+  of a delivery 2 or later are in force (`staged_in_force`: the #128
+  notion, signed and/or sent, still executable; drafts never, so a table
+  never sent is removed for free as before). Nothing with a table of
+  several deliveries.
+- `bal/gui/qt/dialogs.py`: the Check row "Back to one delivery:
+  invalidating the will in several deliveries", the "Invalidate" step as
+  for a postpone; cancelled there: no date is put back (there is none to
+  put back; the #134 revert is for a postpone), the sentence says the
+  copies stay in force, the next Check asks again, and the table window
+  brings the deliveries back. After the broadcast the one-date will is
+  prepared and sent in the same Check, as for a postpone.
+- `bal/gui/qt/deliveries.py`: "Back to one delivery" says the
+  invalidation FIRST when a will in several deliveries is in force, and
+  then not "It is free" (true only for drafts: the question of before
+  otherwise); its sentence on the dates says "With one delivery only, the
+  heirs receive the whole estate on {}, the date of delivery 1. Today they
+  receive {} by that date: the rest would arrive earlier than planned."
+  (before "Without the table ...", not understood; the command line says
+  the same); the FIRST table of a wallet asks
+  "Think it over: going back ... will need an invalidation ... Changing
+  the dates or the shares later stays free: it is going back to one
+  delivery that costs. Save the table?" (`back_to_one_warning`, also under
+  the example in the window); without a table but with a will in several
+  deliveries in force (its removal not invalidated yet) the window opens
+  on ITS dates and shares (`in_force_table`, read along the chain of
+  copies, #186) with "save them to keep it (nothing to sign)", no warning
+  asked: changing one's mind is one Save.
+- `bal/core/messages.py` `staged_removed_message`: the sentence of the
+  Check row's reason and of the command line ("Back to one delivery: your
+  will in 3 deliveries is held by the will-executors and must be
+  invalidated on the blockchain first (a network fee); then the new will
+  is prepared.").
+- `bal/cli/controller.py`, `commands.py`: `bal_instalments_clear` with a
+  will in several deliveries in force is refused without
+  `--confirm_invalidation true` (the sentence, the privacy note and the
+  hint to ask the owner); `bal_will_check` / `prepare` return "postponed"
+  with the sentence and the invalidation transaction, as for a postpone.
+- Catalogs: 7 new texts and 1 changed, Italian and Spanish (the command line stays
+  English by design, `babel.cfg`).
+
+**Tests:** new `tests/test_staged_back_to_one.py` (16 tests; three fake
+will-executors with their own fee addresses, the owner's table): the core
+(`staged_in_force` 36 of 39, the rule only with a one-delivery plan, none
+for one date); the Check: the invalidation asked first and cancelled
+(nothing built or sent, 39 copies in force, the date untouched, the
+sentence), asked again at the next Check, accepted (the invalidation
+broadcast, then the 3 copies of the one-date will sent in the same Check,
+a clean Check after), drafts only (free), the R-2 amounts, three to two
+deliveries (normal, #187); the window: the question with the invalidation
+(No keeps, Yes removes) and without a will in force, the first table's
+warning (No, Yes, not repeated, shown under the example), the will in
+force offered back (its cells, Save without a question, the next Check
+clean), nothing offered without one; the command line: refused without
+the confirmation, removed with it, "postponed" with the sentence, drafts
+without confirmation; after the owner's ZIP test: the question starts with
+the invalidation, before the dates, without "It is free" (with it for
+drafts only); after the review: the note when an heir was
+added since, no automatic invalidation (the headless flow itself).
+Mutation check: the rule off, 6 tests catch it. Updated, with the reason
+in their docstrings: `test_engine_instalments.py` and
+`test_cli_instalments.py` (one test each of #169 said the table's removal
+built a one-date will one day earlier, free: now the invalidation first,
+then the one delivery on the wallet's date; the command refused without
+the confirmation, prepare "postponed"); `test_gui_deliveries.py` and
+`test_staged_texts.py` (three tests saving the first table of a wallet
+answer the new question; one of them had no scripted answer and opened a
+real window: the first run of the affected tests hung for six hours, then
+a timeout was put on every run).
+
+**Review (Opus 5.5, read-only, on the owner's request of two models
+checking each other):** nothing that asks a healthy wallet to invalidate,
+the flow the same as a postpone (after the broadcast the one-date will is
+built in the same Check, as for a postpone). Fixed from its findings: the
+automatic rebuild (off by default, `GUI_AUTO_REBUILD_ENABLED`) would have
+invalidated on its own after the owner said no in the Check: never for a
+back to one delivery (the command line's `bal_will_autorebuild` returns
+the reason "back_to_one", it never sends by itself); the Will tab's
+"Prepare" road showed the postpone's words: its own now; the window
+offering the will in force back said "nothing to sign" even when an heir
+was added or removed since: it says to check the shares; whether a copy in
+force is still executable is asked whatever the wallet's sync state (a
+spend the wallet already knows counts: this check leads to a paid action).
+Known, for the owner: a wallet made before #188 that went back to one
+delivery the old way (a one-date will over the staged copies, still
+executable) is asked the invalidation at its first Check after the update;
+the "Think it over" question is asked whenever no table is stored, so
+also before a table made again after a back to one. Not counted: copies
+of a will in several deliveries only partially signed (a co-signer could
+complete one; the new will is dated one day before them, as #128).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed (four
+import blocks sorted by `ruff --fix` on the files touched). Related tests
+191 passed (2 minutes). Whole `tests/` directory: 2988 passed in the
+normal order (50 minutes); in the reverse file order the first run had 8
+failures, all in `test_gui_delivery_field_refresh.py` and
+`test_delivery_field_keeps_value.py` (the period form, "today + the
+period"): both files compute `TODAY` when the module is imported, and that
+run crossed midnight UTC between the collection and those tests (a
+fragility of those tests, not of #188: alone, together with every file of
+#185-#188, and in a second complete reverse run, 44 minutes, all passed).
+Golden files unchanged. Scenario harness (full matrix, the 2-coin
+scenarios 6 times, warn_matrix synced and not): log identical to the #187
+log (135 lines, 74 s). Test ZIP
+`test-zips/ancora_0.8.0-TEST-188-back-to-one.zip` (sha256
+`69de2c1c...a16711`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2; the rule and the Italian texts checked inside the ZIP.
+After the owner's ZIP test (two text fixes, the order of the question and
+its sentence on the dates): ruff clean, the related tests (the deliveries
+window, the staged texts, the command line, the translations) 165 passed
+(1 minute), a new ZIP (sha256 `bd485072...def6f4`) loaded and smoke-tested
+on Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-25, test wallet, a will in three deliveries
+sent):** "Back to one delivery", then the Check: it asks the invalidation
+first (the log: "one delivery wanted, 196 copies of a will in 3
+deliveries in force: the invalidation first (#188)"); cancelled: the
+sentence "Interrupted ... stays in force"; the window "Inheritance in
+several deliveries" opened on the dates and shares in force, saved: the
+will in force again, nothing to sign. The owner found the question said
+the invalidation last and "It is free" too, and did not understand
+"Without the table": both fixed (above), a new ZIP checked by the owner:
+"mi pare ok".
+
+**Outcome:** DONE.

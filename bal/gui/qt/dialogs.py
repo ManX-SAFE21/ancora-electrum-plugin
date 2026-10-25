@@ -126,6 +126,7 @@ from .common import (
     QTimer,
     QVBoxLayout,
     QWidget,
+    StagedWillRemovedException,
     TaskThread,
     TxBroadcastError,
     Util,
@@ -827,6 +828,9 @@ class BalBuildWillDialog(BalDialog):
     report_view = None
     # CHANGELOG #134 (same reason as above): see _revert_cancelled_postpone.
     _postpone_reverted = None
+    # #188: the invalidation of a will in several deliveries (back to one
+    # delivery): no date to put back when it is cancelled.
+    _staged_removed = False
     _later_by_question = False
 
     def __init__(self, bal_window, parent=None, renew=False, closing=False):
@@ -944,6 +948,7 @@ class BalBuildWillDialog(BalDialog):
         # #134: (chosen, restored) when a postpone was cancelled before its
         # invalidation reached the network and the stored date went back.
         self._postpone_reverted = None
+        self._staged_removed = False
         self._unsigned_executors = None
         self.network = Network.get_instance()
         self._stopping = False
@@ -1081,7 +1086,13 @@ class BalBuildWillDialog(BalDialog):
             # rebuild the new (postponed) inheritance.
             _logger.debug(f"postponed {e}")
             self._postpone_invalidation = True
-            self.msg_set_checking(_("Postponed: invalidating old will"))
+            if isinstance(e, StagedWillRemovedException):
+                # #188: back to one delivery: the same road, its own words.
+                self._staged_removed = True
+                self.msg_set_checking(
+                    _("Back to one delivery: invalidating the will in several deliveries"))
+            else:
+                self.msg_set_checking(_("Postponed: invalidating old will"))
             # The shared build (#152), as the Will tab's "Invalidate will".
             return None, build_invalidation(self.bal_window)
         except NoHeirsException:
@@ -2430,7 +2441,9 @@ class BalBuildWillDialog(BalDialog):
         going back would sign that newer will at an earlier date).
         """
         if (not self._postpone_invalidation or self._postpone_reverted
-                or self._later_by_question):
+                or self._later_by_question or self._staged_removed):
+            # #188: back to one delivery cancelled: no date was moved, the
+            # copies in several deliveries stay in force; nothing to revert.
             return
         self._postpone_reverted = engine_context.revert_cancelled_postpone(
             self.bal_window
@@ -4080,6 +4093,16 @@ class BalBuildWillDialog(BalDialog):
                     "bitcoin stay yours, you only pay the normal network fee). "
                     "When you are ready, choose it again."
                 ).format(chosen=datetext.utc_text(self._postpone_reverted[0])))))
+                report.set_will_now(self._will_now_text(summary))
+            elif "prepare" in interrupted and self._staged_removed:
+                # #188: the copies in several deliveries stay in force; the
+                # next Check asks again; the table window brings them back.
+                report.set_result("warn", "<b>{}</b>".format(html.escape(_(
+                    "Interrupted: the will in several deliveries was not "
+                    "invalidated and stays in force. The next Check will ask "
+                    "again; to keep the deliveries instead, open the window "
+                    "\"Inheritance in several deliveries\" and save."
+                ))))
                 report.set_will_now(self._will_now_text(summary))
             elif "prepare" in interrupted:
                 report.set_result("warn", "<b>{}</b>".format(html.escape(_(

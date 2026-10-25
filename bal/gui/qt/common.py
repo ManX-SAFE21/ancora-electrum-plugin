@@ -131,6 +131,7 @@ from ...core.will import (
     NoHeirsException,
     NotCompleteWillException,
     NoWillExecutorNotPresent,
+    StagedWillRemovedException,
     TxFeesChangedException,
     Will,
     WillexecutorChangeException,

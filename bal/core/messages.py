@@ -29,6 +29,7 @@ from .will import (
     NotCompleteWillException,
     NoWillExecutorNotPresent,
     SameDateCopiesException,
+    StagedWillRemovedException,
     TxFeesChangedException,
     Will,
     WillexecutorChangeException,
@@ -103,6 +104,16 @@ def no_valid_transaction(e):
     return type(e) is NotCompleteWillException and str(e) == "WillException"
 
 
+def staged_removed_message(deliveries):
+    """Why the Check invalidates first when the owner goes back to one
+    delivery (#188): the sentence of the Check row and of the command line."""
+    return _(
+        "Back to one delivery: your will in {} deliveries is held by the "
+        "will-executors and must be invalidated on the blockchain first (a "
+        "network fee); then the new will is prepared."
+    ).format(deliveries)
+
+
 def will_change_message(e):
     """Return one sentence saying why the will must be prepared again.
 
@@ -113,6 +124,8 @@ def will_change_message(e):
     determined" sentence instead of a guess.
     """
     # Subclasses first - they are all NotCompleteWillException.
+    if isinstance(e, StagedWillRemovedException):
+        return staged_removed_message(e.deliveries)
     if isinstance(e, TxFeesChangedException):
         # The core raises TxFeesChangedException(f"{tx_fees}:  {w.tx_fees}"),
         # i.e. "current:  stored".  Show both rates when they can be read,

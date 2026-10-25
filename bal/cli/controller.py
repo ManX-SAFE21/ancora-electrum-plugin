@@ -54,6 +54,7 @@ from ..core.messages import (
     check_alive_passed_sentence,
     heir_error_message,
     protected_executor_message,
+    staged_removed_message,
     will_change_message,
 )
 from ..core.plugin_base import BalConfig, BalPlugin
@@ -119,6 +120,12 @@ def _user_facing(e):
         return UserFacingException(
             _("The will is expired and must be invalidated on-chain and rebuilt")
         )
+    if isinstance(e, will_mod.StagedWillRemovedException):
+        # #188: back to one delivery: the same road as a postpone.
+        return UserFacingException(
+            staged_removed_message(e.deliveries) + " "
+            + _("Run bal_will_invalidate, sign and broadcast the transaction, "
+                "then bal_will_prepare."))
     if isinstance(e, will_mod.WillPostponedException):
         return UserFacingException(
             _(
@@ -977,13 +984,20 @@ class BalController(BalSettingsController):
         except will_mod.WillPostponedException as e:
             _logger.info(f"will postponed: {e}")
             inv = self._tx_out(self.invalidate_will())
-            return {
-                "result": "postponed",
-                "message": _(
+            if isinstance(e, will_mod.StagedWillRemovedException):
+                # #188: back to one delivery: the same road, its own words.
+                message = staged_removed_message(e.deliveries) + " " + _(
+                    "Sign and broadcast the invalidation transaction now, "
+                    "then prepare again.")
+            else:
+                message = _(
                     "This inheritance was already signed/sent to will-executors "
                     "and you are postponing it. Sign and broadcast the "
                     "invalidation transaction now, then prepare again."
-                ),
+                )
+            return {
+                "result": "postponed",
+                "message": message,
                 "invalidation_tx": inv,
                 "will": self._will_status_dict(),
             }
@@ -1142,7 +1156,10 @@ class BalController(BalSettingsController):
             return {"result": "no_heirs"}
         except (will_mod.WillExpiredException, will_mod.WillPostponedException) as e:
             _logger.info(f"auto rebuild: {type(e).__name__}: must invalidate")
-            return self._auto_rebuild_invalidate("expired")
+            # #188: its own reason (the transaction is never sent by itself).
+            reason = ("back_to_one" if isinstance(e, will_mod.StagedWillRemovedException)
+                      else "expired")
+            return self._auto_rebuild_invalidate(reason)
         except will_mod.NotCompleteWillException:
             pass
 
@@ -2253,8 +2270,13 @@ class BalController(BalSettingsController):
         out["message"] = " ".join(messages)
         return out
 
-    def instalments_clear(self, confirm_earlier=None):
+    def instalments_clear(self, confirm_earlier=None, confirm_invalidation=None):
         """``bal_instalments_clear``: remove the table (#169).
+
+        #188: with a will in several deliveries in force (signed or sent),
+        going back to one delivery means its invalidation on the blockchain
+        first (the next ``bal_will_check`` says so): refused without
+        ``confirm_invalidation``.
 
         One delivery again (:func:`bal.engine.context.clear_instalments`):
         everything at the wallet's date (delivery 1's), with the amounts of
@@ -2267,10 +2289,24 @@ class BalController(BalSettingsController):
         no table.
         """
         confirm_earlier = _as_bool(confirm_earlier, "confirm_earlier")
+        confirm_invalidation = _as_bool(confirm_invalidation, "confirm_invalidation")
         if self.settings_unavailable:
             raise UserFacingException(
                 _delivery_hold_message(delivery.DeliverySettingsUnavailable())
             )
+        if instalments.has_table(self) and not confirm_invalidation:
+            staged = will_mod.Will.staged_in_force(self.willitems, self.wallet)
+            if staged:
+                count = max(
+                    delivery.instalment_number(name)
+                    for w in staged.values() for name in (w.heirs or {})
+                    if not str(name).startswith('w!ll3x3c"'))
+                raise UserFacingException(
+                    staged_removed_message(count) + " " + _(
+                        "The will's coins are spent together in one transaction "
+                        "visible to everybody. Ask the owner; if this is what the "
+                        "owner wants, run the command again with "
+                        "--confirm_invalidation true."))
         first = delivery.as_delivery(self.will_settings.get("locktime"))
         if instalments.has_table(self) and not confirm_earlier and first is not None:
             _in_force, reference, old = instalments.dates_in_force(self)
@@ -2281,9 +2317,11 @@ class BalController(BalSettingsController):
                 _n, date, _more, before = earlier
                 raise UserFacingException(
                     _(
-                        "Without the table the heirs receive the whole estate "
-                        "on {} (delivery 1), instead of {} by that date: the "
-                        "rest would arrive earlier."
+                        # Same words as the window (#188, owner's ZIP test).
+                        "With one delivery only, the heirs receive the whole "
+                        "estate on {}, the date of delivery 1. Today they "
+                        "receive {} by that date: the rest would arrive "
+                        "earlier than planned."
                     ).format(context.utc_day_text(date), delivery.share_text(before))
                     + " " + _confirm_earlier_hint()
                 )
