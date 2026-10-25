@@ -46,7 +46,7 @@ from electrum.util import (
 )
 
 from ..i18n import N_, _
-from . import futures, will_state
+from . import delivery, futures, will_state
 from .delivery import instalment_number
 from .heirs import WillExecutorFeeTooHighException, address_key, is_op_return_address
 from .util import Util, copy_structure
@@ -2521,6 +2521,11 @@ class Will:
 
         Will.check_will(will, all_utxos, wallet, timestamp_to_check)
         if heirs:
+            # #188: one delivery wanted while a will in several deliveries
+            # is in force: the invalidation first. Before the heirs check,
+            # which would read "heir luca (delivery 2) removed" and build a
+            # one-date will over the copies in force.
+            Will.check_staged_will_removed(will, heirs, wallet)
             # BUG-2 (CHANGELOG #72): a sent tx that is no longer VALID can
             # still be postponed; checked before the VALID-only check below.
             Will.check_sent_txs_not_postponed(will, heirs, wallet)
@@ -2688,6 +2693,52 @@ class Will:
             if wi.get_status("VALID") or wi.get_status("REPLACED"):
                 out.append(wid)
         return out
+
+    @staticmethod
+    def staged_in_force(will, wallet):
+        """The copies of the will in force that belong to a delivery 2 or
+        later (#188), ``{wid: item}``; ``{}`` for a will with one date.
+        The will in force is the #128 notion (:meth:`in_force_items`:
+        signed and/or sent, still executable; drafts never). Whether a copy
+        is still executable is asked whenever the wallet can be asked, also
+        while it is not synchronized (Opus' review: this check leads to a
+        paid action; a spend the wallet already knows must count)."""
+        synced = Will.wallet_synced(wallet) or bool(
+            wallet and getattr(wallet, "adb", None))
+        in_force = Will.in_force_items(will, wallet or None, synced)
+        return {
+            wid: w for wid, w in in_force.items()
+            if any(
+                not str(name).startswith('w!ll3x3c"')
+                and delivery.instalment_number(name) >= 2
+                for name in (w.heirs or {})
+            )
+        }
+
+    @staticmethod
+    def check_staged_will_removed(will, heirs, wallet):
+        """Raise :class:`StagedWillRemovedException` when ``heirs`` (the
+        rows the build uses) have one delivery while copies of a delivery
+        2 or later are in force (#188): the will in several deliveries must
+        be invalidated on the blockchain before the one-date will. Nothing
+        when the plan has several deliveries (a change of dates or shares
+        stays a normal rebuild, #187) or when such copies were never
+        signed nor sent (drafts only: the table is simply gone)."""
+        plan = futures.plan_of_rows(heirs)
+        if len(plan) != 1:
+            return
+        staged = Will.staged_in_force(will, wallet)
+        if not staged:
+            return
+        count = max(
+            delivery.instalment_number(name)
+            for w in staged.values() for name in (w.heirs or {})
+            if not str(name).startswith('w!ll3x3c"')
+        )
+        _logger.info(
+            "one delivery wanted, {} copies of a will in {} deliveries in force: "
+            "the invalidation first (#188)".format(len(staged), count))
+        raise StagedWillRemovedException(count)
 
     @staticmethod
     def check_sent_txs_not_postponed(will, heirs, wallet):
@@ -3670,6 +3721,26 @@ class WillPostponedException(NotCompleteWillException):
 
 class WillexecutorChangeException(NotCompleteWillException):
     pass
+
+
+class StagedWillRemovedException(WillPostponedException):
+    """The settings say one delivery while a will in several deliveries is
+    in force (#188, owner decision of 2026-10-24).
+
+    Going back to one delivery is a change of the TYPE of will: the copies
+    in several deliveries held by the will-executors are invalidated on the
+    blockchain first (a network fee), then the new will is prepared, as for
+    a postpone (the parent class: the Check and the command line already
+    know that road). Before, a one-date will dated one day earlier was
+    built over them (the old copies stayed valid, pre-empted by one day
+    only; in the R-2 case not even that). ``deliveries``: how many the will
+    in force has.
+    """
+
+    def __init__(self, deliveries):
+        """``deliveries``: the number of deliveries of the will in force."""
+        super().__init__("staged will removed")
+        self.deliveries = deliveries
 
 
 class FuturesOffPlanException(NotCompleteWillException):

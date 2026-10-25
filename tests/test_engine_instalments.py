@@ -405,8 +405,12 @@ def test_anticipating_delivery_2_is_free(make):
 # ----------------------------------------------------------- other cases
 
 def test_removing_the_table_gives_one_delivery(make):
-    """The table removed: one delivery on the wallet's date, one day
-    earlier than the will in force (free); the old chain is replaced."""
+    """The table removed: #188 (owner decision), the will in several
+    deliveries held by the will-executors is invalidated on the blockchain
+    first (cancelled: nothing built, the 39 copies in force); then the one
+    delivery on the wallet's date (not a day earlier: the old chain is
+    dead, not pre-empted). Before, a one-date will one day earlier was
+    built over the old chain (free, pre-empted by one day only)."""
     s = _sent_owner_will(make)
     old = set(_valid(s))
     s.clock.travel(1)
@@ -414,9 +418,12 @@ def test_removing_the_table_gives_one_delivery(make):
     assert context.clear_instalments(s.bw) is False
     _people(s, "luca", "john")
     s.check(cancel_on=("invalidat",))
-    assert not any("nvalidat" in a[1] for a in s.user.asked)
+    assert any("nvalidat" in a[1] for a in s.user.asked)
+    assert {lv: len(items) for lv, items in _by_level(s).items()} == {1: 3, 2: 9, 3: 27}
+    s.check()
+    assert [k for k, _t in s.world.broadcast_log] == ["invalidation(dialog)"]
     assert {lv: len(items) for lv, items in _by_level(s).items()} == {1: 3}
-    assert {fk.fmt(w.tx.locktime) for w in _valid(s).values()} == {"2030-02-28"}
+    assert {fk.fmt(w.tx.locktime) for w in _valid(s).values()} == {"2030-03-01"}
     assert not old & set(_valid(s))
 
 

@@ -168,8 +168,11 @@ def test_without_a_table_the_window_starts_from_the_example(make, monkeypatch, a
                          {"luca": "17", "john": "17"}]
     assert "example" in ed.top_note.text() and ed.one_delivery_button.isHidden()
     assert ed.save_button.isEnabled() and ed.problem.isHidden()
+    # #188: the first table of a wallet asks to think it over (Yes).
+    answers.queue.append(True)
     ed._save()
-    assert answers.asked == [] and ed.result_kind == "saved"
+    assert [q for q in answers.asked if "Think it over" not in q] == []
+    assert ed.result_kind == "saved"
     assert stored(bw) == delivery.default_instalments(["luca", "john"], D1)
     assert bw.will_settings["locktime"] == D1
     for toolbar in toolbars(bw):
@@ -361,7 +364,7 @@ def test_back_to_one_delivery_is_asked_and_removes_the_table(make, monkeypatch, 
     ed._back_to_one()
     assert len(answers.asked) == 1
     question = answers.asked[0]
-    assert "receive the whole estate on 10/03/2030 (delivery 1), instead of 20%" in question
+    assert "receive the whole estate on 10/03/2030, the date of delivery 1. Today they receive 20%" in question
     assert "the amounts of the heirs count again" in question
     assert stored(bw) and ed.result_kind is None
     answers.queue.append(True)
@@ -481,10 +484,11 @@ def test_the_window_is_refused_with_a_reason(make, monkeypatch, setup, refusal):
     assert len(bw.shown) == 1 and refusal in bw.shown[0]
 
 
-def test_open_deliveries_editor_returns_what_the_window_did(make, monkeypatch):
+def test_open_deliveries_editor_returns_what_the_window_did(make, monkeypatch, answers):
     """The window opens on the wallet's table; its result is returned."""
     s = make()
     bw = window(s, monkeypatch)
+    answers.queue.append(True)                  # #188: the first table's warning
     monkeypatch.setattr(deliveries.DeliveriesEditor, "exec",
                         lambda self: self._save())
     assert bw.open_deliveries_editor() == "saved"

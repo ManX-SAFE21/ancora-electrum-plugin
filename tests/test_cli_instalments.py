@@ -522,20 +522,27 @@ def test_the_heir_commands_say_what_the_table_needs(make):
 
 def test_clear_gives_one_delivery_and_shows_the_heirs_amounts(make):
     """The table removed: the heirs' own amounts count again, so they are
-    shown; prepare builds one delivery, one day before the will in force
-    (free)."""
+    shown. #188: with the will in several deliveries sent, the command is
+    refused first without ``--confirm_invalidation true`` (the will must
+    be invalidated on the blockchain), then without ``--confirm_earlier
+    true``; prepare then returns "postponed" with the invalidation
+    transaction (before, it built one delivery one day earlier, free)."""
     s = make()
     sent_will(s)
     s.clock.travel(1)
     before = settings(s)
     text = raised(s.cli("instalments_clear"))
+    assert text.startswith("Back to one delivery: your will in 3 deliveries")
+    assert "--confirm_invalidation true" in text
+    assert settings(s) == before
+    text = raised(s.cli("instalments_clear", False, True))
     assert text.startswith(
-        "Without the table the heirs receive the whole estate on 2030-03-01 "
-        "(delivery 1), instead of 20% by that date: the rest would arrive "
-        "earlier.")
+        "With one delivery only, the heirs receive the whole estate on "
+        "2030-03-01, the date of delivery 1. Today they receive 20% by that "
+        "date: the rest would arrive earlier than planned.")
     assert "--confirm_earlier true" in text
     assert settings(s) == before
-    out = returned(s.cli("instalments_clear", True))
+    out = returned(s.cli("instalments_clear", True, True))
     assert out["removed"] is True
     assert out["heirs"] == {"luca": [ADDR["luca"], "50%", D1],
                             "john": [ADDR["john"], "50%", D1]}
@@ -545,10 +552,11 @@ def test_clear_gives_one_delivery_and_shows_the_heirs_amounts(make):
     assert again["removed"] is False and "There is no table" in again["message"]
     assert returned(s.cli("instalments_show"))["staged"] is False
     result = returned(s.cli("prepare_will"))
-    assert result["result"] == "rebuilt", result
+    assert result["result"] == "postponed", result
+    assert result["message"].startswith("Back to one delivery: your will in 3 deliveries")
+    assert result["invalidation_tx"]
     valid = [i for i in result["will"]["items"] if i["status"]["VALID"]]
-    assert len(valid) == 3
-    assert {fk.fmt(i["locktime"]) for i in valid} == {"2030-02-28"}
+    assert len(valid) == 39
 
 
 def test_the_heirs_are_untouched_by_the_table_commands(make):

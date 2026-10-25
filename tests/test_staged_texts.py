@@ -322,6 +322,7 @@ def test_heirs_tab_follows_the_table_saved_in_its_window(make, monkeypatch, answ
     bw = tgd.window(s, monkeypatch)
     before = _amounts(bw)
     assert "+" not in before["luca"][0] and before["luca"][1] == ""
+    answers.queue.append(True)                  # #188: the first table's warning
     deliveries.DeliveriesEditor(bw)._save()
     shown = _amounts(bw)
     assert shown["luca"][0] == "16.5% + 16.5% + 17%"
@@ -359,7 +360,7 @@ class _Catalogs:
         return compile_catalog(os.path.join(root, path).replace(".mo", ".po"))
 
 
-def test_italian_shows_the_decimal_comma(make, monkeypatch):
+def test_italian_shows_the_decimal_comma(make, monkeypatch, answers):
     """Owner's ZIP test: "16.5%" in the version row and the Heirs tab,
     "16,5%" in the box. In Italian every place reads "16,5%"; the stored
     table keeps "16.5%"."""
@@ -369,6 +370,7 @@ def test_italian_shows_the_decimal_comma(make, monkeypatch):
     bw = tgd.window(s, monkeypatch)
     try:
         i18n.set_language(_Catalogs(), "it_IT")
+        answers.queue.append(True)              # #188: the first table's warning
         deliveries.DeliveriesEditor(bw)._save()
         shown = _amounts(bw)
         assert shown["luca"][0] == "16,5% + 16,5% + 17%"

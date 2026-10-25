@@ -54,7 +54,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ...core import delivery
+from ...core import delivery, will_changes
+from ...core.will import Will
 from ...core.willexecutors import Willexecutors
 from ...engine import context, instalments
 from ...i18n import _, number_separators
@@ -216,6 +217,8 @@ class DeliveriesEditor(BalDialog):
             stored = []
         self.had_table = instalments.has_table(bal_window)
         self.heirs_changed = False
+        self.from_in_force = False
+        in_force_rows, in_force_complete = ([], True) if stored else in_force_table(bal_window)
         if stored:
             rows = stored
             kept = set()
@@ -224,6 +227,19 @@ class DeliveriesEditor(BalDialog):
                 kept.update(shares or {})
             self.heirs_changed = kept != set(self.names)
             self.from_example = False
+        elif in_force_rows:
+            # #188: no table, but a will in several deliveries in force
+            # (its removal not invalidated yet): its dates and shares, so
+            # "I changed my mind" is one Save, nothing to sign.
+            rows = in_force_rows
+            self.from_example = False
+            self.from_in_force = True
+            # An heir added or removed since (Opus' review): the note says
+            # to check the shares, not "nothing to sign".
+            kept = set()
+            for row in rows:
+                kept.update(row.get("shares") or {})
+            self.heirs_changed = (not in_force_complete) or kept != set(self.names)
         else:
             rows = delivery.default_instalments(self.names, self._first_date())
             self.from_example = True
@@ -573,13 +589,17 @@ class DeliveriesEditor(BalDialog):
         self.later_note.setVisible(bool(later))
 
     def _top_text(self):
-        """The note above the table: the heirs changed, or the example."""
+        """The note above the table: the heirs changed, the will in force
+        (#188), or the example with the warning of #188."""
         if self.heirs_changed:
             return _("The heirs changed since the table was saved: check the "
                      "shares of every heir.")
+        if self.from_in_force:
+            return _("The dates and shares of your will in several deliveries, "
+                     "still in force: save them to keep it (nothing to sign).")
         if self.from_example:
-            return _("An example to change: 33%, 33% and 34% of the estate, "
-                     "one year apart.")
+            return (_("An example to change: 33%, 33% and 34% of the estate, "
+                      "one year apart.") + " " + back_to_one_warning())
         return ""
 
     def _branches(self):
@@ -703,6 +723,13 @@ class DeliveriesEditor(BalDialog):
                   "earlier:") + "\n\n" + earlier + "\n\n" + _earlier_cost_text()
                 + "\n\n" + _("Save the table?")):
             return
+        if not self.had_table and not self.from_in_force and not ask(
+                self, back_to_one_warning() + "\n\n" + _(
+                    "Changing the dates or the shares later stays free: it is "
+                    "going back to one delivery that costs.") + "\n\n"
+                + _("Save the table?")):
+            # #188 (owner): said once, at the first table of the wallet.
+            return
         try:
             context.set_instalments(self.bal_window, rows, now=self._now())
         except delivery.DeliverySettingsUnavailable:
@@ -758,13 +785,26 @@ def _after_change(bal_window):
 def confirm_back_to_one(bal_window, parent):
     """Remove the table after the owner's yes (#170, owner decision (a)).
 
-    Without the table the rest of the estate arrives at delivery 1, earlier:
+    With one delivery only the rest of the estate arrives at delivery 1, earlier:
     the question says by how much, and that the amounts of the heirs count
     again. Returns True when the table was removed.
     """
     settings = bal_window.will_settings
     first = delivery.as_delivery(settings.get("locktime"))
     text = ""
+    staged = Will.staged_in_force(bal_window.willitems or {}, bal_window.wallet)
+    if staged:
+        # #188 (owner decision; owner's ZIP test: said FIRST, it is what
+        # matters most, and in place of "it is free"): a change of the type
+        # of will, the copies in several deliveries held by the
+        # will-executors are invalidated on the blockchain first.
+        text = _(
+            "Your will in several deliveries is held by the will-executors. "
+            "To go back to one delivery it must be invalidated on the "
+            "blockchain first: a network fee, and the will's coins are spent "
+            "together in one transaction visible to everybody. The next Check "
+            "will ask you to sign the invalidation, then prepare the new will."
+        ) + "\n\n"
     if first is not None:
         _in_force, reference, old = instalments.dates_in_force(
             bal_window, DeliveriesEditor._now())
@@ -772,11 +812,16 @@ def confirm_back_to_one(bal_window, parent):
             [(first, Decimal(100))], delivery.schedule_now(reference, old))
         if earlier is not None:
             _n, date, _more, before = earlier
-            text = _(
-                "Without the table the heirs receive the whole estate on {} "
-                "(delivery 1), instead of {} by that date: the rest would "
-                "arrive earlier."
-            ).format(_day_text(date), _pct(before)) + "\n\n" + _earlier_cost_text() + "\n\n"
+            text += _(
+                # Owner's ZIP test (#188): "without the table" was not
+                # understood; "with one delivery only" says what it means.
+                "With one delivery only, the heirs receive the whole estate "
+                "on {}, the date of delivery 1. Today they receive {} by that "
+                "date: the rest would arrive earlier than planned."
+            ).format(_day_text(date), _pct(before)) + "\n\n"
+            if not staged:
+                # "It is free...": true only when nothing was sent (drafts).
+                text += _earlier_cost_text() + "\n\n"
     amounts = heir_amounts_text(bal_window)
     if amounts:
         # #185 (owner, B grey): the heir window shows these amounts grey and
@@ -821,6 +866,54 @@ def heir_amounts_text(bal_window):
                 shown = amount
         parts.append("{} {}".format(name, shown))
     return ", ".join(parts)
+
+
+def back_to_one_warning():
+    """The warning before a will in several deliveries is made (#188,
+    owner decision of 2026-10-24): going back is not free."""
+    return _(
+        "Think it over: going back from several deliveries to one delivery "
+        "will need an invalidation on the blockchain, to keep the will safe "
+        "(a network fee; the will's coins are spent together in one "
+        "transaction visible to everybody).")
+
+
+def in_force_table(bal_window):
+    """``(rows, complete)``: the table of the will in several deliveries in
+    force (#188), its dates and the share of each heir at each delivery,
+    read along the chain of copies (``will_changes.side_from_items``);
+    ``([], True)`` without one. ``complete`` is False when an heir of the
+    will is no longer in the Heirs tab (its share is left out: the window
+    says the shares are to be checked)."""
+    try:
+        in_force = context.in_force_items(bal_window)
+        if not Will.staged_in_force(bal_window.willitems or {}, bal_window.wallet):
+            return [], True
+        side = will_changes.side_from_items(in_force, bal_window.selected_willexecutors())
+    except Exception as e:
+        _logger.debug(f"table of the will in force not read: {e!r}")
+        return [], True
+    if side is None or not side.deliveries:
+        return [], True
+    complete = True
+    by_address = {}
+    for name, value in (bal_window.heirs or {}).items():
+        if not delivery.is_message_row(value):
+            by_address[str(value[0])] = name
+    rows = []
+    for date, shares in side.deliveries:
+        if date is None or shares is None:
+            return [], True
+        cells = {}
+        for address, pct in shares.items():
+            name = by_address.get(address)
+            share = delivery.as_share(round(pct, 2))
+            if name is None:
+                complete = False
+            elif share is not None and share:
+                cells[name] = delivery.share_text(share)
+        rows.append({"locktime": int(date), "shares": cells})
+    return rows, complete
 
 
 def staged_field_text(settings):
