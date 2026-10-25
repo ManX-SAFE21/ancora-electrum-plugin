@@ -12903,3 +12903,63 @@ the invalidation last and "It is free" too, and did not understand
 "mi pare ok".
 
 **Outcome:** DONE.
+
+## 189. Plain texts: the refused chain, translated Yes / No, today in two tests
+
+**Date:** 2026-10-25
+
+**Owner decision (2026-10-25):** three small steps in one, as only texts,
+translations and tests change (the text-only rule: ruff and the whole
+suite, no scenario harness, no owner ZIP test). Noted in #187 and #188.
+
+**What changed:**
+
+- `bal/core/messages.py`: new `chain_refused_message`. When the safety net
+  refuses a chain of deliveries (`WillChainError`), the owner read the raw
+  reason ("chain: a loop between the transactions"). Now one plain
+  sentence: "The new will was not prepared: a safety check found a problem
+  in the chain of deliveries. Nothing was changed: if you have a will in
+  force, it stays as it is. The details are in Electrum's log." The raw
+  reason goes to the log.
+- `bal/gui/qt/dialogs.py` (the Check): the sentence in the build row, and
+  the dialog stops there (before, the raw text in red, then the error went
+  up to the thread). `bal/gui/qt/window.py` (Prepare): the sentence in an
+  error box, without the "preparing a new will" message before it.
+  `bal/cli/controller.py`: `build_will` gives a `UserFacingException` with
+  the sentence (the command line stays English, as before).
+- `bal/gui/qt/common.py`: new `ask_yes_no`, a Yes / No question with the
+  buttons added with their own `_()` text; No is the default button and
+  the Esc key. Qt's standard Yes / No buttons (Electrum's `question`)
+  stayed in English, because Electrum loads no Qt translation (checked in
+  `electrum/gui/qt/util.py`), although the catalogs had "Sì" / "Sí". Used
+  by `BalDialog.question` (Exclude the will-executor, close the offline
+  signing with a will not saved), by `deliveries.ask` (the questions of
+  the deliveries window, #188's included) and by `confirm_basic_mode`
+  (#174, unchanged for the owner).
+- `bal/locale/`: catalogs extracted and updated; the new sentence in
+  Italian and Spanish, no fuzzy entries.
+- `tests/test_gui_delivery_field_refresh.py`,
+  `tests/test_delivery_field_keeps_value.py`: TODAY (and the date D built
+  on it) computed again when each test starts (an autouse fixture). Computed
+  once when the file was loaded, they went stale when the whole suite
+  crossed midnight UTC before these files ran: the 8 failures of the #188
+  reverse-order run. A test only change.
+- Not changed (owner decision): the "OK" button of the plain message boxes
+  stays in English, for the same reason (a step of its own if wanted).
+
+**Tests:** `tests/test_texts_189.py` (new, 12 tests): the translated Yes /
+No box (Yes, No, Escape; No by default and on Esc), `BalDialog.question`,
+the deliveries question and "Go back to BASIC mode?" through it; "Yes" /
+"No" in the Italian and Spanish catalogs; the plain chain sentence, the raw
+reason only in the log, its Italian and Spanish texts not fuzzy; the
+command line's `build_will` with a refused chain.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the new file, the BASIC question, the deliveries window, #188, the
+Exclude question, the two date files, the chain rebuilds, the command line
+deliveries, the offline signing, the messages) 244 passed (3.5 minutes).
+Whole `tests/` directory in the normal order: 3000 passed (44 minutes).
+Golden files unchanged. The date fix itself shows only in a run that
+crosses midnight UTC.
+
+**Outcome:** DONE.

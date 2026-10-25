@@ -134,6 +134,7 @@ from ...core.will import (
     StagedWillRemovedException,
     TxFeesChangedException,
     Will,
+    WillChainError,
     WillexecutorChangeException,
     WillExecutorNotPresent,
     WillExpiredException,
@@ -232,11 +233,28 @@ def confirm_basic_mode(parent=None):
     by the Settings dialog, its reset buttons and the wizard's mode
     selector (through :func:`switch_user_type`).
     """
+    return ask_yes_no(
+        parent,
+        _("Go back to BASIC mode? The advanced tools will be hidden. "
+          "The will does not change."),
+        _("BASIC mode"),
+    )
+
+
+def ask_yes_no(parent, text, title=""):
+    """A Yes / No question with translated buttons; True on Yes.
+
+    No is the default button and the Esc key, so nothing changes by mistake.
+
+    #189 (owner): Qt's standard Yes / No buttons (Electrum's ``question``)
+    stayed in English, because Electrum loads no Qt translation; buttons
+    added with their own ``_()`` text are translated by the plugin's
+    catalogs. Used by every Yes / No question of the plugin.
+    """
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Icon.Question)
-    box.setWindowTitle(_("BASIC mode"))
-    box.setText(_("Go back to BASIC mode? The advanced tools will be hidden. "
-                  "The will does not change."))
+    box.setWindowTitle(title or "")
+    box.setText(text)
     yes = box.addButton(_("Yes"), QMessageBox.ButtonRole.YesRole)
     no = box.addButton(_("No"), QMessageBox.ButtonRole.NoRole)
     box.setDefaultButton(no)
