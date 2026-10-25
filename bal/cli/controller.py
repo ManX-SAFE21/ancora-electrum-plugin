@@ -50,6 +50,7 @@ from ..core.checkalive import (
 from ..core.delivery import DeliveryHold
 from ..core.heirs import Heirs, is_op_return_address
 from ..core.messages import (
+    chain_refused_message,
     check_alive_message,
     check_alive_passed_sentence,
     heir_error_message,
@@ -790,8 +791,13 @@ class BalController(BalSettingsController):
         pass the old will's creation date when it re-anchors
         ``date_to_check`` (``with_creation_date=False``), as before.
         ``ignore_duplicate`` / ``keep_original`` were never used.
+        #189: a chain of deliveries refused by the safety net
+        (``WillChainError``) is told in plain words, the raw reason logged.
         """
-        return build.build_will(self, with_creation_date=False)
+        try:
+            return build.build_will(self, with_creation_date=False)
+        except will_mod.WillChainError as e:
+            raise UserFacingException(chain_refused_message(e)) from None
 
     def _after_rebuild(self):
         """Label the rebuilt transactions and keep the delivery date in step.

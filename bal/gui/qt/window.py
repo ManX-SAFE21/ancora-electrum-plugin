@@ -48,6 +48,7 @@ from ...core.heirs import (
     message_text,
 )
 from ...core.messages import (
+    chain_refused_message,
     check_alive_message,
     heir_error_message,
     staged_removed_message,
@@ -109,6 +110,7 @@ from .common import (
     TxFeesChangedException,
     Util,
     Will,
+    WillChainError,
     WillexecutorChangeException,
     WillExecutorFeeTooHighException,
     WillExecutorNotPresent,
@@ -2452,10 +2454,18 @@ class BalWindow:
                 # dropped unsigned drafts and gave back the will in force
                 # (the popup below then says "Your will is in force").
                 replaced_before = Will.replaced_ids(self.willitems)
+                refused = False
                 try:
                     self.build_will(ignore_duplicate, keep_original)
+                except WillChainError as chain_error:
+                    # #189: the safety net refused the chain of deliveries,
+                    # nothing was changed: one plain sentence (the raw reason
+                    # is logged), and no "preparing a new will" before it.
+                    refused = True
+                    self.show_error(chain_refused_message(chain_error))
+                    return None
                 finally:
-                    if change_text and not Will.only_brought_back(
+                    if not refused and change_text and not Will.only_brought_back(
                         replaced_before, self.willitems
                     ):
                         self.show_message(change_text)

@@ -46,7 +46,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -59,6 +58,7 @@ from ...core.will import Will
 from ...core.willexecutors import Willexecutors
 from ...engine import context, instalments
 from ...i18n import _, number_separators
+from .common import ask_yes_no
 from .dialogs import BalDialog
 
 _logger = get_logger(__name__)
@@ -754,14 +754,10 @@ class DeliveriesEditor(BalDialog):
 def ask(parent, text):
     """A Yes / No question of the deliveries; True for Yes (No is the
     default button: nothing changes by mistake). A function, so the tests
-    can answer it."""
-    yes, no = QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.No
+    can answer it. #189: the buttons are translated (``ask_yes_no``)."""
     if not isinstance(parent, QWidget):
         parent = None
-    box = QMessageBox(QMessageBox.Icon.Question,
-                      _("Inheritance in several deliveries"), text, yes | no, parent)
-    box.setDefaultButton(no)
-    return box.exec() == yes
+    return ask_yes_no(parent, text, _("Inheritance in several deliveries"))
 
 
 def _earlier_cost_text():

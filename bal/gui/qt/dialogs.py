@@ -60,6 +60,7 @@ from ...core.checkalive import (
 from ...core.messages import (
     amounts_message,
     build_failure_message,
+    chain_refused_message,
     check_alive_message,
     excluded_after_build_message,
     heir_label,
@@ -132,6 +133,7 @@ from .common import (
     Util,
     WaitingDialog,
     Will,
+    WillChainError,
     WillExecutorNotPresent,
     Willexecutors,
     WillExpiredException,
@@ -139,6 +141,7 @@ from .common import (
     WillPostponedException,
     _,
     _logger,
+    ask_yes_no,
     bring_to_front,
     decimal_point_to_base_unit_name,
     draw_qr,
@@ -204,6 +207,16 @@ class BalDialog(QDialog,MessageBoxMixin):
             self.setWindowTitle(title)
         # WindowModalDialog.__init__(self,parent)
         self.setWindowIcon(read_QIcon_from_bytes(bal_plugin.read_file(icon)))
+
+    def question(self, msg, parent=None, title=None, **kwargs):
+        """Electrum's Yes / No question with translated buttons (#189).
+
+        Electrum's own ``question`` uses Qt's standard buttons, which stay
+        in English (Electrum loads no Qt translation): ``ask_yes_no`` gives
+        the same answer (True on Yes, No by default) with "Yes" / "No" from
+        the plugin's catalogs. The extra Electrum arguments are not used.
+        """
+        return ask_yes_no(parent or self, msg, title or "")
 
     def closeEvent(self, event):
         self._stopping = True
@@ -1279,6 +1292,14 @@ class BalBuildWillDialog(BalDialog):
                         + _("Skipped")
                     )
                 )
+                return False, None
+
+            except WillChainError as e:
+                # #189: the safety net refused the chain of deliveries; the
+                # will in force is untouched. A plain sentence, the raw
+                # reason in the log (before: the raw text in red, then the
+                # error went up to the thread).
+                self.msg_set_building(self.msg_error(chain_refused_message(e)))
                 return False, None
 
             except Exception as e:

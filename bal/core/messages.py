@@ -32,6 +32,7 @@ from .will import (
     StagedWillRemovedException,
     TxFeesChangedException,
     Will,
+    WillChainError,
     WillexecutorChangeException,
     WillExecutorNotPresent,
     WillExecutorTermsChanged,
@@ -112,6 +113,24 @@ def staged_removed_message(deliveries):
         "will-executors and must be invalidated on the blockchain first (a "
         "network fee); then the new will is prepared."
     ).format(deliveries)
+
+
+def chain_refused_message(e=None):
+    """The sentence shown when the safety net refuses a chain of deliveries
+    (:class:`WillChainError`): the Check row, the main window and the
+    command line.
+
+    #189 (owner): the raw reason ("chain: a loop between the
+    transactions") is technical; it goes to Electrum's log, the owner reads
+    that nothing was changed. ``e`` is only logged.
+    """
+    if isinstance(e, WillChainError):
+        _logger.info(f"chain refused: {e}")
+    return _(
+        "The new will was not prepared: a safety check found a problem in "
+        "the chain of deliveries. Nothing was changed: if you have a will in "
+        "force, it stays as it is. The details are in Electrum's log."
+    )
 
 
 def will_change_message(e):

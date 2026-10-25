@@ -57,9 +57,29 @@ from bal.gui.qt.widgets import LockTimeWidget, WillSettingsWidget
 _APP = QApplication.instance() or QApplication(sys.argv)
 
 DAY = 86400
-TODAY = int(datetime.now(tz=timezone.utc).replace(
-    hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+
+def _midnight_today():
+    """Today at midnight UTC, as a timestamp."""
+    return int(datetime.now(tz=timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+
+TODAY = _midnight_today()
 D = TODAY + 400 * DAY            # a fixed delivery date (midnight UTC)
+
+
+@pytest.fixture(autouse=True)
+def _today_per_test():
+    """Compute TODAY (and D) again when each test starts.
+
+    #189: computed once when the file was loaded, they went stale when the
+    whole suite crossed midnight UTC before this file ran (the reverse
+    order), and the field, which reads the real clock, was one day ahead.
+    """
+    global TODAY, D
+    TODAY = _midnight_today()
+    D = TODAY + 400 * DAY
 
 _TX_HEX = (
     "01000000012a5c9a94fcde98f5581cd00162c60a13936ceb75389ea65b"
