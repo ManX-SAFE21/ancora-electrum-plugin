@@ -401,6 +401,11 @@ def _status_block(report):
     note = report.summary.get("note") or future.note
     if note:
         y += block.text(x, y + 2, inner, note, report_font(9, italic=True), "#333333") + 2
+    # #190: the excluded will-executors that still hold a copy, as in the
+    # Will tab: the first sentence in bold, then one line per sentence.
+    for i, line in enumerate(report.summary.get("held_text") or []):
+        y += block.text(x, y + (4 if i == 0 else 1), inner, line,
+                        report_font(9, bold=(i == 0)), "#555555") + 1
     height = y + pad - 3
     # The box goes under the texts: put it first.
     box = [Item("rect", QRectF(0, 0, PAGE_W, height), fill=bg, colour=fg, radius=5),

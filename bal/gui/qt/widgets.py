@@ -51,7 +51,7 @@ from ...core.input_rules import (
 )
 from ...core.messages import heir_label, months_text
 from ...core.reminders import build_ics_reminders, write_temp_ics
-from ...core.summary import deselected_text
+from ...core.summary import deselected_text, excluded_holders_html
 from ...engine import context as engine_context
 from .calendar import BalCalendar, BalCalendarButton
 from .common import (
@@ -2540,6 +2540,14 @@ class WillSummaryWidget(QFrame):
         drow.addWidget(self.deselected_button, 0, Qt.AlignmentFlag.AlignTop)
         self.deselected_row.setVisible(False)
         column.addWidget(self.deselected_row)
+        # #190: the excluded will-executors that still hold a copy of the
+        # will in force: a grey note, its first sentence in bold (owner).
+        self.held_label = QLabel()
+        self.held_label.setWordWrap(True)
+        self.held_label.setTextFormat(Qt.TextFormat.RichText)
+        self.held_label.setStyleSheet("color:#555555;")
+        self.held_label.setVisible(False)
+        column.addWidget(self.held_label)
         box.addLayout(column, 1)
         self.button = QPushButton()
         self.button.setMinimumHeight(32)
@@ -2642,6 +2650,9 @@ class WillSummaryWidget(QFrame):
         deselected = summary.get("deselected_text") or ""
         self.deselected_label.setText(deselected)
         self.deselected_row.setVisible(bool(deselected))
+        held = excluded_holders_html(summary.get("held") or [])
+        self.held_label.setText(held)
+        self.held_label.setVisible(bool(held))
         self.action = summary.get("action")
         if self.action:
             self.button.setText(summary.get("action_text") or "")
@@ -3123,6 +3134,17 @@ class BuildReportView(QWidget):
                 self._group(_("Will-Executor"), rows, actions=actions,
                             footer=footer, note=note)
             )
+        held = excluded_holders_html(snapshot.get("held") or [])
+        if held:
+            # #190: the note of the Will tab's summary, under the
+            # will-executors (an excluded one is no longer in their box
+            # once the new will replaced its copy).
+            line = QLabel(held)
+            line.setWordWrap(True)
+            line.setTextFormat(Qt.TextFormat.RichText)
+            line.setStyleSheet("color:#555555;")
+            line.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            self.box.addWidget(line)
         if snapshot.get("will_now"):
             self.box.addWidget(
                 self._group(_("Your will now"), [(snapshot["will_now"], None, None)])

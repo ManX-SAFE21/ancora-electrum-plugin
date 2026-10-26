@@ -313,6 +313,9 @@
     ]
    ],
    "heirs": null,
+   "held": [
+    "https://we1.test"
+   ],
    "result": [
     "ok",
     "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"

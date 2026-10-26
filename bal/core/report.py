@@ -289,7 +289,7 @@ def _tx_order(tx):
 def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
                 wallet_name="", plugin_version="", electrum_version="",
                 still_active=None, now=None, created=None, warn_months=None,
-                selected=None):
+                selected=None, held=None):
     """The :class:`WillReport` of the wallet's will (see the module docstring).
 
     ``heirs``: the Heirs tab (only its size, for the summary); ``now``: the
@@ -297,6 +297,9 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
     printed as "Created on" (default: now, local); ``selected``: the URLs of
     the will-executors selected now (#134, ``summary.selected_urls``): a
     deselected one that never received the will is "deselected: not sent".
+    ``held`` (#190, ``engine.context.excluded_holders``): the will-executors
+    not selected that hold a copy of the will in force; the summary's note
+    (``held_text``) is printed under the state box.
     Raises what the data raises: the GUI catches it and says the report
     could not be prepared.
     """
@@ -305,6 +308,7 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
     summary = will_summary(
         willitems, len(heirs or {}), will_settings, is_basic_mode, now=now,
         still_active=still_active, warn_months=warn_months, selected=selected,
+        held=held,
         # #135: the will in force by the one rule of the Will tab.
         in_force=will_versions.in_force_delivery(history, will),
     ) or {}

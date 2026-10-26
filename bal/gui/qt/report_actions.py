@@ -25,6 +25,7 @@ from ...core.plugin_base import get_version
 from ...core.report import report_block_reason, will_report
 from ...core.summary import selected_urls, will_summary
 from ...core.willexecutors import Willexecutors
+from ...engine import context
 from ...i18n import _
 from . import report_pages
 from .calendar import BalCalendar
@@ -103,6 +104,7 @@ def build_report(bal_window):
     from electrum.version import ELECTRUM_VERSION
 
     wallet = getattr(bal_window, "wallet", None)
+    selected = _selected(bal_window)
     return will_report(
         bal_window.willitems,
         bal_window.heirs,
@@ -114,7 +116,9 @@ def build_report(bal_window):
         electrum_version=ELECTRUM_VERSION,
         still_active=_still_active(bal_window),
         warn_months=_warn_months(bal_window),
-        selected=_selected(bal_window),
+        selected=selected,
+        # #190: the excluded will-executors that still hold a copy.
+        held=context.excluded_holders(bal_window, selected),
     )
 
 

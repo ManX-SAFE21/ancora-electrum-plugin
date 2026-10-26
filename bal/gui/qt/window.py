@@ -1059,6 +1059,7 @@ class BalWindow:
             _logger.debug(f"watch-only not read: {e!r}")
             watch_only = None
         try:
+            selected = self.selected_willexecutors()
             summary = will_summary(
                 self.willitems,
                 len(self.heirs or {}),
@@ -1069,7 +1070,9 @@ class BalWindow:
                 # #134: the one date style and the in-force comparison.
                 long_dates=True,
                 # #134: deselected will-executors are not "to send".
-                selected=self.selected_willexecutors(),
+                selected=selected,
+                # #190: the excluded ones that still hold a copy.
+                held=context.excluded_holders(self, selected),
                 # #135: THE will in force, the one rule of the List, the
                 # Future view and the wizard (not only the REPLACED copies).
                 in_force=context.in_force_delivery(self),
