@@ -143,7 +143,8 @@ def test_spin_box_range_step_and_value():
     assert (w.spin.minimum(), w.spin.maximum(), w.spin.singleStep()) == (1, 3650, 30)
     assert w.spin.value() == 180 and w.get_value() == "-180d"
     assert "days" in w.spin.suffix()
-    assert "before the delivery" in w.hint.text() and "6 months" in w.hint.text()
+    # #191: the approximate months in the tooltip, not in the sentence.
+    assert "before the delivery" in w.hint.text() and "6 months" in w.hint.toolTip()
 
 
 def test_spin_box_shows_an_old_value_converted_without_saving_it():
@@ -159,7 +160,7 @@ def test_set_value_of_the_new_form_saves_it():
     w.set_value("-30d")
     assert w.spin.value() == 30
     bw.update_setting_widgets.assert_called_once_with("-30d", "threshold")
-    assert "1 month" in w.hint.text()
+    assert "1 month" in w.hint.toolTip()
 
 
 def test_user_change_saves_and_syncs():
@@ -167,7 +168,7 @@ def test_user_change_saves_and_syncs():
     w = ThresholdTimeWidget(bw, None)
     w.spin.setValue(90)
     bw.update_setting_widgets.assert_called_with("-90d", "threshold", True)
-    assert "3 months" in w.hint.text()
+    assert "3 months" in w.hint.toolTip()
 
 
 def test_resolved_date_turns_red_when_past():
@@ -176,9 +177,14 @@ def test_resolved_date_turns_red_when_past():
     w.show_resolved_date(past, now=NOW)
     assert w.label.text() == past.strftime("%Y-%m-%d")
     assert "ff0000" in w.label.styleSheet() and w.alarm is past
+    # #191: the date shown inside the sentence, in red.
+    assert '<span style="color:#ff0000;">{}</span>'.format(
+        past.strftime("%Y-%m-%d")) in w.hint.text()
+    assert "already passed" in w.hint.toolTip()
     future = datetime.fromtimestamp(NOW + DAY, tz=timezone.utc)
     w.show_resolved_date(future, now=NOW)
     assert w.label.styleSheet() == ""
+    assert w.hint.text().endswith("→ " + future.strftime("%Y-%m-%d"))
 
 
 def test_read_only_and_legacy_calls():

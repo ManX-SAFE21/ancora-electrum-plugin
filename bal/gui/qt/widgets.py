@@ -833,12 +833,18 @@ class ThresholdTimeWidget(QWidget):
         self.spin.setKeyboardTracking(False)
         self.spin.setToolTip(_(self.tooltip_text))
         hbox.addWidget(self.spin)
+        # #191: ONE label, "before the delivery → 2032-03-29". With the date
+        # in a label of its own, a window narrower than the toolbar's
+        # minimum (maximized on a 1366-point screen) drew the date over
+        # the sentence; one label can only be cut at its end.
         self.hint = QLabel("")
+        self.hint.setTextFormat(Qt.TextFormat.RichText)
         hbox.addWidget(self.hint)
         # Kept under the old name: on_locktime_change used ``editor.label``.
-        self.label = QLabel("")
+        # It holds the date and its colour; not shown (the hint shows them).
+        self.label = QLabel("", self)
+        self.label.hide()
         self.editor = self
-        hbox.addWidget(self.label)
         hbox.addStretch(1)
         if init_value is None:
             # #123: the wallet's own settings, not the shared global.
@@ -875,17 +881,32 @@ class ThresholdTimeWidget(QWidget):
             return CHECK_ALIVE_DEFAULT_DAYS
 
     def _update_hint(self):
-        """Show "before the delivery (≈ 6 months) →" next to the spin box,
-        always whole (its minimum width follows the text)."""
+        """Show "before the delivery → 2032-03-29" next to the spin box (the
+        date red when past), always whole when there is room (its minimum
+        width follows the text).
+
+        #191 (owner, choice A): the approximate months "(≈ 6 months)" moved
+        to the tooltip, so the sentence is shorter and the date sits in the
+        same label (see ``__init__``).
+        """
         days = self.spin.value()
         months = round(days / 30.44)
         if months >= 2:
-            extra = " " + _("(≈ {} months)").format(months)
+            extra = _("(≈ {} months)").format(months)
         elif months == 1:
-            extra = " " + _("(≈ 1 month)")
+            extra = _("(≈ 1 month)")
         else:
             extra = ""
-        self.hint.setText(_("before the delivery") + extra + " →")
+        text = html.escape(_("before the delivery") + " →")
+        date = self.label.text()
+        if date:
+            colour = "#ff0000" if self.label.styleSheet() else None
+            date = html.escape(date)
+            text += " " + ('<span style="color:{};">{}</span>'.format(colour, date)
+                           if colour else date)
+        self.hint.setText(text)
+        tips = [t for t in (extra, self.label.toolTip()) if t]
+        self.hint.setToolTip(chr(10).join(tips))
         # #146 (owner's ZIP test): never squeezed in a narrow toolbar, where
         # it was cut to "before the d"; the row gives way instead.
         self.hint.setMinimumWidth(self.hint.sizeHint().width())
@@ -929,6 +950,7 @@ class ThresholdTimeWidget(QWidget):
         self.label.setToolTip(
             _("This Check Alive date has already passed") if past else ""
         )
+        self._update_hint()     # #191: the date is shown inside the hint
 
     def set_read_only(self, read_only=True):
         """Show the value but make it non-editable (outside the wizard)."""
@@ -1082,7 +1104,7 @@ class DeliveryFormWidget(QWidget):
         self.period_radio = QRadioButton(_("Period (renewable)"))
         # #170 (owner, M4 plan answer 2): the third form, the table of the
         # deliveries; its window holds the dates and the shares.
-        self.staged_radio = QRadioButton(_("Several deliveries"))
+        self.staged_radio = QRadioButton(_("Several deliveries (Multiverse)"))
         self.staged_button = QPushButton(_("Edit the deliveries…"))
         self.radio_group = QButtonGroup(self)
         self.radio_group.addButton(self.fixed_radio)

@@ -280,7 +280,8 @@ def test_will_tab_rows_fee_on_top_and_the_whole_check_alive_sentence(make, monke
     )
     assert first == [w["locktime"], w["baltx_fees"]] and second == [w["threshold"]]
     hint = w["threshold"].hint
-    assert hint.text().endswith(" →") and "(≈ " in hint.text()
+    # #191: one label "before the delivery → <date>", months in the tooltip.
+    assert "before the delivery →" in hint.text() and "(≈ " in hint.toolTip()
     assert hint.minimumWidth() == hint.sizeHint().width() > 0
 
 

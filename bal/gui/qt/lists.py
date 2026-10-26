@@ -1729,7 +1729,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # ADVANCED only: shown or hidden each time the menu opens, so it
         # follows a change of mode. A lambda: Qt would pass "checked".
         self.deliveries_action = menu.addAction(
-            _("Inheritance in several deliveries…"),
+            _("Inheritance in several deliveries (Multiverse)…"),
             lambda: self.bal_window.open_deliveries_editor())
         # Through the class: a test host built without __init__ has the
         # toolbar's attributes only.

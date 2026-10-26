@@ -283,10 +283,13 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats,
             model.level_tip, "",
         ))
         # The delivery form under the delivery (owner, #132): "Fixed date"
-        # or "Period (renewable) — 24 months (2 years)".
+        # or "Period (renewable) — 24 months (2 years)"; #191: "Multiverse —
+        # 3 deliveries: ..." for a will in several deliveries.
         scene["lines"].append((None, "{}: {}".format(
             _("Delivery form"),
-            core_future.delivery_form_text(model.form, model.period_months)), "", ""))
+            core_future.delivery_form_text(
+                model.form, model.period_months,
+                [inst.locktime for inst in model.deliveries])), "", ""))
         if model.check_alive is not None:
             check_colour = "#c62828" if model.check_alive_passed else CHECK_ALIVE_COLOUR
             scene["check_alive"] = {

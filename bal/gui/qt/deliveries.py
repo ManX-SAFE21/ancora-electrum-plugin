@@ -206,7 +206,8 @@ class DeliveriesEditor(BalDialog):
     def __init__(self, bal_window, parent=None):
         """Build the window on the stored table (or the example)."""
         super().__init__(parent or bal_window.window, bal_window.bal_plugin,
-                         _("Inheritance in several deliveries"))
+                         # #191: the owner's nickname next to the name.
+                         _("Inheritance in several deliveries (Multiverse)"))
         self.bal_window = bal_window
         self.result_kind = None
         self.names = delivery.payee_names(bal_window.heirs)
@@ -253,7 +254,7 @@ class DeliveriesEditor(BalDialog):
     def _build_window(self):
         """The fixed parts: title, the three areas, buttons and notes."""
         vbox = QVBoxLayout(self)
-        title = QLabel(_("Inheritance in several deliveries"))
+        title = QLabel(_("Inheritance in several deliveries (Multiverse)"))
         font = title.font()
         font.setBold(True)
         font.setPointSizeF(font.pointSizeF() + 2)

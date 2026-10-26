@@ -13037,3 +13037,67 @@ report prints it under the state box. Seen, for later steps: the PDF says
 toolbar "before the delivery (2032-03-29)" overlaps another date.
 
 **Outcome:** DONE.
+
+## 191. The Multiverse: the delivery form of a will in several deliveries, and the Check Alive sentence in one label
+
+**Date:** 2026-10-26
+
+**Owner (ZIP test of #190, 2026-10-26):** the PDF report of a will in three
+deliveries said "Delivery form: Fixed date" (the settings' form of such a
+will is "fixed"), and in the toolbar the Check Alive sentence "before the
+delivery (≈ 6 months) →" and its date were drawn over each other. Owner
+decisions: the will in several deliveries is nicknamed "Multiverse" (IT
+"Multiverso", ES "Multiverso"), next to the name where the user meets the
+form, not in every sentence; the delivery form lists the dates; for the
+toolbar, choice A: one shorter sentence "before the delivery → <date>",
+the approximate months in the tooltip.
+
+**What changed:**
+
+- `bal/core/future.py`: `delivery_form_text(form, months, locktimes=())`:
+  with more than one delivery "Multiverse — 3 deliveries: 1 Mar 2030,
+  1 Mar 2033, 1 Mar 2036" (the short UTC day); one delivery unchanged
+  ("Fixed date" / "Period (renewable) — N months").
+- `bal/gui/qt/report_pages.py` (PDF state box) and
+  `bal/gui/qt/future_view.py` (Will tab, Future view): pass the dates of
+  the deliveries of the will in force.
+- The nickname: the wizard's choice "Several deliveries (Multiverse)"
+  (`bal/gui/qt/widgets.py`), the window "Inheritance in several deliveries
+  (Multiverse)" (`bal/gui/qt/deliveries.py`, title and heading) and its
+  entry in Tools (`bal/gui/qt/lists.py`). Warnings, errors and help keep
+  "several deliveries".
+- `bal/gui/qt/widgets.py`, the Check Alive field: one label "before the
+  delivery → 2032-03-29" (the date red when past); "(≈ 6 months)" and
+  "This Check Alive date has already passed" in its tooltip. Cause of the
+  overlap: on a screen narrower than the Will tab's top row (a maximized
+  window, about 1365 points), Qt squeezes the row below its minimum; the
+  sentence kept its whole width (#146) and the separate date label was
+  laid over it. One label can only be cut at its end; the row's minimum
+  also drops (547 -> 458 points in the probe). The old date label stays,
+  hidden, for the callers of `editor.label`.
+- `bal/locale/`: "Multiverse" and the three titles in Italian and Spanish,
+  no fuzzy entries.
+
+**Tests:** `tests/test_delivery_form_multiverse.py` (new, 3 tests, three
+fake will-executors with their own fee addresses): the text of each form;
+the Will tab and the PDF of a will in three deliveries say "Multiverse —
+3 deliveries: ..." and no "Fixed date". `tests/test_gui_deliveries.py`:
+the window title and the wizard's choice with the nickname;
+`tests/test_check_button.py`: the Tools entry. `tests/test_check_alive_days.py`,
+`tests/test_advanced_period_default.py`: the months read from the tooltip,
+the date (red when past) inside the sentence.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (delivery form, Future view, report, deliveries window, Tools menu,
+Check Alive, #189 texts) 310 passed (35 s). No golden file holds these
+texts. Text and look step: no whole suite and no scenario harness. A
+probe of the Will tab squeezed to 1200 points (bigger font, Italian)
+reproduced the owner's overlap before the change and shows the whole
+sentence after it. Test ZIP `test-zips/ancora_0.8.0-TEST-191-multiverse.zip`
+(sha256 `e40f8192...42bea2a0b`): `external_zip_test.py` and
+`smoke_test.py` pass on Electrum 4.8.2; the Italian texts checked inside.
+
+**Owner's ZIP test (2026-10-26):** toolbar, Future view, PDF report and
+the nickname in the menu, window and wizard: all good.
+
+**Outcome:** DONE.
