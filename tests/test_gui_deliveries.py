@@ -162,6 +162,8 @@ def test_without_a_table_the_window_starts_from_the_example(make, monkeypatch, a
     s = make()
     bw = window(s, monkeypatch)
     ed = deliveries.DeliveriesEditor(bw)
+    # #191: the owner's nickname next to the name.
+    assert ed.windowTitle() == "Inheritance in several deliveries (Multiverse)"
     assert ed.names == ["luca", "john"]
     assert texts(ed) == [{"luca": "16.5", "john": "16.5"},
                          {"luca": "16.5", "john": "16.5"},
@@ -408,6 +410,7 @@ def test_the_wizard_offers_several_deliveries_in_advanced_only(make, monkeypatch
     bw = window(s, monkeypatch)
     box = wizard_form(bw)
     assert not box.staged_radio.isHidden() and box.staged_radio.isEnabled()
+    assert box.staged_radio.text() == "Several deliveries (Multiverse)"    # #191
     assert box.fixed_radio.isChecked() and box.staged_button.isHidden()
     context.set_delivery(bw, form=delivery.FORM_PERIOD, months=24)
     box = wizard_form(bw)
@@ -456,7 +459,7 @@ def test_the_tools_entry_is_advanced_only(make, monkeypatch):
     bw = window(s, monkeypatch)
     lst = bw.will_list_widget
     action = lst.deliveries_action
-    assert action.text() == "Inheritance in several deliveries…"
+    assert action.text() == "Inheritance in several deliveries (Multiverse)…"
     assert action in lst.menu.actions() and action.isVisible()
     opened = []
     monkeypatch.setattr(bw, "open_deliveries_editor", lambda: opened.append(1))

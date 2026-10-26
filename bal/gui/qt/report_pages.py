@@ -375,7 +375,9 @@ def _status_block(report):
             datetext.utc_text(future.delivery), future.time_left),
             DELIVERY_LEVEL_COLOURS.get(future.level, TEXT)))
         rows.append((_("Delivery form"),
-                     core_future.delivery_form_text(future.form, future.period_months), TEXT))
+                     core_future.delivery_form_text(
+                         future.form, future.period_months,
+                         [inst.locktime for inst in future.deliveries]), TEXT))
     if future.check_alive is not None:
         value = datetext.utc_text(future.check_alive)
         if not future.check_alive_passed:

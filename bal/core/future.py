@@ -42,8 +42,8 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from ..i18n import _
+from . import datetext, will_versions
 from . import delivery as _delivery
-from . import will_versions
 from .checkalive import check_alive_basic, check_alive_renewal, resolve_date_to_check
 from .heirs import HEIR_ADDRESS, HEIR_REAL_AMOUNT, is_op_return_address
 from .messages import _day, months_text
@@ -138,12 +138,23 @@ class Future:
         return self.deliveries[0].locktime if self.deliveries else None
 
 
-def delivery_form_text(form, months=None):
+def delivery_form_text(form, months=None, locktimes=()):
     """``"Fixed date"`` or ``"Period (renewable) — 24 months (2 years)"`` (#132).
 
     The #127 msgids of the delivery form and ``messages.months_text``; a
     period form whose N cannot be read says only "Period (renewable)".
+
+    #191: ``locktimes``, the dates of the deliveries of the will in force.
+    With more than one it is the will in several deliveries, nicknamed
+    "Multiverse" by the owner: ``"Multiverse — 3 deliveries: 29 Mar 2032,
+    29 Mar 2033, 29 Mar 2034"``. WHY: the settings' form of such a will is
+    "fixed", so the PDF and the Will tab said "Fixed date" for a will in
+    three deliveries. The short UTC day, the will's own day, as elsewhere.
     """
+    if len(locktimes) > 1:
+        return "{} — {}: {}".format(
+            _("Multiverse"), _("{} deliveries").format(len(locktimes)),
+            ", ".join(datetext.utc_day(ts, short=True) for ts in locktimes))
     if form != _delivery.FORM_PERIOD:
         return _("Fixed date")
     text = _("Period (renewable)")
