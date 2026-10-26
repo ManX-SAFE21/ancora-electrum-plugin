@@ -49,7 +49,7 @@ from ...core.input_rules import (
     normalize_perc_amount_text,
     parse_perc_amount,
 )
-from ...core.messages import heir_label, months_text
+from ...core.messages import heir_label, low_fee_warning, months_text
 from ...core.reminders import build_ics_reminders, write_temp_ics
 from ...core.summary import deselected_text, excluded_holders_html
 from ...engine import context as engine_context
@@ -169,6 +169,14 @@ class BalTxFeesWidget(QWidget):
         button.setStyleSheet("QPushButton{font-size: 16px;}")
         layout.addWidget(button)
         layout.addWidget(self.txfee_widget)
+        # #192: an orange sign next to a fee below 20 sat/vB, the owner's
+        # explanation in its tooltip. A sign, not a message box: the arrows
+        # step one by one and a box at each step would be in the way.
+        self.warning = QLabel("⚠", self)
+        self.warning.setStyleSheet("color:#e65100; font-size: 16px;")
+        self.warning.setVisible(False)
+        layout.addWidget(self.warning)
+        self._show_warning()
         # Expose the leading icon (prefix) and the editable field so the parent
         # WillSettingsWidget can align them on a grid (see its vertical layout).
         self.prefix_widget = button
@@ -176,6 +184,16 @@ class BalTxFeesWidget(QWidget):
 
     def doubleclick(self, event=None):
         pass
+
+    def _show_warning(self):
+        """Show the #192 sign when the fee shown is below 20 sat/vB (also
+        a fee stored before #192), hide it otherwise."""
+        warning = getattr(self, "warning", None)
+        if warning is None:         # set_value during __init__, before it
+            return
+        text = low_fee_warning(self.txfee_widget.value())
+        warning.setToolTip(text)
+        warning.setVisible(bool(text))
 
     def set_read_only(self, read_only=True):
         # Show the fee but make it non-editable (no spin arrows, no keyboard),
@@ -208,6 +226,7 @@ class BalTxFeesWidget(QWidget):
             spin.blockSignals(True)
             spin.setValue(value)
             spin.blockSignals(False)
+            self._show_warning()
 
         finally:
             self._updating = False
@@ -3165,6 +3184,13 @@ class BuildReportView(QWidget):
             line.setWordWrap(True)
             line.setTextFormat(Qt.TextFormat.RichText)
             line.setStyleSheet("color:#555555;")
+            line.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            self.box.addWidget(line)
+        if snapshot.get("low_fee"):
+            # #192: the low-fee warning, read at least once by who signs.
+            line = QLabel("⚠ " + snapshot["low_fee"])
+            line.setWordWrap(True)
+            line.setStyleSheet("color:#e65100;")
             line.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
             self.box.addWidget(line)
         if snapshot.get("will_now"):

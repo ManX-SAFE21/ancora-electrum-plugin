@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 from electrum.logging import get_logger
 
 from ..i18n import _, number_separators
-from .delivery import instalment_number, person_name
+from .delivery import DEFAULT_FEE, instalment_number, person_name
 from .plugin_base import BalTimestamp
 from .will import (
     FuturesOffPlanException,
@@ -131,6 +131,36 @@ def chain_refused_message(e=None):
         "the chain of deliveries. Nothing was changed: if you have a will in "
         "force, it stays as it is. The details are in Electrum's log."
     )
+
+
+#: #192: under this miner fee rate (sat/vB) the plugin warns; the default
+#: fee of a new will (owner, multiverse plan section 4: a warning, never a
+#: block, for every will).
+LOW_FEE_LIMIT = DEFAULT_FEE
+
+
+def low_fee_warning(fee):
+    """The warning for a miner fee rate below :data:`LOW_FEE_LIMIT`, or "".
+
+    #192 (owner's text, 2026-10-26): lowering the fee is the user's choice;
+    years later, on the delivery date, a busy network may not accept a
+    transaction with a low fee. A warning only: nothing is refused. ``fee``:
+    the rate in sat/vB (``baltx_fees``, an int, a float or a string); a
+    value that is not a number gives "" (the validated writes refuse it).
+    """
+    try:
+        rate = float(fee)
+    except (TypeError, ValueError):
+        return ""
+    if rate >= LOW_FEE_LIMIT:
+        return ""
+    return _(
+        "Miner fee below {limit} sat/vB: it is your choice. On the delivery "
+        "date of your will the Bitcoin network may be very busy, and the "
+        "nodes may not accept a transaction with a low fee. With {limit} "
+        "sat/vB or more this risk is much smaller and the inheritance is "
+        "more likely to be executed on time, without delays."
+    ).format(limit=LOW_FEE_LIMIT)
 
 
 def will_change_message(e):

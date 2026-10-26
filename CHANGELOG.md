@@ -13101,3 +13101,56 @@ sentence after it. Test ZIP `test-zips/ancora_0.8.0-TEST-191-multiverse.zip`
 the nickname in the menu, window and wizard: all good.
 
 **Outcome:** DONE.
+
+## 192. The warning for a miner fee below 20 sat/vB
+
+**Date:** 2026-10-26
+
+**Owner decision (multiverse plan, section 4; text of 2026-10-26):**
+lowering the miner fee is the user's choice, but years later, on the
+delivery date, a busy network may not accept a transaction with a low fee.
+A WARNING only, never a block, for every will, also one whose fee was
+stored before this step. Owner's Italian text: "Commissione inferiore a 20
+sat/vB: è una tua scelta. Alla data di consegna del tuo testamento la rete
+Bitcoin potrebbe essere molto trafficata, e i nodi potrebbero non accettare
+una transazione con una commissione bassa. Con 20 sat/vB o più questo
+rischio si riduce molto e l'eredità ha più probabilità di essere eseguita
+nei tempi stabiliti, senza ritardi."
+
+**What changed:**
+
+- `bal/core/messages.py`: `LOW_FEE_LIMIT = DEFAULT_FEE` (20 sat/vB) and
+  `low_fee_warning(fee)`: the text below the limit, "" at 20 or more or
+  for a value that is not a number.
+- `bal/gui/qt/widgets.py`, the miner fee field (Will tab toolbar and the
+  wizard's settings page, the same widget): an orange "⚠" next to it while
+  the fee is below 20, the text in its tooltip; it follows the value typed.
+- `bal/core/build_report.py`, `bal/gui/qt/dialogs.py`,
+  `bal/gui/qt/widgets.py` (`BuildReportView`): the Check window shows an
+  orange line "⚠ Miner fee below 20 sat/vB: ..."; the snapshot has a
+  `low_fee` key only when the warning is shown. The will is signed and
+  sent as before.
+- `bal/cli/controller.py`: `bal_delivery_set --fee` with a fee below 20
+  stores it and adds the warning to the answer.
+- `bal/locale/`: the text in Italian (the owner's) and Spanish, no fuzzy
+  entries.
+
+**Tests:** `tests/test_low_fee_warning.py` (new, 5 tests, three fake
+will-executors with their own fee addresses): the rule and the text; the
+sign in both toolbars (a fee stored before, 20 hides it, 19 shows it and
+is stored); the wizard's page; the Check window warns and the will is
+pushed to the three will-executors, no warning at 20; the command line
+warns at 19, not at 20. Golden files: 68 Check and copies goldens gained
+the `low_fee` line (the test fee of flowkit is 13 sat/vB), nothing else
+changed (owner OK).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests 109 passed (28 s); goldens 94 passed (56 s). Whole suite, normal
+order: 3018 passed (49 min). Test ZIP
+`test-zips/ancora_0.8.0-TEST-192-low-fee.zip` (sha256
+`af738d2b...a88f91cedf0`): `external_zip_test.py` and `smoke_test.py`
+pass on Electrum 4.8.2; the rule and the Italian text checked inside.
+
+**Owner's ZIP test (2026-10-26):** all good.
+
+**Outcome:** DONE.

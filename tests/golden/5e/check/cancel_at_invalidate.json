@@ -131,6 +131,7 @@
      39.99997993504976
     ]
    ],
+   "low_fee": "Miner fee below 20 sat/vB: it is your choice. On the delivery date of your will the Bitcoin network may be very busy, and the nodes may not accept a transaction with a low fee. With 20 sat/vB or more this risk is much smaller and the inheritance is more likely to be executed on time, without delays.",
    "result": [
     "ok",
     "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
@@ -340,6 +341,7 @@
      ]
     ]
    },
+   "low_fee": "Miner fee below 20 sat/vB: it is your choice. On the delivery date of your will the Bitcoin network may be very busy, and the nodes may not accept a transaction with a low fee. With 20 sat/vB or more this risk is much smaller and the inheritance is more likely to be executed on time, without delays.",
    "result": [
     "warn",
     "<b>Interrupted: the old will was not invalidated. Your later date (23 September 2033, 00:00 UTC) was not applied: the will in force needs an invalidation transaction on the blockchain first (your bitcoin stay yours, you only pay the normal network fee). When you are ready, choose it again.</b>"
@@ -503,6 +505,7 @@
     ]
    ],
    "heirs": null,
+   "low_fee": "Miner fee below 20 sat/vB: it is your choice. On the delivery date of your will the Bitcoin network may be very busy, and the nodes may not accept a transaction with a low fee. With 20 sat/vB or more this risk is much smaller and the inheritance is more likely to be executed on time, without delays.",
    "result": [
     "ok",
     "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
