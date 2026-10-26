@@ -64,6 +64,7 @@ from ...core.messages import (
     check_alive_message,
     excluded_after_build_message,
     heir_label,
+    low_fee_warning,
     no_valid_transaction,
     rebuild_reason_message,
     will_change_message,
@@ -4072,6 +4073,8 @@ class BalBuildWillDialog(BalDialog):
             # #190: the excluded will-executors that still hold a copy.
             held = engine_context.excluded_holders(bw, selected)
             report.set_held(held)
+            # #192: a miner fee below 20 sat/vB (a warning, never a block).
+            report.set_low_fee(low_fee_warning((bw.will_settings or {}).get("baltx_fees")))
             summary = will_summary(
                 bw.willitems,
                 len(bw.heirs or {}),

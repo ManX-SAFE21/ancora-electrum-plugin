@@ -54,6 +54,7 @@ from ..core.messages import (
     check_alive_message,
     check_alive_passed_sentence,
     heir_error_message,
+    low_fee_warning,
     protected_executor_message,
     staged_removed_message,
     will_change_message,
@@ -1745,6 +1746,10 @@ class BalController(BalSettingsController):
                 )
         if changes:
             messages.append(_("Stored."))
+            # #192: a fee below 20 sat/vB is stored, with the warning.
+            warning = low_fee_warning(changes.get("baltx_fees"))
+            if warning:
+                messages.append(warning)
             new_date = changes.get("locktime")
             if new_date is not None and in_force is not None and new_date > in_force:
                 messages.append(

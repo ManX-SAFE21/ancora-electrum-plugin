@@ -160,6 +160,8 @@ class BuildReport:
             self._invalidation = None
             # #190: the excluded will-executors that hold a copy (URLs).
             self._held = []
+            # #192: the low-fee warning ("" when the fee is 20 sat/vB or more).
+            self._low_fee = ""
 
     # ---- updates (any thread) ---------------------------------------- #
     def set_step(self, step, state, note=None):
@@ -258,6 +260,12 @@ class BuildReport:
         with self._lock:
             self._held = list(urls or [])
 
+    def set_low_fee(self, text):
+        """The #192 warning of a miner fee below 20 sat/vB
+        (``bal.core.messages.low_fee_warning``), "" for none."""
+        with self._lock:
+            self._low_fee = text or ""
+
     def set_will_now(self, text):
         """The will in force after an error or a Cancel (None: no box)."""
         with self._lock:
@@ -310,4 +318,6 @@ class BuildReport:
                    if self._invalidation else {}),
                 # #190: only when shown, as "changes".
                 **({"held": list(self._held)} if self._held else {}),
+                # #192: only when shown, as "changes".
+                **({"low_fee": self._low_fee} if self._low_fee else {}),
             }
