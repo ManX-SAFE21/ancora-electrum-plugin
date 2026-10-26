@@ -158,6 +158,8 @@ class BuildReport:
             # #135 follow-up: the facts of the invalidation about to be
             # signed (``invalidation_preview.invalidation_facts``) or None.
             self._invalidation = None
+            # #190: the excluded will-executors that hold a copy (URLs).
+            self._held = []
 
     # ---- updates (any thread) ---------------------------------------- #
     def set_step(self, step, state, note=None):
@@ -249,6 +251,13 @@ class BuildReport:
         with self._lock:
             self._invalidation = dict(facts) if facts else None
 
+    def set_held(self, urls):
+        """The will-executors not selected that hold a copy of the will in
+        force (#190, ``bal.core.summary.excluded_holders``): their note
+        under the will-executors."""
+        with self._lock:
+            self._held = list(urls or [])
+
     def set_will_now(self, text):
         """The will in force after an error or a Cancel (None: no box)."""
         with self._lock:
@@ -299,4 +308,6 @@ class BuildReport:
                 # #135 follow-up: only when shown, as "changes".
                 **({"invalidation": dict(self._invalidation)}
                    if self._invalidation else {}),
+                # #190: only when shown, as "changes".
+                **({"held": list(self._held)} if self._held else {}),
             }

@@ -15,7 +15,9 @@ with the mockup of #84a.
 Must never import Qt (``bal/core`` rule).
 """
 
+import html
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from ..i18n import _
 from . import datetext
@@ -353,6 +355,74 @@ def deselected_text(count):
     ).format(count)
 
 
+def excluded_holders(in_force, selected):
+    """The URLs of the will-executors not selected now that hold a copy of
+    the will in force (#190), sorted.
+
+    ``in_force``: the items of the will in force (``Will.in_force_items``,
+    the #128 notion: signed and/or sent, VALID or REPLACED, not invalidated
+    or executed, still executable). A copy is held when it was sent to the
+    will-executor (``PUSHED``, or ``CHECKED``, which implies it): a copy
+    signed and never sent is not with it. ``selected``:
+    :func:`selected_urls`; a will-executor excluded, or removed from the
+    list, is not in it. None (no selection rule): ``[]``.
+
+    WHY (owner, study of 2026-10-24, point 4): a copy sent cannot be
+    recalled; after an Exclude the summary no longer counted that
+    will-executor, so nothing said it still holds an executable will.
+    """
+    if selected is None:
+        return []
+    urls = set()
+    for w in (in_force or {}).values():
+        url = (w.we or {}).get("url")
+        if not url or url in selected:
+            continue
+        if w.get_status("PUSHED") or w.get_status("CHECKED"):
+            urls.add(url)
+    return sorted(urls)
+
+
+def excluded_holders_paragraphs(urls):
+    """The note of :func:`excluded_holders` (#190): three sentences, the
+    first one shown in bold. ``[]`` when ``urls`` is empty.
+
+    Text approved by the owner (2026-10-25): the copy cannot be deleted;
+    a new will dated one day earlier is executed first when the other
+    will-executors publish it; only an invalidation on the blockchain
+    cancels the old copy too.
+    """
+    hosts = [urlparse(u).hostname or u for u in urls or []]
+    if not hosts:
+        return []
+    if len(hosts) == 1:
+        lead = _(
+            "{} is excluded but still holds a copy of your will, and a "
+            "will-executor cannot be asked to delete it."
+        ).format(hosts[0])
+    else:
+        lead = _(
+            "{} excluded will-executors ({}) still hold a copy of your will, "
+            "and a will-executor cannot be asked to delete it."
+        ).format(len(hosts), ", ".join(hosts))
+    return [
+        lead,
+        _("If you change your will, the new one is dated one day earlier: "
+          "when the other will-executors publish it, the network executes it "
+          "first and the old copy is no longer valid."),
+        _("Only an invalidation on the blockchain cancels the old copy too."),
+    ]
+
+
+def excluded_holders_html(urls):
+    """:func:`excluded_holders_paragraphs` as rich text: the first sentence
+    in bold, one line per sentence (#190, owner). ``""`` when empty."""
+    parts = [html.escape(p) for p in excluded_holders_paragraphs(urls)]
+    if not parts:
+        return ""
+    return "<b>{}</b><br>{}".format(parts[0], "<br>".join(parts[1:]))
+
+
 def _heirs_row(heirs_count, prepared=True):
     """The "Heirs" line (their number; the names are in the Heirs tab)."""
     text = str(heirs_count)
@@ -363,7 +433,8 @@ def _heirs_row(heirs_count, prepared=True):
 
 def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
                  still_active=None, warn_months=None, long_dates=False,
-                 selected=None, in_force=None, has_funds=None, watch_only=None):
+                 selected=None, in_force=None, has_funds=None, watch_only=None,
+                 held=None):
     """Describe the will in force for the summary box of the Will tab.
 
     Args:
@@ -411,6 +482,10 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
             says that its keys are elsewhere, and its button
             (``"offline_sign"``) opens the "Sign the will offline" window:
             "Sign and send" cannot sign there. None or False: as before.
+        held: #190: the URLs of :func:`excluded_holders` (will-executors
+            not selected that hold a copy of the will in force); the
+            summary then has ``held`` (those URLs) and ``held_text`` (the
+            note, :func:`excluded_holders_paragraphs`). None: nothing.
 
     Returns:
         A dict: ``state`` (``"ok"``, ``"to_sign"``, ``"to_send"``,
@@ -425,12 +500,12 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         on an unexpected error it returns ``None`` and the GUI hides the box.
     """
     try:
-        return _with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
+        return _with_held(_with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
                              is_basic_mode, _now(now), still_active or [],
                              warn_months, datetext.utc_text if long_dates else _day,
                              long_dates, selected, in_force, has_funds,
                              watch_only),
-                             willitems or {}, selected)
+                             willitems or {}, selected), held)
     except Exception:
         return None
 
@@ -455,6 +530,18 @@ def _with_deselected(summary, willitems, selected):
             count = counts["deselected"]
     summary["deselected"] = count
     summary["deselected_text"] = deselected_text(count) if count else ""
+    return summary
+
+
+def _with_held(summary, held):
+    """Add ``held`` / ``held_text`` to ``summary`` (#190): the excluded
+    will-executors that hold a copy of the will in force. Not while the
+    summary is busy (no data yet)."""
+    if summary is None:
+        return None
+    urls = list(held or []) if summary.get("state") != "busy" else []
+    summary["held"] = urls
+    summary["held_text"] = excluded_holders_paragraphs(urls)
     return summary
 
 

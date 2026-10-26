@@ -43,6 +43,7 @@ from electrum.util import MyEncoder
 from ..core import checkalive, delivery, trace, will_state
 from ..core.heirs import Heirs
 from ..core.messages import will_change_message
+from ..core.summary import excluded_holders as _excluded_holders
 from ..core.util import Util, copy_structure
 from ..core.will import NoHeirsException, NotCompleteWillException, Will, WillItem
 from ..core.willexecutors import Willexecutors
@@ -1021,6 +1022,24 @@ def in_force_items(host):
     except Exception as e:
         _logger.warning(f"will in force not read: {e!r}")
         return {}
+
+
+def excluded_holders(host, selected):
+    """The will-executors not selected now (excluded, or removed from the
+    list) that hold a copy of the will in force, their URLs (#190).
+
+    :func:`in_force_items` read through ``bal.core.summary.
+    excluded_holders`` (a copy sent, still executable). ``selected``: the
+    URLs selected now (``BalWindow.selected_willexecutors``); None: no rule,
+    ``[]``. Read only; ``[]`` when the will cannot be read (logged).
+    """
+    if selected is None:
+        return []
+    try:
+        return _excluded_holders(in_force_items(host), selected)
+    except Exception as e:
+        _logger.warning(f"excluded will-executors not read: {e!r}")
+        return []
 
 
 def prepared_items(host, in_force=None):

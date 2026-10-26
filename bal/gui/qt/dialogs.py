@@ -4068,6 +4068,10 @@ class BalBuildWillDialog(BalDialog):
                 report.set_step("verify", "skip")
             if report.step("prepare")[0] == "ok":
                 report.set_heirs(heir_shares(bw.willitems, bw.heirs))
+            selected = self._selected_willexecutors()
+            # #190: the excluded will-executors that still hold a copy.
+            held = engine_context.excluded_holders(bw, selected)
+            report.set_held(held)
             summary = will_summary(
                 bw.willitems,
                 len(bw.heirs or {}),
@@ -4078,7 +4082,8 @@ class BalBuildWillDialog(BalDialog):
                 # #134: the one date style and the in-force comparison.
                 long_dates=True,
                 # #134: deselected will-executors are not "to send".
-                selected=self._selected_willexecutors(),
+                selected=selected,
+                held=held,
                 # #135: THE will in force, the one rule of the List, the
                 # Future view and the wizard (not only the REPLACED copies).
                 in_force=engine_context.in_force_delivery(bw),

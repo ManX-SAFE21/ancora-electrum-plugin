@@ -12963,3 +12963,77 @@ Golden files unchanged. The date fix itself shows only in a run that
 crosses midnight UTC.
 
 **Outcome:** DONE.
+
+## 190. The excluded will-executor that still holds a copy is said
+
+**Date:** 2026-10-26
+
+**Owner decision (study of 2026-10-24, `context/STUDY-2026-10-24-staged-will-safety.md`,
+point 4; texts and look 2026-10-25):** a will-executor excluded, or removed
+from the list, that still holds a copy of the will in force is said in the
+summary, permanently, with what it means. Before, after an Exclude the
+summary no longer counted it (#178) and nothing said that it still holds an
+executable will: a copy sent cannot be recalled. A grey note, its first
+sentence in bold; the box keeps its colour (owner: orange is "something to
+do", here usually there is nothing to do). Also in the PDF report (owner).
+
+**What changed:**
+
+- `bal/core/summary.py`: new `excluded_holders(in_force, selected)`: the
+  URLs of the will-executors not selected now with a copy SENT (`PUSHED` or
+  `CHECKED`) among the items of the will in force (`Will.in_force_items`,
+  the #128 notion: VALID or REPLACED, not invalidated or executed, still
+  executable). A copy signed and never sent is not with it; a will-executor
+  deselected before it received anything stays the #134 note only. New
+  `excluded_holders_paragraphs` / `excluded_holders_html`: "<host> is
+  excluded but still holds a copy of your will, and a will-executor cannot
+  be asked to delete it." (plural: "2 excluded will-executors (a, b) still
+  hold ...") / "If you change your will, the new one is dated one day
+  earlier: when the other will-executors publish it, the network executes
+  it first and the old copy is no longer valid." / "Only an invalidation on
+  the blockchain cancels the old copy too." `will_summary(held=...)` adds
+  `held` and `held_text` (nothing while busy).
+- `bal/engine/context.py`: `excluded_holders(host, selected)`, read only.
+- `bal/gui/qt/widgets.py`: the Will tab's summary box shows the note under
+  the #134 line; the Check window (`BuildReportView`) under the
+  will-executors box (`BuildReport.set_held`, snapshot key `held` only when
+  shown). `bal/gui/qt/window.py`, `bal/gui/qt/dialogs.py`: they pass the
+  list. `bal/core/report.py`, `bal/gui/qt/report_actions.py`,
+  `bal/gui/qt/report_pages.py`: the PDF prints the note under the state box.
+- `bal/locale/`: the four sentences in Italian (the owner's text) and
+  Spanish, no fuzzy entries.
+- `tests/golden/5e/`: three Check snapshots gain the `held` line (the
+  scenarios where a will-executor was deselected or excluded AFTER it
+  received the will: `executor_deselected`, `exclude_down`,
+  `all_executors_deselected_after_sent`); nothing else changed in them.
+
+**Tests:** `tests/test_excluded_holder_note.py` (new, 10 tests, three fake
+will-executors with their own fee addresses): the rule (sent or verified
+and not selected; signed only, selected, backup: not counted); the texts,
+one and two will-executors, bold first sentence; excluded after it
+received the will (summary green with the note, Check window, Will tab
+box); still said after a change signed and sent to the other two (its
+copies REPLACED, still executable); gone after an invalidation and when
+selected again; removed from the list: said; deselected before the first
+sending: not said; the PDF report prints the three sentences.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (summary, Check window, report, exclusion, selection) 493 passed (3
+minutes). Whole `tests/` directory in the normal order: 3007 passed, 3
+failed (44 minutes): the three golden files above, only the new `held`
+line; updated after the owner's OK, the two golden test files then 94
+passed (52 s). Scenario harness (full matrix, the 2-coin scenarios 6
+times, warn_matrix synced and not): log identical to #188's (135 lines,
+87 s). Test ZIP `test-zips/ancora_0.8.0-TEST-190-excluded-holder.zip`
+(sha256 `9507b251...6e7193`): `external_zip_test.py` and `smoke_test.py`
+pass on Electrum 4.8.2; the rule and the Italian sentence checked inside.
+
+**Owner's ZIP test (2026-10-26, test wallet, a will in three deliveries,
+we.divinaly.support excluded earlier):** a fourth will-executor added,
+Check, signed and sent: the Will tab shows the note (orange box while to
+sign, green once in force, "4 of 4 received and verified it"); the PDF
+report prints it under the state box. Seen, for later steps: the PDF says
+"Delivery form: Fixed date" for a will in three deliveries; in the
+toolbar "before the delivery (2032-03-29)" overlaps another date.
+
+**Outcome:** DONE.
