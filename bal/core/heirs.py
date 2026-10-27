@@ -457,6 +457,51 @@ def shared_addresses(heirs):
     return sorted(pairs)
 
 
+def is_own_address(wallet, address):
+    """True when ``address`` belongs to ``wallet`` itself (#197).
+
+    Owner's test of #194/#195: an heir paid at an address copied from the
+    wallet's own Receive list; on the delivery date that heir's bitcoin
+    would stay in this wallet. Compared with :func:`address_key` (a bech32
+    address typed in capitals, as in a QR code, is still found); an
+    OP_RETURN message is never one. Never raises: a wallet that cannot
+    tell gives False, and the heir is saved as before.
+    """
+    key = address_key(address)
+    if key is None:
+        return False
+    try:
+        return bool(wallet.is_mine(key))
+    except Exception as e:
+        _logger.info(f"own address not checked: {e}")
+        return False
+
+
+def own_address_heirs(wallet, heirs, stored=None):
+    """The names of the heirs of ``heirs`` (``{name: [address, ...]}``)
+    paid at an address of ``wallet`` itself (#197), in their order.
+
+    ``stored``: the heirs already saved; a name saved there with the same
+    address is left out (already confirmed, or saved before #197: the
+    owner chose to warn only when an address is entered or changed).
+    """
+    names = []
+    for name, value in (heirs or {}).items():
+        try:
+            address = value[HEIR_ADDRESS]
+        except (IndexError, KeyError, TypeError):
+            continue
+        try:
+            before = (stored or {}).get(name)
+            if before is not None and address_key(before[HEIR_ADDRESS]) == address_key(address):
+                continue
+        except (IndexError, KeyError, TypeError):
+            pass
+        if is_own_address(wallet, address):
+            names.append(name)
+    return names
+
+
 #: The most a will message carries: 80 bytes of UTF-8 text (#140), the
 #: limit of ``validate_op_return_hex`` and of the standard OP_RETURN output.
 MESSAGE_MAX_BYTES = 80
@@ -619,16 +664,26 @@ class Heirs(dict, Logger):
         # Build-will task when a runtime object slipped into an heir value.
         self.db.put("heirs", _json_safe(dict(self)))
 
-    def import_file(self, path):
+    def import_file(self, path, confirm_own=None):
         """Import the heirs of the JSON file ``path`` (merged by name).
 
         #140 (owner): one message per will; a message of the file when the
         heirs already have one is not imported. Returns the names of those
         skipped messages (the GUI says so).
+
+        #197 (owner): ``confirm_own(names)`` is asked once when heirs of the
+        file are paid at an address of this wallet (not those already
+        saved with that address, :func:`own_address_heirs`); on False
+        nothing is imported and :class:`OwnAddressImportDeclined` is
+        raised. None (the default) asks nothing, as before.
         """
         data = read_json_file(path)
         data = Heirs._validate(data)
         data, skipped = keep_one_message(self, data)
+        if confirm_own is not None:
+            own = own_address_heirs(self.wallet, data, stored=self)
+            if own and not confirm_own(own):
+                raise OwnAddressImportDeclined(", ".join(own))
         self.update(data)
         self.save()
         return skipped
@@ -1288,6 +1343,14 @@ class SecondMessageNotAllowed(ValueError):
     """A second OP_RETURN message in the will (#140, owner: one only).
 
     ``args[0]``: the name of the message already there.
+    """
+
+
+class OwnAddressImportDeclined(Exception):
+    """The owner answered No to importing heirs paid at an address of the
+    wallet itself (#197): nothing was imported.
+
+    ``args[0]``: the names of those heirs, comma separated.
     """
 
 

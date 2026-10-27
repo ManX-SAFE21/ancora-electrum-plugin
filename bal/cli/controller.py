@@ -2437,15 +2437,43 @@ class BalController(BalSettingsController):
         :meth:`_check_heir_locktime`), and so is a name with "§"
         (:meth:`_check_heir_name`, #168). #140: never a second message
         (:meth:`_check_one_message`). #169: with a table of the deliveries
-        the answer has ``instalments_note`` (:meth:`_with_table_note`)."""
+        the answer has ``instalments_note`` (:meth:`_with_table_note`).
+        #197: ``warning`` when the address belongs to this wallet
+        (:meth:`_with_own_address_warning`); the heir is saved anyway."""
         self._check_heir_locktime(locktime)
         self._check_heir_name(name)
         self._check_address_free(address, name)
         self._check_one_message(address, name)
         value = self._build_heir_entry(name, address, amount, locktime)
+        own = heirs_mod.own_address_heirs(self.wallet, {name: value}, stored=self.heirs)
         self.heirs[name] = value
         self.wallet.save_db()
-        return self._with_table_note({"name": name, "value": list(value)})
+        return self._with_table_note(self._with_own_address_warning(
+            {"name": name, "value": list(value)}, own))
+
+    @staticmethod
+    def _with_own_address_warning(out, names):
+        """``out`` with ``warning`` when ``names`` is not empty (#197).
+
+        ``names``: the heirs just saved at an address of this wallet
+        (:func:`bal.core.heirs.own_address_heirs`). The owner's choice for
+        the command line: no question and no new option (a script cannot
+        answer), the heir is saved as before; only this line in the
+        answer, the same check as the heir window.
+        """
+        if not names:
+            return out
+        if len(names) == 1:
+            out["warning"] = _(
+                "The address of {} belongs to this wallet: on the delivery "
+                "date the bitcoin would stay in this wallet."
+            ).format(names[0])
+        else:
+            out["warning"] = _(
+                "The addresses of {} belong to this wallet: on the delivery "
+                "date their bitcoin would stay in this wallet."
+            ).format(", ".join(names))
+        return out
 
     def _check_one_message(self, address, name):
         """Refuse a second OP_RETURN message (#140, owner: one per will);
@@ -2468,7 +2496,8 @@ class BalController(BalSettingsController):
         is refused (see :meth:`_check_heir_locktime`). #140:
         never a second message (:meth:`_check_one_message`). #169: with a
         table of the deliveries the answer has ``instalments_note``
-        (:meth:`_with_table_note`)."""
+        (:meth:`_with_table_note`). #197: ``warning`` when the address is
+        changed to one of this wallet (:meth:`_with_own_address_warning`)."""
         if name not in self.heirs:
             raise UserFacingException(_("Heir not found: {}").format(name))
         self._check_heir_locktime(locktime)
@@ -2479,9 +2508,11 @@ class BalController(BalSettingsController):
         self._check_address_free(address, name)
         self._check_one_message(address, name)
         value = self._build_heir_entry(name, address, amount, locktime)
+        own = heirs_mod.own_address_heirs(self.wallet, {name: value}, stored=self.heirs)
         self.heirs[name] = value
         self.wallet.save_db()
-        return self._with_table_note({"name": name, "value": list(value)})
+        return self._with_table_note(self._with_own_address_warning(
+            {"name": name, "value": list(value)}, own))
 
     def heirs_delete(self, names):
         """Delete heirs by name; ``not_found`` lists the unknown names.
@@ -2526,7 +2557,9 @@ class BalController(BalSettingsController):
         the delivery separator "§" is skipped (#168). #140: a message
         (OP_RETURN) when the heirs already have one is skipped, with the
         reason. #169: with a table of the deliveries the answer has
-        ``instalments_note`` (:meth:`_with_table_note`).
+        ``instalments_note`` (:meth:`_with_table_note`). #197: ``warning``
+        names the imported heirs paid at an address of this wallet
+        (:meth:`_with_own_address_warning`); they are imported anyway.
         """
         data = read_json_file(path)
         if isinstance(data, dict) and isinstance(data.get("heirs"), dict):
@@ -2548,12 +2581,15 @@ class BalController(BalSettingsController):
         valid, extra = heirs_mod.keep_one_message(self.heirs, valid)
         for name in extra:
             skipped[name] = heir_error_message(heirs_mod.SecondMessageNotAllowed(name))
+        # #197: read before the update (an heir already saved with the
+        # same address is not warned again).
+        own = heirs_mod.own_address_heirs(self.wallet, valid, stored=self.heirs)
         self.heirs.update(valid)
         self.heirs.save()
         # #138: no note of an heir that is no longer there.
         heir_notes.clean(self.wallet, list(self.heirs.keys()))
         self.wallet.save_db()
-        return self._with_table_note({
+        return self._with_table_note(self._with_own_address_warning({
             "imported": len(valid),
             "names": list(valid),
             "skipped": skipped,
@@ -2561,7 +2597,7 @@ class BalController(BalSettingsController):
             # #135: heirs on one address after the import (a warning: the
             # file is imported as it is; keep only one of each pair).
             "same_address": [list(p) for p in heirs_mod.shared_addresses(self.heirs)],
-        })
+        }, own))
 
     def heirs_export(self, path):
         self.heirs.export_file(path)
