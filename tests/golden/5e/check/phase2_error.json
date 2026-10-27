@@ -254,7 +254,7 @@
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "Finished"
   ],
   "items": [
@@ -324,7 +324,7 @@
      "signing broke (flowkit)"
     ],
     "warnings": [
-     "All done:\tWill still to sign"
+     "Not finished:\tWill still to sign"
     ]
    },
    "changes": [
@@ -411,7 +411,7 @@
    "Signing your will:\t<b><font color='#ff0000'><b>signing broke (flowkit)</b></font></b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "Finished"
   ],
   "settings": {

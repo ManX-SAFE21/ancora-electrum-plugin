@@ -10,9 +10,13 @@ nothing was signed:
 
 Now the signing row says why the will is not signed yet, in orange, with a
 line below (owner): the way to sign depends on the wallet type, which
-Electrum shows in its window title; and "All done" says "Will still to
+Electrum shows in its window title; and the last row says "Will still to
 sign", or "Will partly signed" when a signature was made here (owner). A
 normal wallet, which signs everything, is unchanged.
+
+#196 (owner): that last row is labelled "Not finished", not "All done"
+("All done: Will still to sign" read as a contradiction); "All done: Ok"
+stays for a signed will.
 
 Test wallets: throw-away testnet keys made at every run (the wallets of
 ``tests/test_engine_merge.py``), three fake will-executors
@@ -77,18 +81,21 @@ def _sign_step(s):
 ])
 def test_not_signed_is_not_ok(world, kind, text, done):  # noqa: F811
     """H1 / H2: watch-only (single and multisig) and a multisig at "1 of 2":
-    the signing row says why, the hint follows, "All done" is not "Ok"
-    (owner: "partly signed" when a signature was made here), nothing is
-    sent; the second Check says the same."""
+    the signing row says why, the hint follows, the last row is "Not
+    finished" (#196), never "All done" (owner: "partly signed" when a
+    signature was made here), nothing is sent; the second Check says the
+    same."""
     s = world(kind)
     for _ in range(2):
         s.check()
         rows = _rows(s)
         assert _last(rows, "Signing your will") == text
         assert HINT in rows
-        assert _last(rows, "All done") == done
+        assert _last(rows, "Not finished") == done
+        assert _last(rows, "All done") is None
         assert _sign_step(s) == "warn"
         assert text in _warnings(s) and HINT in _warnings(s)
+        assert not any(w.startswith("All done") for w in _warnings(s))
         assert not any(w.get_status("COMPLETE") for w in _valid(s).values())
         assert s.world.pushed == []
 

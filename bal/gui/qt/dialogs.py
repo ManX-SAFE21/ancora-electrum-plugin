@@ -3257,18 +3257,20 @@ class BalBuildWillDialog(BalDialog):
         # result like the other rows have.
         # #159 (H1, H2): "Ok" only when the will is signed; a watch-only
         # wallet or a multisig waiting for another signer still has to sign.
+        # #196 (owner): then the label is "Not finished", not "All done":
+        # "All done: Will still to sign" read as a contradiction.
         left = self._signing_left()
         if left is None:
             self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_ok()))
         elif left.partial:
             # Owner: a multisig signed here ("1 of 2") is partly signed, not
             # "still to sign" (the signature made here counts).
-            self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_warning(
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
                 _("Will partly signed: complete it with the missing "
                   "signatures."))))
         else:
             self.msg_edit_row("{}:\t{}".format(
-                _("All done"), self.msg_warning(_("Will still to sign"))))
+                _("Not finished"), self.msg_warning(_("Will still to sign"))))
 
         # Safety net (CHANGELOG #69): warn when an executor still holds a
         # transaction of an OLDER will that could be executed before the
