@@ -163,6 +163,7 @@ from .widgets import (
     MessageEdit,
     PercAmountEdit,
     WillSummaryWidget,
+    message_delivery_text,
     message_help_text,
     message_warning_text,
 )
@@ -1247,6 +1248,36 @@ class BalWindow:
         except Exception:
             return None
 
+    def basic_table_blocks(self, keys=None):
+        """True (and the reason shown) when BASIC must not change the heirs.
+
+        #193 (owner decision (1), 2026-10-23): in BASIC a will in several
+        deliveries keeps its table read-only, and the table's window exists
+        only in ADVANCED. An heir added, removed or imported there would
+        leave the table out of step with the heirs, and the next Check would
+        stop with no way to fix it in BASIC. So "New heir", "Import" and
+        "Delete" do not go on and say to switch to ADVANCED. ``keys``: the
+        heirs to delete; the message (OP_RETURN) has no share in the table,
+        so a selection of messages only is never blocked. An edit (rename)
+        is not blocked: the shares follow the new name.
+        """
+        try:
+            if not self.bal_plugin.is_basic_mode() or not instalments.has_table(self):
+                return False
+        except Exception as e:
+            _logger.debug(f"BASIC table guard not checked: {e!r}")
+            return False
+        if keys is not None:
+            heirs = self.heirs or {}
+            if not any(k in heirs and not is_op_return_address(str(heirs[k][0]))
+                       for k in keys):
+                return False
+        self.show_message(_(
+            "This will is in several deliveries: to add or remove an heir, "
+            "switch to ADVANCED, where you give them their shares in the "
+            "table."))
+        return True
+
     def offer_table_update(self, before=None):
         """After the heirs changed, the table of the deliveries (#170).
 
@@ -1279,7 +1310,17 @@ class BalWindow:
         """The heir window (:meth:`_heir_dialog`); then, when the heirs
         changed and the table of the deliveries no longer fits them, the
         question to open it (#170, :meth:`offer_table_update`), once, after
-        the last "Add another heir"."""
+        the last "Add another heir". #193: a new heir (no ``heir_key``) is
+        not added in BASIC with a table (:meth:`basic_table_blocks`)."""
+        if not isinstance(heir_key, str):
+            # #193 (owner's ZIP test): the "👤 New Heir" button is connected
+            # straight to this method, and Qt's ``clicked`` passes its
+            # ``checked`` flag (False). Taken as a heir name, it opened an
+            # "edit of False": no BASIC block, a phantom delete of "False"
+            # in the log, no automatic name for a new message.
+            heir_key = None
+        if heir_key is None and self.basic_table_blocks():
+            return None
         depth = getattr(self, "_heir_dialog_depth", 0)
         before = self._heirs_snapshot() if depth == 0 else None
         self._heir_dialog_depth = depth + 1
@@ -1791,6 +1832,9 @@ class BalWindow:
         Advanced "New heir" window does. An existing message keeps its name.
         ``key``: the message to open (a double click in the Heirs list);
         default: the first one. Returns True when the message was saved.
+        #193: in a will in several deliveries a grey line says that the
+        message travels in delivery 1. The message is never blocked in
+        BASIC: it has no share in the table of the deliveries.
         """
         if key is None or key not in self.heirs:
             names = message_names(self.heirs)
@@ -1823,6 +1867,13 @@ class BalWindow:
         name_line.setWordWrap(True)
         name_line.setStyleSheet("color:#6A737D;")
         vbox.addWidget(name_line)
+        if instalments.has_table(self):
+            # #193: in a will in several deliveries only delivery 1 carries
+            # the message; said in the window too, not only in the "?".
+            delivery_line = QLabel(message_delivery_text())
+            delivery_line.setWordWrap(True)
+            delivery_line.setStyleSheet("color:#6A737D;")
+            vbox.addWidget(delivery_line)
         hint = QLabel("")
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#6A737D;")
@@ -1883,7 +1934,11 @@ class BalWindow:
     def import_heirs(self):
         """Import heirs from a file (the notes of the heirs still there are
         kept; the notes of heirs no longer there are dropped, #138). #140:
-        a second message of the file is not imported, and said so."""
+        a second message of the file is not imported, and said so. #193:
+        not in BASIC with a table of the deliveries
+        (:meth:`basic_table_blocks`)."""
+        if self.basic_table_blocks():
+            return
         skipped = []
 
         def importer(path):

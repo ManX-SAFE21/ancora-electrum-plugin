@@ -257,7 +257,12 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
 
     def delete_heirs(self, selected_keys):
         """Delete the selected heirs; #170: then, when the table of the
-        deliveries no longer fits them, the question to open it."""
+        deliveries no longer fits them, the question to open it. #193: not
+        in BASIC with a table of the deliveries, unless only messages are
+        selected (``basic_table_blocks``)."""
+        blocks = getattr(self.bal_window, "basic_table_blocks", None)
+        if callable(blocks) and blocks(selected_keys):
+            return
         snapshot = getattr(self.bal_window, "_heirs_snapshot", None)
         before = snapshot() if callable(snapshot) else None
         self.bal_window.delete_heirs(selected_keys)

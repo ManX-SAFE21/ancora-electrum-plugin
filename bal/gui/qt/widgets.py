@@ -2144,7 +2144,8 @@ class PercAmountEdit(BTCAmountEdit):
 
 def message_help_text():
     """The "?" of the will message (#140, owner): what it is, when and
-    where it can be read, the byte count and two examples."""
+    where it can be read, the byte count, the delivery that carries it in a
+    will in several deliveries (#193) and two examples."""
     # Owner's ZIP test: one sentence per line, easier to read.
     return _(
         "A short text written in the will transaction (OP_RETURN), at most "
@@ -2155,11 +2156,18 @@ def message_help_text():
         "mempool.space).\n"
         "A letter with an accent takes 2 bytes, an emoji 4.\n"
         "Only one message per will.\n"
+        "In a will in several deliveries the message travels in delivery 1.\n"
         "Examples:\n"
         "\u201cHappy birthday, my love. No ring: eternal words and bitcoin. "
         "Yours, M.\u201d\n"
         "\u201cTo Marco and Giulia: everything I have is yours. With love, "
         "dad\u201d")
+
+
+def message_delivery_text():
+    """#193: the delivery that carries the message of a will in several
+    deliveries (M4 decision 5: one message only, in delivery 1)."""
+    return _("In a will in several deliveries the message travels in delivery 1.")
 
 
 def message_warning_text():

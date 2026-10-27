@@ -13154,3 +13154,60 @@ pass on Electrum 4.8.2; the rule and the Italian text checked inside.
 **Owner's ZIP test (2026-10-26):** all good.
 
 **Outcome:** DONE.
+
+## 193. BASIC with a will in several deliveries: no heir added, deleted or imported
+
+**Date:** 2026-10-27
+
+**Owner decision (1), 2026-10-23; Import too, 2026-10-26:** in BASIC the
+table of the deliveries is read-only and its window exists only in
+ADVANCED. An heir added, deleted or imported in BASIC would leave the table
+out of step with the heirs, and the next Check would stop with no way to
+fix it there. So in BASIC, with a will in several deliveries, "New heir",
+"Delete" and "Import" do not go on and say: "This will is in several
+deliveries: to add or remove an heir, switch to ADVANCED, where you give
+them their shares in the table." Editing an heir and the message (it has
+no share in the table) still work; ADVANCED and a will with one delivery
+are unchanged.
+
+**What changed:**
+
+- `bal/gui/qt/window.py`: `basic_table_blocks(keys=None)` shows the
+  sentence and returns True only in BASIC with a table (and, with `keys`,
+  when at least one key is an heir and not the message). Used by
+  `new_heir_dialog` (no key: a new heir; also the wizard's "+ Add heir")
+  and `import_heirs`.
+- `bal/gui/qt/window.py`, `new_heir_dialog`: a key that is not a string
+  is taken as "new heir". WHY (owner's ZIP 1 test): the "👤 New Heir"
+  button is connected straight to this method and Qt's `clicked` passes
+  its `checked` flag (False); it was taken as the name of an heir to
+  edit, so the block did not apply and, after OK, a phantom delete of
+  "False" ran.
+- `bal/gui/qt/lists.py`, `HeirListWidget.delete_heirs`: the same block;
+  deleting the message alone goes on.
+- `bal/gui/qt/widgets.py`: the message's "?" gains "In a will in several
+  deliveries the message travels in delivery 1." (`message_delivery_text`);
+  the message window shows the same sentence as a grey line, only with a
+  table.
+- `bal/locale/`: the texts in Italian and Spanish, no fuzzy entries.
+
+**Tests:** `tests/test_basic_table_block.py` (new, 12 tests, three fake
+will-executors with their own fee addresses, the real `BalWindow`): New
+heir blocked; the real button and the real menu entries (New Heir,
+Import) blocked; in ADVANCED the button opens a NEW heir window (fails
+without the fix: `[False, None]`); Edit not blocked; Delete blocked, the
+message alone deleted; Import blocked; ADVANCED and one delivery
+unchanged; the "?" and the grey line of the message window.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+12 passed (5 s); related tests 149 passed (49 s); goldens 94 passed
+(60 s). Test ZIP `test-zips/ancora_0.8.0-TEST-193-basic-table-2.zip`
+(sha256 `3333898a...d4d2882`).
+
+**Owner's ZIP test (2026-10-27):** ZIP 1: the block worked from the menu
+but the "👤 New Heir" button still opened the window (fixed above). ZIP 2:
+all nine checks good. The owner's extra check (back from several
+deliveries to one) found a fault in the invalidation, older than this
+step (#188): it is the next step.
+
+**Outcome:** DONE.
