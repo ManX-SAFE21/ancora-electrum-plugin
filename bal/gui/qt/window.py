@@ -39,10 +39,13 @@ from ...core.checkalive import (
 )
 from ...core.heirs import (
     AmountNotValid,
+    OwnAddressImportDeclined,
     SecondMessageNotAllowed,
+    address_key,
     automatic_message_name,
     check_one_message,
     heir_with_address,
+    is_own_address,
     message_address,
     message_names,
     message_text,
@@ -120,6 +123,7 @@ from .common import (
     WillPostponedException,
     _,
     _logger,
+    ask_yes_no,
     char_width_in_lineedit,
     export_meta_gui,
     getOpenFileName,
@@ -1799,6 +1803,8 @@ class BalWindow:
                 self.show_error(
                     _("This address is already used by the heir {}.").format(other))
                 continue
+            if self._own_address_declined(d, heir_key, raw_address):
+                continue
             try:
                 self.set_heir(heir)
             except Exception as e:
@@ -1906,6 +1912,32 @@ class BalWindow:
             return True
         return False
 
+    def _own_address_declined(self, parent, heir_key, address):
+        """True when ``address`` belongs to this wallet and the owner
+        answers No to "Use it anyway?" (#197).
+
+        Owner's test of #194/#195: an heir address copied from the wallet's
+        own Receive list; on the delivery date that heir's bitcoin would
+        stay in this wallet. A question, never a block (owner: he tests
+        with his own addresses); No is the default, and the window stays
+        open with what was typed. An edit that keeps the stored address
+        asks nothing: already confirmed, or saved before #197 (owner: warn
+        only when an address is entered or changed).
+        """
+        stored = self.heirs.get(heir_key) if heir_key is not None else None
+        try:
+            if stored is not None and address_key(stored[0]) == address_key(address):
+                return False
+        except (IndexError, TypeError):
+            pass
+        if not is_own_address(self.wallet, address):
+            return False
+        return not ask_yes_no(parent, _(
+            "This address belongs to this same wallet: on the delivery date "
+            "this heir's bitcoin would stay in this wallet instead of going "
+            "to the heir. It is usually a mistake (an address copied from "
+            "Receive). Use it anyway?"), _("Heir address"))
+
     def set_heir(self, heir):
         heir = list(heir)
         if is_op_return_address(heir[1]):
@@ -1936,14 +1968,25 @@ class BalWindow:
         kept; the notes of heirs no longer there are dropped, #138). #140:
         a second message of the file is not imported, and said so. #193:
         not in BASIC with a table of the deliveries
-        (:meth:`basic_table_blocks`)."""
+        (:meth:`basic_table_blocks`). #197 (owner): heirs of the file paid
+        at an address of this wallet get ONE question with their names;
+        Yes imports the whole file, No imports nothing (and says so)."""
         if self.basic_table_blocks():
             return
         skipped = []
 
+        def confirm_own(names):
+            """The #197 question; True on Yes."""
+            return ask_yes_no(self.window, _(
+                "These heirs of the file are paid at an address of this same "
+                "wallet: {}. On the delivery date their bitcoin would stay in "
+                "this wallet instead of going to them. It is usually a "
+                "mistake. Import the file anyway?").format(", ".join(names)),
+                _("Heir address"))
+
         def importer(path):
             """``Heirs.import_file``, keeping the skipped messages."""
-            skipped[:] = self.heirs.import_file(path) or []
+            skipped[:] = self.heirs.import_file(path, confirm_own=confirm_own) or []
 
         before = self._heirs_snapshot()
 
@@ -1959,12 +2002,19 @@ class BalWindow:
             if before is not None:
                 self.offer_table_update(before)
 
-        import_meta_gui(
-            self.window,
-            _("heirs"),
-            importer,
-            after_import,
-        )
+        try:
+            import_meta_gui(
+                self.window,
+                _("heirs"),
+                importer,
+                after_import,
+            )
+        except OwnAddressImportDeclined:
+            # #197: Electrum's import_meta_gui catches only FileImportFailed
+            # ("Failed to import from file.", an error box): a No of the
+            # owner is not a failure, it gets a plain message here, and
+            # neither "successfully imported" nor the list refresh.
+            self.show_message(_("Nothing was imported."))
 
     def export_heirs(self):
         export_meta_gui(self.window, "heirs.json", self.heirs.export_file)

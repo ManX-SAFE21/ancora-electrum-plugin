@@ -13403,3 +13403,74 @@ last row) 120 passed (52 s); goldens 243 passed (2 min 4 s). No whole
 suite and no ZIP (owner rule for text-only steps).
 
 **Outcome:** DONE.
+
+## 197. A question when an heir is paid at an address of the wallet itself
+
+**Date:** 2026-10-27
+
+**Owner's idea (test of #195, 2026-10-27):** the false "new funds" of #195
+came from an heir paid at an address copied from the wallet's own Receive
+list. On the delivery date that heir's bitcoin would stay in the wallet.
+Warn when an heir address belongs to the wallet itself: with a question,
+never a block (the owner tests with his own addresses).
+
+**Owner's choices:** the question text as proposed; the import asks once
+for the whole file; the command line asks nothing and saves as before,
+with only a "warning" line in its answer (choice c1); the heirs already
+saved at such an address are not flagged (only an address entered or
+changed is checked).
+
+**What changed:**
+
+- `bal/core/heirs.py`: new `is_own_address(wallet, address)` (compared
+  with `address_key`, so a bech32 address typed in capitals is found; an
+  OP_RETURN message is never one; never raises) and
+  `own_address_heirs(wallet, heirs, stored=None)` (the names in order; a
+  name saved in `stored` with the same address is left out).
+  `Heirs.import_file` takes `confirm_own(names)`: on False nothing is
+  imported and the new `OwnAddressImportDeclined` is raised. None (the
+  default) asks nothing, as before.
+- `bal/gui/qt/window.py`: the "New heir" / "Edit heir" window asks "This
+  address belongs to this same wallet: on the delivery date this heir's
+  bitcoin would stay in this wallet instead of going to the heir. It is
+  usually a mistake (an address copied from Receive). Use it anyway?"
+  (title "Heir address", No by default) after the checks already there;
+  No leaves the window with what was typed; an edit that keeps the stored
+  address asks nothing. The import asks once with the names: Yes imports
+  the whole file, No imports nothing and says "Nothing was imported."
+  (Electrum's `import_meta_gui` catches only `FileImportFailed`, an error
+  box "Failed to import from file.": the No is caught in `import_heirs`).
+- `bal/cli/controller.py`: `heirs_add`, `heirs_update` and
+  `heirs_import` add `warning` to the answer when an heir saved there is
+  at an address of the wallet; nothing else changes. The help of the three
+  commands says so (`bal/cli/commands.py`). The command line stays in
+  English (`babel.cfg`).
+- Catalogs: the four texts of the window in Italian and Spanish
+  ("portafoglio" / "cartera", the word of the rest of the plugin).
+
+**Tests:** `tests/test_own_address_heir.py` (new, 12 tests). The check:
+receive and change addresses, capitals, never an address of someone
+else, a message or an empty text, a wallet that raises. The window (the
+REAL dialog on flowkit wallets with three fake will-executors, each with
+its own fee address): Yes saves, No saves nothing, an address of someone
+else asks nothing, an edit keeping the address asks nothing and a change
+asks again; after Yes the Check prepares the will and the second Check is
+clean (no "new funds", #195). The import: No imports nothing, Yes the
+whole file, the same saved heirs imported again ask nothing. The command
+line: the heir saved and the "warning" (one heir, several heirs), none
+for an update that keeps the address.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+12 passed (6 s); related tests 286 passed (2 min 7 s); goldens 243 passed
+(1 min 42 s). Whole suite, normal order: 3056 passed (49 min 30 s). Test
+ZIP `test-zips/ancora_0.8.0-TEST-197-own-address-warning.zip` (sha256
+`301bf3da...ac021f32`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2; the change checked inside.
+
+**Owner's ZIP test (2026-10-27):** `wallet_test_ottobre2026`, an address
+of the wallet copied from Receive: the question "Indirizzo dell'erede"
+shows with Sì / No; the steps (No, Yes, an edit, the import with No and
+Yes, the same file again) "tutto bene". The log of the session has no
+error of the plugin.
+
+**Outcome:** DONE.

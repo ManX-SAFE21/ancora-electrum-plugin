@@ -419,6 +419,8 @@ async def heirs_show(self, name, wallet=None, plugin=None):
 async def heirs_add(self, name, address, amount, locktime=None, wallet=None, plugin=None):
     """Add (or replace) an heir in the current wallet.
 
+    The answer has ``warning`` when the address belongs to this wallet.
+
     arg:str:name:The heir name.
     arg:str:address:The destination address (or ``OP_RETURN:<hex>`` for an OP_RETURN heir).
     arg:str:amount:The amount in satoshis or a percentage like ``50%%``.
@@ -438,6 +440,8 @@ async def heirs_update(
     plugin=None,
 ):
     """Update an existing heir (only the given fields).
+
+    The answer has ``warning`` when the new address belongs to this wallet.
 
     arg:str:name:The heir name.
     arg:str:address:The new destination address.
@@ -461,7 +465,8 @@ async def heirs_import(self, path, wallet=None, plugin=None):
     """Import heirs from a JSON file (validated, merged).
 
     Returns ``imported`` (heirs taken from the file), ``names``, ``skipped``
-    (each refused entry with the reason) and ``total``.
+    (each refused entry with the reason) and ``total``; ``warning`` when
+    imported heirs are paid at an address of this wallet.
 
     arg:str:path:Path to the JSON file.
     """
