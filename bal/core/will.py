@@ -1353,8 +1353,20 @@ class Will:
         to an executor (REPLACED, or wrongly marked INVALIDATED, see BUG-2)
         could stay executable after "Tools > Invalidate". The item statuses
         are the plugin's bookkeeping; only spending a coin really kills the
-        transactions that use it. Inputs that spend the output of another
-        will transaction are not wallet coins and are naturally skipped.
+        transactions that use it.
+
+        WHY only coins on the network (#194, owner's ZIP test): an input
+        that spends the output of another will transaction is skipped only
+        while that transaction is not in the wallet. When it is kept in the
+        wallet's LOCAL history (a copy never broadcast), Electrum counts its
+        outputs as wallet coins (``get_addr_outputs`` returns them, and
+        ``Util.get_available_utxos`` looks through the local will copies
+        that spend them), and a later delivery of a will in several
+        deliveries spends exactly such an output. The invalidation then
+        spent outputs the network does not know, and the network refused
+        the whole transaction (``bad-txns-inputs-missingorspent``). A coin
+        whose transaction is local or future is therefore skipped: the real
+        coins are enough, since every will transaction descends from them.
 
         Fee: the CURRENT network fee for a confirmation within
         ``INVALIDATION_FEE_ETA_BLOCKS`` blocks (see
@@ -1379,6 +1391,10 @@ class Will:
         for utxo in utxos:
             if utxo.is_coinbase_output() and utxo.block_height < current_height+100:
                 _logger.debug("is not mature coinbase output")
+                continue
+            # An output of a transaction not on the network (see the
+            # docstring: #194).
+            if utxo.block_height in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
                 continue
             utxo_str = utxo.prevout.to_str()
             if utxo_str in prevout_to_spend:
