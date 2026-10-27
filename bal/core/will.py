@@ -2145,10 +2145,18 @@ class Will:
         3. if the transaction IS complete, does not store it: its matching
            local-history entry is removed by the cleanup below.
 
-        Finally it deletes every wallet-local transaction whose label exactly
-        matches the decoded label of a current valid item but that is no longer
-        among the just-saved transactions, so fully-signed, rebuilt or replaced
-        wills do not pile up stale entries.
+        Finally it deletes every wallet-local (or future) transaction whose
+        label matches the history label template (any will-executor) but that
+        is not among the just-saved transactions, so fully-signed, rebuilt,
+        replaced or discarded wills do not pile up stale entries. WHY any
+        will-executor (#195): before, only the labels of the current valid
+        items were looked at, so the copies of a draft for a will-executor
+        no longer in the will stayed in the history for good. A transaction
+        on the network is never removed (before, the label alone decided).
+
+        Note: the copies of one coin for several will-executors spend the
+        same coin, and Electrum keeps only the last one added (it removes a
+        conflicting local transaction): the history shows one copy per coin.
 
         This method must never raise: history persistence is a convenience on
         top of the will check, so any failure is logged and ignored.
@@ -2165,15 +2173,6 @@ class Will:
         saved_txids = []
         not_storable = []
         try:
-            current_labels = {
-                history_label.replace(
-                    "{willexecutor}", (wi.we or {}).get("url", "")
-                )
-                for wi in will.values()
-                if wi.get_status("VALID")
-                and wi.tx is not None
-                and wi.tx.txid() is not None
-            }
             for wi in will.values():
                 if not wi.get_status("VALID"):
                     continue
@@ -2212,14 +2211,12 @@ class Will:
                     "to the local history: they spend a will transaction not "
                     "on the network yet, so the wallet cannot store them"
                 )
-            # Delete stale wallet-local txs whose label matches a current valid
-            # item but that are no longer among the saved ones. This removes
-            # entries for fully-signed (complete) items and for rebuilt/replaced
-            # wills with the same executor.
-            for txid, label in Will._wallet_labels(wallet):
+            # Delete the stale wallet-local will txs: labelled for any
+            # will-executor (#195, see the docstring) and not among the saved
+            # ones. This removes entries for fully-signed (complete) items and
+            # for rebuilt, replaced or discarded wills.
+            for txid in Will.history_copies(wallet, history_label):
                 if txid in saved_txids:
-                    continue
-                if label not in current_labels:
                     continue
                 try:
                     wallet.adb.remove_transaction(txid)
@@ -2250,15 +2247,7 @@ class Will:
         if not wallet or not getattr(wallet, "adb", None):
             return []
         removed = []
-        for txid, label in Will._wallet_labels(wallet):
-            if not label or not Util._label_matches_history(label, history_label):
-                continue
-            try:
-                height = int(wallet.adb.get_tx_height(txid).height())
-            except Exception:
-                continue
-            if height not in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
-                continue
+        for txid in Will.history_copies(wallet, history_label):
             try:
                 wallet.adb.remove_transaction(txid)
                 removed.append(txid)
@@ -2396,6 +2385,54 @@ class Will:
             _logger.debug(f"clear_tx_parents_cache not done: {e!r}")
 
     @staticmethod
+    def history_copies(wallet, history_label):
+        """The txids of the will copies kept in the wallet's LOCAL history.
+
+        A txid is one when its label matches the ``history_label`` template
+        (for any will-executor, ``Util._label_matches_history``) and it is
+        local or future (:meth:`_is_local_tx`): a transaction on the network
+        is never one. Shared by the two clean-ups (the history update and
+        the purge before a rebuild) and by the Check with SAVE_HISTORY off
+        (#195). Never raises: an empty list on failure.
+        """
+        try:
+            return [
+                txid
+                for txid, label in Will._wallet_labels(wallet)
+                if label
+                and Util._label_matches_history(label, history_label)
+                and Will._is_local_tx(wallet, txid)
+            ]
+        except Exception as e:
+            _logger.error(f"history copies not read: {e}")
+            return []
+
+    @staticmethod
+    def _is_local_tx(wallet, txid):
+        """True when ``txid`` is wallet-local or future: not on the network.
+
+        Used before removing a labelled will transaction from the history
+        (#195): a transaction on the network is never removed. A label whose
+        transaction is no longer stored counts as local (Electrum reports an
+        unknown txid so), and its label is cleared with it.
+
+        WHY ``force_local_if_missing_tx=False``: by default Electrum reports
+        a mined or mempool transaction whose raw data has not arrived yet as
+        local. On any lookup failure this returns False: nothing is removed
+        on uncertain data.
+        """
+        try:
+            try:
+                info = wallet.adb.get_tx_height(txid, force_local_if_missing_tx=False)
+            except TypeError:
+                # An Electrum without that argument.
+                info = wallet.adb.get_tx_height(txid)
+            height = int(info.height())
+        except Exception:
+            return False
+        return height in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE)
+
+    @staticmethod
     def _wallet_labels(wallet):
         """Return the wallet's ``(txid, label)`` pairs in a defensive way."""
         try:
@@ -2518,6 +2555,10 @@ class Will:
         Locktimes are always UNIX timestamps, so the validity check only needs
         a single reference timestamp (no block height).
 
+        Every coin of the wallet must be spent by the will, except the
+        outputs of transactions not on the network (#195: a will copy kept
+        in the local history may pay an address of the wallet itself).
+
         Args:
             will: The will dictionary (WillItem entries keyed by txid).
             timestamp_to_check: Reference UNIX timestamp (usually "now").
@@ -2577,9 +2618,22 @@ class Will:
         _logger.info("check all utxo in wallet are spent")
         if all_inputs:
             for utxo in all_utxos:
+                # #195: an output of a transaction not on the network is
+                # not a coin to cover. Owner's wallet: an heir paid at an
+                # address of the wallet itself, the will's copy kept
+                # unsigned in the local history; Electrum counts its output
+                # as a coin, and every Check said "new funds" and rebuilt.
+                # The same rule as the invalidation (#194).
+                if utxo.block_height in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
+                    continue
                 if utxo.value_sats() > 68 * tx_fees:
                     if not Util.in_utxo(utxo, all_inputs.keys()):
-                        _logger.info("utxo is not spent", utxo.to_json())
+                        # #195: name the coin (the old line printed none).
+                        _logger.info(
+                            f"utxo is not spent: {utxo.prevout.to_str()} "
+                            f"({utxo.value_sats()} sat, height "
+                            f"{utxo.block_height})"
+                        )
                         _logger.debug(all_inputs.keys())
                         raise NotCompleteWillException(
                             "Some utxo in the wallet is not included"

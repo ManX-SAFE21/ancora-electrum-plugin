@@ -13273,3 +13273,94 @@ local copy to an address of the same wallet), and the copies of a
 discarded draft stay in the local history.
 
 **Outcome:** DONE.
+
+## 195. The will's copies in the local history: no false "new funds", a cleaner history
+
+**Date:** 2026-10-27
+
+**Owner's ZIP test of #194 (2026-10-27):** after the invalidation the new
+will was prepared and, at the end, the report said "The wallet contains
+funds that the current will does not cover yet: a new will must be
+prepared." Twice in a row (17:32 and 17:33) the Check found "Some utxo in
+the wallet is not included", rebuilt the will and asked to sign it again.
+The log line "utxo is not spent" did not say which coin. The copies of a
+discarded draft also stayed in the LOCAL history.
+
+**Cause:**
+
+- One heir was paid at an address of the wallet itself (the owner took it
+  from Electrum's own addresses). Before it was signed, the will's copy
+  stayed in the LOCAL history (by design, while the will is unsigned).
+  Electrum counts the output of a local transaction as a coin of the
+  wallet (`get_addr_outputs`), so `Will.is_will_valid` saw a coin the will
+  does not spend: a false alarm, that coin is not on the network.
+- The clean-up after a Check removed only the copies labelled for a
+  will-executor of the current will: a copy of a will-executor no longer
+  in the will stayed. The copies of the drafts of 2026-10-26 came from
+  signings cancelled at the password (no "adding signature" in the log).
+- Found while testing: the clean-up chose by the label alone, so a
+  transaction ON THE NETWORK carrying the history label was removed from
+  the wallet (the test removed the funding transaction).
+- With "Save inheritance transactions in history" off, the copies saved
+  while it was on stayed until a rebuild.
+
+**What changed:**
+
+- `bal/core/will.py`, `Will.is_will_valid`: the outputs of transactions
+  not on the network (local or future) are not coins to cover, the same
+  rule as the invalidation (#194). The log line names the coin
+  (outpoint, amount, height).
+- `bal/core/will.py`, new `Will.history_copies`: the txids of the will
+  copies kept in the LOCAL history (label matching the history label for
+  any will-executor, transaction local or future, never one on the
+  network). It reads the height with `force_local_if_missing_tx=False`:
+  by default Electrum reports a mined transaction whose raw data is not
+  stored as local.
+- `Will.save_valid_transactions_to_history`: removes every copy from
+  `history_copies` that is not among the copies just saved, for any
+  will-executor. The docstring notes that Electrum keeps one copy per
+  coin: the copies of the will-executors spend the same coin and the last
+  one added replaces the others ("removing tx from history" in the log).
+- `Will.remove_stale_wallet_history`: uses `history_copies` too (never a
+  network transaction).
+- `bal/engine/context.py`, `save_to_history`: with the setting off, the
+  copies saved while it was on are removed, then the History is redrawn;
+  with no such copy nothing is done.
+- The history label stays as it is (owner's choice).
+
+**Tests:**
+
+- `tests/test_local_copies_history.py` (new, 8 tests, three fake
+  will-executors with their own fee addresses). An heir at an address of
+  the wallet and the will left unsigned: the next Check has no alarm and
+  the same will to sign; signed after it, no rebuild. A real new coin:
+  the alarm stays and the log line names it. A copy of a will-executor no
+  longer in the will is removed. A labelled transaction on the network is
+  never removed. Setting off: the old copies are removed.
+  `history_copies` lists the local copies only. Setting on: the copy of
+  the will to sign stays (unchanged). Without the fix 7 of the 8 fail.
+- `tests/test_engine_context.py`: setting off with old copies: removed,
+  nothing saved, then the redraw.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+8 passed (6 s); related tests 353 passed (3 min 50 s); goldens 231 passed
+(2 min 11 s). Whole suite, normal order: 3043 passed (47 min 57 s). Test
+ZIP `test-zips/ancora_0.8.0-TEST-195-local-copies-history.zip` (sha256
+`ee0e45e6...df0da4a6b`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2; the fix checked inside.
+
+**Owner's ZIP test (2026-10-27):** the same wallet, the heir still at an
+address of the wallet:
+
+- fee changed (20 -> 19), Cancel at the password: the copy stays in the
+  History as "Local";
+- the second Check: "will ok", no "utxo is not spent", no rebuild, the
+  same will to sign;
+- signed: accepted by 4 of 4 will-executors, the local copies removed;
+- setting on, fee changed, Cancel: a copy in the History; setting off,
+  Check, Cancel: the four labelled copies removed, nothing saved.
+
+Seen in the same test and left for later: the final row "All done: Will
+still to sign" reads as a contradiction.
+
+**Outcome:** DONE.
