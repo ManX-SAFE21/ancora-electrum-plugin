@@ -98,10 +98,19 @@ def save_to_history(host):
     Only when the ``SAVE_HISTORY`` setting is enabled, and never raises.
     Then ``host.after_history_saved()`` (the GUI redraws the History tab;
     like ``BalWindow._save_will_to_history``, also after a failed save, but
-    not when the setting is off).
+    not when the setting is off, see below).
+
+    With the setting off, the copies saved while it was on are removed
+    (#195; before they stayed until the next rebuild), then the redraw;
+    with no such copy nothing is done (no redraw, no write of the wallet
+    file at every Check).
     """
     try:
         if not bool(host.bal_plugin.SAVE_HISTORY.get()):
+            label = host.bal_plugin.HISTORY_LABEL.get()
+            if Will.history_copies(host.wallet, label):
+                Will.remove_stale_wallet_history(host.wallet, label)
+                host.after_history_saved()
             return
         Will.save_valid_transactions_to_history(
             host.willitems, host.wallet, host.bal_plugin.HISTORY_LABEL.get()

@@ -142,6 +142,20 @@ def test_history_off_saves_nothing(plugin):
     assert host.calls == []
 
 
+def test_history_off_removes_old_copies_then_redraws(plugin):
+    """SAVE_HISTORY off with copies saved while it was on (#195): they are
+    removed, nothing is saved, then the redraw."""
+    plugin.SAVE_HISTORY.set(False)
+    host = Host(plugin)
+    with mock.patch.object(Will, "history_copies", return_value=["t1"]), \
+            mock.patch.object(Will, "remove_stale_wallet_history") as purge, \
+            mock.patch.object(Will, "save_valid_transactions_to_history") as save:
+        context.save_to_history(host)
+    purge.assert_called_once_with(host.wallet, plugin.HISTORY_LABEL.get())
+    save.assert_not_called()
+    assert host.calls == [("after_history_saved",)]
+
+
 def test_history_on_saves_then_redraws(plugin):
     """SAVE_HISTORY on: saved with the label, then the redraw hook."""
     plugin.SAVE_HISTORY.set(True)
