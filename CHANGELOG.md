@@ -13364,3 +13364,42 @@ Seen in the same test and left for later: the final row "All done: Will
 still to sign" reads as a contradiction.
 
 **Outcome:** DONE.
+
+## 196. "Not finished", not "All done", when the will is still to sign
+
+**Date:** 2026-10-27
+
+**Owner's ZIP test of #195 (2026-10-27):** after a Cancel at the password
+the "Attention" box of the Check said "All done: Will still to sign"
+("Tutto fatto: Testamento ancora da firmare"): a contradiction.
+
+**Owner's choice (option A):** change the label of the last row, not the
+row itself. Option B (hide the row when the orange line "Interrupted: the
+new will was not signed." already says it) was left out: that line shows
+only after a Cancel, while the row also shows for a watch-only wallet and
+for a multisig waiting for another signer (#159), where it may be the only
+"still to sign" message.
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`: the last row of the Check is "Not finished:
+  Will still to sign" and "Not finished: Will partly signed: complete it
+  with the missing signatures."; "All done: Ok" stays for a signed will.
+- Catalogs: `pybabel extract` and `update`; "Not finished" is "Non finito"
+  in Italian and "Sin terminar" in Spanish (pybabel had proposed the fuzzy
+  "Finito" / "Terminado", the opposite: corrected, no fuzzy entry left).
+
+**Tests:** `tests/test_check_signing_honest.py`: watch-only (single and
+multisig) and a multisig at "1 of 2" say "Not finished" with the same
+text as before, never "All done", also in the "Attention" box. The golden
+files `check/cancel_at_sign`, `check/auto_sign_off`, `check/phase2_error`
+and `check/owner_drafts_128` change only in that row (3 lines each:
+"All done:" -> "Not finished:"); before the update they were the only 4
+goldens that failed.
+
+**Verification (text-only step):** `ruff check bal/ tests/`: all checks
+passed. Touched tests (signing, translations, and the flows that read the
+last row) 120 passed (52 s); goldens 243 passed (2 min 4 s). No whole
+suite and no ZIP (owner rule for text-only steps).
+
+**Outcome:** DONE.

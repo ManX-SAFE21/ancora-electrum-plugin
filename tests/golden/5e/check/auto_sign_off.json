@@ -252,7 +252,7 @@
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "<b>Next step (manual): press 'Sign' to sign your will.</b>",
    "Finished"
   ],
@@ -321,7 +321,7 @@
     "problems": [],
     "warnings": [
      "Auto-sign disabled — sign manually",
-     "All done:\tWill still to sign",
+     "Not finished:\tWill still to sign",
      "Next step (manual): press 'Sign' to sign your will."
     ]
    },
@@ -396,7 +396,7 @@
    "Signing your will:\t<b>Auto-sign disabled — sign manually</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "<b>Next step (manual): press 'Sign' to sign your will.</b>",
    "Finished"
   ],
