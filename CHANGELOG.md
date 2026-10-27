@@ -13211,3 +13211,65 @@ deliveries to one) found a fault in the invalidation, older than this
 step (#188): it is the next step.
 
 **Outcome:** DONE.
+
+## 194. The invalidation spends only coins that exist on the network
+
+**Date:** 2026-10-27
+
+**Owner's ZIP test of #193 (2026-10-27):** going back from a will in
+several deliveries to one, the Check asked for the invalidation and the
+network refused it: "bad-txns-inputs-missingorspent". The log showed
+three inputs: the real coin and the outputs of two will transactions
+(delivery 1 and delivery 2 of a discarded draft) kept only in the wallet's
+LOCAL history, never broadcast. The summary said "Amount moved 2.5317
+mBTC": the real coin (1.35258) plus those two outputs. Older than #193:
+it comes from #188.
+
+**Cause:** Electrum counts the outputs of a local transaction as wallet
+coins (`get_addr_outputs`), and `Util.get_available_utxos` looks through
+the local will copies that spend them. A later delivery of a will in
+several deliveries spends exactly such an output, so
+`Will.invalidate_will` took it as a coin to invalidate. Its docstring
+said these inputs "are naturally skipped": only while that transaction is
+not in the wallet.
+
+**What changed:**
+
+- `bal/core/will.py`, `Will.invalidate_will`: a coin whose transaction is
+  local or future (not on the network) is skipped. The real coins are
+  enough: every will transaction descends from them. The docstring says
+  why. Every invalidation goes through this function (Tools > Invalidate,
+  the automatic one, the Check, the command line), and so does its
+  summary (amount moved, wills made useless).
+- `tests/flowkit.py`: the fake network refuses, like a real node, a
+  transaction that spends an output it has never seen
+  (`bad-txns-inputs-missingorspent`). Before it accepted anything, so the
+  tests of #188 could not see the fault.
+
+**Tests:** `tests/test_invalidation_local_coins.py` (new, 5 tests, three
+fake will-executors with their own fee addresses; the owner's wallet: the
+copies of delivery 1 and delivery 2 kept in the local history): the built
+invalidation spends the real coins only; the fake network refuses a
+missing coin; back to one delivery, the invalidation is accepted and the
+one-date will is sent to the three will-executors; Tools > Invalidate;
+one delivery without local copies unchanged. Without the fix 3 fail with
+the owner's error.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+5 passed (9 s); related tests 249 passed (124 s); goldens 130 passed
+(51 s). Whole suite, normal order: 3035 passed (46 min 48 s). Test ZIP
+`test-zips/ancora_0.8.0-TEST-194-invalidation-local-coins.zip` (sha256
+`94e02d8e...a483eec9d`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2; the fix checked inside.
+
+**Owner's ZIP test (2026-10-27):** same wallet, local copies kept: "Amount
+moved 1.35258 mBTC", one input (the real coin), fee 118 sat; the network
+accepted the invalidation; the one-date will was signed and verified by
+4 of 4 will-executors; Electrum removed the three local copies by itself.
+Seen in the same test and left to #195: the final report said "The wallet
+contains funds that the current will does not cover yet: a new will must
+be prepared." (a false alarm: most likely an output of the new will's
+local copy to an address of the same wallet), and the copies of a
+discarded draft stay in the local history.
+
+**Outcome:** DONE.

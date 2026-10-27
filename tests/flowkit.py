@@ -53,6 +53,7 @@ from types import SimpleNamespace
 from electrum import constants
 from electrum import util as electrum_util
 from electrum.bip32 import BIP32Node
+from electrum.interface import TxBroadcastServerReturnedError
 from electrum.segwit_addr import encode_segwit_address
 from electrum.simple_config import SimpleConfig
 from electrum.transaction import Transaction, tx_from_any
@@ -227,7 +228,21 @@ class World:
             "address": WE_ADDR[2], "status": "200", "info": "fake"}
 
     def record_broadcast(self, wallet, tx, kind):
-        """A transaction reaches the network: mempool, seen by the wallet."""
+        """A transaction reaches the network: mempool, seen by the wallet.
+
+        #194: like a real node, a transaction that spends an output of a
+        transaction the network has never seen is refused with
+        ``bad-txns-inputs-missingorspent``. WHY: the owner's invalidation
+        spent the outputs of will transactions stored only in the wallet's
+        local history; this fake network accepted any transaction, so the
+        tests could not see it.
+        """
+        missing = [i.prevout.txid.hex() for i in tx.inputs()
+                   if i.prevout.txid.hex() not in self.broadcast]
+        if missing:
+            raise TxBroadcastServerReturnedError(
+                "bad-txns-inputs-missingorspent (flowkit: {} not on the "
+                "network)".format(", ".join(t[:8] for t in missing)))
         raw = str(tx)
         self.broadcast[tx.txid()] = raw
         self.broadcast_log.append((kind, tx.txid()))
