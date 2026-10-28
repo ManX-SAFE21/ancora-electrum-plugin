@@ -10,12 +10,15 @@ hosts a few GUI helpers that do not deserve a module of their own:
 
     * :class:`shown_cv`       - trivial mutable "is this tab shown?" holder.
     * :func:`add_widget`      - add a labelled widget (plus optional help) to a grid.
+    * :func:`rich_text`       - mark a label that shows the plugin's own HTML.
+    * :func:`help_button`     - Electrum's "?" button, HTML help on 4.8.2 and 4.8.3.
     * :func:`log_error`       - format an exception traceback for a dialog.
     * :func:`export_meta_gui` - export plugin metadata to a JSON file.
       (:class:`CheckAliveError` now lives in ``bal.core.checkalive``.)
 """
 
 import enum
+import inspect
 import os
 import subprocess
 import tempfile
@@ -203,7 +206,43 @@ def add_widget(grid, label, widget, row, help_):
     """
     grid.addWidget(QLabel(label), row, 0)
     grid.addWidget(widget, row, 1)
-    grid.addWidget(HelpButton(help_), row, 2)
+    grid.addWidget(help_button(help_), row, 2)
+
+
+def rich_text(label):
+    """Mark ``label`` as rich text (HTML) and return it.
+
+    For a label that shows HTML the plugin builds itself (``<b>``, ``<br>``,
+    colours, escaped entities such as ``&amp;``), with the untrusted parts
+    (names, addresses, server texts) escaped by the caller.
+
+    WHY: Electrum 4.8.3 (its #10972, security) shows every QLabel left on
+    the default AutoText as plain text, so without this the tags appear as
+    they are. Saying RichText explicitly works the same on 4.8.2. It also
+    renders the escaped entities, which AutoText showed raw when the text
+    had no tag (an "&amp;" in a name).
+    """
+    label.setTextFormat(Qt.TextFormat.RichText)
+    return label
+
+
+# Electrum 4.8.3 added ``rich_text`` to HelpButton (default False: plain
+# help); 4.8.2 has no such argument and always showed the help as AutoText.
+_HELP_BUTTON_RICH = "rich_text" in inspect.signature(HelpButton.__init__).parameters
+
+
+def help_button(text):
+    """Electrum's "?" button with ``text`` as its help (already translated).
+
+    WHY: on 4.8.3 the help is plain text unless ``rich_text=True`` is passed,
+    so the plugin's HTML help showed its tags; 4.8.2 refuses the argument.
+    It is passed only on 4.8.3 and only for a text that looks like HTML
+    (the test 4.8.2 used): a plain help keeps its "\\n" line breaks, which
+    rich text would join.
+    """
+    if _HELP_BUTTON_RICH and Qt.mightBeRichText(text):
+        return HelpButton(text, rich_text=True)
+    return HelpButton(text)
 
 
 

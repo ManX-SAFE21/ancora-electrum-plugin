@@ -29,6 +29,34 @@ def _restore_network():
     constants.net = _START_NET
 
 
+@pytest.fixture(autouse=True)
+def _no_raw_html_labels():
+    """Fail a test that shows a label with raw HTML on Electrum 4.8.3 (#198).
+
+    Applies 4.8.3's rule (labels left on AutoText become plain text) with
+    :class:`rich_text_guard.RichTextGuard`, also on 4.8.2, so a label that
+    needs ``rich_text()`` is found by the tests. Only when a QApplication
+    already exists: the tests without Qt are untouched.
+    """
+    from PyQt6.QtWidgets import QApplication
+    from rich_text_guard import RichTextGuard
+
+    app = QApplication.instance()
+    if app is None:
+        yield
+        return
+    guard = RichTextGuard()
+    app.installEventFilter(guard)
+    try:
+        yield
+        guard.check_later_texts()
+    finally:
+        app.removeEventFilter(guard)
+    if guard.found:
+        pytest.fail("labels showing raw HTML on Electrum 4.8.3 (use rich_text()):\n"
+                    + "\n".join("  " + t for t in guard.found))
+
+
 @pytest.fixture
 def regtest_net():
     """Regtest for the tests on regtest data (the karen7 wallet).

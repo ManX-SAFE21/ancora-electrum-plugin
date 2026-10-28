@@ -26,7 +26,6 @@ from .common import (
     BalPlugin,
     Buttons,
     EnterButton,
-    HelpButton,
     NoWheelComboBox,
     PasswordDialog,
     QComboBox,
@@ -43,10 +42,12 @@ from .common import (
     _,
     _logger,
     add_widget,
+    help_button,
     is_advanced_mode,
     partial,
     read_QIcon_from_bytes,
     read_QPixmap_from_bytes,
+    rich_text,
     show_modal,
     switch_user_type,
     webopen,
@@ -739,7 +740,7 @@ class Plugin(BalPlugin, EventListener):
         # Rows 0 and 1 held the two hide options until #129; the other rows
         # keep their numbers (code and tests refer to them).
         lbl_auto_sign = QLabel(_("Auto-sign on Check"))
-        help_auto_sign = HelpButton(_(
+        help_auto_sign = help_button(_(
             "When checking, automatically sign and broadcast the will "
             "transactions to their will-executors.\n"
             "The wallet password is requested only if the wallet is "
@@ -807,7 +808,7 @@ class Plugin(BalPlugin, EventListener):
         heir_warn_red.setMaximum(max(1, heir_warn_yellow.value() - 1))
         heir_warn_yellow.setMinimum(min(120, heir_warn_red.value() + 1))
         lbl_warn_yellow = QLabel(_("Yellow warning: inheritance date less than (months)"))
-        help_warn_yellow = HelpButton(_(
+        help_warn_yellow = help_button(_(
             "The delivery date turns yellow when fewer than this many months "
             "are left (default 12). It is only a colour: the will does not "
             "change. Only used in ADVANCED mode."
@@ -834,7 +835,7 @@ class Plugin(BalPlugin, EventListener):
         reset_btn_warn_yellow = _make_warn_reset_btn()
         grid.addWidget(_hide_if_basic(reset_btn_warn_yellow), 6, 3)
         lbl_warn_red = QLabel(_("Red warning: inheritance date less than (months)"))
-        help_warn_red = HelpButton(_(
+        help_warn_red = help_button(_(
             "The delivery date turns red when fewer than this many months are "
             "left (default 6): if you are still here, choose a later date. "
             "Only used in ADVANCED mode."
@@ -849,7 +850,7 @@ class Plugin(BalPlugin, EventListener):
         # only in ADVANCED mode.  In BASIC mode the factory defaults are always
         # used and these settings are hidden.
         lbl_num_reminders = QLabel(_("Number of reminders"))
-        help_num_reminders = HelpButton(_(
+        help_num_reminders = help_button(_(
             "How many reminder alarms the exported calendar (.ics) event "
             "contains.  Range: 1 to 5 (default 3).  Only used in ADVANCED mode."
         ))
@@ -860,7 +861,7 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_6), 8, 3)
 
         lbl_event_summary = QLabel(_("Event summary"))
-        help_event_summary = HelpButton(_(
+        help_event_summary = help_button(_(
             "Default message to be used in event summary\n"
             "Variables:\n"
             "  $wallet_name: name of wallet\n"
@@ -874,7 +875,7 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_7), 9, 3)
 
         lbl_event_description = QLabel(_("Event description"))
-        help_event_description = HelpButton(_(
+        help_event_description = help_button(_(
             "Default message to be used in event description\n"
             "Variables:\n"
             "  $wallet_name: name of wallet\n"
@@ -889,7 +890,7 @@ class Plugin(BalPlugin, EventListener):
         # Welist server URL: shown only in ADVANCED mode.  In BASIC mode the
         # factory default is always used and the setting is hidden.
         lbl_welist_server = QLabel(_("Welist Server URL"))
-        help_welist_server = HelpButton(_(
+        help_welist_server = help_button(_(
             "URL of the server that provides the will-executor list.  "
             "Only available in ADVANCED mode."
         ))
@@ -900,7 +901,7 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_9), 11, 3)
 
         lbl_calendar_app = QLabel(_("Calendar app command"))
-        help_calendar_app = HelpButton(_(
+        help_calendar_app = help_button(_(
             "Command used to open .ics calendar files.\n"
             "Leave empty to use the system default (xdg-open/open/start).\n"
             "Only used in ADVANCED mode."
@@ -915,7 +916,7 @@ class Plugin(BalPlugin, EventListener):
         # label field is disabled while the checkbox is off (see
         # on_save_history_change above).
         lbl_save_history = QLabel(_("Save inheritance transactions in history"))
-        help_save_history = HelpButton(_(
+        help_save_history = help_button(_(
             "After each check, save the valid will transactions into the "
             "wallet's local history (the History tab), each with a label.\n"
             "The label may contain the variable:\n"
@@ -929,7 +930,7 @@ class Plugin(BalPlugin, EventListener):
         grid.addWidget(_hide_if_basic(reset_btn_11), 13, 3)
 
         lbl_history_label = QLabel(_("History label"))
-        help_history_label = HelpButton(_(
+        help_history_label = help_button(_(
             "Label applied to the will transactions saved into the wallet's "
             "local history.\n"
             "Variables:\n"
@@ -951,7 +952,7 @@ class Plugin(BalPlugin, EventListener):
 
         grid.addWidget(heir_repush, 15, 0)
         grid.addWidget(
-            HelpButton(
+            help_button(
                 _("Broadcast all transactions to willexecutors including those already pushed")
             ),
             15,
@@ -962,7 +963,7 @@ class Plugin(BalPlugin, EventListener):
         # close Check always runs). Placed below the rebroadcast button so the
         # existing rows keep their numbers.
         lbl_rebuild_on_close = QLabel(_("Rebuild will on wallet close"))
-        help_rebuild_on_close = HelpButton(_(
+        help_rebuild_on_close = help_button(_(
             "Run the 'Build your will' wizard every time the wallet is closed "
             "or Electrum is quit, so the will is rebuilt and re-validated.\n"
             "When disabled, the will is only rebuilt when you press Check or "
@@ -1046,9 +1047,10 @@ class Plugin(BalPlugin, EventListener):
         btn_reset.clicked.connect(on_reset_defaults)
 
         # Group C / C4c: clickable support link to the project website.
-        lbl_support = QLabel(
+        # Rich text, or Electrum 4.8.3 shows the tags and no link (#198).
+        lbl_support = rich_text(QLabel(
             '<a href="https://safe21.io"><b>safe21.io</b></a>'
-        )
+        ))
         lbl_support.setToolTip(_("Open the Safe21 support website"))
         # Open the link in the user's browser via Electrum's helper instead of
         # letting Qt open it directly, so it goes through Electrum's policy.
@@ -1070,7 +1072,7 @@ class Plugin(BalPlugin, EventListener):
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(btn_reset)
         bottom_row.addStretch(1)
-        bottom_row.addWidget(QLabel("<b>{}</b>".format(_("Support:"))))
+        bottom_row.addWidget(rich_text(QLabel("<b>{}</b>".format(_("Support:")))))
         bottom_row.addWidget(lbl_support)
 
         # Outer layout: warning (top) -> settings grid -> bottom button row.

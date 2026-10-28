@@ -13474,3 +13474,63 @@ Yes, the same file again) "tutto bene". The log of the session has no
 error of the plugin.
 
 **Outcome:** DONE.
+
+## 198. Electrum 4.8.3: the plugin's bold, colours and links show again
+
+**Why:** Electrum 4.8.3 (23 Oct 2026, a security update, its #10972)
+shows as plain text every label left on Qt's default AutoText, and the
+help of the "?" buttons unless `rich_text=True` is passed (an argument
+4.8.2 does not have). The plugin's own HTML then showed its tags: the
+whole suite run on 4.8.3 with a probe found 12 places (the "?" of
+"Delivery date", "Delivery time" and "Check alive"; the will details;
+"What changes compared with the will in force"; the step numbers and the
+result line of the offline signing; the Check's log; "Support:" and the
+safe21.io link, which no longer opened). The logic was not touched by
+4.8.3: before this change the whole suite already passed on it (3056
+passed).
+
+**What changed:**
+
+- `bal/gui/qt/common.py`: new `rich_text(label)` (says RichText
+  explicitly: the same on 4.8.2 and 4.8.3; it also renders escaped
+  entities such as `&amp;`, which AutoText showed raw in a text without
+  tags) and `help_button(text)` (Electrum's HelpButton; `rich_text=True`
+  only on 4.8.3 and only for a help that looks like HTML, so a plain help
+  keeps its line breaks). `add_widget` uses it.
+- Every "?" of the plugin is made by `help_button` (`basic_wizard.py`,
+  `lists.py`, `plugin.py`, `widgets.py`, `window.py`; a local variable
+  `help_button` became `help_btn`).
+- Labels marked with `rich_text`: the will details (Locktime, Heirs,
+  Willexecutor; the titles and values are now escaped, as they are data:
+  heir names, URLs), the "What changes" box (title, names, values on the
+  right, notes), the quiet note of the Check, the Check's log, the step
+  numbers and the result line of "Sign the will offline", "Support:" and
+  the safe21.io link of the Settings.
+- Tooltips: 4.8.3 makes them plain text too; none of the plugin's has
+  HTML, nothing to change.
+
+**Tests:** `tests/rich_text_guard.py` (new) does what 4.8.3 does to the
+labels, also on 4.8.2, and records each label that would show raw HTML
+(at its first show, or given HTML later); `tests/conftest.py` installs it
+around every test (`_no_raw_html_labels`, autouse) and fails the test that
+left one. `tests/test_rich_text_483.py` (new, 5 tests): `rich_text`,
+`help_button` on both versions, no plain `HelpButton(` left in the plugin,
+the guard itself, the "What changes" box with an "&" in a name.
+`tests/test_heir_notes_and_address.py`: the spy of the "?" texts follows
+`help_button`.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests 5
+passed on 4.8.2 and on 4.8.3. Whole suite with the guard, normal order:
+Electrum 4.8.3: 3060 passed, 1 failed (the spy above, then fixed and
+passed on both: 17 passed, 6 s each) (54 min 36 s); Electrum 4.8.2: 3061
+passed (45 min 42 s). Electrum 4.8.3 in WSL from the official tag `4.8.3`
+(a separate git worktree; 4.8.2 kept). Test ZIP
+`test-zips/ancora_0.8.0-TEST-198-electrum-483.zip` (sha256
+`0c676cce...01f4c818`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2 and 4.8.3 (11 s).
+
+**Note:** 4.8.3 upgrades the wallet file (seed version 72 to 74, only
+Lightning invoices and channels change): a wallet opened once with 4.8.3
+no longer opens with 4.8.2.
+
+**Outcome:** DONE.

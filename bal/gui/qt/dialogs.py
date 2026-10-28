@@ -153,6 +153,7 @@ from .common import (
     pyqtSignal,
     read_json_file,
     read_QIcon_from_bytes,
+    rich_text,
     show_modal,
     show_on_top,
     stop_thread,
@@ -874,7 +875,8 @@ class BalBuildWillDialog(BalDialog):
         self.updatemessage.connect(self.msg_update)
         self.bal_window = bal_window
         self.bal_plugin = bal_window.bal_plugin
-        self.message_label = QLabel(_("Building Will:"))
+        # The log: lines with times in grey, results in colour (rich text).
+        self.message_label = rich_text(QLabel(_("Building Will:")))
         # Allow the long report text to wrap instead of forcing the dialog ever
         # wider, and let it grow downward inside the scroll area below.
         self.message_label.setWordWrap(True)
