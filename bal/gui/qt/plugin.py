@@ -317,7 +317,7 @@ class Plugin(BalPlugin, EventListener):
             except Exception:
                 pass
         b = StatusBarButton(
-            read_QIcon_from_bytes(self.read_file("icons/ancora-icon-light-64.png")),
+            read_QIcon_from_bytes(self.read_file("icons/ancora-icon-64.png")),
             # Product name: a brand, so it is never translated.
             NAME,
             lambda: self.settings_dialog(sb.window()),
@@ -510,7 +510,7 @@ class Plugin(BalPlugin, EventListener):
 
         d = BalDialog(window, self, self.get_window_title(_("Settings")))
         d.setMinimumSize(100, 200)
-        qicon = read_QPixmap_from_bytes(self.read_file("icons/ancora-icon-light-16.png"))
+        qicon = read_QPixmap_from_bytes(self.read_file("icons/ancora-icon-16.png"))
         lbl_logo = QLabel()
         lbl_logo.setPixmap(qicon)
 

@@ -13534,3 +13534,74 @@ Lightning invoices and channels change): a wallet opened once with 4.8.3
 no longer opens with 4.8.2.
 
 **Outcome:** DONE.
+
+## 199. The new logo: the "à" icon and "àncòra" with the slogan
+
+**Why:** the owner made a new logo (2026-10-28) in place of the anchor of
+#163: a lower-case "à" with two teal accents as the icon, and the word
+"àncòra" with the slogan "àncora per te, ancòra per loro." below it. The
+name does not change. Owner's choices: the icon on a white square with
+rounded corners, so that it stands out on a dark theme too, with the "à"
+at 90% of the square; the big logo only in the PDF report, which is always
+printed on a light background (white paper); the Settings keep the small
+icon. Then (same day): every page of the PDF is signed "àncòra di
+Safe21" in the footer (proposal 4). Electrum's plugin dialog and plugin
+list keep the "à": the owner tried the word "àncòra" on the white
+square there, but Electrum takes one icon from the manifest for both
+places (checked in its code, 4.8.2 and 4.8.3), and in the list the word
+is too small to read.
+
+**What changed:**
+
+- `assets/brand/`: the files of the old kit (anchor, mark, wordmark,
+  vertical and mono lockups) are replaced by `svg/ancora-mark.svg`,
+  `svg/ancora-icon.svg`, `svg/ancora-lockup.svg` and
+  `svg/ancora-lockup-dark.svg` with their PNGs (icon 16-1024 px, lockup
+  1200 and 2400 px). They come from the owner's traced SVGs with the
+  shapes and colours unchanged: the background is removed (the holes of
+  the letters become real holes) and the drawing is cut out with a small
+  margin. The dark lockup is the light one with the word in white: the
+  owner's dark trace had dark slivers along the first "a". `README.md`
+  describes the new files.
+- `bal/icons/`: `ancora-icon-16/64/128.png` (the icon on its white square)
+  replace `ancora-icon-light-*.png`; `ancora-lockup.png` is the new logo.
+  The names are updated in `manifest.json` (Electrum's plugin list and
+  plugin dialog), `bal_resources.py`, `dialogs.py`, `plugin.py` (status
+  bar, Settings) and `window.py`.
+- `bal/core/brand.py`: `INK` and `WATER` are the ink and the teal of the new
+  logo (`#0D0E12`, `#1DAA9B`); the interface colours do not change.
+- `bal/gui/qt/report_pages.py`: page 1 shows the logo with the slogan,
+  40 points high (was 30) so the slogan can be read; the small header of
+  the other pages shows only the word (`LOGO_WORD_PART`, the top part of the
+  same image). The fallback when the image cannot be read is now text:
+  "àncòra" in bold and, on page 1, the slogan, made smaller until it fits
+  (the old fallback drew the anchor). The footer of every page shows, in
+  the middle, the signature "àncòra by Safe21 · safe21.io" (new
+  `signature_text()`; Italian "di Safe21", Spanish "de Safe21"): the
+  name and the site stay out of the text to translate; "PRIVATE" gets
+  the room on its left, so the two never overlap. `bal/locale`: the
+  catalogs refreshed with the new text and its two translations.
+
+**Tests:** `tests/test_brand.py`: the new icon names; new
+`test_the_icon_is_the_a_on_a_white_rounded_square` (16, 64 and 128 px:
+square, transparent corners, white edge, the ink "a" and the teal accents).
+`tests/test_inheritance_report.py`: the logo test checks the word, its
+accents and the slogan in the logo's colours with the image, the text
+fallback, and the word alone on the pages after the first; every page has
+the signature in the footer; new `test_footer_signature_in_every_language`
+(English, Italian, Spanish: the three footer texts, each on one line,
+never overlapping, the signature centred).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. The
+affected tests (test_brand, test_inheritance_report, test_build_report,
+test_pdf_heirs_qr, test_will_message, test_excluded_holder_note,
+test_delivery_form_multiverse, test_version_source, test_translations,
+test_i18n): 118 passed on Electrum 4.8.2 (32 s) and on 4.8.3 (32 s). Pages 1
+and 2 of a report rendered and checked by eye, with the image and with the
+fallback; the footer rendered in English, Italian and Spanish. Test ZIP
+`test-zips/ancora_0.8.0-TEST-199-new-icon.zip` (sha256
+`6707b88f...bcb7944b`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2 and 4.8.3 (13 s); the new icons are in it, the old ones are
+not.
+
+**Outcome:** DONE.
