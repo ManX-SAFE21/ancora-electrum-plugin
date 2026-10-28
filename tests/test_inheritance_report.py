@@ -69,6 +69,7 @@ D = fk.ts(2027, 8, 27, 22)
 URLS = ["https://we0.test", "https://we1.test", "https://we2.test"]
 CREATED = datetime(2026, 10, 13, 15, 42)
 FOOTER = "PRIVATE — keep it in a safe place"
+SIGNATURE = "àncòra by Safe21 · safe21.io"
 
 
 def _sat(sats):
@@ -124,12 +125,13 @@ def _check_pages(pages):
     for page in pages:
         texts = rp.page_texts(page)
         assert FOOTER in texts
+        assert SIGNATURE in texts
         assert "Page {}/{}".format(page.number, total) in texts
         for item in page.items:
             r = item.rect
             assert r.left() >= -0.01 and r.right() <= rp.PAGE_W + 0.01, (item.kind, item.text)
             assert r.top() >= -0.01 and r.bottom() <= rp.PAGE_H + 0.01, (item.kind, item.text)
-            footer = item.text in (FOOTER, "Page {}/{}".format(page.number, total))
+            footer = item.text in (FOOTER, SIGNATURE, "Page {}/{}".format(page.number, total))
             if not footer and item.kind != "line":
                 assert r.bottom() <= rp.PAGE_H - rp.FOOTER_H + 0.01, (item.kind, item.text)
 
@@ -331,9 +333,54 @@ def test_delivery_form_and_check_alive_flag(make, mode, kw, form, flag):
     assert (orange > 20) is flag and (orange == 0) is not flag
 
 
+class _Catalogs:
+    """The repo's catalogs, compiled as the ZIP has them."""
+
+    def read_file(self, path):
+        """The compiled ``.mo`` of ``path``."""
+        from build_zip import compile_catalog
+
+        root = os.path.join(os.path.dirname(__file__), os.pardir, "bal")
+        return compile_catalog(os.path.join(root, path).replace(".mo", ".po"))
+
+
+@pytest.mark.parametrize("lang, private, signature", [
+    (None, FOOTER, SIGNATURE),
+    ("it_IT", "PRIVATO — conservalo in un luogo sicuro", "àncòra di Safe21 · safe21.io"),
+    ("es_ES", "PRIVADO — guárdalo en un lugar seguro", "àncòra de Safe21 · safe21.io"),
+])
+def test_footer_signature_in_every_language(make, lang, private, signature):
+    """#199 (owner, proposal 4): every page's footer reads "PRIVATE", the
+    signature "àncòra by Safe21 · safe21.io" in the middle and "Page x/y",
+    in the language of the report; each text fits its place on one line and
+    the three never overlap."""
+    from bal import i18n
+
+    s = make()
+    s.check()
+    i18n.set_language(_Catalogs(), lang)
+    try:
+        pages = rp.layout_report(_report(s), _sat)
+        for page in pages:
+            foot = sorted((i for i in page.items if i.kind == "text"
+                           and i.rect.top() > rp.PAGE_H - rp.FOOTER_H),
+                          key=lambda i: i.rect.left())
+            assert [i.text for i in foot[:2]] == [private, signature]
+            assert len(foot) == 3
+            for left, right in zip(foot, foot[1:], strict=False):
+                assert left.rect.right() <= right.rect.left() + 0.01, (left.text, right.text)
+            for item in foot:
+                assert rp.text_width(item.text, item.font) <= item.rect.width(), item.text
+            # Centred on the page.
+            middle = foot[1].rect.center().x()
+            assert abs(middle - rp.PAGE_W / 2) < 0.5
+    finally:
+        i18n.set_language(None, None)
+
+
 def test_header_logo_and_no_heartbeat(make):
     """Owner: the logo only, without "Heartbeat"; the logo is painted from
-    the image, or as a vector logo when the image cannot be read."""
+    the image, or as text when the image cannot be read (#199)."""
     s = make()
     s.check()
     pages = rp.layout_report(_report(s), _sat)
@@ -347,25 +394,38 @@ def test_header_logo_and_no_heartbeat(make):
         os.path.dirname(path), os.path.basename(name)), "rb").read())
     assert logo is not None and logo.width() == 1200
     assert rp.load_logo(lambda name: b"") is None              # -> vector logo
-    # #163: the àncòra logo, in its own colours, with the image and with
-    # the vector fallback. At 150 dpi (2.08 px per point, 15 mm margin =
-    # 88.6 px) the logo is 30 points high: the anchor is 140 units high, so
-    # one unit = 30/140 point, and the logo starts 2 points down.
-    def at(image, x, y):
-        """The colour at (x, y) units of the anchor."""
-        k, s = 30.0 / 140.0, 150 / 72.0
-        return image.pixelColor(round(88.6 + x * k * s), round(88.6 + (2 + y * k) * s))
+    # #199: the àncòra logo with the slogan, in its own colours. At 150 dpi
+    # (2.08 px per point, 15 mm margin = 88.6 px) the logo is 40 points high
+    # and starts 2 points down; the slogan is the part below LOGO_WORD_PART.
+    k = 150 / 72.0
+    left, top = 88.6, 88.6 + 2 * k
+    width, height = 40.0 * rp.LOGO_RATIO * k, 40.0 * k
+    word_h = height * rp.LOGO_WORD_PART
 
-    def near(colour, hex_colour):
-        """True when ``colour`` is close to ``hex_colour``."""
+    def count(image, y0, y1, hex_colour):
+        """Pixels of the logo's rows ``y0``..``y1`` close to ``hex_colour``."""
         c = QColor(hex_colour)
-        return all(abs(a - b) < 60 for a, b in (
-            (colour.red(), c.red()), (colour.green(), c.green()), (colour.blue(), c.blue())))
+        n = 0
+        for y in range(round(y0), round(y1)):
+            for x in range(round(left), round(left + width)):
+                p = image.pixelColor(x, y)
+                n += all(abs(a - b) < 40 for a, b in (
+                    (p.red(), c.red()), (p.green(), c.green()), (p.blue(), c.blue())))
+        return n
 
-    for image in (rp.page_image(pages[0], logo), rp.page_image(pages[0], None)):
-        assert near(at(image, 70, 18), brand.WATER)   # the ring, right side
-        assert near(at(image, 40, 56), brand.INK)     # the stock
-        assert near(at(image, 60, 130), brand.INK)    # the bottom of the arm
+    image = rp.page_image(pages[0], logo)
+    assert count(image, top, top + word_h, brand.INK) > 500       # the word
+    assert count(image, top, top + word_h, brand.WATER) > 50      # its two accents
+    assert count(image, top + word_h, top + height, brand.INK) > 50   # the slogan
+    # Without the image: the word and the slogan as text, in ink.
+    image = rp.page_image(pages[0], None)
+    assert count(image, top, top + word_h, brand.INK) > 200
+    assert count(image, top + word_h, top + height, brand.INK) > 20
+    # The pages after the first: the word alone, 12 points high.
+    small = [i for p in pages[1:] for i in p.items if i.kind == "logo"]
+    assert small and all(i.text == "word" and i.rect.height() == 12.0 for i in small)
+    assert all(abs(i.rect.width() / 12.0 - rp.LOGO_RATIO / rp.LOGO_WORD_PART) < 1e-9
+               for i in small)
 
 
 def _many_executors(count):

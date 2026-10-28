@@ -17,8 +17,9 @@ A4 pages:
   transaction id (instalment 1 only with multiverse; the later instalments
   as counts), the locktime and the miner fee, and the wills sent before
   that the will-executors still hold;
-* on every page the footer "PRIVATE — keep it in a safe place" and
-  "Page x/y"; after the first, a small header (logo + subject).
+* on every page the footer "PRIVATE — keep it in a safe place", the
+  signature "àncòra by Safe21 · safe21.io" (#199) and "Page x/y"; after the
+  first, a small header (logo + subject).
 
 WHY a page space in points: :func:`layout_report` places everything in a
 page of :data:`PAGE_W` x :data:`PAGE_H` units = points (A4 less 15 mm
@@ -43,7 +44,7 @@ texts of a page; :func:`paint_page` / :func:`print_pages` /
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -57,7 +58,7 @@ from PyQt6.QtWidgets import QApplication
 
 from ...core import datetext
 from ...core import future as core_future
-from ...core.brand import INK, WATER
+from ...core.brand import INK, NAME, SLOGAN
 from ...core.future import ExecutorMark
 from ...core.report import _host, _percent
 from ...i18n import _
@@ -74,10 +75,16 @@ FOOTER_H = 24.0
 SMALL_HEADER_H = 28.0
 #: The logo file in the plugin (read with the plugin's ``read_file``: the
 #: plugin is loaded from a zip): ``ancora-lockup-1200.png`` of the brand kit,
-#: unchanged (``assets/brand/png``, #163: anchor + "àncòra").
+#: unchanged (``assets/brand/png``, #199: "àncòra" with the slogan below).
 LOGO_FILE = "icons/ancora-lockup.png"
-#: Width / height of the logo (the file's own proportions).
-LOGO_RATIO = 1200.0 / 266.0
+#: Width / height of the logo: the view box of ``assets/brand/svg/ancora-lockup.svg``.
+LOGO_RATIO = 2282.0 / 952.0
+#: The top part of the logo that holds the word alone, as a fraction of its
+#: height: the slogan starts below it (in the SVG the word ends at 1353, the
+#: slogan begins at 1454, the view box starts at 709). The small header of
+#: the pages after the first shows only this part: at 12 points the slogan
+#: could not be read (#199).
+LOGO_WORD_PART = (1403.0 - 709.0) / 952.0
 #: The grid page shows at most this many will-executors, then "(+N more)".
 MAX_GRID_ROWS = 40
 
@@ -103,7 +110,8 @@ class Item:
     ``rect``, aligned with ``align``), ``"rect"`` (``fill`` and a border in
     ``colour``, corner ``radius``; no border when ``colour`` is empty),
     ``"line"`` (from the top-left to the top-right of ``rect``, ``width``
-    thick), ``"logo"`` (the àncòra logo in ``rect``), ``"timeline"``
+    thick), ``"logo"`` (the àncòra logo in ``rect``; with ``text`` ``"word"``
+    only the word, without the slogan, #199), ``"timeline"``
     (the #131 time line of ``scene``, drawn by ``future_view.paint_future``)
     or ``"qr"`` (the QR code of ``text`` filling the square ``rect``, #145).
     """
@@ -338,7 +346,9 @@ def _header_block(report):
     (existing msgid) for the same reason.
     """
     block = _Block()
-    logo_h = 30.0
+    # #199: 40 points (was 30) so that the slogan under the word can be read;
+    # the texts on the right are taller, the header keeps its height.
+    logo_h = 40.0
     block.items.append(Item("logo", QRectF(0, 2, logo_h * LOGO_RATIO, logo_h)))
     right = Qt.AlignmentFlag.AlignRight
     x, w = PAGE_W * 0.45, PAGE_W * 0.55
@@ -842,19 +852,38 @@ def layout_report(report, format_amount):
     return pages
 
 
+def signature_text():
+    """The signature in the footer (#199, owner): "àncòra by Safe21 ·
+    safe21.io". The name is written as in the logo (lower case) and stays out
+    of the text to translate (see :mod:`bal.core.brand`); so does the site,
+    which no translation may change."""
+    return _("{} by Safe21").format(NAME.lower()) + " · safe21.io"
+
+
 def _decorate(page, total):
-    """Add the footer (every page) and the small header (pages after the first)."""
+    """Add the footer (every page): "PRIVATE", the signature in the middle and
+    "Page x/y"; and the small header (pages after the first)."""
     small = report_font(8)
     y = PAGE_H - FOOTER_H + 8
     page.items.append(Item("line", QRectF(0, y, PAGE_W, 0), colour=RULE, width=0.5))
-    page.items.append(Item("text", QRectF(0, y + 4, PAGE_W * 0.7, 12), font=small,
+    # The signature is centred on the page; "PRIVATE" gets the room on its
+    # left, so the two never overlap in any language.
+    sign = signature_text()
+    sign_w = text_width(sign, small) + 2
+    left = (PAGE_W - sign_w) / 2
+    page.items.append(Item("text", QRectF(0, y + 4, left - 4, 12), font=small,
                            colour=GREY, text=_("PRIVATE — keep it in a safe place")))
+    page.items.append(Item("text", QRectF(left, y + 4, sign_w, 12), font=small,
+                           colour=GREY, text=sign,
+                           align=int(Qt.AlignmentFlag.AlignHCenter)))
     page.items.append(Item("text", QRectF(PAGE_W * 0.7, y + 4, PAGE_W * 0.3, 12),
                            font=small, colour=GREY, text=_("Page {}/{}").format(page.number, total),
                            align=int(Qt.AlignmentFlag.AlignRight)))
     if page.number > 1:
         logo_h = 12.0
-        page.items.append(Item("logo", QRectF(0, 0, logo_h * LOGO_RATIO, logo_h)))
+        # #199: the word alone ("word"), the slogan stays on page 1.
+        page.items.append(Item("logo", QRectF(0, 0, logo_h * LOGO_RATIO / LOGO_WORD_PART, logo_h),
+                               text="word"))
         subject = "{} · {}".format(_("Will plan"), page.subject) if page.subject else _("Will plan")
         page.items.append(Item("text", QRectF(PAGE_W * 0.3, 1, PAGE_W * 0.7, 12),
                                font=small, colour=GREY, text=subject,
@@ -892,40 +921,34 @@ def load_logo(read_file):
     return None if image.isNull() else image
 
 
-def paint_vector_logo(painter, rect):
-    """The àncòra logo drawn with lines, from ``assets/brand/svg/ancora-lockup.svg``.
+def paint_vector_logo(painter, rect, word=False):
+    """The àncòra logo as text, when the PNG cannot be read (#163, #199).
 
-    The fallback when the PNG cannot be read (#163): the anchor with the
-    geometry of the SVG (the mark is 120 x 140 units, drawn 130 units high
-    as in the lockup) in the logo's own colours, then the word "àncòra" in
-    Electrum's bold font, in ink (the brand font is not installed here).
+    The word "àncòra" in Electrum's bold font, in the ink of the logo, in the
+    word's part of ``rect`` (:data:`LOGO_WORD_PART`); below it the slogan,
+    unless ``word`` (the small header of the pages after the first). WHY
+    text: the logo of #199 is a traced drawing with no simple geometry to
+    redraw by hand, and the brand font is not installed here; the report
+    must never fail because of the logo.
     """
-    h = rect.height()
-    k = h / 140.0
-    x0, y0 = rect.x(), rect.y()
-
-    def pt(x, y):
-        return QPointF(x0 + x * k, y0 + y * k)
-
+    h = rect.height() if word else rect.height() * LOGO_WORD_PART
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    pen = QPen(QColor(INK), 9 * k)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-    painter.drawLine(pt(60, 28), pt(60, 120))                 # shank
-    painter.drawLine(pt(22, 56), pt(98, 56))                  # stock
-    # The arm: the lower half of a circle of radius 46 around (60, 84).
-    painter.drawArc(QRectF(x0 + 14 * k, y0 + 38 * k, 92 * k, 92 * k), 180 * 16, 180 * 16)
-    pen.setColor(QColor(WATER))
-    painter.setPen(pen)
-    painter.drawEllipse(pt(60, 18), 10 * k, 10 * k)          # ring
-    painter.drawLine(pt(14, 84), pt(26, 72))                  # the two tips
-    painter.drawLine(pt(106, 84), pt(94, 72))
-    font = report_font(max(1, round(0.8 * h)), bold=True)
-    painter.setFont(font)
     painter.setPen(QColor(INK))
-    painter.drawText(QPointF(x0 + 151.4 / 130.0 * h, y0 + 0.94 * h), "àncòra")
+    painter.setFont(report_font(max(1, round(0.8 * h)), bold=True))
+    painter.drawText(QRectF(rect.x(), rect.y(), rect.width(), h),
+                     int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom), "àncòra")
+    if not word:
+        rest = rect.height() - h
+        slogan = SLOGAN[0].lower() + SLOGAN[1:]      # lower case, as in the logo
+        # The largest size (at most 60% of its row) that fits the logo's width.
+        size = max(1, round(0.6 * rest))
+        font = report_font(size)
+        while size > 1 and text_width(slogan, font) > rect.width():
+            size -= 1                     # report_font takes whole sizes
+            font = report_font(size)
+        painter.setFont(font)
+        painter.drawText(QRectF(rect.x(), rect.y() + h, rect.width(), rest),
+                         int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), slogan)
     painter.restore()
 
 
@@ -950,10 +973,14 @@ def paint_page(painter, page, logo=None):
             painter.setPen(QPen(QColor(item.colour), item.width))
             painter.drawLine(item.rect.topLeft(), item.rect.topRight())
         elif item.kind == "logo":
+            word = item.text == "word"
             if logo is not None:
-                painter.drawImage(item.rect, logo)
+                # "word": only the top part of the image, where the word is.
+                part = LOGO_WORD_PART if word else 1.0
+                painter.drawImage(item.rect, logo,
+                                  QRectF(0, 0, logo.width(), logo.height() * part))
             else:
-                paint_vector_logo(painter, item.rect)
+                paint_vector_logo(painter, item.rect, word)
         elif item.kind == "timeline":
             fv.paint_future(painter, item.rect, item.scene, item.base_font)
         elif item.kind == "qr":

@@ -192,7 +192,7 @@ def person_renames(renames):
 
 class BalDialog(QDialog,MessageBoxMixin):
     _stopping = False
-    def __init__(self, parent, bal_plugin, title=None, icon="icons/ancora-icon-light-16.png"):
+    def __init__(self, parent, bal_plugin, title=None, icon="icons/ancora-icon-16.png"):
         from PyQt6.QtCore import QMetaObject, Qt
         def handler(signum, frame):
             QMetaObject.invokeMethod(self, "close", Qt.ConnectionType.QueuedConnection)

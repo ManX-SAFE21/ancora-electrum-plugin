@@ -2664,7 +2664,7 @@ class BalWindow:
                 # payment_identifier=payment_identifier,
             )
             d.setWindowIcon(
-                read_QIcon_from_bytes(self.bal_plugin.read_file("icons/ancora-icon-light-16.png"))
+                read_QIcon_from_bytes(self.bal_plugin.read_file("icons/ancora-icon-16.png"))
             )
         except SerializationError as e:
             _logger.error("unable to deserialize the transaction")
