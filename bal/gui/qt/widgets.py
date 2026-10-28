@@ -64,7 +64,6 @@ from .common import (
     BTCAmountEdit,
     ColorScheme,
     Decimal,
-    HelpButton,
     NoWheelComboBox,
     Optional,
     QAbstractSpinBox,
@@ -100,12 +99,14 @@ from .common import (
     datetime,
     format_status_history,
     getSaveFileName,
+    help_button,
     is_advanced_mode,
     log_error,
     os,
     partial,
     pyqtSignal,
     read_QIcon_from_bytes,
+    rich_text,
     signature_suffix,
     status_color,
     switch_user_type,
@@ -157,7 +158,7 @@ class BalTxFeesWidget(QWidget):
         #label = ClickableLabel("＄")
         #label.doubleClicked.connect(self.doubleclick)
         #layout.addWidget(label)
-        button = HelpButton(_("mining fees expressed in sats/vbyte to be used in the Bitcoin transaction.\nHigher value ensure your transaction will be confirmed"))
+        button = help_button(_("mining fees expressed in sats/vbyte to be used in the Bitcoin transaction.\nHigher value ensure your transaction will be confirmed"))
         button.setText("丰")
         # Hover tooltip for the small "丰" help icon (the long explanation still
         # appears on click via the HelpButton); makes the icon self-explanatory.
@@ -347,16 +348,16 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         default_index = self._index_for(default_locktime)
         # help_text and tooltip_text are class attributes marked with N_():
         # translate them here, when shown.
-        help_button=HelpButton(_(self.help_text))
-        help_button.setText(self.label_text)
+        help_btn = help_button(_(self.help_text))
+        help_btn.setText(self.label_text)
         # Show a short label (e.g. "Delivery time") when the user hovers the
         # icon, so the emoji button is self-explanatory.
         if self.tooltip_text:
-            help_button.setToolTip(_(self.tooltip_text))
-        hbox.addWidget(help_button)
+            help_btn.setToolTip(_(self.tooltip_text))
+        hbox.addWidget(help_btn)
         # Expose the leading icon (prefix) so the parent WillSettingsWidget can
         # align all rows on a common left edge (see its vertical layout).
-        self.prefix_widget = help_button
+        self.prefix_widget = help_btn
         self.combo.currentIndexChanged.connect(self.on_current_index_changed)
         # `activated` fires ONLY on real user interaction with the selector.
         self.combo.activated.connect(self._on_user_picked_editor)
@@ -809,7 +810,7 @@ class ThresholdTimeWidget(QWidget):
     """
 
     valueEdited = pyqtSignal()
-    # rich_text=True is used by the HelpButton, so HTML tags (<b>, <br>) render.
+    # Shown by help_button (common.py) as rich text, so the tags (<b>, <br>) render.
     help_text = N_(
         "<b>CHECK ALIVE</b><br><br>"
         "How many days before the delivery date the plugin asks if you are "
@@ -838,11 +839,11 @@ class ThresholdTimeWidget(QWidget):
         self.setLayout(hbox)
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(4)
-        help_button = HelpButton(_(self.help_text))
-        help_button.setText(self.label_text)
-        help_button.setToolTip(_(self.tooltip_text))
-        hbox.addWidget(help_button)
-        self.prefix_widget = help_button
+        help_btn = help_button(_(self.help_text))
+        help_btn.setText(self.label_text)
+        help_btn.setToolTip(_(self.tooltip_text))
+        hbox.addWidget(help_btn)
+        self.prefix_widget = help_btn
         self.spin = QSpinBox()
         self.spin.setRange(1, CHECK_ALIVE_MAX_DAYS)
         self.spin.setSingleStep(30)
@@ -995,7 +996,7 @@ class ThresholdTimeWidget(QWidget):
 
 
 class LockTimeWidget(BalTimeEditWidget):
-    # rich_text=True is used by the HelpButton, so HTML tags (<b>, <br>) render.
+    # Shown by help_button (common.py) as rich text, so the tags (<b>, <br>) render.
     help_text = N_(
         "<b>DELIVERY TIME</b><br><br>"
         "Set Locktime for transactions.<br>"
@@ -2363,9 +2364,11 @@ class WillWidget(QWidget):
                 creation = str(BalTimestamp(self.will[w].time))
 
                 def qlabel(title, value):
-                    # ``title`` is shown as it is: callers pass a translated
-                    # label, or data (an heir name, a will-executor URL).
-                    return QLabel("<b>{}:</b>\t{}".format(title, value))
+                    # ``title`` is a translated label or data (an heir name,
+                    # a will-executor URL), ``value`` data too: both escaped,
+                    # the label being rich text (#198, Electrum 4.8.3).
+                    return rich_text(QLabel("<b>{}:</b>\t{}".format(
+                        html.escape(str(title)), html.escape(str(value)))))
 
                 detaillayout.addWidget(qlabel(_("Locktime"), locktime))
                 detaillayout.addWidget(qlabel(_("Creation Time"), creation))
@@ -2388,7 +2391,7 @@ class WillWidget(QWidget):
                     )
                 )
                 detaillayout.addWidget(QLabel(""))
-                detaillayout.addWidget(QLabel("<b>{}</b>".format(_("Heirs:"))))
+                detaillayout.addWidget(rich_text(QLabel("<b>{}</b>".format(_("Heirs:")))))
                 for heir_name in self.will[w].heirs:
                     if 'w!ll3x3c"' in heir_name:
                         continue
@@ -2416,7 +2419,7 @@ class WillWidget(QWidget):
                 if self.will[w].we:
                     detaillayout.addWidget(QLabel(""))
                     detaillayout.addWidget(
-                        QLabel("<b>{}</b>".format(_("Willexecutor:")))
+                        rich_text(QLabel("<b>{}</b>".format(_("Willexecutor:"))))
                     )
                     decoded_amount = Util.decode_amount(
                         self.will[w].we["base_fee"], self._bal_parent.decimal_point
@@ -2496,8 +2499,8 @@ def what_changes_box(rows, title=None, footer=None):
     column = QVBoxLayout(box)
     column.setContentsMargins(12, 8, 12, 10)
     column.setSpacing(4)
-    title = QLabel("<b>{}</b>".format(
-        html.escape(title or _("What changes compared with the will in force"))))
+    title = rich_text(QLabel("<b>{}</b>".format(
+        html.escape(title or _("What changes compared with the will in force")))))
     title.setStyleSheet("color:#174A8C;")
     column.addWidget(title)
     grid = QGridLayout()
@@ -2505,7 +2508,7 @@ def what_changes_box(rows, title=None, footer=None):
     grid.setVerticalSpacing(5)
     for r, (label, value, note) in enumerate(rows):
         # An empty label continues the row above (one line per will).
-        key = QLabel("• " + html.escape(label) if label else "")
+        key = rich_text(QLabel("• " + html.escape(label) if label else ""))
         key.setStyleSheet("color:#4A5560;")
         text = value + ("<br><span style='color:#6A737D'>{}</span>".format(
             html.escape(note)) if note else "")
@@ -2930,7 +2933,7 @@ class BuildReportView(QWidget):
             text.setWordWrap(True)
             grid.addWidget(text, r, 0)
             if right is not None:
-                value = QLabel(html.escape(right))
+                value = rich_text(QLabel(html.escape(right)))
                 value.setWordWrap(True)
                 value.setAlignment(
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -2944,7 +2947,7 @@ class BuildReportView(QWidget):
                 grid.addWidget(actions[r], r, 2, Qt.AlignmentFlag.AlignRight)
         column.addLayout(grid)
         if note:
-            line = QLabel(html.escape(note))
+            line = rich_text(QLabel(html.escape(note)))
             line.setWordWrap(True)
             line.setStyleSheet("color:#555555;")
             column.addWidget(line)
@@ -3138,7 +3141,7 @@ class BuildReportView(QWidget):
             self.box.addWidget(self._group(_("Heirs"), rows))
         if note and not note[1]:
             # #135: nothing changed in the shares: one quiet grey line.
-            quiet = QLabel(html.escape(note[0]))
+            quiet = rich_text(QLabel(html.escape(note[0])))
             quiet.setWordWrap(True)
             quiet.setStyleSheet("color:#6A737D;")
             self.box.addWidget(quiet)

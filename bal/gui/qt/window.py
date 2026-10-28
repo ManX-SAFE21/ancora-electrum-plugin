@@ -92,7 +92,6 @@ from .common import (
     HeirChangeException,
     HeirNotFoundException,
     Heirs,
-    HelpButton,
     Mapping,
     Network,
     NoHeirsException,
@@ -127,6 +126,7 @@ from .common import (
     char_width_in_lineedit,
     export_meta_gui,
     getOpenFileName,
+    help_button,
     import_meta_gui,
     is_onion_url,
     is_op_return_address,
@@ -1391,7 +1391,7 @@ class BalWindow:
         amount_help = QLabel("")
         amount_help.setWordWrap(True)
         amount_help.setStyleSheet("color:#6A737D;")
-        amount_help_button = HelpButton(_(
+        amount_help_button = help_button(_(
             "Percentage: a share of the wallet balance (e.g. 30). The heirs' "
             "percentages are weights: together they share, in proportion, what is "
             "left after the fees and the fixed amounts (e.g. two heirs at 30 and no "
@@ -1447,7 +1447,7 @@ class BalWindow:
         op_return_message.setVisible(False)
         op_return_amount_label = QLabel(_("Amount"))
         op_return_message_label = QLabel(_("OP_RETURN Message"))
-        message_help_button = HelpButton(message_help_text())
+        message_help_button = help_button(message_help_text())
         message_info = QWidget()
         message_info_layout = QVBoxLayout(message_info)
         message_info_layout.setContentsMargins(0, 0, 0, 0)
@@ -1556,12 +1556,12 @@ class BalWindow:
 
         grid.addWidget(QLabel(_("Name")), 1, 0)
         grid.addWidget(heir_name, 1, 1)
-        grid.addWidget(HelpButton(_("Unique name or description about heir")), 1, 2)
+        grid.addWidget(help_button(_("Unique name or description about heir")), 1, 2)
 
         # #140 (owner): "Bitcoin address", never mistaken for a home address.
         grid.addWidget(QLabel(_("Bitcoin address")), 2, 0)
         grid.addWidget(heir_address, 2, 1)
-        grid.addWidget(HelpButton(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
+        grid.addWidget(help_button(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
         grid.addWidget(address_help, 3, 1)
 
         # #185: row 4 is the shares of a table (below), the amount follows.
@@ -1620,7 +1620,7 @@ class BalWindow:
         shares_layout.addWidget(shares_dates)
         if edit_deliveries is not None:
             shares_layout.addWidget(edit_deliveries, 0, Qt.AlignmentFlag.AlignLeft)
-        shares_help = HelpButton(_(
+        shares_help = help_button(_(
             "With the inheritance in several deliveries each heir receives a "
             "share of the whole estate at each delivery. The shares are changed "
             "in the window \"Inheritance in several deliveries\" (Tools in the "
@@ -1695,7 +1695,7 @@ class BalWindow:
         notes.setPlainText(heir_notes.get(self.wallet, heir_key) if heir_key else "")
         grid.addWidget(QLabel(_("Notes")), 8, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(notes, 8, 1)
-        grid.addWidget(HelpButton(_(
+        grid.addWidget(help_button(_(
             "Private notes for you, kept only in this wallet; never sent to the "
             "will-executors or written on the blockchain.")), 8, 2,
             Qt.AlignmentFlag.AlignTop)
@@ -1857,7 +1857,7 @@ class BalWindow:
             field.setText(message_text(heir[0]))
         grid.addWidget(QLabel(_("Message")), 0, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(field, 0, 1)
-        grid.addWidget(HelpButton(message_help_text()), 0, 2, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(help_button(message_help_text()), 0, 2, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(field.counter, 1, 1)
         vbox.addLayout(grid)
         warning = QLabel(message_warning_text())

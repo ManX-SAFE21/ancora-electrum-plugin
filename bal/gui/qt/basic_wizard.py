@@ -74,7 +74,6 @@ from ...core.util import Util, copy_structure
 from ...engine import context as engine_context
 from .common import (
     N_,
-    HelpButton,
     QButtonGroup,
     QFrame,
     QGridLayout,
@@ -88,6 +87,7 @@ from .common import (
     Willexecutors,
     _,
     _logger,
+    help_button,
 )
 from .dialogs import BalWizardWidget
 from .explainer import explainer_intro
@@ -772,10 +772,10 @@ class WhenPage(_StepPage):
             g.addWidget(box, 1, c)
             box.valueChanged.connect(self._on_box)
         g.addWidget(_label(_("your computer's time"), MUTED_STYLE), 1, 4)
-        help_button = HelpButton(_(NEW_DELIVERY_HELP))
+        help_btn = help_button(_(NEW_DELIVERY_HELP))
         # The hover text of the old delivery field (same meaning).
-        help_button.setToolTip(_(LockTimeWidget.tooltip_text))
-        g.addWidget(help_button, 1, 5)
+        help_btn.setToolTip(_(LockTimeWidget.tooltip_text))
+        g.addWidget(help_btn, 1, 5)
         g.setColumnStretch(6, 1)
         layout.addWidget(self.boxes)
 

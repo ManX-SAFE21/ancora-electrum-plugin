@@ -41,7 +41,6 @@ from .common import (
     BalTimestamp,
     Buttons,
     CancelButton,
-    HelpButton,
     MessageBoxMixin,
     MyTreeView,
     OkButton,
@@ -78,6 +77,7 @@ from .common import (
     enum,
     export_meta_gui,
     getOpenFileName,
+    help_button,
     import_meta_gui,
     is_op_return_address,
     partial,
@@ -2596,7 +2596,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(sync_btn, row, 2)
         grid.addWidget(loading_label, row, 3)
         grid.addWidget(
-            HelpButton(_("Will executor server URL (e.g. http://192.168.1.100:8080)")),
+            help_button(_("Will executor server URL (e.g. http://192.168.1.100:8080)")),
             row,
             4,
         )
@@ -2605,7 +2605,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(QLabel(_("Info")), row, 0)
         grid.addWidget(info_edit, row, 1)
         grid.addWidget(
-            HelpButton(_("A short description or name for this executor")),
+            help_button(_("A short description or name for this executor")),
             row,
             2,
         )
@@ -2614,7 +2614,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(QLabel(_("Base Fee (sats)")), row, 0)
         grid.addWidget(base_fee_spin, row, 1)
         grid.addWidget(
-            HelpButton(_("Base fee in satoshis")),
+            help_button(_("Base fee in satoshis")),
             row,
             2,
         )
@@ -2623,7 +2623,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(QLabel(_("Address")), row, 0)
         grid.addWidget(address_edit, row, 1)
         grid.addWidget(
-            HelpButton(_("Bitcoin address for fee payments (optional)")),
+            help_button(_("Bitcoin address for fee payments (optional)")),
             row,
             2,
         )

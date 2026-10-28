@@ -85,6 +85,7 @@ from .common import (
     IMPORT_FILE_FILTER,
     getOpenFileName,
     getSaveFileName,
+    rich_text,
     write_json_file,
 )
 from .dialogs import BalDialog, decode_will_payload
@@ -453,7 +454,8 @@ class StepBar(QWidget):
             column = QVBoxLayout(box)
             column.setContentsMargins(4, 6, 4, 6)
             column.setSpacing(1)
-            number = QLabel()
+            # The step number in bold (rich text, see mark()).
+            number = rich_text(QLabel())
             number.setAlignment(Qt.AlignmentFlag.AlignCenter)
             column.addWidget(number)
             label = QLabel(text)
@@ -563,7 +565,8 @@ class _GuidedDialog(BalDialog):
         where_row.addWidget(self.where)
         where_row.addStretch(1)
         column.addLayout(where_row)
-        self.result = QLabel()
+        # The result line: a coloured tick or warning (rich text, see screen()).
+        self.result = rich_text(QLabel())
         self.result.setWordWrap(True)
         self.result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         column.addWidget(self.result)
