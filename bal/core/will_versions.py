@@ -19,6 +19,35 @@ Grouping rules (verified on flowkit histories, ``tests/test_core_will_versions.p
 * ROOTS are the items that do not spend the output of another will item
   (``father`` of ``Will.add_willtree``, recomputed here without writing it).
   The other items (multiverse instalments) belong to their root's version.
+* A NEW WILL ON A COIN THAT CAME BACK (#200, owner's wallet): an executed
+  copy can send part of the coins back to the wallet (an heir that is an
+  address of the wallet itself), and the next will spends that coin, so it
+  spends the output of a will item exactly like a later delivery. Such an
+  item is a root of its own (see :func:`new_will_links`) when 1. the item
+  it spends reached the blockchain (CONFIRMED or MEMPOOL), 2. it was built
+  by a later build (``time``) and 3. it was built after that item's
+  delivery date: the blockchain accepts a transaction only after its
+  locktime, so a coin coming back from an executed copy exists only after
+  that date, while the deliveries of one will are built before the date of
+  delivery 1 (the build makes only deliveries dated after the date to
+  check). 4. A copy with the same content as a delivery the executed copy
+  already had (a will-executor added after delivery 1 was executed) stays
+  with that delivery. 5. A copy that pays only persons of delivery 2 or
+  later (the ``§n`` names) is the rest of a will in several deliveries
+  rebuilt after its delivery 1 was executed (a new coin, another fee),
+  never a new will: it stays with that delivery 1, as before #200, so the
+  List, Future, the PDF report and the Graph number its deliveries alike
+  (the display of a will in several deliveries partly executed is a step
+  of its own). Known limit: condition 3 compares the build time, read on
+  the computer's clock, with the delivery date; with a clock some hours
+  slow, a new will built a few hours after that date keeps the old
+  grouping (display only). This display link differs ON PURPOSE from the
+  ``father`` stored by ``Will.add_willtree``: the stored tree is a real
+  spending dependency (the new will exists only while the executed copy
+  does), ``Will.set_invalidate`` cascades through its ``children`` when the
+  executed copy disappears (another copy mined instead), and ``father`` only
+  decides whether ``Will.check_invalidated`` checks an item's own inputs.
+  Nothing of it changes here.
 * The VERSION KEY of a root is its content: locktime, sorted inputs, heirs
   without the will-executor pseudo-heirs (name, address, amount as set,
   heir date) and the fee rate. The build ``time`` is NOT part of the key:
@@ -70,7 +99,7 @@ from .heirs import (
     HEIR_REAL_AMOUNT,
     is_op_return_address,
 )
-from .util import Util
+from .util import LOCKTIME_THRESHOLD, Util
 from .will import Will
 
 # The reserved name prefix of the will-executor pseudo-heirs (the fee
@@ -242,22 +271,144 @@ def _digest(value):
     return hashlib.sha1(repr(value).encode("utf-8")).hexdigest()[:16]
 
 
-def _fathers(will):
-    """``{id: father id}``: the will item whose output each item spends.
-
-    The same rule as ``Will.add_willtree`` (the first input spending a
-    will item's output), computed here without writing ``father`` on the
-    items (the list only reads; ``father`` is stored in the wallet).
-    """
-    fathers = {}
+def _parents(will):
+    """``{id: [ids]}``: the will items whose outputs each item spends, in
+    the order of its inputs (each id once; items spending none are left
+    out)."""
+    parents = {}
     for wid, item in will.items():
         try:
             inputs = item.tx.inputs()
         except Exception:
             continue
+        found = []
         for inp in inputs:
             parent = _txid_of_input(inp)
-            if parent != wid and parent in will:
+            if parent != wid and parent in will and parent not in found:
+                found.append(parent)
+        if found:
+            parents[wid] = found
+    return parents
+
+
+def built_after_on_chain(child, father):
+    """True when ``child`` was built after ``father`` reached the blockchain.
+
+    Conditions 1-3 of the module docstring (#200), on stored data only (no
+    wallet, no block time: Electrum knows a block's time only for the
+    transactions it verified, and the Graph has no wallet). Unknown data
+    keeps today's link (False): ``child`` without a build time, a father
+    time or a locktime that cannot be read, a block-height locktime. A
+    ``father`` without a build time (very old wallets) and a ``child`` with
+    one are two builds: conditions 1 and 3 still decide.
+    """
+    if not (_flag(father, "CONFIRMED") or _flag(father, "MEMPOOL")):
+        return False
+    try:
+        child_time = float(child.time)
+        locktime = int(father.tx.locktime)
+    except Exception:
+        return False
+    # A block-height locktime cannot be compared with a build time.
+    if locktime < LOCKTIME_THRESHOLD:
+        return False
+    father_time = getattr(father, "time", None)
+    if father_time is not None:
+        try:
+            # One build gives one time to all its items, and an item kept by
+            # the #122 reuse keeps its older time: a later build is newer.
+            if child_time <= float(father_time):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return child_time > locktime
+
+
+def _later_delivery_copy(item):
+    """True when every person ``item`` pays is in delivery 2 or later
+    (heir-row names ``"Luca§2"``, ``delivery.instalment_number``): rule 5
+    of the module docstring.
+
+    The will-executor fee outputs and the OP_RETURN message rows are not
+    persons and do not count, so a message row can never turn the rule
+    off; a copy that pays nobody is not one. An old BAL will in several
+    deliveries (plain names) is not recognised: its copies rebuilt after
+    delivery 1 was executed are a will of their own.
+    """
+    numbers = set()
+    for name, row in (getattr(item, "heirs", None) or {}).items():
+        if str(name).startswith(_EXECUTOR_HEIR):
+            continue
+        try:
+            address = row[HEIR_ADDRESS]
+        except (TypeError, IndexError, KeyError):
+            continue
+        if is_op_return_address(str(address)):
+            continue
+        numbers.add(instalment_number(name))
+    return bool(numbers) and min(numbers) >= 2
+
+
+def new_will_links(will, parents=None):
+    """The links ``(child id, father id)`` that start a new will (#200).
+
+    ``child`` spends an output of ``father`` and conditions 1-3 hold
+    (:func:`built_after_on_chain`), 4. ``child`` does not have the
+    content key (:func:`version_key`) of another child of ``father`` that
+    conditions 1-3 keep, whatever its flags: that is the #129 rule "a
+    will-executor added later does not split the version", for the
+    deliveries left after delivery 1 was executed (a will-executor added,
+    or one will-executor's own fee address changed, #141). Without it the
+    will in force would be split in a version of one copy (the added
+    will-executor's) and an "executed" version holding the others. 5.
+    ``child`` pays someone of delivery 1 (:func:`_later_delivery_copy`):
+    otherwise it is the rest of the same will.
+
+    ``parents``: :func:`_parents` of ``will`` when the caller has it.
+    Display only: used by the versions (:func:`_fathers`) and by the Graph
+    (``bal.core.graph.build_graph``), on the whole will (rule 4 needs the
+    replaced and invalidated children too).
+    """
+    if parents is None:
+        parents = _parents(will)
+    after = {
+        (wid, parent)
+        for wid, found in parents.items()
+        for parent in found
+        if built_after_on_chain(will[wid], will[parent])
+        and not _later_delivery_copy(will[wid])
+    }
+    # Nothing on the blockchain spent by a later build: the usual case, and
+    # the thousand-item will stays as fast as before.
+    if not after:
+        return set()
+    executed = {parent for _wid, parent in after}
+    kept = {}
+    for wid, found in parents.items():
+        for parent in found:
+            if parent in executed and (wid, parent) not in after:
+                kept.setdefault(parent, set()).add(version_key(will[wid]))
+    return {
+        (wid, parent) for wid, parent in after
+        if version_key(will[wid]) not in kept.get(parent, ())
+    }
+
+
+def _fathers(will):
+    """``{id: father id}``: the will item whose output each item spends.
+
+    The same rule as ``Will.add_willtree`` (the first input spending a
+    will item's output), computed here without writing ``father`` on the
+    items (the list only reads; ``father`` is stored in the wallet), except
+    for the links of :func:`new_will_links`: a new will built on a coin
+    that came back from an executed copy is a root of its own (#200).
+    """
+    parents = _parents(will)
+    cut = new_will_links(will, parents)
+    fathers = {}
+    for wid, found in parents.items():
+        for parent in found:
+            if (wid, parent) not in cut:
                 fathers[wid] = parent
                 break
     return fathers
