@@ -15,7 +15,15 @@ will items at every refresh. Here:
   one content (split by build time), items without heirs or without time,
   a wallet not synchronized, a spender that is not an invalidation, errors
   from the wallet, the display order with "Show all history", and the
-  time taken by a will of more than a thousand items.
+  time taken by a will of more than a thousand items;
+* #200, a new will on a coin that came back from an executed copy (the
+  owner's case end to end is in ``tests/test_new_will_after_executed.py``):
+  the edges of ``new_will_links`` (unknown or unreadable data, a
+  block-height date, the same build, a father not on the chain, a copy
+  rebuilt before the father's date, the content of a kept delivery, a copy
+  that pays only later deliveries, a loop in corrupted data), the Graph's
+  own rule, and a thousand items whose deliveries 1 were executed (with
+  and without copies built after the execution).
 
 Run (standalone or with pytest):
     QT_QPA_PLATFORM=offscreen PYTHONPATH=electrum-src \\
@@ -642,6 +650,269 @@ def test_a_thousand_items_in_well_under_a_second():
     # At most one executable() per item, each walking its parents once:
     # far from one lookup per pair of items.
     assert len(calls) <= 3 * len(will)
+
+
+# ----------------------------- #200: a new will on a coin that came back
+
+NEW200 = D + 4 * 365 * 86400
+T_OLD = float(D - 200 * 86400)       # the first will, built before its date
+T_NEW = float(D + 11 * 86400)        # the new will, after the execution
+EXECUTED = ("COMPLETE", "PUSHED", "CHECKED", "CONFIRMED")
+
+
+def _executed_and_new(father_flags=EXECUTED, t_old=T_OLD, t_new=T_NEW, out=1,
+                      locktime=D):
+    """we1's copy executed (``father_flags``), we0's copy of the same will
+    dead, and the three copies of a new will (bob and carol, 2031) spending
+    output ``out`` of the executed copy (1: the change or "me"; 0: an
+    heir's output, which a wallet never gets back: the rule must not care)."""
+    executed = FakeItem(_hex(1001), "https://we1.test", locktime=locktime, t=t_old,
+                        flags=father_flags)
+    dead = FakeItem(_hex(1002), "https://we0.test", locktime=locktime, t=t_old,
+                    flags=("COMPLETE", "PUSHED", "CHECKED", "INVALIDATED"))
+    new = [FakeItem(_hex(1010 + i), "https://we{}.test".format(i), locktime=NEW200,
+                    t=t_new, inputs=[(_hex(1001), out)]) for i in range(3)]
+    for item in new:
+        item.heirs = {"bob": ["tb1qbob", "50%", NEW200],
+                      "carol": ["tb1qcarol", "50%", NEW200]}
+    return _will(executed, dead, *new)
+
+
+def _shape(history):
+    """``[(state, items)]`` of the versions, oldest first."""
+    return [(v.state, len(v.items)) for v in history.versions]
+
+
+SPLIT = [("executed", 2), ("in_force", 3)]     # the new will on its own
+LINKED = [("executed", 5)]                     # today's link kept
+
+
+@pytest.mark.parametrize("flags", [EXECUTED, ("COMPLETE", "PUSHED", "MEMPOOL")])
+@pytest.mark.parametrize("out", [0, 1])
+@pytest.mark.parametrize("wallet", [None, FakeWallet()])
+def test_a_new_will_on_a_coin_back_from_an_executed_copy(flags, out, wallet):
+    """Mined or in the mempool, either output, with or without a wallet:
+    the new will is a version of its own and the version in force."""
+    history = wv.build_history(_executed_and_new(flags, out=out), wallet)
+    assert _shape(history) == SPLIT
+    assert history.current == history.versions[1].vid
+    assert sorted(history.versions[1].roots) == [_hex(1010), _hex(1011), _hex(1012)]
+
+
+def test_a_father_without_a_build_time_is_another_build():
+    """Very old wallets have items without ``time``: the new will (with a
+    time, after the date) is still another build."""
+    assert _shape(wv.build_history(_executed_and_new(t_old=None))) == SPLIT
+
+
+def test_unknown_or_unreadable_data_keeps_the_link():
+    """A new copy without a build time, a time or a date that cannot be
+    read, a date in blocks (it cannot be compared with a build time):
+    today's link."""
+    assert _shape(wv.build_history(_executed_and_new(t_new=None))) == LINKED
+    assert _shape(wv.build_history(_executed_and_new(locktime=800_000))) == LINKED
+    # The list itself cannot read such times (``_make_version``): the rule
+    # alone is asked here.
+    for kw in ({"t_new": "not a time"}, {"t_old": "not a time"}):
+        assert wv.new_will_links(_executed_and_new(**kw)) == set()
+    will = _executed_and_new()
+    will[_hex(1001)].tx.locktime = "not a date"
+    assert not wv.built_after_on_chain(will[_hex(1010)], will[_hex(1001)])
+
+
+def test_the_same_build_or_an_older_one_keeps_the_link():
+    """The anticipation can date delivery 1 in the past: delivery 2 of the
+    same build (same time, after delivery 1's date) stays under it once
+    delivery 1 is mined; a child older than its father too."""
+    same = float(D + 3600)
+    assert _shape(wv.build_history(_executed_and_new(t_old=same, t_new=same))) == LINKED
+    assert _shape(wv.build_history(_executed_and_new(t_old=T_NEW, t_new=T_NEW - 1))) == LINKED
+
+
+def test_a_father_not_on_the_chain_keeps_the_link():
+    """A delivery 1 still to come (signed, sent): its children are its
+    next delivery, whatever their build time."""
+    pending = ("VALID", "COMPLETE", "PUSHED", "CHECKED")
+    assert len(wv.build_history(_executed_and_new(pending)).versions) == 1
+
+
+def test_a_copy_rebuilt_before_the_fathers_date_keeps_the_link():
+    """Delivery 2 rebuilt (a later build) while delivery 1 was still to
+    come, then delivery 1 mined: built before delivery 1's date, so it
+    cannot spend a coin that came back from it."""
+    will = _executed_and_new(t_new=float(D - 86400))
+    assert _shape(wv.build_history(will)) == LINKED
+
+
+@pytest.mark.parametrize("sibling_flags", [
+    ("VALID", "COMPLETE", "PUSHED", "CHECKED"),
+    ("REPLACED", "COMPLETE", "PUSHED"),
+    ("INVALIDATED", "COMPLETE", "PUSHED"),
+])
+def test_the_content_of_a_kept_delivery_stays_with_it(sibling_flags):
+    """Rule 4: a copy built after the execution with the content of a
+    delivery the executed copy already had (any flags) stays with it; a
+    copy with other content starts a will of its own."""
+    will = _executed_and_new()
+    for i in range(3):                       # the new will's copies...
+        del will[_hex(1010 + i)]
+    kept = FakeItem(_hex(1020), "https://we0.test", locktime=NEW200, t=T_OLD,
+                    inputs=[(_hex(1001), 1)], flags=sibling_flags)
+    added = FakeItem(_hex(1021), "https://we2.test", locktime=NEW200, t=T_NEW,
+                     inputs=[(_hex(1001), 1)])
+    other = FakeItem(_hex(1022), "https://we1.test", locktime=NEW200, t=T_NEW,
+                     inputs=[(_hex(1001), 1)])
+    other.heirs = {"carol": ["tb1qcarol", "100%", NEW200]}
+    will.update(_will(kept, added, other))
+    assert wv.built_after_on_chain(added, will[_hex(1001)])
+    assert wv.new_will_links(will) == {(_hex(1022), _hex(1001))}
+    history = wv.build_history(will)
+    assert [sorted(v.items) for v in history.versions] == [
+        sorted([_hex(1001), _hex(1002), _hex(1020), _hex(1021)]), [_hex(1022)]]
+
+
+def test_a_loop_in_corrupted_data_does_not_hang():
+    """Two executed items of one build spending each other (the rule is
+    asked on both links and cuts neither): the list and the Graph still
+    come back, and nothing disappears from the list."""
+    from bal.core import graph as core_graph
+    a = FakeItem(_hex(1101), t=T_NEW, inputs=[(_hex(1102), 0)], flags=EXECUTED)
+    b = FakeItem(_hex(1102), "https://we1.test", t=T_NEW, inputs=[(_hex(1101), 0)],
+                 flags=EXECUTED)
+    will = _will(a, b)
+    history = wv.build_history(will)
+    assert {w for v in history.versions for w in v.items} == set(will)
+    _roots, nodes = core_graph.build_graph(will)
+    assert sorted(nodes) == sorted(will)
+
+
+def test_the_graph_draws_the_new_will_and_hides_the_executed_one():
+    """The Graph's own rule: the executed copy with nothing in force under
+    it is left out when a VALID copy is drawn; "show replaced" draws it
+    again; alone (no new will) it stays."""
+    from bal.core import graph as core_graph
+    will = _executed_and_new()
+    roots, nodes = core_graph.build_graph(will)
+    assert sorted(nodes) == [_hex(1010), _hex(1011), _hex(1012)]
+    assert all(n.parent is None and n.depth == 0 for n in roots)
+    _roots, nodes = core_graph.build_graph(will, show_replaced=True)
+    assert _hex(1001) in nodes and nodes[_hex(1001)].children == []
+    alone = {w: i for w, i in will.items() if w in (_hex(1001), _hex(1002))}
+    _roots, nodes = core_graph.build_graph(alone)
+    assert list(nodes) == [_hex(1001)] and nodes[_hex(1001)].delivered
+
+
+def test_a_rebuilt_later_delivery_stays_with_its_executed_delivery_1():
+    """Rule 5: copies built after the execution that pay only persons of
+    delivery 2 or later (the rest of the table rebuilt after delivery 1
+    was executed: a new coin, another fee) stay with the executed delivery
+    1, in the List and in the Graph alike (before the rule the List made
+    them a version "(+1 delivery) · bob 0% + 40%"). An OP_RETURN message
+    row or a will-executor fee output does not change that; a person of
+    delivery 1 does, in both views."""
+    from bal.core import graph as core_graph
+    from bal.core.heirs import message_address
+    will = _executed_and_new()
+    for i in range(3):
+        url = "https://we{}.test".format(i)
+        will[_hex(1010 + i)].heirs = {
+            "bob§2": ["tb1qbob", "40%", NEW200],
+            "note": [message_address("ciao"), "0", NEW200],
+            # Each will-executor's own fee output (``Heirs`` names it so).
+            'w!ll3x3c"{}"{}'.format(url, NEW200): ["addr-" + url, 1000, NEW200]}
+    assert wv.new_will_links(will) == set()
+    assert _shape(wv.build_history(will)) == LINKED
+    _roots, nodes = core_graph.build_graph(will)
+    assert sorted(c.wid for c in nodes[_hex(1001)].children) == [
+        _hex(1010), _hex(1011), _hex(1012)]
+    assert {nodes[_hex(1010 + i)].depth for i in range(3)} == {1}
+    will[_hex(1010)].heirs["alice"] = ["tb1qalice", "60%", NEW200]
+    assert wv.new_will_links(will) == {(_hex(1010), _hex(1001))}
+    _roots, nodes = core_graph.build_graph(will)
+    assert nodes[_hex(1010)].parent is None
+    assert [len(v.items) for v in wv.build_history(will).versions] == [4, 1]
+
+
+def test_a_thousand_items_with_executed_deliveries_in_well_under_a_second():
+    """The thousand items above, every delivery-1 copy executed, so the
+    rule is asked on every link (children of the same build): one version,
+    the list and the Graph each well under a second. Measured and printed."""
+    from bal.core import graph as core_graph
+    will = {}
+    n = [5000]
+
+    def add(father, depth, url, flags):
+        n[0] += 1
+        txid = _hex(n[0])
+        inputs = [(father, 1)] if father else [(_hex(1), 0)]
+        will[txid] = FakeItem(txid, url, inputs=inputs, locktime=D + depth, t=1.0,
+                              flags=flags)
+        return txid
+
+    urls = ["https://we{}.test".format(i) for i in range(10)]
+    for u in urls:
+        r = add(None, 0, u, EXECUTED)
+        for u2 in urls:
+            c = add(r, 1, u2, ("VALID", "COMPLETE", "PUSHED"))
+            for u3 in urls:
+                add(c, 2, u3, ("VALID", "COMPLETE", "PUSHED"))
+    assert len(will) == 1110
+    start = time.perf_counter()
+    history = wv.build_history(will, FakeWallet())
+    list_time = time.perf_counter() - start
+    start = time.perf_counter()
+    _roots, nodes = core_graph.build_graph(will)
+    graph_time = time.perf_counter() - start
+    print("\n1110 items, deliveries 1 executed: list {:.3f} s, graph {:.3f} s".format(
+        list_time, graph_time))
+    assert len(history.versions) == 1 and len(history.versions[0].items) == 1110
+    assert len(nodes) == 1110
+    assert list_time < 1.0 and graph_time < 1.0
+
+
+def test_a_thousand_items_with_copies_built_after_the_execution():
+    """The same thousand items, the children built after delivery 1 was
+    executed, so every link to an executed copy goes through the whole
+    rule (conditions 1-5): under each executed copy five children paying
+    delivery-1 persons start a new will (ten new versions, one per coin),
+    five paying only ``§2`` persons stay. The list and the Graph each well
+    under a second. Measured and printed."""
+    from bal.core import graph as core_graph
+    will = {}
+    n = [7000]
+
+    def add(father, depth, url, flags, t, later=False):
+        n[0] += 1
+        txid = _hex(n[0])
+        inputs = [(father, 1)] if father else [(_hex(1), 0)]
+        item = FakeItem(txid, url, inputs=inputs, locktime=D + depth, t=t, flags=flags)
+        if later:
+            item.heirs = {"bob§2": ["tb1qbob", "40%", D + depth]}
+        will[txid] = item
+        return txid
+
+    urls = ["https://we{}.test".format(i) for i in range(10)]
+    pending = ("VALID", "COMPLETE", "PUSHED")
+    for u in urls:
+        r = add(None, 0, u, EXECUTED, T_OLD)
+        for i, u2 in enumerate(urls):
+            c = add(r, 1, u2, pending, T_NEW, later=bool(i % 2))
+            for u3 in urls:
+                add(c, 2, u3, pending, T_NEW)
+    assert len(will) == 1110
+    start = time.perf_counter()
+    history = wv.build_history(will, FakeWallet())
+    list_time = time.perf_counter() - start
+    start = time.perf_counter()
+    roots, nodes = core_graph.build_graph(will)
+    graph_time = time.perf_counter() - start
+    print("\n1110 items, children built after the execution: "
+          "list {:.3f} s, graph {:.3f} s".format(list_time, graph_time))
+    assert len(wv.new_will_links(will)) == 50
+    assert len(history.versions) == 11
+    assert sum(len(v.items) for v in history.versions) == 1110
+    assert len(nodes) == 1110 and len(roots) == 60
+    assert list_time < 1.0 and graph_time < 1.0
 
 
 if __name__ == "__main__":

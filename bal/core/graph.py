@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from . import delivery
 from .heirs import is_op_return_address
 from .summary import _executor_state
+from .will_versions import new_will_links
 
 # The state of a box (codes; the widget gives them colours and symbols).
 OK = "ok"            # verified, or delivered (in the blockchain)
@@ -98,6 +99,31 @@ def shown(w, show_replaced=False):
     return bool(w.get_status("VALID") or _delivered(w) or show_replaced)
 
 
+def _drop_finished_wills(nodes):
+    """Leave out the copies that reached the blockchain with nothing in force
+    after them (#200, the rule of the Graph only in :func:`build_graph`).
+
+    A node stays when it is VALID or a VALID node hangs under it (a will in
+    several deliveries whose delivery 1 was executed keeps its green
+    delivery 1). One walk up from each VALID node, so a thousand items stay
+    fast; a loop in corrupted data stops at a node already seen.
+    """
+    live = set()
+    for node in nodes.values():
+        if not node.item.get_status("VALID"):
+            continue
+        current = node
+        while current is not None and current.wid not in live:
+            live.add(current.wid)
+            current = current.parent
+    for wid in [w for w, n in nodes.items() if n.delivered and w not in live]:
+        node = nodes.pop(wid)
+        if node.parent is not None and node in node.parent.children:
+            node.parent.children.remove(node)
+        for child in node.children:
+            child.parent = None
+
+
 def build_graph(willitems, selected=None, show_replaced=False, order=None):
     """The tree of the will: ``(roots, nodes)``.
 
@@ -107,16 +133,34 @@ def build_graph(willitems, selected=None, show_replaced=False, order=None):
     delivery 1). ``order``: the will-executor URLs in the order of the
     Will-Executor tab; the children are sorted by it (then by name), so a
     will-executor keeps its place in every column.
+
+    #200 (owner's wallet): a new will built on a coin that came back from
+    an executed copy is not a later delivery of it. Its copies are roots,
+    by the same rule as the versions of the Will tab
+    (``will_versions.new_will_links``, asked on the whole will: its rule 4
+    needs the replaced children too). The rest of a will in several
+    deliveries rebuilt after delivery 1 was executed (a new coin, another
+    fee) stays under that delivery 1 by the same rule (its rule 5), so the
+    Graph and the List never group the copies differently. One rule of the
+    Graph only: without ``show_replaced``, when a VALID copy is drawn, the
+    copies that reached the blockchain with no VALID copy under them are
+    left out (the old will, executed before the will in force: the List
+    keeps it as a version). A VALID copy is never left out, and "show
+    replaced" draws them again.
     """
+    will = willitems or {}
     nodes = {}
-    for wid, w in (willitems or {}).items():
+    for wid, w in will.items():
         if shown(w, show_replaced):
             state, detail = node_state(w, selected)
             nodes[wid] = Node(wid, w, state, detail)
+    cut = new_will_links(will)
     for wid, node in nodes.items():
         for inp in node.item.tx.inputs():
             parent = inp.prevout.txid.hex()
             if parent in nodes and parent != wid:
+                if (wid, parent) in cut:
+                    continue
                 node.parent = nodes[parent]
                 break
     rank = {u: i for i, u in enumerate(order or [])}
@@ -128,6 +172,8 @@ def build_graph(willitems, selected=None, show_replaced=False, order=None):
     for node in nodes.values():
         if node.parent is not None:
             node.parent.children.append(node)
+    if not show_replaced and any(n.item.get_status("VALID") for n in nodes.values()):
+        _drop_finished_wills(nodes)
     roots = sorted((n for n in nodes.values() if n.parent is None), key=key)
 
     def walk(node, depth, seen):

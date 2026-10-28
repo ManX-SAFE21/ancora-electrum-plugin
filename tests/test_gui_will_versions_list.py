@@ -514,6 +514,44 @@ def test_menu_of_a_version_row_acts_on_all_its_transactions(make):
     assert force is True and sorted(txids) == sorted(s.bw.willitems)
 
 
+def test_a_new_will_on_a_coin_back_from_an_executed_will_has_its_row(make):
+    """#200, the owner's wallet: the will was executed (we1's copy mined,
+    30 % back to the wallet) and a new will was made on that coin. The
+    List showed no row for it (its copies sat under the executed will as
+    one more delivery): now #2 in force on top, #1 executed below, and the
+    menu of row #2 sends exactly the copies of the new will."""
+    old, new = fk.ts(2026, 10, 16, 19), fk.ts(2030, 10, 15, 19)
+    s = make(locktime=old)
+    me = s.wallet.get_receiving_addresses()[5]
+    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "70%", old]
+    s.bw.heirs["me"] = [me, "30%", old]
+    del s.bw.heirs["bob"]
+    s.bw.heirs.save()
+    s.check()
+    s.clock.travel(10)
+    (executed,) = [w for w, i in s.bw.willitems.items() if i.we["url"] == URLS[1]]
+    tx = s.bw.willitems[executed].tx
+    s.wallet.adb.add_transaction(tx)
+    s.wallet.adb.add_unverified_or_unconfirmed_tx(tx.txid(), 101)
+    s.clock.travel(11)
+    s.set_date(new)
+    s.set_heirs(alice="40%", bob="30%", carol="30%")
+    s.check()
+    copies = sorted(w for w, i in s.bw.willitems.items() if int(i.tx.locktime) == new)
+    lst = _list(s)
+    texts = [t for _k, _key, t in _top(lst)]
+    assert [t.split(" ·")[0] for t in texts] == ["#2", "#1"]
+    assert "alice 40%, bob 30%, carol 30%" in texts[0]
+    assert texts[0].endswith("· in force") and texts[1].endswith("· executed")
+    menu = lst.build_menu(_version_index(lst, 2))
+    actions = {a.text(): a for a in menu.actions()}
+    sent = []
+    with patch.object(s.bw, "broadcast_transactions",
+                      lambda force=False, txids=None, **kw: sent.append(txids)):
+        actions["broadcast"].trigger()
+    assert [sorted(t) for t in sent] == [copies]
+
+
 def test_draft_on_top_unnumbered_and_not_deletable(make):
     s = make()
     s.check()

@@ -13605,3 +13605,120 @@ Electrum 4.8.2 and 4.8.3 (13 s); the new icons are in it, the old ones are
 not.
 
 **Outcome:** DONE.
+
+## 200. A new will on a coin that came back from an executed will is a will of its own
+
+**Why:** the owner's wallet (2026-10-28). A one-date will (an heir 70%,
+30% to an address of the wallet itself) was executed:
+one copy was mined, the heir got 70% and 30% came back to the wallet as a
+new coin. Then a new will on that coin (other heirs, 15 October 2030),
+signed and sent. Its copies spend an output of the executed copy, exactly
+like a later delivery of a will in several deliveries, so the Will tab
+grouped them as the next delivery of the executed will: the List showed
+no row for the new will (its copies were counted under the executed will
+#34), Future said in
+red "The delivery date has passed" with the old date (16 October 2026),
+the Graph drew the old will as delivery 1 and the new one as delivery 2,
+and the box before an invalidation would have said that it ends no will.
+The wallet and the will were right: only the grouping of what is shown
+was wrong. The rule was chosen by a panel (three proposals tried on test
+wallets, two independent judges) and the owner approved it before it was
+written. A review (three critics, three verifiers) found that the first
+version also made the rest of a will in several deliveries, rebuilt after
+its delivery 1 was executed, a version of its own, with a wrong List row
+("(+1 delivery) · bob 0% + 40%") and its deliveries numbered differently
+in Future and in the Graph; rule 5 below keeps that case as it was (owner
+OK).
+
+**What changed:**
+
+- `bal/core/will_versions.py`: new `new_will_links()`,
+  `built_after_on_chain()` and `_later_delivery_copy()`. A will item that
+  spends an output of another will item starts a will of its own when 1.
+  that item reached the blockchain (CONFIRMED or MEMPOOL), 2. it was built
+  by a later build (its build `time`; an executed item without a time and
+  a new one with a time are two builds) and 3. it was built after that
+  item's delivery date: the blockchain accepts a transaction only after
+  its locktime, so a coin that comes back from an executed copy exists
+  only after that date, while the deliveries of one will are built before
+  the date of delivery 1. 4. A copy with the content of a delivery the
+  executed copy already had (a will-executor added after delivery 1 was
+  executed) stays with that delivery, the #129 rule. 5. A copy that pays
+  only persons of delivery 2 or later (the `§n` names; OP_RETURN message
+  rows and the will-executor fee outputs do not count) is the rest of a
+  will in several deliveries rebuilt after its delivery 1 was executed (a
+  new coin, another fee): it stays with that delivery 1, as before. Unknown
+  data (no build time, a time or a date that cannot be read, a date in
+  blocks) keeps the old link. Only stored data is read (flags, build time,
+  date): the same result without a wallet or before the wallet is
+  synchronized. `_fathers()` uses it, so the List, Future, the PDF report
+  and the invalidation box see the new will. Known limit, written in the
+  module docstring: condition 3 reads the build time on the computer's
+  clock; with a clock some hours slow, a new will built a few hours after
+  the delivery date keeps the old grouping (display only).
+- `bal/core/graph.py`: `build_graph()` uses the same rule on the whole
+  will, so the Graph and the List never group the copies differently, and
+  one rule of the Graph only: without "Show replaced versions", when a
+  copy in force is drawn, a copy that reached the blockchain with nothing
+  in force under it is left out (the old executed will; the List keeps it
+  as a version, and "Show replaced versions" draws it again). This rule
+  also changes BASIC, for a will executed and then a new will on a new
+  coin: the Graph draws only the new will, under its own date (before,
+  the executed copy stood in the same column and the column read its old
+  date).
+- Not changed, on purpose: the `father` and `children` stored in the wallet
+  (`Will.add_willtree`), `check_invalidated`, `set_invalidate`,
+  `search_rai`, the build, signing, sending and invalidation. The stored
+  tree is a real spending dependency: when the executed copy disappears
+  (another copy mined instead), it is what invalidates the new will. The
+  "Display" window of the Will tab menu still draws that stored tree (the
+  new will under the executed copy): a possible step of its own.
+- Fact corrected during the analysis: a one-date will with fixed amounts
+  does not give change back today (the fixed amounts are scaled up to the
+  whole balance, #76); a coin comes back from an executed one-date will
+  only through an heir that is an address of the wallet itself (#197), or
+  from a will built before #76.
+
+**Tests:** new `tests/test_new_will_after_executed.py` (flowkit, three fake
+will-executors with their own fee addresses): the owner's case with the
+executed copy in the mempool, mined and not verified, mined and verified
+(versions, will in force, Future, Graph also with "Show replaced", nothing
+written, the stored father unchanged); without a wallet and not
+synchronized; the PDF report (one delivery, 2030); the invalidation box
+(it names #2); a second Check (nothing sent, the new copies stay valid);
+the paid invalidation of the new will (only its copies, the invalidation
+row ends #2); the executed copy replaced by another copy (the stored tree
+invalidates the new will); the new will cancelled at the password (a draft
+on top); a will-executor added to the new will; BASIC, a will executed and
+a new will on a new coin (the Graph draws only the new will under its
+date, "Show replaced" draws the executed copy again); wills in several
+deliveries: delivery 1 executed, a will-executor added before delivery 1
+was mined, delivery 2 rebuilt after delivery 1 was executed (new coin,
+other fee: one version, the table's two columns in the Graph), a
+will-executor added after delivery 1 was executed (one version), a new will
+in several deliveries on the coin that came back.
+`tests/test_core_will_versions.py`: the edges with small synthetic wills
+(either output, mined or in the mempool, with or without a wallet; an
+executed copy without a build time; unknown or unreadable data and a date
+in blocks; the same build or an older one; a father not on the chain; a
+copy rebuilt before the father's date; the content of a kept delivery with
+any flags; a copy that pays only later deliveries, with a message row and
+each will-executor's own fee output, in the List and the Graph; a loop in
+corrupted data; the Graph's own rule) and a thousand items whose
+deliveries 1 were executed, with and without copies built after the
+execution (list and Graph, each well under a second).
+`tests/test_gui_will_versions_list.py`: the owner's case in the real List
+(#2 in force on top, #1 executed, the menu of row #2 sends the copies of
+the new will).
+
+**Verification:** `ruff check bal/ tests/` clean; the whole suite on
+Electrum 4.8.3, normal order: 3106 passed (53 min); the affected test files
+646 passed; the tests of the owner's case fail on the code before #200,
+and the four tests of rule 5 fail with that rule switched off; the test ZIP loads on Electrum
+4.8.2 and 4.8.3 (external zip and smoke test). Owner ZIP test
+(2026-10-29, Electrum 4.8.2, the owner's wallet): the List shows #35 in
+force on top and #34 executed below; Future says the will is in force on
+15 October 2030, no red text; the Graph leaves out the executed copy and
+"Show replaced versions" draws it again (green).
+
+**Outcome:** DONE.
