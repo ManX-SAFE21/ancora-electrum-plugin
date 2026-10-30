@@ -155,7 +155,7 @@ from .dialogs import (
     decode_will_payload,
 )
 from .explainer import show_explainer
-from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
+from .flow_adapter import CHOOSE_DATE_FIRST, REST_CANCELLED, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
 from .graph_view import GraphPanel
 from .lists import HeirListWidget, PreviewList
@@ -186,8 +186,8 @@ def _on_gui_thread():
     return threading.current_thread() is threading.main_thread()
 
 
-def _hold_code(host):
-    """The code of the delivery settings hold that applies, or None.
+def _hold(host):
+    """The delivery settings hold that applies (the exception), or None.
 
     See :func:`bal.engine.context.check_holds` (CHANGELOG #123, rule I6).
     A plain function, not a method: the window's methods that call it also
@@ -196,23 +196,39 @@ def _hold_code(host):
     try:
         context.check_holds(host)
     except delivery.DeliveryHold as e:
-        return e.code
+        return e
     return None
+
+
+def _hold_code(host):
+    """The code of the delivery settings hold that applies, or None
+    (:func:`_hold`)."""
+    hold = _hold(host)
+    return hold.code if hold is not None else None
+
+
+def rest_cancelled_text(hold):
+    """The owner's text of a ``DeliveryRestCancelled`` hold (#201): which
+    delivery was executed, that nothing is done, and how to go on."""
+    return _(REST_CANCELLED).format(hold.executed)
 
 
 def _stopped_by_hold(window):
     """True (and the owner is told) when a hold of the delivery settings
     stops a Sign / Broadcast / Invalidate command (rule I6).
 
-    The settings could not be prepared: the error. The "which date?"
-    question waits: press the Check button first.
+    The settings could not be prepared: the error. The rest of a will in
+    several deliveries was cancelled (#201): what happened and how to go
+    on. The "which date?" question waits: press the Check button first.
     """
-    code = _hold_code(window)
-    if code is None:
+    hold = _hold(window)
+    if hold is None:
         return False
-    _logger.info(f"command refused: delivery hold ({code})")
-    if code == delivery.DeliverySettingsUnavailable.code:
+    _logger.info(f"command refused: delivery hold ({hold.code})")
+    if isinstance(hold, delivery.DeliverySettingsUnavailable):
         window.show_error(_(SETTINGS_UNAVAILABLE))
+    elif isinstance(hold, delivery.DeliveryRestCancelled):
+        window.show_message(rest_cancelled_text(hold))
     else:
         window.show_message(_(CHOOSE_DATE_FIRST))
     return True
@@ -2420,6 +2436,11 @@ class BalWindow:
                 # #123, fail closed: nothing is prepared on display-only values.
                 self.show_error(_(SETTINGS_UNAVAILABLE))
                 return
+            except delivery.DeliveryRestCancelled as e:
+                # #201 (owner's rule): the plan the owner stopped is not
+                # prepared again; the message says how to go on.
+                self.show_message(rest_cancelled_text(e))
+                return
             except delivery.InstalmentsMismatch as e:
                 # #168: the table of the deliveries no longer fits the
                 # heirs: nothing is prepared (the message says what to do;
@@ -2919,8 +2940,9 @@ class BalWindow:
                 self.init_class_variables()
             except delivery.DeliveryHold as e:
                 # CHANGELOG #123 (rule I6): the "which date?" question waits
-                # for the Check, or the settings are not available. Never a
-                # question here: skipped.
+                # for the Check, or the settings are not available (#201: or
+                # the rest of a will in several deliveries was cancelled).
+                # Never a question here: skipped.
                 _logger.info(f"auto rebuild: delivery hold ({e.code}), nothing to do")
                 return False
             except CheckAliveAfterDeliveryError:

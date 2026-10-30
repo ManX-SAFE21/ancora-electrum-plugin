@@ -35,6 +35,7 @@ from bal.engine.ui import CheckRun, Step
 from bal.gui.qt.dialogs import BalBuildWillDialog
 from bal.gui.qt.flow_adapter import (
     CHOOSE_DATE,
+    REST_CANCELLED,
     SETTINGS_UNAVAILABLE,
     DialogFlowUI,
     DialogRun,
@@ -161,6 +162,10 @@ def _notes():
         # CHANGELOG #123, fail closed: no data, the text is the adapter's.
         "delivery_settings_unavailable": ({}, ("error", SETTINGS_UNAVAILABLE),
                                           "problems"),
+        # #201: a state the owner chose, not an error: the amber sign.
+        "delivery_rest_cancelled": ({"executed": 2},
+                                    ("alert", REST_CANCELLED.format(2)),
+                                    "warnings"),
     }
 
 

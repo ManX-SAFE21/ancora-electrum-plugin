@@ -13722,3 +13722,123 @@ force on top and #34 executed below; Future says the will is in force on
 "Show replaced versions" draws it again (green).
 
 **Outcome:** DONE.
+
+## 201. After delivery 1 of a will in several deliveries, nothing on its own
+
+**Why:** owner's rule (2026-10-29): once delivery 1 of a will in several
+deliveries (a Multiverse) was executed, the plugin builds, signs and sends
+nothing on its own. While the plan is running it leaves it alone; when the
+owner stopped it (Tools > Invalidate, or the coins spent) it does not
+prepare it again. Two probe rounds (fake will-executors, Electrum 4.8.2
+and 4.8.3) showed that the plugin did not respect it:
+
+- with three deliveries, the first Check, wallet close or
+  `bal_will_autorebuild` after delivery 1 built 12 new copies, which differed
+  from the copies held only in the change address, and sent them: each
+  will-executor then held two conflicting copies of delivery 2. On a
+  wallet without a password this happened with no question at all. Cause:
+  the rows of delivery 1 were never found in a VALID copy (the executed
+  copy is on the chain, no longer VALID), so the will was "not coherent"
+  ("heir alice (delivery 1) added") and was prepared again at every flow;
+- after the owner's Invalidate, every Check, wallet close, GUI automatic
+  rebuild and `bal_will_autorebuild` prepared delivery 2 again on the coin
+  that came back (a wallet without a password signed and sent it with no
+  question). Nothing stored said that the owner had stopped the plan.
+
+Two rebuilds stay, on purpose (owner, 2026-10-29): new coins in the wallet
+after delivery 1 (delivery 2 is prepared again with them, one day earlier,
+password asked as usual) and a will-executor added (its own copy).
+Wallets without a password stay supported (owner: useful for automations).
+
+**What changed:**
+
+- New `bal/core/delivery_progress.py`, read from the wallet only (never
+  from the stored flags, which may not be refreshed yet when a flow
+  starts). `plan_outputs()`: the outputs of a copy that the copies of the
+  next delivery spend; a copy executed counts for this plan only when the
+  next delivery hangs on it, so a will executed earlier with a new will in
+  several deliveries on the coin that came back (#200) is not "delivery 1
+  done" of the new will. `done_deliveries()`: deliveries 1..n executed while
+  some are left. `cancelled_rest()`: a copy of delivery n (not the last) is
+  in a block or in the mempool, the change that pays the next delivery is
+  spent by a transaction that is not a copy of the will, and no copy could
+  still be mined (signed, every coin it spends unspent, or the output of
+  another copy that could be mined). In doubt a copy is not live, so the
+  hold applies (owner's rule, 2026-10-30: in doubt, stop): a draft (not
+  signed), a copy spending a coin the wallet does not know, or one that
+  cannot be read.
+- `bal/core/will.py`: `is_will_valid(done_deliveries=)` and
+  `check_willexecutors_and_heirs(done=)`: the rows of the deliveries
+  already executed are not looked for in the VALID copies, and the plan of
+  the possible futures (#187) starts at the next delivery. The default (0)
+  changes nothing for the other callers.
+- `bal/core/delivery.py`: a new hold, `DeliveryRestCancelled` (code
+  `delivery_rest_cancelled`), next to the two of #123.
+  `bal/engine/context.py`: `check_holds()` raises it when `cancelled_rest()`
+  finds the rest cancelled; `check_will()` passes `done_deliveries()`.
+  Every flow passes through `check_holds()` first, before the Check Alive
+  gate, so one test covers the Check, Prepare, wallet close (skipped with
+  one log line), the GUI automatic rebuild (skipped), the command line
+  (result `delivery_rest_cancelled` with a message), and the Sign /
+  Broadcast / Invalidate commands (refused with the message).
+- The text (`bal/gui/qt/flow_adapter.py`, `REST_CANCELLED`; the Check shows
+  it after "Checking variables: Stopped", amber): delivery N was executed
+  and the remaining deliveries were cancelled; no will is in force and
+  nothing is prepared, signed or sent; to prepare a new will, "Back to one
+  delivery" in the window "Inheritance in several deliveries" (Tools in the
+  Will tab, ADVANCED mode), a new date, then "Check your will". The
+  command line names `bal_instalments_clear`, `bal_delivery_set --date` and
+  `bal_will_prepare`. Italian and Spanish translations.
+- Not changed, on purpose: one-date wills (after Invalidate the Check
+  prepares the will again, the usual way to postpone); what the List,
+  Future, the Graph and the PDF show for a will in several deliveries
+  after delivery 1 (separate steps); an Invalidate while delivery 1 is only
+  in the mempool (held as stopped; if another will-executor's copy of
+  delivery 1 is the one mined, Electrum drops the copy in the mempool and
+  the invalidation, the plan runs again: a warning is a separate step).
+
+**Tests:** new `tests/test_multiverse_after_delivery_1.py` (flowkit, three
+fake will-executors with their own fee addresses, wallets with and without
+a password): the plan running, two and three deliveries, the first flow
+right after delivery 1 is mined then a Check, for the Check, wallet close,
+GUI automatic rebuild and `bal_will_autorebuild` (no new copy, nothing
+sent, no question); delivery 2 executed too; new coins while running
+(delivery 2 prepared again with them, one day earlier, then nothing); a
+will-executor added while running (one copy for it); the plan stopped
+after Invalidate, two and three deliveries, every flow (nothing prepared,
+the Check's text, the command line's code and message); Sign, Broadcast
+and Invalidate refused with the text; new coins after Invalidate stay out; "Back to one
+delivery" and a new date prepare a new will; Invalidate with delivery 1 in
+the mempool, then another copy mined the way Electrum learns it; a
+one-date will after Invalidate is prepared again; nothing decided without
+a wallet; in doubt the plan stays stopped, every flow, with and without a
+password: an old copy whose coin the wallet does not know, and a draft of
+delivery 2 on the coin that came back (a signed copy there is still live). `tests/test_gui_flow_adapter.py`: the new note's row.
+
+**Verification:** `ruff check bal/ tests/` clean; the whole suite on
+Electrum 4.8.3, normal order: 3151 passed, no failure (1 h 02 min); 16
+setup errors came from the logging plugin switched off in that run (the
+`caplog` tests), and those files rerun with it on: 81 passed. With the
+previous "in doubt, live" rule 16 of the 17 new tests fail (the other is
+the signed copy that must stay live). The test ZIP loads on Electrum 4.8.3
+(external zip). `tests/test_engine_context.py`: the call of
+`Will.is_will_valid` now carries `done_deliveries=0` without a table.
+
+**Owner's test of 2026-10-30 (first ZIP):** delivery 1 executed on
+mainnet; the Check after it did nothing (no password, nothing signed). After
+Tools > Invalidate the Check prepared the rest again and asked to sign
+(cancelled by the owner): the wallet held 1037 copies of earlier wills,
+and one whose coin the wallet did not know counted as "could still be
+mined", so the hold never applied. Reproduced with flowkit; fixed by
+"in doubt, not live" above (the new tests: 16 of them fail with the
+previous rule).
+
+**Owner's test of the second ZIP (2026-10-30, mainnet, Electrum 4.8.2, wallet
+with a password):** Tools > Invalidate, signed and sent, still in the
+mempool; "Check your will" stopped with the text (no password, nothing
+prepared, signed or sent); the wallet close asked nothing. Before that, the
+close of the old plugin, still loaded while the second ZIP was installed,
+signed and sent the draft left by the first test (a new will on the
+coin that came back, then invalidated by this test).
+
+**Outcome:** DONE.

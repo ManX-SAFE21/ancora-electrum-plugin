@@ -179,10 +179,10 @@ _PERIOD = re.compile(r"[+-]?[0-9]+\s*[A-Za-z]")
 
 
 # --------------------------------------------------------------------------- #
-# Holds: the two states that stop every flow (rule I6)
+# Holds: the states that stop every flow (rule I6)
 # --------------------------------------------------------------------------- #
 class DeliveryHold(Exception):  # noqa: N818 - named after the state, not an error
-    """Base of the two holds: no flow builds, signs, pushes or invalidates.
+    """Base of the holds: no flow builds, signs, pushes or invalidates.
 
     ``code`` is the machine-readable code the command line returns.
     """
@@ -219,6 +219,35 @@ class DeliverySettingsUnavailable(DeliveryHold):  # noqa: N818 - name from the #
 
     code = "delivery_settings_unavailable"
     default_message = "The delivery settings of this wallet could not be prepared."
+
+
+class DeliveryRestCancelled(DeliveryHold):  # noqa: N818 - named after the state, not an error
+    """The rest of a will in several deliveries was cancelled (#201).
+
+    A copy of delivery :attr:`executed` was executed, and the change that
+    paid the later deliveries was spent by a transaction that is not a
+    copy of the will (the owner's Invalidate, or any other spend): no copy
+    can deliver any more and no will is in force
+    (:func:`bal.core.delivery_progress.cancelled_rest`).
+
+    Owner's rule (2026-10-29): a plan the owner stopped is never prepared
+    again on its own. The table still asks for the later deliveries, so
+    without this hold every Check, wallet close, automatic rebuild and
+    ``bal_will_autorebuild`` prepared them again on the coins that came
+    back (a passwordless wallet signed and sent them with no question).
+    The owner goes on by removing the table ("Back to one delivery").
+    """
+
+    code = "delivery_rest_cancelled"
+    default_message = (
+        "Delivery {} was executed and the remaining deliveries were "
+        "cancelled: no will is in force."
+    )
+
+    def __init__(self, executed=1, message=None):
+        """``executed``: the delivery executed before the rest was cancelled."""
+        self.executed = executed
+        super().__init__(message or self.default_message.format(executed))
 
 
 def check_holds(settings, unavailable=False):

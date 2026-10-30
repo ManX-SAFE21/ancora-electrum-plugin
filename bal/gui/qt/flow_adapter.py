@@ -20,11 +20,13 @@ as in the tests and the scenario harness, works unchanged).
 The texts are translated when the event arrives, never at import (the
 catalog is loaded later).
 
-Since #123 also the two holds of the wallet's delivery settings: the
-"which date?" question (state ``delivery_choice``; the dialog then asks it)
-and settings that could not be prepared (note
-``delivery_settings_unavailable``). Their texts are marked here and shared
-with the window (``bal.gui.qt.window``), which shows them too.
+Since #123 also the holds of the wallet's delivery settings: the "which
+date?" question (state ``delivery_choice``; the dialog then asks it),
+settings that could not be prepared (note
+``delivery_settings_unavailable``) and, since #201, the rest of a will in
+several deliveries cancelled (note ``delivery_rest_cancelled``). Their
+texts are marked here and shared with the window (``bal.gui.qt.window``),
+which shows them too.
 """
 
 from ...core import datetext
@@ -46,6 +48,18 @@ CHOOSE_DATE_FIRST = N_(
 )
 #: The status of the "Checking variables" row while the question is asked.
 CHOOSE_DATE = N_("Choose the delivery date")
+#: #201: the rest of a will in several deliveries was cancelled after
+#: delivery {} (the owner's Invalidate, or the coins spent): nothing is
+#: prepared again on its own. Shown by the Check, Prepare and the Sign /
+#: Broadcast / Invalidate commands.
+REST_CANCELLED = N_(
+    "Delivery {} was executed and the remaining deliveries were cancelled "
+    "(the coins that paid them were spent): no will is in force, and "
+    "nothing is prepared, signed or sent. To prepare a new will, press "
+    "\"Back to one delivery\" in the window \"Inheritance in several "
+    "deliveries\" (Tools in the Will tab, ADVANCED mode), then choose a new "
+    "date and press 'Check your will'."
+)
 
 
 class DialogFlowUI:
@@ -130,7 +144,9 @@ class DialogFlowUI:
         Errors in red (``msg_error``), warnings after the amber sign
         (``msg_alert``); ``msg_edit_row`` also puts them in the report's
         problems / warnings box. ``delivery_settings_unavailable`` (#123) is
-        an error row with :data:`SETTINGS_UNAVAILABLE`.
+        an error row with :data:`SETTINGS_UNAVAILABLE`;
+        ``delivery_rest_cancelled`` (#201) a warning row with
+        :data:`REST_CANCELLED`.
         """
         d = self._dialog
         if code == "check_alive_reason":
@@ -164,6 +180,9 @@ class DialogFlowUI:
         elif code == "delivery_settings_unavailable":
             # #123, fail closed: nothing was built, signed or sent.
             d.msg_edit_row(d.msg_error(_(SETTINGS_UNAVAILABLE)))
+        elif code == "delivery_rest_cancelled":
+            # #201: a state the owner chose, not an error: the amber sign.
+            d.msg_edit_row(d.msg_alert(_(REST_CANCELLED).format(data["executed"])))
         else:
             raise ValueError(f"unknown note {code!r}")
 

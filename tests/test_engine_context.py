@@ -275,6 +275,8 @@ def test_check_will_passes_the_hosts_state(plugin):
         host.willitems, 1800000000, host.will_settings["baltx_fees"], ["u1"],
         heirs=host.heirs, willexecutors=host.willexecutors,
         self_willexecutor=False, wallet=host.wallet,
+        # #201: no table, so no delivery is done.
+        done_deliveries=0,
     )
 
 
