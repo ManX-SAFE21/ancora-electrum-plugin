@@ -13889,3 +13889,29 @@ file, updated in the same way; that file's tests and the golden tests were then
 run again and passed.
 
 **Outcome:** DONE
+
+## 204. A stop the owner chose is not shown as an error
+
+**Why:** when the owner stopped a will in several deliveries after delivery 1
+(#201), the plugin did the right thing, but the Check window showed it in red:
+"Check: error" and a red final sentence. It looked like a fault.
+
+**What changed:**
+
+- `bal/engine/check.py`: new step state `held` for this stop; the settings that
+  cannot be prepared keep `stopped`.
+- `bal/gui/qt/flow_adapter.py`: `held` writes "Stopped" in amber.
+- `bal/gui/qt/dialogs.py`: for this stop the step and the final sentence are
+  amber; the warnings box does not repeat the bare word "Stopped".
+  `have_to_sign` gets a class-level default, so the report also works on a
+  dialog whose `__init__` did not run.
+- `tests/test_multiverse_after_delivery_1.py`, `tests/test_gui_flow_adapter.py`:
+  the new cases.
+
+Real errors stay red. Look only: the stop works as before; nothing is built,
+signed or sent. No new text to translate.
+
+**Verified:** ruff clean; 273 tests passed (these flows and the golden files,
+unchanged), 4 min 37 s, Electrum 4.8.3.
+
+**Outcome:** DONE

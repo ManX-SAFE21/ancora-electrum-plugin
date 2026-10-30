@@ -332,6 +332,17 @@ def test_stopped_plan_is_not_prepared_again(make, rows, with_password, flow):
         s.clock.travel(1)
 
 
+def test_stopped_plan_is_amber_not_red(make):
+    """#204: a stop the owner chose is not shown as a failure."""
+    s, _ = _stopped(make, 3)
+    report = s.check()._report().snapshot()
+    assert tuple(report["steps"][0][:2]) == ("check", "warn")
+    assert report["result"][0] == "warn"
+    assert not report["boxes"]["problems"]
+    assert len(report["boxes"]["warnings"]) == 1
+    assert STOPPED in report["boxes"]["warnings"][0]
+
+
 def test_stopped_plan_refuses_sign_broadcast_and_invalidate(make):
     """Sign, Broadcast and Invalidate are refused with the same text (rule
     I6): no copy could still be mined, there is nothing to invalidate."""
