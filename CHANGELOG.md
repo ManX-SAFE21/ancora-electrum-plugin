@@ -13842,3 +13842,26 @@ signed and sent the draft left by the first test (a new will on the
 coin that came back, then invalidated by this test).
 
 **Outcome:** DONE.
+
+## 202. "(today)" follows the UTC day, not 24 hours
+
+**Why:** on the owner's real testnet test (2026-10-30) a delivery date of
+the next day was shown as "(today)", because any date less than 24 hours
+away counted as today, also on another UTC day.
+
+**What changed:**
+
+- `bal/core/summary.py`: new `same_utc_day`; `relative_date` says "(today)"
+  only on the same UTC day. Another UTC day less than 24 hours away says
+  "(in 1 day)" or "(passed 1 day ago)", never "0 days".
+- `bal/core/future.py`: `time_left_text` does the same.
+- `tests/test_will_summary.py`, `tests/test_core_future.py`: the new cases.
+
+No new text to translate; display only: nothing that builds, signs or sends
+changes.
+
+**Verified:** ruff clean; 469 tests passed (the ones on these dates and the
+golden files of the Check and of the copies, unchanged), 3 min 44 s, Electrum
+4.8.3.
+
+**Outcome:** DONE

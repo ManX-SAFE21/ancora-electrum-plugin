@@ -250,6 +250,11 @@ def test_time_left_texts():
     assert cf.time_left_text(fk.ts(2027, 12, 10), now) == "(in 1 year and 2 months)"
     assert cf.time_left_text(fk.ts(2028, 10, 10), now) == "(in 2 years)"
     assert cf.time_left_text(now + 3600, now) == "(today)"
+    # #202: by UTC day, not by 24 hours; never "0 days".
+    late = fk.ts(2026, 10, 10, 23)
+    assert cf.time_left_text(fk.ts(2026, 10, 10), late) == "(today)"
+    assert cf.time_left_text(late + 3600, late) == "(in 1 day)"
+    assert cf.time_left_text(late - fk.DAY, fk.ts(2026, 10, 10, 1)) == "(passed 1 day ago)"
     assert cf.time_left_text(now - 3 * fk.DAY, now) == "(passed 3 days ago)"
 
 
