@@ -13865,3 +13865,27 @@ golden files of the Check and of the copies, unchanged), 3 min 44 s, Electrum
 4.8.3.
 
 **Outcome:** DONE
+
+## 203. The Check says nothing "changed" on a first will
+
+**Why:** on the owner's real testnet test (2026-10-30) the first will showed
+"What changed: The will contains no valid transaction: a new will must be
+prepared", although no will had ever existed and nothing had changed.
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`: new `_first_will`; with no valid transaction and
+  no copy in the wallet, the "Checking your will" row says Ok and the "What
+  changed" box is not drawn. With copies, none valid, the sentence stays.
+- `tests/test_first_will_no_change_sentence.py`: the rule.
+- `tests/golden/5e/`: 66 files updated; the only difference is this sentence.
+
+The command line keeps its `reason`. Display only: nothing that builds, signs
+or sends changes. No new text to translate.
+
+**Verified:** ruff clean; 716 tests run (the ones on the Check rows and the
+golden files), 13 min 41 s, Electrum 4.8.3: the one failure was the 66th golden
+file, updated in the same way; that file's tests and the golden tests were then
+run again and passed.
+
+**Outcome:** DONE
