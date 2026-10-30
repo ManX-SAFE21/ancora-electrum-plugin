@@ -52,6 +52,7 @@ VARIABLES_STATES = (
     "expired",
     "check_alive_passed",
     "stopped",
+    "held",
     "no_heirs",
     "check_alive_before_delivery",
     "delivery_choice",
@@ -147,7 +148,7 @@ def check_variables(host, run, ui):
        "delivery_choice" (the dialog asks it). The settings could not be
        prepared: step "stopped", note "delivery_settings_unavailable", stop
        "delivery_settings_unavailable". #201: the rest of a will in several
-       deliveries was cancelled: step "stopped", note
+       deliveries was cancelled: step "held", note
        "delivery_rest_cancelled", stop "delivery_rest_cancelled". Nothing is
        built, signed, pushed or invalidated;
     3. the Check Alive gate. After the delivery date: stop
@@ -205,7 +206,7 @@ def check_variables(host, run, ui):
     except DeliveryRestCancelled as e:
         # #201 (owner's rule): the plan the owner stopped is never prepared
         # again on its own; the note says how to go on.
-        ui.step(Step.VARIABLES, "stopped")
+        ui.step(Step.VARIABLES, "held")
         ui.note("delivery_rest_cancelled", executed=e.executed)
         return Phase1Result("delivery_rest_cancelled")
     except CheckAliveAfterDeliveryError:

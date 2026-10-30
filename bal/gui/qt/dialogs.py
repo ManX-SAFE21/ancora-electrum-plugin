@@ -823,6 +823,9 @@ class BalBlockingWaitingDialog(BalDialog):
 
 
 class BalBuildWillDialog(BalDialog):
+    #: How phase 1 ended (set in ``_on_success_phase1_body``); ``None`` before.
+    have_to_sign = None
+
     updatemessage = pyqtSignal()
     COLOR_WARNING = "#cfa808"
     COLOR_ERROR = "#ff0000"
@@ -4003,7 +4006,9 @@ class BalBuildWillDialog(BalDialog):
                     report.put("problems", key, text)
             elif kind == "warn":
                 report.set_step(step, "warn")
-                if text:
+                # #204: "Stopped" is the state of the step; the note on its
+                # own row says why, so the box does not repeat the bare word.
+                if text and text != _("Stopped"):
                     report.put("warnings", key, text)
             elif step in ("check", "prepare"):
                 # Plain text on these steps tells what changed (a new fee, a
@@ -4116,13 +4121,20 @@ class BalBuildWillDialog(BalDialog):
                 None,
             )
             interrupted = report.interrupted()
-            if not failed_step and not interrupted:
+            # #204: the plan the owner stopped (#201) is a state he chose, not
+            # a failure: amber, and the steps not reached stay as they are.
+            held = self.have_to_sign == "delivery_rest_cancelled"
+            if not held and not failed_step and not interrupted:
                 # A normal ending: the steps never reached were not needed
                 # (nothing to prepare, sign or send).
                 for step in ("prepare", "sign", "send"):
                     if report.step(step)[0] == "todo":
                         report.set_step(step, "skip")
-            if failed_step:
+            if held:
+                report.set_result("warn", "<b>{}</b>".format(html.escape(
+                    _("The check stopped: nothing was changed."))))
+                report.set_will_now(self._will_now_text(summary))
+            elif failed_step:
                 report.set_result("err", "<b>{}</b>".format(html.escape({
                     "check": _("The check stopped: nothing was changed."),
                     "prepare": _("The new will was not prepared."),

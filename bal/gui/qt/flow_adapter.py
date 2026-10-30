@@ -129,6 +129,11 @@ class DialogFlowUI:
             d.msg_set_status(
                 _("Checking variables"), row, _("Stopped"), d.COLOR_ERROR
             )
+        elif state == "held":
+            # #204: a stop the owner chose (#201), not an error: amber.
+            d.msg_set_status(
+                _("Checking variables"), row, _("Stopped"), d.COLOR_WARNING
+            )
         elif state == "delivery_choice":
             # #123: the "which date?" question is asked next (the dialog
             # does it on the GUI thread, then runs phase 1 again).

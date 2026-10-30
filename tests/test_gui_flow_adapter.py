@@ -110,6 +110,9 @@ STATES = {
         "warn", {"warnings": ["Check Alive passed"]}),
     "stopped": ("Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
                 "err", {}),
+    # #204: a stop the owner chose: amber, and the box does not repeat the word.
+    "held": ("Checking variables:	<font color=#cfa808><b>Stopped</b></font>",
+             "warn", {}),
     "no_heirs": ("Checking variables:\t<b><font color='#cfa808'>&#9888;</font> "
                  "<b>No Heirs</b></b>", "warn", {"warnings": ["No Heirs"]}),
     "check_alive_before_delivery": (
