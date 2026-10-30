@@ -47,7 +47,13 @@ from . import delivery as _delivery
 from .checkalive import check_alive_basic, check_alive_renewal, resolve_date_to_check
 from .heirs import HEIR_ADDRESS, HEIR_REAL_AMOUNT, is_op_return_address
 from .messages import _day, months_text
-from .summary import _executors_row, delivery_warning, executor_counts, executor_states
+from .summary import (
+    _executors_row,
+    delivery_warning,
+    executor_counts,
+    executor_states,
+    same_utc_day,
+)
 
 _DAY = 86400
 
@@ -216,13 +222,14 @@ def time_left_text(ts, now):
     """``"(in 4 months and 14 days)"``, ``"(passed 3 days ago)"`` or ``"(today)"``.
 
     The bracketed msgids of the will summary (``summary.relative_date``),
-    with :func:`span_text` inside.
+    with :func:`span_text` inside. Another UTC day less than 24 hours away
+    counts as 1 day (never "0 days").
     """
-    if abs(ts - now) < _DAY:
+    if same_utc_day(ts, now):
         return _("(today)")
     if ts > now:
-        return _("(in {})").format(span_text(now, ts))
-    return _("(passed {} ago)").format(span_text(ts, now))
+        return _("(in {})").format(span_text(now, max(ts, now + _DAY)))
+    return _("(passed {} ago)").format(span_text(min(ts, now - _DAY), now))
 
 
 def _flag(item, name):

@@ -91,19 +91,29 @@ def _span(start, end):
     return _("{years} and {months}").format(years=years_text, months=months_text)
 
 
+def same_utc_day(first, second):
+    """True when two UNIX times fall on the same UTC day.
+
+    WHY: the dates are shown as UTC days, so "(today)" must follow the UTC
+    calendar; a date tomorrow, less than 24 hours away, is not today.
+    """
+    return first // _DAY == second // _DAY
+
+
 def relative_date(ts, now=None):
     """``"(in 1 year and 11 months)"``, ``"(passed 5 days ago)"`` or ``"(today)"``.
 
     The parentheses are part of the texts on purpose: a bare "in {}" or
     "today" could match a different Electrum translation, which wins over
-    BAL's catalog (see ``bal.i18n``).
+    BAL's catalog (see ``bal.i18n``). Another UTC day less than 24 hours
+    away counts as 1 day (never "0 days").
     """
     current = _now(now)
-    if abs(ts - current) < _DAY:
+    if same_utc_day(ts, current):
         return _("(today)")
     if ts > current:
-        return _("(in {})").format(_span(current, ts))
-    return _("(passed {} ago)").format(_span(ts, current))
+        return _("(in {})").format(_span(current, max(ts, current + _DAY)))
+    return _("(passed {} ago)").format(_span(min(ts, current - _DAY), current))
 
 
 def _thresholds(warn_months):
