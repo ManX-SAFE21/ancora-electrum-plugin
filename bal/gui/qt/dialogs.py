@@ -2649,9 +2649,12 @@ class BalBuildWillDialog(BalDialog):
             self._add_close_button()
             return
 
-        if self.have_to_sign == "delivery_settings_unavailable":
+        if self.have_to_sign in ("delivery_settings_unavailable",
+                                 "delivery_rest_cancelled"):
             # #123, fail closed: the error is on its own red row; nothing was
-            # built, signed, sent or invalidated.
+            # built, signed, sent or invalidated. #201: the rest of a will in
+            # several deliveries was cancelled: the same stop, the note says
+            # how to go on.
             self._add_close_button()
             return
 

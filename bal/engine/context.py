@@ -40,7 +40,7 @@ from datetime import datetime, timedelta, timezone
 from electrum.logging import get_logger
 from electrum.util import MyEncoder
 
-from ..core import checkalive, delivery, trace, will_state
+from ..core import checkalive, delivery, delivery_progress, trace, will_state
 from ..core.heirs import Heirs
 from ..core.messages import will_change_message
 from ..core.summary import excluded_holders as _excluded_holders
@@ -291,6 +291,10 @@ def check_will(host, undo_anticipation=False):
 
     #173: the command trace gets ``bal_will_check`` and its outcome (the
     reason when the will is not coherent, :func:`_trace_reason`).
+
+    #201: the deliveries already executed while some are left
+    (:func:`done_deliveries`) are done: their rows are not looked for in
+    the copies in force (``done_deliveries`` of ``Will.is_will_valid``).
     """
     trace.command("bal_will_check")
     renames = []
@@ -318,6 +322,11 @@ def check_will(host, undo_anticipation=False):
             willexecutors=host.willexecutors,
             self_willexecutor=host.no_willexecutor,
             wallet=host.wallet,
+            # #201: without this, the rows of an executed delivery were never
+            # found in a VALID copy ("heir alice (delivery 1) added"): every
+            # Check, wallet close and automatic rebuild prepared the plan
+            # again, and with three deliveries signed and sent 12 new copies.
+            done_deliveries=done_deliveries(host),
         )
     except Exception as e:
         trace.add(trace.WARNING, _("not coherent: {}").format(_trace_reason(e)))
@@ -661,8 +670,10 @@ def check_holds(host):
 
     ``DeliverySettingsUnavailable`` when ``host.settings_unavailable``
     (the settings could not be prepared), else ``DeliveryChoicePending``
-    while the "which date?" question waits (``choice_pending``); both from
-    :mod:`bal.core.delivery`. Nothing is built, signed, pushed or
+    while the "which date?" question waits (``choice_pending``), else
+    ``DeliveryRestCancelled`` (#201) when the rest of a will in several
+    deliveries was cancelled after a delivery (:func:`cancelled_rest`);
+    all from :mod:`bal.core.delivery`. Nothing is built, signed, pushed or
     invalidated while one applies. Read with safe defaults: a host without
     these attributes or keys (the fake hosts of the tests, a plain dict) is
     never held.
@@ -671,6 +682,61 @@ def check_holds(host):
         getattr(host, "will_settings", None),
         getattr(host, "settings_unavailable", False),
     )
+    executed = cancelled_rest(host)
+    if executed is not None:
+        raise delivery.DeliveryRestCancelled(executed)
+
+
+def table_count(host):
+    """The rows of the host's table of the deliveries; 0 without one or
+    when it cannot be read (never raises)."""
+    try:
+        return len(delivery.table_rows(getattr(host, "will_settings", None)))
+    except Exception:
+        return 0
+
+
+def cancelled_rest(host):
+    """The delivery executed before the rest of the host's will in several
+    deliveries was cancelled, or ``None`` (#201,
+    :func:`bal.core.delivery_progress.cancelled_rest`). Never raises: in
+    doubt the flows are not stopped (they did the same before #201).
+
+    WHY here, in :func:`check_holds`: every flow passes there first (the
+    Check, Prepare, wallet close, the automatic rebuild, the command line,
+    the Sign / Broadcast / Invalidate commands), before the Check Alive
+    gate and before anything is built, so one test covers them all.
+    """
+    count = table_count(host)
+    if count < 2:
+        return None
+    try:
+        return delivery_progress.cancelled_rest(
+            getattr(host, "willitems", None) or {},
+            getattr(host, "wallet", None),
+            count,
+        )
+    except Exception as e:
+        _logger.error(f"rest of the deliveries not read: {e!r}")
+        return None
+
+
+def done_deliveries(host):
+    """How many deliveries of the host's will are done while some are left
+    (#201, :func:`bal.core.delivery_progress.done_deliveries`); 0 without
+    a table, when none or all were executed, or when it cannot be read."""
+    count = table_count(host)
+    if count < 2:
+        return 0
+    try:
+        return delivery_progress.done_deliveries(
+            getattr(host, "willitems", None) or {},
+            getattr(host, "wallet", None),
+            count,
+        )
+    except Exception as e:
+        _logger.error(f"executed deliveries not read: {e!r}")
+        return 0
 
 
 def set_will_setting(host, field, value):

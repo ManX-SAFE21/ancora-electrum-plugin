@@ -2549,6 +2549,7 @@ class Will:
         self_willexecutor=False,
         wallet=False,
         callback_not_valid_tx=None,
+        done_deliveries=0,
     ):
         """Check whether the whole will is valid at the given timestamp.
 
@@ -2569,6 +2570,12 @@ class Will:
             self_willexecutor: Whether the user acts as their own executor.
             wallet: The Electrum wallet object.
             callback_not_valid_tx: Optional callback invoked for invalid txs.
+            done_deliveries: #201, a will in several deliveries whose
+                deliveries 1..n were executed while some are left
+                (``bal.core.delivery_progress.done_deliveries``): their rows
+                are not looked for in the VALID copies (the executed copy
+                is no longer VALID), and the plan of the possible futures
+                starts at delivery n + 1, where the VALID copies start.
 
         Returns:
             True if the will is valid; raises an exception otherwise.
@@ -2593,6 +2600,7 @@ class Will:
                 self_willexecutor,
                 timestamp_to_check,
                 tx_fees,
+                done=done_deliveries,
             ):
                 raise NotCompleteWillException()
 
@@ -2602,6 +2610,9 @@ class Will:
         # VALID copies, not the will in force: after the build of the same
         # Check the new chain (earlier) is what counts.
         plan = futures.plan_of_rows(heirs) if heirs else []
+        # #201: the deliveries already executed are behind: the VALID
+        # copies start at the next one.
+        plan = plan[done_deliveries:]
         if len(plan) >= 2:
             valid_items = {wid: w for wid, w in will.items() if w.get_status("VALID")}
             off = futures.futures_off_plan(valid_items, plan)
@@ -3126,10 +3137,14 @@ class Will:
 
     @staticmethod
     def check_willexecutors_and_heirs(
-        will, heirs, willexecutors, self_willexecutor, check_date, tx_fees
+        will, heirs, willexecutors, self_willexecutor, check_date, tx_fees,
+        done=0,
     ):
         """Check that the VALID will items still match the heirs and the
         will-executors; raise the reason when they do not.
+
+        ``done`` (#201): deliveries 1..done of a will in several deliveries
+        were executed; their rows are not missing heirs.
 
         ``heirs``: the heir rows the will is built from (with a table of
         the deliveries, the rows of every delivery, #168). A postpone of a
@@ -3299,7 +3314,10 @@ class Will:
         # CHANGELOG #77: report an ADDED heir before a CHANGED one, so that
         # "carol added" (with the others' shares adjusted) names carol, not
         # the first heir whose share changed.
-        missing = [h for h in heirs if h not in heirs_found]
+        # #201: the rows of an executed delivery are paid by a copy that is
+        # no longer VALID (it is on the chain): never "added".
+        missing = [h for h in heirs
+                   if h not in heirs_found and instalment_number(h) > done]
         if missing:
             changes = {
                 h: Will._heir_change(h, heirs[h], will_only_valid) for h in missing

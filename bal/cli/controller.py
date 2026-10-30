@@ -252,7 +252,8 @@ _MOVED_SETTINGS = ("WILL_SETTINGS", "BAL_WILL_SETTINGS")
 def _delivery_hold_message(e, settings=None):
     """The command-line text of a hold of the delivery settings (#123).
 
-    ``e``: ``DeliveryChoicePending`` or ``DeliverySettingsUnavailable``.
+    ``e``: ``DeliveryChoicePending``, ``DeliverySettingsUnavailable`` or
+    ``DeliveryRestCancelled`` (#201).
     ``settings``: the wallet's settings, for the two dates of the "which
     date?" question (without them the text has no dates). Says that nothing
     was done and which command answers. English, like every command-line
@@ -263,6 +264,15 @@ def _delivery_hold_message(e, settings=None):
             "The delivery settings of this wallet could not be prepared: "
             "nothing was changed. Please restart Electrum and send the log."
         )
+    if isinstance(e, delivery.DeliveryRestCancelled):
+        return _(
+            "Delivery {} was executed and the remaining deliveries were "
+            "cancelled (the coins that paid them were spent): no will is in "
+            "force, so nothing was built, signed or sent. To prepare a new "
+            "will, remove the table with bal_instalments_clear, set a new "
+            "date with bal_delivery_set --date YYYY-MM-DD, then run "
+            "bal_will_prepare."
+        ).format(e.executed)
     dates = delivery.choice_dates(settings) if settings is not None else None
     keep, later = dates if dates else (None, None)
     if keep is None or later is None:
@@ -758,8 +768,9 @@ class BalController(BalSettingsController):
 
     def _hold_result(self, e):
         """The JSON answer of a flow stopped by a delivery hold: ``result``
-        is the hold's code (``delivery_choice_pending`` or
-        ``delivery_settings_unavailable``) and ``message`` says what to do."""
+        is the hold's code (``delivery_choice_pending``,
+        ``delivery_settings_unavailable`` or, #201,
+        ``delivery_rest_cancelled``) and ``message`` says what to do."""
         return {
             "result": e.code,
             "message": _delivery_hold_message(e, self.will_settings),
