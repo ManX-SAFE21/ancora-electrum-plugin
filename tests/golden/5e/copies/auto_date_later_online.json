@@ -19,7 +19,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Wait</b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
@@ -92,9 +92,7 @@
   "questions": [],
   "report": {
    "boxes": {
-    "changes": [
-     "The will contains no valid transaction: a new will must be prepared."
-    ],
+    "changes": [],
     "problems": [],
     "warnings": []
    },
@@ -172,7 +170,7 @@
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
    "Heir:\t<font color=#05ad05><b>bob</b></font>",

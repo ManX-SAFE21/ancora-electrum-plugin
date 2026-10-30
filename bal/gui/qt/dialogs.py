@@ -1164,6 +1164,7 @@ class BalBuildWillDialog(BalDialog):
             message = (
                 self._past_date_message()
                 or self._rebuild_reason_message(e)
+                or (self.msg_ok() if self._first_will(e) else None)
                 or self._check_failure_message(e)
             )
             _logger.debug(f"message: {message}")
@@ -3488,6 +3489,17 @@ class BalBuildWillDialog(BalDialog):
             self._postpone_invalidation,
             self._unsigned_executors,
         )
+
+    def _first_will(self, e):
+        """True when the core found no valid transaction because the wallet
+        has no will at all.
+
+        #203 (owner): on a first will nothing changed, so the Check must not
+        say "The will contains no valid transaction" in the "What changed"
+        box. With copies in the wallet, none of them valid, the sentence is
+        true and stays.
+        """
+        return no_valid_transaction(e) and not self.bal_window.willitems
 
     def _check_failure_message(self, e):
         """Return a precise explanation of why the will is no longer coherent.
