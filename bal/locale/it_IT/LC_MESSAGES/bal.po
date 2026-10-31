@@ -2140,7 +2140,7 @@ msgstr "Il messaggio nel testamento è nella consegna 1."
 #: bal/gui/qt/deliveries.py:656
 #, python-brace-format
 msgid "Delivery {} is later than the will in force ({}): at the next Check the old will must be invalidated first (on-chain, miner fee)."
-msgstr "La consegna {} è più tardi del testamento in vigore ({}): al prossimo Check il vecchio testamento va prima invalidato (sulla blockchain, commissione ai miner)."
+msgstr "La consegna {} è più tardi del testamento in vigore ({}): al prossimo Controllo il vecchio testamento va prima invalidato (sulla blockchain, commissione ai miner)."
 
 #: bal/gui/qt/deliveries.py:703
 #, python-brace-format
@@ -2174,7 +2174,7 @@ msgstr "È gratuito: viene preparato un nuovo testamento con le date anticipate.
 
 #: bal/gui/qt/deliveries.py:799
 msgid "Your will in several deliveries is held by the will-executors. To go back to one delivery it must be invalidated on the blockchain first: a network fee, and the will's coins are spent together in one transaction visible to everybody. The next Check will ask you to sign the invalidation, then prepare the new will."
-msgstr "Il tuo testamento in più consegne è presso i will-executor. Per tornare a una sola consegna va prima invalidato sulla blockchain: una commissione di rete, e le monete del testamento vengono spese insieme in una sola transazione visibile a tutti. Il prossimo Check ti chiederà di firmare l'invalidazione, poi preparerà il nuovo testamento."
+msgstr "Il tuo testamento in più consegne è presso i will-executor. Per tornare a una sola consegna va prima invalidato sulla blockchain: una commissione di rete, e le monete del testamento vengono spese insieme in una sola transazione visibile a tutti. Il prossimo Controllo ti chiederà di firmare l'invalidazione, poi preparerà il nuovo testamento."
 
 #: bal/gui/qt/deliveries.py:813
 #, python-brace-format
@@ -2184,11 +2184,11 @@ msgstr "Con una sola consegna gli eredi ricevono tutto il patrimonio il {}, la d
 #: bal/gui/qt/deliveries.py:826
 #, python-brace-format
 msgid "Then the amounts of the heirs count again ({}): check them before the next Check."
-msgstr "Poi tornano a valere gli importi degli eredi ({}): controllali prima del prossimo Check."
+msgstr "Poi tornano a valere gli importi degli eredi ({}): controllali prima del prossimo Controllo."
 
 #: bal/gui/qt/deliveries.py:829
 msgid "Then the amounts of the heirs count again: check them before the next Check."
-msgstr "Poi tornano a valere gli importi degli eredi: controllali prima del prossimo Check."
+msgstr "Poi tornano a valere gli importi degli eredi: controllali prima del prossimo Controllo."
 
 #: bal/gui/qt/deliveries.py:831
 msgid "Go back to one delivery?"
@@ -2765,7 +2765,7 @@ msgstr "Interrotto: il vecchio testamento non è stato invalidato. La tua data p
 
 #: bal/gui/qt/dialogs.py:4137
 msgid "Interrupted: the will in several deliveries was not invalidated and stays in force. The next Check will ask again; to keep the deliveries instead, open the window \"Inheritance in several deliveries\" and save."
-msgstr "Interrotto: il testamento in più consegne non è stato invalidato e resta in vigore. Il prossimo Check lo chiederà di nuovo; per tenere invece le consegne, apri la finestra \"Eredità in più consegne\" e salva."
+msgstr "Interrotto: il testamento in più consegne non è stato invalidato e resta in vigore. Il prossimo Controllo lo chiederà di nuovo; per tenere invece le consegne, apri la finestra \"Eredità in più consegne\" e salva."
 
 #: bal/gui/qt/dialogs.py:4145
 msgid "Interrupted: the old will was not invalidated, nothing was changed."
@@ -3184,7 +3184,7 @@ msgstr "Non è stato possibile preparare le impostazioni di consegna di questo p
 
 #: bal/gui/qt/flow_adapter.py:46
 msgid "Nothing is signed or sent until you choose the delivery date: press 'Check your will'."
-msgstr "Non viene firmato né inviato niente finché non scegli la data di consegna: premi 'Verifica/Aggiorna'."
+msgstr "Non viene firmato né inviato niente finché non scegli la data di consegna: premi 'Controlla'."
 
 #: bal/gui/qt/flow_adapter.py:50
 msgid "Choose the delivery date"
@@ -3193,7 +3193,7 @@ msgstr "Scegli la data di consegna"
 #: bal/gui/qt/flow_adapter.py:56
 #, python-brace-format
 msgid "Delivery {} was executed and the remaining deliveries were cancelled (the coins that paid them were spent): no will is in force, and nothing is prepared, signed or sent. To prepare a new will, press \"Back to one delivery\" in the window \"Inheritance in several deliveries\" (Tools in the Will tab, ADVANCED mode), then choose a new date and press 'Check your will'."
-msgstr "La consegna {} è stata eseguita e le consegne rimaste sono state annullate (le monete che le pagavano sono state spese): nessun testamento è in vigore, e non viene preparato, firmato né inviato niente. Per preparare un testamento nuovo premi \"Torna a una sola consegna\" nella finestra \"Eredità in più consegne\" (Tools nella scheda Testamento, modalità AVANZATO), poi scegli una data nuova e premi 'Verifica/Aggiorna'."
+msgstr "La consegna {} è stata eseguita e le consegne rimaste sono state annullate (le monete che le pagavano sono state spese): nessun testamento è in vigore, e non viene preparato, firmato né inviato niente. Per preparare un testamento nuovo premi \"Torna a una sola consegna\" nella finestra \"Eredità in più consegne\" (Tools nella scheda Testamento, modalità AVANZATO), poi scegli una data nuova e premi 'Controlla'."
 
 #: bal/gui/qt/flow_adapter.py:125
 msgid "Check Alive passed"
@@ -3547,7 +3547,7 @@ msgstr "Procedura guidata - Crea il tuo testamento"
 
 #: bal/gui/qt/lists.py:1772 bal/gui/qt/window.py:778
 msgid "Check your will"
-msgstr "Verifica/Aggiorna"
+msgstr "Controlla"
 
 #: bal/gui/qt/lists.py:1774
 #, python-brace-format
@@ -5013,7 +5013,7 @@ msgstr "Il tuo testamento è stato cambiato da un altro programma. La data di co
 
 #: bal/gui/qt/window.py:705
 msgid "To use the later date again, choose it and press 'Check your will': first the old will needs an invalidation transaction (your bitcoin stay yours, you only pay the network fee)."
-msgstr "Per usare di nuovo la data più lontana, sceglila e premi 'Verifica/Aggiorna': prima il vecchio testamento ha bisogno di una transazione di invalidazione (i bitcoin restano tuoi, paghi solo la commissione di rete)."
+msgstr "Per usare di nuovo la data più lontana, sceglila e premi 'Controlla': prima il vecchio testamento ha bisogno di una transazione di invalidazione (i bitcoin restano tuoi, paghi solo la commissione di rete)."
 
 #: bal/gui/qt/window.py:746
 #, python-brace-format
