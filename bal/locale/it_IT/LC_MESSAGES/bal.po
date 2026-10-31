@@ -5221,9 +5221,9 @@ msgid ""
 msgstr ""
 "Questa eredità era già stata firmata e inviata ai Will-Executor e tu la stai posticipando.\n"
 "\n"
-"PRIMA bisogna invalidare il piano sulla blockchain per le monete già impegnate, altrimenti un Will-Executor potrebbe trasmettere la vecchia transazione (con la data precedente) ed eseguire l'eredità troppo presto.\n"
+"PRIMA bisogna invalidare sulla blockchain le monete già impegnate, altrimenti un Will-Executor potrebbe trasmettere la vecchia transazione (con la data precedente) ed eseguire l'eredità troppo presto.\n"
 "\n"
-"Firma ora la transazione di invalidazione e trasmetti il piano, poi premi di nuovo 'Prepara' per creare la nuova eredità (posticipata)."
+"Firma e trasmetti ora la transazione di invalidazione, poi premi di nuovo 'Prepara' per creare la nuova eredità (posticipata)."
 
 #: bal/gui/qt/window.py:2623
 msgid "Please, check your heirs, locktime and threshold!"
