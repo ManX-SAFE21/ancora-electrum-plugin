@@ -13935,3 +13935,21 @@ golden tests, 2 min 7 s, unchanged, Electrum 4.8.3. No catalog has an empty
 translation now.
 
 **Outcome:** DONE
+
+## 206. The Italian postponing message names the invalidation transaction
+
+**Why:** when a will already sent is postponed, the Italian message said "trasmetti
+il piano" and "invalidare il piano": the owner signs and sends the invalidation
+transaction, and what is invalidated is the coins already committed. The English
+and Spanish texts already said so.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`: the translation of that message.
+
+Text only: no code changed.
+
+**Verified:** ruff clean; 156 translation and golden tests passed, 1 min 39 s,
+goldens unchanged, Electrum 4.8.3.
+
+**Outcome:** DONE
