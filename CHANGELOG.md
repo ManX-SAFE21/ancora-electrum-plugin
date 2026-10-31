@@ -13953,3 +13953,21 @@ Text only: no code changed.
 goldens unchanged, Electrum 4.8.3.
 
 **Outcome:** DONE
+
+## 207. The Italian invalidation messages speak of the old will
+
+**Why:** after #206, two Italian messages still said "invalidare il piano": the one
+for an expired will and the one shown after the invalidation. The other messages
+already say that the old will is invalidated, and so do the English and Spanish
+texts.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`: the translation of those two messages.
+
+Text only: no code changed.
+
+**Verified:** ruff clean; 156 translation and golden tests passed, 2 min 32 s,
+goldens unchanged, Electrum 4.8.3.
+
+**Outcome:** DONE
