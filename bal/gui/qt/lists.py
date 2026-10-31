@@ -1802,7 +1802,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
                        lambda: self.bal_window.show_trace())
         # Toolbar order (left -> right):
         #   Wizard | Delivery time | Check Alive | fee ... Check | Calendar
-        # #161 (owner): the Check ("Verifica/Aggiorna" in Italian) on the
+        # #161 (owner): the Check ("Controlla" in Italian) on the
         # right, just before the calendar.
         # The settings widget shows its fields in ADVANCED only (#130). The
         # row takes the toolbar's free width (stretch 1), so the Wizard

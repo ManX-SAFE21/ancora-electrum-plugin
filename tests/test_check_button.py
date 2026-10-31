@@ -91,7 +91,7 @@ def _row():
 
 def test_wizard_on_the_left_check_before_the_calendar():
     """#161 (owner): the Wizard on the left, then the settings; on the
-    right the Check ("Verifica/Aggiorna" in Italian) just before the
+    right the Check ("Controlla" in Italian) just before the
     calendar. No "Sign the will offline" button any more (it is in the
     Tools menus)."""
     host, settings, widgets = _row()

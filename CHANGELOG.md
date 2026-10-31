@@ -13971,3 +13971,26 @@ Text only: no code changed.
 goldens unchanged, Electrum 4.8.3.
 
 **Outcome:** DONE
+
+## 208. One name for the Check button: "Controlla" in Italian, "Comprobar" in Spanish
+
+**Why (owner):** the same button had several names. The button itself read
+"Verifica/Aggiorna", while the menu and many messages said "Controlla" and others
+"il prossimo Check". "Verifica" also recalled "Verifica se sei vivo", which is
+another thing.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`: the button and the messages naming it read
+  "Controlla"; "il prossimo Check" reads "il prossimo Controllo".
+- `bal/locale/es_ES/LC_MESSAGES/bal.po`: the same with "Comprobar" and "la próxima
+  Comprobación", the word the plugin already uses.
+- `bal/gui/qt/lists.py`, `tests/test_check_button.py`: a comment and a docstring
+  that quoted the old name.
+
+Text only: no logic changed. "Check Alive" keeps its names.
+
+**Verified:** ruff clean; 213 translation, button and golden tests passed,
+2 min 48 s, goldens unchanged, Electrum 4.8.3.
+
+**Outcome:** DONE
