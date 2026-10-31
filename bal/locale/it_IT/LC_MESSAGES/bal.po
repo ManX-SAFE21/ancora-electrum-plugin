@@ -5209,7 +5209,7 @@ msgstr " nessuna transazione senza Will-Executor attiva o nessun Will-Executor s
 
 #: bal/gui/qt/window.py:2538
 msgid "Please sign and broadcast the invalidation transaction now, then press 'Prepare' again."
-msgstr ""
+msgstr "Firma e trasmetti ora la transazione di invalidazione, poi premi di nuovo 'Prepara'."
 
 #: bal/gui/qt/window.py:2544
 msgid ""

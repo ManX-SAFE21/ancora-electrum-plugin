@@ -13915,3 +13915,23 @@ signed or sent. No new text to translate.
 unchanged), 4 min 37 s, Electrum 4.8.3.
 
 **Outcome:** DONE
+
+## 205. The invalidation sentence translated into Italian and Spanish
+
+**Why:** going back from several deliveries to one (#188), the plugin asks to
+sign and send the invalidation transaction. The sentence "Please sign and
+broadcast the invalidation transaction now, then press 'Prepare' again." had no
+translation, so it stayed in English in the Italian and Spanish plugin.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`, `bal/locale/es_ES/LC_MESSAGES/bal.po`:
+  the translation of that sentence.
+
+Text only: no code changed.
+
+**Verified:** ruff clean; 58 translation and text tests passed, 15 s, and 152
+golden tests, 2 min 7 s, unchanged, Electrum 4.8.3. No catalog has an empty
+translation now.
+
+**Outcome:** DONE
