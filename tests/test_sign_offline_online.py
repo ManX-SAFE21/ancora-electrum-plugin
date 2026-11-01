@@ -600,9 +600,11 @@ def test_heir_amount_says_the_least(world, monkeypatch):  # noqa: F811
     d._amount = lambda sats: "{} sat".format(sats)
     heirs = [SimpleNamespace(name="alice", sats=1000, sats_max=1500, address="a1"),
              SimpleNamespace(name="bob", sats=700, sats_max=None, address="b1")]
-    summary = SimpleNamespace(heirs=heirs, messages=[], delivery=None,
-                              executors=[], to_sign=1, copies=1)
-    monkeypatch.setattr(gui.engine, "file_summary", lambda items: summary)
+    delivery = SimpleNamespace(
+        heirs=heirs, messages=[], locktime=None, executors=[], change=[],
+        backup=False, miner_fee=None, miner_fee_max=None)
+    summary = SimpleNamespace(deliveries=[delivery], problems=[], to_sign=1, copies=1)
+    monkeypatch.setattr(gui.engine, "file_summary", lambda wallet, items: summary)
     text = d.details_html()
     assert "at least 1000 sat" in text and "1500" not in text
     assert "700 sat" in text and "at least 700" not in text

@@ -53,6 +53,7 @@ from .common import (
     webopen,
 )
 from .dialogs import BalDialog
+from .offline_sign import SigningWarningDialog
 from .widgets import BalCheckBox, BalLineEdit, BalSpinBox, BalTextEdit
 from .window import BalWindow
 
@@ -492,6 +493,13 @@ class Plugin(BalPlugin, EventListener):
         except Exception as e:
             _logger.debug(f"electrum icon not set on the password window: {e!r}")
         return d.run()
+
+    def signing_warning_dialog(self, details, parent=None):
+        """The check before a signature (#209): True when the user goes on.
+
+        *details*: the rich text of :func:`bal.gui.qt.offline_sign.check_html`.
+        """
+        return bool(SigningWarningDialog(parent, details).exec())
 
     def get_seed(self):
         password = None

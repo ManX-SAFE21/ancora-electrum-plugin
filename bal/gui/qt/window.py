@@ -66,7 +66,9 @@ from ...engine.invalidate import (
 )
 from ...engine.merge import merge_summary
 from ...engine.merge import merge_will as engine_merge_will
+from ...engine.offline_sign import file_summary as engine_file_summary
 from ...engine.offline_sign import prepare_problem as engine_prepare_problem
+from ...engine.offline_sign import problem_lines as engine_problem_lines
 from ...engine.offline_sign import sign_file as engine_sign_file
 from ...engine.push import (
     ALREADY_PRESENT,
@@ -78,6 +80,7 @@ from ...engine.push import (
     select_push,
 )
 from ...engine.sign import sign_will, sign_will_item
+from ...engine.sign import to_sign as engine_to_sign
 from ...engine.verify import ever_sent, verify_targets, verify_will
 from .common import (
     IMPORT_FILE_FILTER,
@@ -159,7 +162,7 @@ from .flow_adapter import CHOOSE_DATE_FIRST, REST_CANCELLED, SETTINGS_UNAVAILABL
 from .future_view import FutureView, WillViewSwitch, make_future_area
 from .graph_view import GraphPanel
 from .lists import HeirListWidget, PreviewList
-from .offline_sign import open_sign_offline
+from .offline_sign import check_html, open_sign_offline
 from .trace_window import show_trace
 from .widgets import (
     MESSAGE_WARNING_STYLE,
@@ -2783,6 +2786,38 @@ class BalWindow:
         return sign_will(self.wallet, willitems, password, txids,
                          selected=selected, on_progress=on_progress)
 
+    def confirm_signing(self, will=None, txids=None, parent=None):
+        """The check before a signature (#209): True when signing may go on.
+
+        The owner: the reference is the address on paper, and the plugin must
+        warn "when signing offline, and probably always". So every signing
+        started by the user stops here first, wallet password or not; the
+        automatic rebuild does not, because nobody is there to answer.
+
+        *will*: a will loaded from a file instead of the live one (the Will
+        Details window, the review of an imported will): a payment problem
+        refuses it, as in the guided window. The live will is only shown: it
+        was built here, and a hacked computer could change this code too.
+        *txids*: the copies to sign; ``None``: the rule of
+        :meth:`sign_transactions`. A wallet with no keys signs nothing.
+        """
+        if self.wallet.is_watching_only():
+            return True
+        items = will if will is not None else self.willitems
+        selected = None
+        if will is None and txids is None:
+            selected = self.selected_willexecutors()
+        targets = engine_to_sign(items, txids, selected)
+        if not targets:
+            return True
+        summary = engine_file_summary(self.wallet, items, targets)
+        if will is not None and summary.problems:
+            self.show_error("\n".join(engine_problem_lines(summary.problems)))
+            return False
+        return self.bal_plugin.signing_warning_dialog(
+            check_html(summary, self.window.format_amount_and_units),
+            parent=parent or self.window)
+
     def _prepare_and_sign_tx(self, willitems, txid, password):
         """Prepare one will transaction and sign it.
 
@@ -3292,6 +3327,8 @@ class BalWindow:
             """Log the error (the window shows it)."""
             log_error(exec_info, self)
 
+        if not self.confirm_signing(will=will, txids=txids):
+            return
         password = self.get_wallet_password()
         if password is False:
             # The password window was cancelled: nothing to sign (#157:

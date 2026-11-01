@@ -48,9 +48,17 @@ Each computer has its colour (teal online, orange offline) in its drawing,
 the step bar and the place label; the route starts with a map of the five
 steps ("What we will do", :func:`route_map`), which "See the plan" shows
 again at any time.
+
+#209 (owner): "the reference is the bitcoin address on paper, which cannot be
+changed". The check lists every payment read from the transactions
+(:func:`check_html`); "Sign all" stays off until the user ticks that the
+addresses were compared, and for good when the file pays what the will does
+not say. :class:`SigningWarningDialog` is the same check for a signing outside
+this window (:meth:`bal.gui.qt.window.BalWindow.confirm_signing`).
 """
 
 import html
+import re
 from datetime import datetime, timezone
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
@@ -65,6 +73,8 @@ from PyQt6.QtGui import (
     QPolygonF,
 )
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -283,6 +293,150 @@ def delivery_text(locktime):
     if locktime < _LOCKTIME_THRESHOLD:
         return _("block {}").format(locktime)
     return datetext.utc_text(locktime)
+
+
+def signing_warning():
+    """What the user must do before any signature (#209, owner's words)."""
+    return _("Compare the addresses with the ones you wrote on paper. The "
+             "plugin cannot know whether they are the right ones: if the "
+             "online computer has been hacked, the will may contain false "
+             "addresses. Once signed, you will not be able to notice.")
+
+
+def _least(amount, line, info=""):
+    """The amount of *line* (``sats``, ``sats_max``) in words.
+
+    Owner (ZIP test, #160): "from ... to ..." was not clear. Each
+    will-executor's copy pays its own fee, so the amount depends a little on
+    who delivers the will: show the least, *info* says why.
+    """
+    if line.sats is None:
+        return html.escape(_("nothing (below the dust limit)"))
+    if line.sats_max is not None:
+        return html.escape(_("at least {}").format(amount(line.sats))) + info
+    return html.escape(amount(line.sats))
+
+
+def _output_rows(amount, name, line, info=""):
+    """Two rows of a table: the name and the amount, then the full address."""
+    return ("<tr><td><b>{}</b></td><td>&nbsp;{}</td></tr>"
+            "<tr><td colspan='2' style='color:#555555;'><tt>{}</tt></td></tr>"
+            ).format(html.escape(name), _least(amount, line, info),
+                     html.escape(line.address))
+
+
+def _delivery_html(amount, delivery, info):
+    """The rich text of one delivery of the check (see :func:`check_html`)."""
+    esc = html.escape
+    parts = ["<p><b>{}</b><br>{}</p>".format(
+        esc(_("Delivery to the heirs")), esc(delivery_text(delivery.locktime)))]
+    parts.append("<p><b>{}</b></p><table cellspacing='0' cellpadding='3'>{}</table>"
+                 .format(esc(_("Heirs")), "".join(
+                     _output_rows(amount, heir.name, heir, info)
+                     for heir in delivery.heirs)))
+    if delivery.messages:
+        parts.append("<p><b>{}</b><br>{}</p>".format(
+            esc(_("Message in the will")),
+            "<br>".join(esc(m) for m in delivery.messages)))
+    rows = "".join(_output_rows(amount, line.url or "", line)
+                   for line in delivery.executors)
+    if delivery.backup:
+        rows += "<tr><td colspan='2'>{}</td></tr>".format(
+            esc(_("Backup transaction (no will-executor)")))
+    parts.append("<p><b>{}</b></p><table cellspacing='0' cellpadding='3'>{}</table>"
+                 .format(esc(_("Will-executors")), rows))
+    if delivery.change:
+        parts.append(
+            "<p><b>{}</b></p><table cellspacing='0' cellpadding='3'>{}</table>".format(
+                esc(_("Returns to your wallet")),
+                "".join(_output_rows(amount, "", line) for line in delivery.change)))
+    if delivery.miner_fee is not None:
+        fee = amount(delivery.miner_fee)
+        if delivery.miner_fee_max not in (None, delivery.miner_fee):
+            fee = _("from {} to {}").format(fee, amount(delivery.miner_fee_max))
+        parts.append("<p><b>{}</b><br>{}</p>".format(esc(_("Miner fee")), esc(fee)))
+    return "".join(parts)
+
+
+def _no_lonely_point(text):
+    """*text* without the point Electrum leaves after a whole amount.
+
+    Electrum writes zero as "0. mBTC" and one as "1. mBTC". The owner's try
+    of #209: an heir left with nothing read "at least 0. mBTC".
+    """
+    return re.sub(r"\.(?=\s|$)", "", text)
+
+
+def check_html(summary, amount, info=""):
+    """The rich text of the check: what the copies to sign really pay (#209).
+
+    *summary*: :func:`bal.engine.offline_sign.file_summary`; *amount*: an
+    amount in the wallet's unit; *info*: what follows an amount that depends
+    on the will-executor (the small "ⓘ"). A delivery after the other, with
+    the problems that stop the signing on top, in red.
+    """
+    esc = html.escape
+    wallet_amount = amount
+
+    def amount(sats):
+        """The amount as the wallet writes it, without a lonely point."""
+        return _no_lonely_point(wallet_amount(sats))
+
+    parts = []
+    if summary.problems:
+        parts.append("<p style='color:#B00020;'><b>{}</b><br>{}</p>".format(
+            esc(_("Do not sign: the will's money does not go where it should.")),
+            "<br>".join(esc(line) for line in engine.problem_lines(summary.problems))))
+    many = len(summary.deliveries) > 1
+    for number, delivery in enumerate(summary.deliveries, 1):
+        if many:
+            parts.append("<h3>{}</h3>".format(esc(_("Delivery {}").format(number))))
+        parts.append(_delivery_html(amount, delivery, info))
+    parts.append("<p>{}</p>".format(esc(
+        _("Transactions to sign: {} of {}").format(summary.to_sign, summary.copies))))
+    return "".join(parts)
+
+
+class SigningWarningDialog(QDialog):
+    """Before a signing outside the guided window: the check and a tick (#209).
+
+    The owner: the plugin must warn "when signing offline, and probably
+    always". It shows what is about to be signed, and "Sign" stays off until
+    the user ticks that the addresses were compared.
+    """
+
+    def __init__(self, parent, details):
+        """Build the window; *details*: the rich text of :func:`check_html`."""
+        QDialog.__init__(self, parent)
+        self.setWindowTitle(_("Check before signing"))
+        self.setMinimumWidth(560)
+        column = QVBoxLayout(self)
+        label = QLabel(details)
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setMinimumHeight(320)
+        area.setWidget(label)
+        column.addWidget(area, 1)
+        warning = QLabel(signing_warning())
+        warning.setWordWrap(True)
+        column.addWidget(warning)
+        self.tick = QCheckBox(_("I compared the addresses with the ones on paper"))
+        column.addWidget(self.tick)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        cancel = QPushButton(_("Cancel"))
+        cancel.clicked.connect(self.reject)
+        row.addWidget(cancel)
+        self.sign_button = QPushButton(_("Sign"))
+        self.sign_button.setEnabled(False)
+        self.tick.toggled.connect(self.sign_button.setEnabled)
+        self.sign_button.clicked.connect(self.accept)
+        row.addWidget(self.sign_button)
+        column.addLayout(row)
 
 
 def is_multisig(wallet):
@@ -834,6 +988,8 @@ class OfflineSignDialog(_GuidedDialog):
         _GuidedDialog.__init__(self, bal_window)
         self.items = None
         self.signed = False
+        # #209: the file chosen has a payment problem: it cannot be signed.
+        self.blocked = False
         # A multisig signed here that still needs another cosigner:
         # ``(have, required)`` of the signatures.
         self.partly = None
@@ -872,9 +1028,18 @@ class OfflineSignDialog(_GuidedDialog):
         area.setMinimumHeight(320)
         area.setWidget(self.details)
         box.addWidget(area, 1)
+        self.paper_warning = QLabel(signing_warning())
+        self.paper_warning.setWordWrap(True)
+        box.addWidget(self.paper_warning)
+        self.paper_tick = QCheckBox(_("I compared the addresses with the ones on paper"))
+        self.paper_tick.toggled.connect(self._paper_ticked)
+        box.addWidget(self.paper_tick)
         row = QHBoxLayout()
         self.sign_button = QPushButton(_("Sign all"))
-        self.sign_button.setStyleSheet(_BIG)
+        # #209: off until the tick, and it must look off.
+        self.sign_button.setStyleSheet(
+            _BIG + "QPushButton:disabled{color:#9AA5B1; border-color:#D5DBE1;}")
+        self.sign_button.setEnabled(False)
         self.sign_button.clicked.connect(self.sign_all)
         row.addWidget(self.sign_button)
         row.addStretch(1)
@@ -927,51 +1092,13 @@ class OfflineSignDialog(_GuidedDialog):
         return self.bal_window.window.format_amount_and_units(sats)
 
     def details_html(self):
-        """The rich text of the check, from :func:`engine.file_summary`."""
-        s = engine.file_summary(self.items)
-        esc = html.escape
-        parts = ["<p><b>{}</b></p><table cellspacing='0' cellpadding='3'>".format(
-            esc(_("Heirs")))]
-        for heir in s.heirs:
-            info = ""
-            if heir.sats is None:
-                amount = _("nothing (below the dust limit)")
-            elif heir.sats_max is not None:
-                # Owner (ZIP test): "from ... to ..." was not clear. Each
-                # will-executor's copy pays its own fee, so the heir gets a
-                # little more or less depending on who delivers it: show
-                # the least the heir gets, with a small "ⓘ" that says why
-                # (:meth:`show_amount_info`).
-                amount = _("at least {}").format(self._amount(heir.sats))
-                info = ("&nbsp;<a href='{}' style='text-decoration:none;'>"
-                        "&#9432;</a>".format(_AMOUNT_INFO_LINK))
-            else:
-                amount = self._amount(heir.sats)
-            parts.append(
-                "<tr><td><b>{}</b></td><td>&nbsp;{}{}</td></tr>"
-                "<tr><td colspan='2' style='color:#555555;'>"
-                "<tt>{}</tt></td></tr>".format(
-                    esc(heir.name), esc(amount), info, esc(heir.address)))
-        parts.append("</table>")
-        if s.messages:
-            parts.append("<p><b>{}</b><br>{}</p>".format(
-                esc(_("Message in the will")),
-                "<br>".join(esc(m) for m in s.messages)))
-        parts.append("<p><b>{}</b><br>{}</p>".format(
-            esc(_("Delivery to the heirs")), esc(delivery_text(s.delivery))))
-        lines = []
-        for url, fee in s.executors:
-            if url is None:
-                lines.append(esc(_("Backup transaction (no will-executor)")))
-            elif fee is None:
-                lines.append(esc(url))
-            else:
-                lines.append(esc(_("{} (fee {})").format(url, self._amount(fee))))
-        parts.append("<p><b>{}</b><br>{}</p>".format(
-            esc(_("Will-executors")), "<br>".join(lines)))
-        parts.append("<p>{}</p>".format(esc(
-            _("Transactions to sign: {} of {}").format(s.to_sign, s.copies))))
-        return "".join(parts)
+        """The rich text of the check (:func:`check_html`), with the small
+        "ⓘ" that says why an amount is "at least" (:meth:`show_amount_info`).
+        """
+        return check_html(
+            engine.file_summary(self.wallet, self.items), self._amount,
+            info=("&nbsp;<a href='{}' style='text-decoration:none;'>"
+                  "&#9432;</a>".format(_AMOUNT_INFO_LINK)))
 
     def amount_info_text(self):
         """What the "ⓘ" after "at least ..." says (owner's words)."""
@@ -984,16 +1111,36 @@ class OfflineSignDialog(_GuidedDialog):
             self.show_message(self.amount_info_text())
 
     def _show_check(self):
-        """Check what the will gives to whom before signing."""
+        """Check what the will really pays before signing (#209).
+
+        A file with a problem can only be read: no tick and no signature.
+        """
         self.details.setText(self.details_html())
         self._show_signature_count()
+        self.blocked = bool(engine.payment_problems(self.wallet, self.items))
+        self.paper_tick.setChecked(False)
+        self.paper_tick.setVisible(not self.blocked)
+        self.paper_warning.setVisible(not self.blocked)
+        self.sign_button.setVisible(not self.blocked)
+        self.sign_button.setEnabled(False)
+        if self.blocked:
+            title = _("Do not sign this file")
+            line = _("This file pays what the will does not say. The online "
+                     "computer may have been hacked: do not sign, and do not "
+                     "use that computer for your bitcoin.")
+        else:
+            title = _("Check before signing")
+            line = _("Make sure the heirs, the amounts and the date are the "
+                     "ones you chose.")
         self.screen(
-            engine.STEP_SIGN, "offline", _("Check before signing"),
-            [_("Make sure the heirs, the amounts and the date are the ones "
-               "you chose.")],
+            engine.STEP_SIGN, "offline", title, [line],
             where=OFFLINE, where_text=_("On THIS computer (offline)"),
             page=self.check_page,
             link=(_("Choose another file"), self._show_choose))
+
+    def _paper_ticked(self, ticked):
+        """The tick of the addresses compared turns "Sign all" on (#209)."""
+        self.sign_button.setEnabled(bool(ticked) and not self.blocked)
 
     def _show_signature_count(self):
         """A multisig: "N of M" signatures under step 3 of the bar."""
