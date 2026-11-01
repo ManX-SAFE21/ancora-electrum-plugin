@@ -2758,9 +2758,14 @@ class BalBuildWillDialog(BalDialog):
                 # #84b: the Signature step is running while Electrum's
                 # password window is open (it stayed grey before).
                 self.msg_set_signing()
-                password = self.bal_window.get_wallet_password(
-                    _("Sign your will"), parent=self
-                )
+                # #209: the addresses compared with the paper, first; a
+                # "no" is the Cancel at the password below.
+                password = False
+                if self.bal_window.confirm_signing(
+                        txids=self._ids_to_sign(), parent=self):
+                    password = self.bal_window.get_wallet_password(
+                        _("Sign your will"), parent=self
+                    )
                 if password is False:
                     self.msg_set_signing(_("Aborted"))
         else:
@@ -5967,6 +5972,11 @@ class WillTxReviewSignDialog(BalDialog):
         self.aborted = False
         self.i = 0
         if not self.txids:
+            self.aborted = True
+            self.close()
+            return
+        # #209: a will from a file: the same check as the guided window.
+        if not bal_window.confirm_signing(will=self.items):
             self.aborted = True
             self.close()
             return

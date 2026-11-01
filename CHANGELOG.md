@@ -13994,3 +13994,48 @@ Text only: no logic changed. "Check Alive" keeps its names.
 2 min 48 s, goldens unchanged, Electrum 4.8.3.
 
 **Outcome:** DONE
+
+## 209. The second computer shows the real outputs and asks to compare them with paper
+
+**Why (owner):** the multisig is one person, one key on the online computer and one
+on an offline computer, against a hacked online computer. Testnet4, 2026-11-01: a
+file whose heir output was redirected showed the same heirs and was signed. The
+owner: the reference is the address on paper, and the plugin must warn when signing
+offline, "and probably always".
+
+**What changed:**
+
+- `bal/engine/offline_sign.py`: `file_summary`, `payment_problems`, `problem_lines`
+  read each copy to sign from its transaction, delivery by delivery: heirs,
+  will-executors, change (only if this wallet's keys derive it, a path in the file
+  proves nothing), messages. `sign_file` refuses a file with problems: an address
+  the will does not name, an heir receiving less, one person with two addresses in
+  a delivery, a transaction that ignores the date, an unreadable copy.
+- `bal/gui/qt/offline_sign.py`: the check lists every payment with its full address.
+  "Sign all" stays off until the tick "I compared the addresses with the ones on
+  paper". A file with problems: "Do not sign this file", no tick, no button.
+  `SigningWarningDialog` is the same check for the other signing routes. A whole
+  amount loses Electrum's lonely point ("0. mBTC").
+- `bal/gui/qt/window.py`, `plugin.py`, `dialogs.py`: `confirm_signing` before the
+  password, on the Check, the Will tab and Will Details, with or without a wallet
+  password; Will Details refuses a file with problems. Not on a watch-only wallet,
+  on the unattended automatic rebuild or on the invalidation signature.
+- `bal/locale/`: 12 new texts in Italian and Spanish.
+- `tests/test_offline_real_outputs.py` (new), `tests/flowkit.py`,
+  `tests/test_sign_offline_online.py`.
+
+Limits, on purpose or for later: a file coherent with itself (names rewritten in all
+copies) cannot be stopped, the false address is shown in full and the paper is the
+defence. `bal_will_sign` on the command line and the file import do not check yet,
+and signatures are not verified yet: next step.
+
+**Verified:** whole suite 3192 passed, 1 h 8 min 28 s, Electrum 4.8.3, with a logger
+of false stops: 951 signings, 9797 copies, no good will stopped (one signal, on a
+fixed fake transaction of an old test). After the last small fixes: ruff clean,
+51 tests of the offline windows passed in 53 s, 95 golden tests in 1 min 6 s. The owner asked Claude to make the ZIP test: real Electrum 4.8.3
+windows, offscreen, throw-away wallets, no network, Italian: single key and multisig
+2 of 3 to 39 of 39 signed, altered file stopped on both routes, tick and warning
+working, no exception. Not covered: Windows, the install from the Plugins dialog
+(the ZIP load test passed), a real Check with funds (fake will-executors only).
+
+**Outcome:** DONE

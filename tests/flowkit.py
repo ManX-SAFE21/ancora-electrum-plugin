@@ -485,6 +485,10 @@ class User:
         """``password``: what the owner types in the password window."""
         self.cancel_on = set()
         self.asked = []
+        # #209: the rich text of each check before a signature. Apart from
+        # ``asked``: a step the owner always passes, not one more question
+        # in every golden file.
+        self.warned = []
         self.password = password
         # The answer to the "which date?" question (#123): "keep" (the
         # default button) or "later". Cancel through ``cancel_on``.
@@ -504,6 +508,12 @@ class User:
         if self.answer("password", msg or ""):
             return self.password
         return None
+
+    def signing_warning_dialog(self, details, parent=None):
+        """The check before a signature (``Plugin.signing_warning_dialog``):
+        the owner ticks and goes on, unless ``cancel_on`` holds "paper"."""
+        self.warned.append(details)
+        return "paper" not in self.cancel_on
 
 
 class _FakeLabel:
@@ -981,6 +991,7 @@ class Session:
         self.user = User(password)
         # Electrum's password window lives on the Qt Plugin object.
         self.plugin.password_dialog = self.user.password_dialog
+        self.plugin.signing_warning_dialog = self.user.signing_warning_dialog
         legacy = legacy_global is not None or legacy_wallet is not None
         self._open_window(locktime, fee, threshold, seed=not legacy,
                           legacy_wallet=legacy_wallet, plugin_data=True,
@@ -1099,6 +1110,7 @@ class Session:
     def activate(self):
         """Point the shared plugin's password window at this wallet's owner."""
         self.plugin.password_dialog = self.user.password_dialog
+        self.plugin.signing_warning_dialog = self.user.signing_warning_dialog
 
     # The owner's actions ------------------------------------------------
 
@@ -1189,6 +1201,7 @@ class Session:
         """Clear the per-Check records; return the number of pushes so far."""
         self.user.cancel_on = set(cancel_on)
         self.user.asked = []
+        self.user.warned = []
         self.bw.popups = []
         self.bw.events = []
         self.bw.opened_dialogs = []
