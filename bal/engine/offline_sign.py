@@ -48,6 +48,11 @@ the signing (:func:`payment_problems`). A hacker can also rewrite the names
 in the file, so a stop is not the whole defence: the address on paper is the
 reference, and the window asks the user to compare them.
 
+#210 (owner): the same doubt for what comes back. A signature already in the
+file is proven (:mod:`bal.engine.signatures`) before the next signer adds one,
+and :func:`merge_problems` stops a file that changes a copy of the will, pays
+what it does not say or holds a false signature, before it reaches the will.
+
 No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 """
 
@@ -55,6 +60,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from electrum.logging import get_logger
+from electrum.transaction import PartialTxOutput
 
 from ..core import delivery as core_delivery
 from ..core.heirs import (
@@ -68,6 +74,7 @@ from ..core.heirs import (
 from ..core.will import Will
 from ..i18n import _
 from .sign import SignResult, sign_targets, sign_will, signing_outcome, to_sign
+from .signatures import check_copy
 
 __all__ = [
     "NO_KEYS",
@@ -87,6 +94,11 @@ __all__ = [
     "TWO_ADDRESSES",
     "NO_DATE",
     "UNREADABLE",
+    "INVALID_SIGNATURE",
+    "UNPROVEN_SIGNATURE",
+    "DIFFERENT_TX",
+    "EXECUTOR_PAID_MORE",
+    "COPIES_DIFFER",
     "DeliveryLines",
     "FileSummary",
     "HeirLine",
@@ -94,10 +106,13 @@ __all__ = [
     "PaymentProblem",
     "file_problem",
     "file_summary",
+    "merge_problems",
     "next_step",
+    "only_signatures",
     "payment_problems",
     "prepare_problem",
     "problem_lines",
+    "send_problems",
     "sign_file",
     "signed_file_data",
     "signed_file_problem",
@@ -147,6 +162,17 @@ TWO_ADDRESSES = "two_addresses"
 NO_DATE = "no_date"
 #: The copy cannot be read, so nothing can be said about what it pays.
 UNREADABLE = "unreadable"
+#: #210: a signature of the copy is wrong or cannot be proven.
+INVALID_SIGNATURE = "invalid_signature"
+#: #210: this computer does not know the coin, so a signature cannot be checked.
+UNPROVEN_SIGNATURE = "unproven_signature"
+#: #210: the file holds another transaction under the name of a will's copy.
+DIFFERENT_TX = "different_tx"
+#: #210: a will-executor gets more than its fee: a row can call anyone that.
+EXECUTOR_PAID_MORE = "executor_paid_more"
+#: #210: the copies of one delivery do not name the same people and addresses:
+#: the list shows each person once, so one rewritten copy would stay out of sight.
+COPIES_DIFFER = "copies_differ"
 
 #: An input with this sequence number makes Bitcoin ignore the locktime.
 _SEQUENCE_FINAL = 0xFFFFFFFF
@@ -272,7 +298,8 @@ def file_problem(wallet, items):
 
 def _host_order(item):
     """Sort key: the copies of the will-executors by URL, the backup last."""
-    url = (item.we or {}).get("url")
+    # A dict or nothing: whatever a hostile file holds must reach the check.
+    url = item.we.get("url") if isinstance(item.we, dict) else None
     return (url is None, url or "", str(item._id))
 
 
@@ -298,8 +325,13 @@ def _is_own(wallet, output):
     because it never goes online). The path alone proves nothing: Electrum
     derives the address from this wallet's keys and compares it, so a hacked
     file cannot pass another address off as the user's own.
+
+    #210: a finished transaction (a file merged back) has plain outputs, with
+    no path at all: only the addresses the wallet already knows.
     """
     try:
+        if not isinstance(output, PartialTxOutput):
+            return bool(wallet.is_mine(output.address))
         wallet.add_output_info(output)
         return bool(output.is_mine)
     except Exception as e:
@@ -307,17 +339,26 @@ def _is_own(wallet, output):
         return False
 
 
+def _whole_sats(value):
+    """*value* as whole satoshis, 0 when it says nothing: nothing is declared."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _read_rows(item):
     """The rows of *item*'s file, by kind: what the file SAYS the copy pays.
 
-    Returns ``(people, declared, executors, messages)``. ``people``:
+    Returns ``(people, declared, executors, messages, fees)``. ``people``:
     ``[(person, address, amount or None)]``, ``None`` for a row with no
     amount, such as an heir below the dust limit (#168: the person, never the
     row of a later delivery); ``declared``: ``{address: sats}`` the heirs must
     receive; ``executors``: ``{address: url}``, the backup copy has none;
-    ``messages``: ``{output script in hex: text}`` of the OP_RETURN messages.
+    ``messages``: ``{output script in hex: text}`` of the OP_RETURN messages;
+    ``fees``: ``{address: sats}`` the will-executors must receive at most.
     """
-    people, declared, executors, messages = [], {}, {}, {}
+    people, declared, executors, messages, fees = [], {}, {}, {}, {}
     we = item.we or {}
     if we.get("address"):
         executors[we["address"]] = we.get("url")
@@ -327,6 +368,7 @@ def _read_rows(item):
         if str(name).startswith(_EXECUTOR_HEIR):
             # The row's name is w!ll3x3c"<url>"<locktime>.
             executors.setdefault(address, str(name).split('"')[1])
+            fees[address] = fees.get(address, 0) + _whole_sats(row[HEIR_REAL_AMOUNT])
             continue
         if not address:
             continue
@@ -341,7 +383,9 @@ def _read_rows(item):
         people.append((core_delivery.person_name(name), address, amount))
         if amount is not None:
             declared[address] = declared.get(address, 0) + amount
-    return people, declared, executors, messages
+    if we.get("address"):
+        fees.setdefault(we["address"], _whole_sats(we.get("base_fee")))
+    return people, declared, executors, messages, fees
 
 
 def _add_output(lines, sats, address, url=None):
@@ -353,14 +397,24 @@ def _add_output(lines, sats, address, url=None):
     lines.append(OutputLine(address=address, sats=sats, url=url))
 
 
-def _read_outputs(wallet, tx, delivery, problems, rows):
+def _add_unnamed(delivery, address, sats):
+    """An output of a copy with no names at all: the address is its name."""
+    for line in delivery.heirs:
+        if line.address == address:
+            _widen(line, sats)
+            return
+    delivery.heirs.append(HeirLine(name=address, address=address, sats=sats))
+
+
+def _read_outputs(wallet, tx, delivery, problems, rows, unnamed=False):
     """Sort every output of *tx* by who gets it; returns ``{address: sats}``
-    of the heirs. *rows*: see :func:`_read_rows`.
+    of the heirs. *rows*: see :func:`_read_rows`; *unnamed*: the copy has no
+    names to compare with (see :func:`file_summary`).
 
     Every output is read, whatever the rows say: the rows only give a name
     to an address.
     """
-    people, _declared, executors, messages = rows
+    people, _declared, executors, messages, fees = rows
     heir_addresses = {address for _n, address, _a in people}
     paid = {}
     for output in tx.outputs():
@@ -376,9 +430,13 @@ def _read_outputs(wallet, tx, delivery, problems, rows):
         elif address in heir_addresses:
             paid[address] = paid.get(address, 0) + sats
         elif address in executors:
+            if sats > fees.get(address, 0):
+                problems.append(PaymentProblem(EXECUTOR_PAID_MORE, address))
             _add_output(delivery.executors, sats, address, executors[address])
         elif _is_own(wallet, output):
             _add_output(delivery.change, sats, address)
+        elif unnamed:
+            _add_unnamed(delivery, address, sats)
         else:
             problems.append(PaymentProblem(UNKNOWN_ADDRESS, address))
     return paid
@@ -386,7 +444,7 @@ def _read_outputs(wallet, tx, delivery, problems, rows):
 
 def _read_heirs(delivery, problems, rows, paid):
     """Add the heirs of one copy to *delivery* (*paid*: what they really get)."""
-    people, declared, _executors, _messages = rows
+    people, declared, _executors, _messages, _fees = rows
     addresses = [address for _n, address, _a in people]
     known = {line.name: line for line in delivery.heirs}
     for name, address, amount in people:
@@ -412,9 +470,10 @@ def _read_heirs(delivery, problems, rows, paid):
             _widen(line, sats)
 
 
-def _read_copy(wallet, item, delivery, problems):
+def _read_copy(wallet, item, delivery, problems, unnamed=False):
     """Add what the copy *item* really pays to *delivery*; *problems* gets why
-    not to sign it."""
+    not to sign it. *unnamed*: see :func:`file_summary`. Returns the people the
+    copy names, with their addresses."""
     # A fresh copy: :func:`_is_own` writes the wallet's data on its outputs.
     # The same text is what ``sign_will_item`` signs.
     tx = Will.get_tx_from_any(str(item.tx))
@@ -422,7 +481,7 @@ def _read_copy(wallet, item, delivery, problems):
     if not tx.locktime or any(
             txin.nsequence == _SEQUENCE_FINAL for txin in tx.inputs()):
         problems.append(PaymentProblem(NO_DATE))
-    paid = _read_outputs(wallet, tx, delivery, problems, rows)
+    paid = _read_outputs(wallet, tx, delivery, problems, rows, unnamed)
     _read_heirs(delivery, problems, rows, paid)
     if not (item.we or {}).get("url"):
         delivery.backup = True
@@ -434,9 +493,17 @@ def _read_copy(wallet, item, delivery, problems):
         fees = [f for f in (fee, delivery.miner_fee, delivery.miner_fee_max)
                 if f is not None]
         delivery.miner_fee, delivery.miner_fee_max = min(fees), max(fees)
+    return frozenset((name, address) for name, address, _amount in rows[0])
 
 
-def file_summary(wallet, items, targets=None):
+def _signature_problems(check):
+    """The problems of a :class:`bal.engine.signatures.SignatureCheck`."""
+    if check.bad:
+        return [PaymentProblem(INVALID_SIGNATURE)]
+    return [PaymentProblem(UNPROVEN_SIGNATURE)] if check.unproven else []
+
+
+def file_summary(wallet, items, targets=None, known=None, unnamed=False):
     """What the copies *targets* of *items* really pay (a :class:`FileSummary`).
 
     *targets*: the txids; by default the copies still to sign
@@ -445,18 +512,33 @@ def file_summary(wallet, items, targets=None):
     transactions; the copies are grouped by delivery date, because a will in
     several deliveries pays each heir a different amount at each date (before
     #209 the window mixed them into one "at least"). Read only.
+
+    *known*: where the signatures' check finds the coin of a later delivery
+    (#210), when it is not in *items*.
+
+    *unnamed*: a list of bare transactions (the QR and audio transfer of the
+    Will tab) holds no names, so nothing can be compared: its outputs are
+    listed by address, for a window where the user compares them with paper
+    before signing. Not for a route with no such window. Only when NO copy has
+    a name: one copy with its names taken away is an altered file.
     """
     pending = to_sign(items) if targets is None else list(targets)
     summary = FileSummary(copies=len(list(sign_targets(items))),
                           to_sign=len(pending))
     deliveries = {}
     problems = []
+    named = {}
+    unnamed = unnamed and not any(items[t].heirs or items[t].we for t in pending)
     for item in sorted((items[t] for t in pending), key=_host_order):
         try:
             locktime = int(item.tx.locktime)
             delivery = deliveries.setdefault(
                 locktime, DeliveryLines(locktime=locktime))
-            _read_copy(wallet, item, delivery, problems)
+            people = _read_copy(wallet, item, delivery, problems, unnamed)
+            if named.setdefault(locktime, people) != people:
+                problems.append(PaymentProblem(COPIES_DIFFER))
+            problems += _signature_problems(
+                check_copy(wallet, items if known is None else known, item))
         except Exception as e:
             # Whatever a damaged or hostile file holds, the answer is "stop".
             _logger.info(f"offline sign: copy not read: {e!r}")
@@ -488,8 +570,76 @@ def problem_lines(problems):
         NO_DATE: _("A transaction has no delivery date: it could be sent at "
                    "any time."),
         UNREADABLE: _("A transaction of the file cannot be read."),
+        INVALID_SIGNATURE: _(
+            "A transaction of the file holds, or asks for, a signature that is "
+            "not valid."),
+        UNPROVEN_SIGNATURE: _(
+            "A signature of the file cannot be checked on this computer: it does "
+            "not know the coin spent. Use the computer where the will was "
+            "prepared."),
+        DIFFERENT_TX: _(
+            "A transaction of the file is not the one of your will: it was changed."),
+        EXECUTOR_PAID_MORE: _(
+            "A will-executor receives more than the will says, at the address "
+            "{address}"),
+        COPIES_DIFFER: _("The copies of one delivery do not pay the same people."),
     }
     return [texts[p.kind].format(address=p.address, name=p.name) for p in problems]
+
+
+def only_signatures(problems):
+    """True when *problems* are all about signatures: the money is not the
+    matter, so the windows must not say it is (#210)."""
+    return bool(problems) and all(
+        p.kind in (INVALID_SIGNATURE, UNPROVEN_SIGNATURE) for p in problems)
+
+
+def _same_transaction(one, other):
+    """True when two copies are the same transaction, signatures apart.
+
+    Inputs, outputs, amounts, date: everything a signature covers. A will's
+    copy never changes once built: a new date or heir makes new copies.
+    """
+    return (Will.get_tx_from_any(str(one.tx)).serialize_to_network(include_sigs=False)
+            == Will.get_tx_from_any(str(other.tx)).serialize_to_network(include_sigs=False))
+
+
+def _merge_problems_of(wallet, willitems, wid, item, everything):
+    """Why the copy *item* of a file must not enter the will *willitems*."""
+    live = willitems.get(wid)
+    if live is None:
+        # A copy this will does not know: only the file can say what it pays.
+        # On its own, because a will may hold older copies of the same date
+        # with another address for the same person.
+        return file_summary(wallet, {wid: item}, [wid], known=everything).problems
+    if not _same_transaction(live, item):
+        return [PaymentProblem(DIFFERENT_TX)]
+    # A signed copy stays as it is: the file brings nothing into it.
+    if live.get_status("COMPLETE"):
+        return []
+    return _signature_problems(check_copy(wallet, everything, item))
+
+
+def merge_problems(wallet, willitems, imported):
+    """Why the will file *imported* must not be merged: an empty list if none.
+
+    Every copy of the file, whatever its statuses say, because the file writes
+    them too. A copy already in the will must be the same transaction and its
+    signatures must be right; a new copy is also read as the offline window
+    reads it (:func:`file_summary`). Read only. As in :func:`payment_problems`,
+    an empty list does not say the addresses are the right ones.
+    """
+    everything = dict(willitems)
+    everything.update(imported)
+    problems = []
+    for wid, item in imported.items():
+        try:
+            problems += _merge_problems_of(wallet, willitems, wid, item, everything)
+        except Exception as e:
+            # Whatever a damaged or hostile file holds, the answer is "stop".
+            _logger.info(f"merge: copy not read: {e!r}")
+            problems.append(PaymentProblem(UNREADABLE))
+    return list(dict.fromkeys(problems))
 
 
 def sign_file(wallet, items, password, on_progress=None):
@@ -515,6 +665,28 @@ def sign_file(wallet, items, password, on_progress=None):
         return result, signing_outcome(items)
     result = sign_will(wallet, items, password, on_progress=on_progress)
     return result, signing_outcome(items)
+
+
+def send_problems(wallet, willitems, imported):
+    """Why the will file *imported* must not be sent as it is: empty if none.
+
+    What :func:`merge_problems` says, and more, because here the file's own
+    copies leave, not the will's: every copy that says it is signed must be
+    proven signed, even when the will holds a signed copy of the same
+    transaction. The will-executors keep what they get.
+    """
+    everything = dict(willitems)
+    everything.update(imported)
+    problems = merge_problems(wallet, willitems, imported)
+    for item in imported.values():
+        if not (item.get_status("VALID") and item.get_status("COMPLETE")):
+            continue
+        check = check_copy(wallet, everything, item)
+        if check.unproven:
+            problems.append(PaymentProblem(UNPROVEN_SIGNATURE))
+        elif check.bad or not 0 < check.required <= check.have:
+            problems.append(PaymentProblem(INVALID_SIGNATURE))
+    return list(dict.fromkeys(problems))
 
 
 def signed_file_data(items):

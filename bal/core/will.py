@@ -204,6 +204,23 @@ class Will:
         return x
 
     @staticmethod
+    def set_input_coin(txin, output):
+        """Tell the input *txin* that it spends *output*: value, address, script.
+
+        For a coin of the will itself, not on the blockchain yet (a later
+        delivery spends the change of the one before).
+        """
+        txin._trusted_value_sats = output.value
+        try:
+            txin.script_descriptor = output.script_descriptor
+        except Exception:
+            pass
+        txin.is_mine = True
+        txin._TxInput__address = output.address
+        txin._TxInput__scriptpubkey = output.scriptpubkey
+        txin._TxInput__value_sats = output.value
+
+    @staticmethod
     def add_info_from_will(will, wid, wallet):
         if isinstance(will[wid].tx, str):
             will[wid].tx = Will.get_tx_from_any(will[wid].tx)
@@ -212,17 +229,7 @@ class Will:
         for txin in will[wid].tx.inputs():
             txid = txin.prevout.txid.hex()
             if txid in will:
-                change = will[txid].tx.outputs()[txin.prevout.out_idx]
-                txin._trusted_value_sats = change.value
-                try:
-                    txin.script_descriptor = change.script_descriptor
-                except Exception:
-                    pass
-                txin.is_mine = True
-                txin._TxInput__address = change.address
-                txin._TxInput__scriptpubkey = change.scriptpubkey
-                txin._TxInput__value_sats = change.value
-                txin._trusted_value_sats = change.value
+                Will.set_input_coin(txin, will[txid].tx.outputs()[txin.prevout.out_idx])
 
     @staticmethod
     def normalize_will(will, wallet=None, others_inputs=None):

@@ -64,11 +64,12 @@ from ...engine.invalidate import (
     broadcast_invalidation,
     build_invalidation,
 )
-from ...engine.merge import merge_summary
+from ...engine.merge import MergeRefusedError, merge_summary
 from ...engine.merge import merge_will as engine_merge_will
 from ...engine.offline_sign import file_summary as engine_file_summary
 from ...engine.offline_sign import prepare_problem as engine_prepare_problem
 from ...engine.offline_sign import problem_lines as engine_problem_lines
+from ...engine.offline_sign import send_problems as engine_send_problems
 from ...engine.offline_sign import sign_file as engine_sign_file
 from ...engine.push import (
     ALREADY_PRESENT,
@@ -2810,7 +2811,9 @@ class BalWindow:
         targets = engine_to_sign(items, txids, selected)
         if not targets:
             return True
-        summary = engine_file_summary(self.wallet, items, targets)
+        # A window with the tick follows: bare transactions can be listed.
+        summary = engine_file_summary(self.wallet, items, targets,
+                                      unnamed=will is not None)
         if will is not None and summary.problems:
             self.show_error("\n".join(engine_problem_lines(summary.problems)))
             return False
@@ -3347,10 +3350,18 @@ class BalWindow:
         Also the Will Details window, the will summary and the settings'
         re-send. CHANGELOG #123: refused while a hold of the delivery
         settings applies (rule I6).
+
+        #210: a will from a file (the Will Details window) leaves only when
+        its copies are proven (:func:`~bal.engine.offline_sign.send_problems`).
         """
         if _stopped_by_hold(self):
             return
         external = will is not None
+        if external:
+            problems = engine_send_problems(self.wallet, self.willitems, will)
+            if problems:
+                self.show_error("\n".join(engine_problem_lines(problems)))
+                return
 
         def on_success(sulcess):
             if not external:
@@ -3605,8 +3616,15 @@ class BalWindow:
         signatures of a multisig add up. Then the will is refreshed and,
         with *show*, a message says what came in
         (:meth:`_merge_message`). Returns the merged ids.
+
+        #210: a file the engine refuses is told here, whatever *show* says,
+        and nothing changes: the result is then empty.
         """
-        ids, error = engine_merge_will(self, imported)
+        try:
+            ids, error = engine_merge_will(self, imported)
+        except MergeRefusedError as e:
+            self.show_error(str(e))
+            return []
         if error is not None:
             log_error(error, self)
         self.update_all()
@@ -3633,11 +3651,12 @@ class BalWindow:
         return "\n".join(lines)
 
     def merge_will_from_file(self, path):
+        # #210: normalize_will reads the file too, and raises on a false coin.
         try:
             willitems = self._load_will_file(path)
+            Will.normalize_will(willitems, self.wallet)
         except Exception as e:
             raise FileImportFailed(_("Invalid will file: {}").format(e)) from None
-        Will.normalize_will(willitems, self.wallet)
         self.merge_will(willitems)
 
     def merge_single_transaction(self, tx):

@@ -316,7 +316,7 @@ def test_names_rewritten_in_one_copy_only_stop(world):  # noqa: F811
 
     _edit_file(stick, rewrite, only=1)
     s = world("keys")
-    assert _kinds(s, stick) == {engine.TWO_ADDRESSES}
+    assert engine.TWO_ADDRESSES in _kinds(s, stick)
 
 
 def test_transaction_that_ignores_the_date_stops(world):  # noqa: F811

@@ -4418,8 +4418,11 @@ class WillDetailDialog(BalDialog):
         live wallet willitems directly, so any further Sign/Broadcast/Export/
         Invalidate action targets the saved will items, and the note about
         the Future view (#131) appears.
+
+        #210: a refused file was told by the merge: the window stays on it.
         """
-        self.bal_window.merge_will(self.will)
+        if not self.bal_window.merge_will(self.will):
+            return
         self._external_will = False
         self.will = self.bal_window.willitems
         self.threshold = _live_threshold(self.bal_window)

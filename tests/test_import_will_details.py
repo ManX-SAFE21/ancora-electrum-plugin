@@ -17,12 +17,14 @@ Run:
 import sys
 import tempfile
 from types import MethodType, SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, __file__.rsplit("/", 2)[0])
 
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from bal.core.will import Will, WillItem
+from bal.engine import offline_sign as engine_offline_sign
 from bal.gui.qt import window as window_mod
 
 _app = QApplication.instance() or QApplication(sys.argv)
@@ -341,6 +343,16 @@ def _make_willitem_with_tx(tx, key=None):
     return wi
 
 
+def _merge_fake(fake, imported):
+    """The Merge of the window on made-up transactions, which no key can prove.
+
+    The rules of the merge are tested here; #210's proof of what a file holds
+    in ``tests/test_verify_signatures.py``, with real wallets.
+    """
+    with patch.object(engine_offline_sign, "merge_problems", return_value=[]):
+        return window_mod.BalWindow.merge_will(fake, imported)
+
+
 def _make_merge_fake(willitems):
     """A BalWindow-like object with a wallet stub sufficient for the local
     validity check that ``merge_will`` runs after merging.
@@ -409,7 +421,7 @@ def test_merge_will_same_id_unsigned_live_substitutes_signed_imported():
     fake, calls = _make_merge_fake(live)
     live_item = live[wid]
 
-    window_mod.BalWindow.merge_will(fake, imported)
+    _merge_fake(fake, imported)
 
     # The live WillItem object is kept (never replaced) and the signed tx
     # substituted in.
@@ -445,7 +457,7 @@ def test_merge_will_same_id_both_signed_combines():
     fake, _ = _make_merge_fake(live)
     live_item = live[wid]
 
-    window_mod.BalWindow.merge_will(fake, imported)
+    _merge_fake(fake, imported)
 
     # Same txid -> combine_with_other_psbt: live tx object is preserved.
     assert live_item.tx is live_tx
@@ -469,7 +481,7 @@ def test_merge_will_same_id_already_complete_never_touches_live_tx():
     fake, _ = _make_merge_fake(live)
     live_item = live[wid]
 
-    window_mod.BalWindow.merge_will(fake, imported)
+    _merge_fake(fake, imported)
 
     # An already-signed live will is left untouched: no combine, no substitute.
     assert live_item.tx is live_tx
@@ -494,7 +506,7 @@ def test_merge_will_statuses_are_monotonic():
     fake, _ = _make_merge_fake(live)
     live_item = live[wid]
 
-    window_mod.BalWindow.merge_will(fake, imported)
+    _merge_fake(fake, imported)
 
     assert live_item.get_status("CONFIRMED") is True
     assert live_item.get_status("MEMPOOL") is True
@@ -512,7 +524,7 @@ def test_merge_will_new_ids_added_wholesale():
 
     fake, _ = _make_merge_fake(live)
 
-    window_mod.BalWindow.merge_will(fake, imported)
+    _merge_fake(fake, imported)
 
     assert len(live) == 2
     assert live[new_id] is imported[new_id]
@@ -530,7 +542,7 @@ def test_merge_will_missing_date_to_check_defaults_to_now():
     fake, calls = _make_merge_fake({})
     del fake.date_to_check
 
-    window_mod.BalWindow.merge_will(fake, imported)
+    _merge_fake(fake, imported)
 
     assert isinstance(fake.date_to_check, (int, float)), \
         "date_to_check must fall back to a timestamp"
@@ -542,8 +554,6 @@ def test_merge_will_validity_error_logs_without_crashing():
     # Regression: the except handler passed log_error(e, self.bal_window);
     # BalWindow has no such attribute, so a validity failure raised a second
     # AttributeError that masked the original error.
-    from unittest.mock import patch
-
     wid = "validity_err"
     imported_tx = _make_partial_tx(locktime=1000, signed=True)
     imported = {wid: _make_willitem_with_tx(imported_tx, key=wid)}
@@ -553,7 +563,7 @@ def test_merge_will_validity_error_logs_without_crashing():
     with patch.object(
         window_mod.Util, "get_available_utxos", side_effect=RuntimeError("boom")
     ):
-        window_mod.BalWindow.merge_will(fake, imported)
+        _merge_fake(fake, imported)
 
     assert any(c[0] == "show_error" for c in calls), \
         "the validity error must be surfaced via show_error"
@@ -623,7 +633,7 @@ def test_merge_will_partial_signatures_update_counts():
     fake, _ = _make_merge_fake(live)
     live_item = live[wid]
 
-    window_mod.BalWindow.merge_will(fake, imported)
+    _merge_fake(fake, imported)
 
     assert live_item.get_status("PARTIALLY_SIGNED") is True
     assert live_item.sigs_have == 1
@@ -648,13 +658,20 @@ def test_will_detail_dialog_merge_switches_to_live():
     live = bal_window.willitems
     imported = _make_willitems(2)
     merged = []
-    bal_window.merge_will = lambda will: merged.append(will)
+    bal_window.merge_will = lambda will: merged.append(will) or list(will)
 
     dialog = WillDetailDialog(bal_window, will=imported)
 
     assert dialog._external_will is True
     assert dialog.merge_button is not None
     assert dialog.merge_button.isHidden() is False
+
+    # #210: a refused file (the merge merged nothing): the window stays on it.
+    refuse = bal_window.merge_will
+    bal_window.merge_will = lambda will: []
+    dialog.merge_will()
+    assert dialog._external_will is True and dialog.merge_button.isHidden() is False
+    bal_window.merge_will = refuse
 
     dialog.merge_will()
 

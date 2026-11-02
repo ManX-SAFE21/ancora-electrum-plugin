@@ -14039,3 +14039,71 @@ working, no exception. Not covered: Windows, the install from the Plugins dialog
 (the ZIP load test passed), a real Check with funds (fake will-executors only).
 
 **Outcome:** DONE
+
+## 210. Every signature is verified: a false one stops the file
+
+**Why (owner):** #209 reads what a file pays, but a signature in the file was only
+counted: "2 of 2" could be false. A hacked online computer could give the second
+computer a made-up first signature, or the online computer a file that looks signed.
+A will that looks signed and is not reaches the heirs as nothing. The owner asked for
+real verification, the same address check on import, merge and `bal_will_sign`, and
+tests with and without password, single key and multisig, tried in the real Electrum.
+
+**What changed:**
+
+- `bal/engine/signatures.py` (new): `check_copy` verifies each signature against the
+  key and the transaction, on a clean copy of it: what proves a signature (scripts,
+  coin) is rebuilt from this wallet, never taken from the file. A coin read from
+  another copy counts only if its hash is the txid. Only `Sighash.ALL` counts: a file
+  asking for a weaker signature is refused. When the coin cannot be known here the
+  answer is "cannot be checked", not "false".
+- `bal/engine/offline_sign.py`: new reasons to stop: false signature, signature that
+  cannot be checked, a different transaction under the same id, an executor paid more
+  than its fee, copies of one delivery paying different people. New `merge_problems`
+  and `send_problems`.
+- `bal/engine/merge.py`: `merge_will` refuses before anything changes
+  (`MergeRefusedError`), for the window and the command line.
+- `bal/engine/sign.py`: a copy asking for a weaker signature is never signed.
+- `bal/core/will.py`: `Will.set_input_coin`, extracted from `add_info_from_will`.
+- `bal/gui/qt/window.py`, `offline_sign.py`, `dialogs.py`: the refusal is shown and the
+  file stays out; "Broadcast" of an imported will in Will Details also refuses copies
+  flagged signed without proof; the second computer's count comes from the transaction,
+  not from the file.
+- `bal/cli/controller.py`: `bal_will_import_merge` and `bal_will_sign` use the same
+  checks.
+- `bal/locale/`: the new texts in Italian and Spanish.
+- `tests/test_verify_signatures.py` (new, 39 test functions); adapted fakes in
+  `tests/test_engine_sign.py`, `test_import_will_details.py`, `test_gui_will_flows.py`,
+  `test_offline_real_outputs.py`, `test_gui_future_view.py`.
+
+Limits, on purpose or for later:
+
+- The statuses sent/checked/confirmed still come from the file into the will (#158
+  rule): visible and recoverable, a later step.
+- A finished file on a wallet that knows no coin is refused with "cannot be checked on
+  this computer"; at the offline window a file already finished still says "already
+  signed, take it back": nothing is signed there and the online computer refuses it if
+  false.
+- A file coherent with itself (all copies rewritten) is only stopped by the paper. One
+  copy with an heir lowered and a new executor URL is not blocked but is visible ("at
+  least", one more will-executor). The command line has no paper warning.
+- "Merge transaction" of a partly signed later delivery is refused; a finished new copy
+  with change beyond the gap limit is refused.
+- Not confirmed: how real will-executors treat an unsigned copy; `dialogs.py` reads the
+  whole-will QR with `normalize_will` outside a `try`. Seen in the test harness only and
+  not touched: wallets that are not native segwit build no will at all, silently.
+
+**Verified:** whole suite 3238 passed and 1 failed, 1 h 15 min 4 s, Electrum 4.8.3, with
+a logger of false stops: 1041 signings, 11831 copies, no good will stopped (one signal,
+on a made-up transaction of an old test). The failure was a fake returning nothing in
+`test_gui_future_view.py`; fixed, that file then 184 passed in 5 s; the plugin did not
+change after the suite. Ruff clean. Two independent reviews: all they found fixed except
+the limits above. The owner asked Claude to make the ZIP test: real Electrum 4.8.3
+windows, offscreen, throw-away wallets, no network, Italian. Single key 39 of 39;
+multisig 2 of 3: first signer "1 of 2", second 39 of 39. False first signature on the
+second signer: "Do not sign this file", no button. False signatures on merge: refused,
+will unchanged at 0 copies. Good file on merge: 39 copies (1/1 signed, 1/2 not signed,
+2/2 signed). No exception. Not covered: Windows, the install from the Plugins dialog (the
+ZIP load test passed), a real Check with funds (fake will-executors only).
+
+**Outcome:** DONE

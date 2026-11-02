@@ -385,7 +385,9 @@ def check_html(summary, amount, info=""):
     parts = []
     if summary.problems:
         parts.append("<p style='color:#B00020;'><b>{}</b><br>{}</p>".format(
-            esc(_("Do not sign: the will's money does not go where it should.")),
+            esc(_("Do not sign: a signature in this file cannot be trusted.")
+                if engine.only_signatures(summary.problems)
+                else _("Do not sign: the will's money does not go where it should.")),
             "<br>".join(esc(line) for line in engine.problem_lines(summary.problems))))
     many = len(summary.deliveries) > 1
     for number, delivery in enumerate(summary.deliveries, 1):
@@ -1077,6 +1079,9 @@ class OfflineSignDialog(_GuidedDialog):
         # As the Will tab's import does (``import_will_into_details``).
         for wi in items.values():
             wi.set_status("IMPORTED", True)
+        # #210: the count under step 3 comes from the transactions: the file
+        # could write any number of signatures.
+        Will.check_signatures(items, self.wallet)
         problem = engine.file_problem(self.wallet, items)
         if problem is not None:
             self.show_error(_(_PROBLEMS[problem]))
@@ -1117,13 +1122,18 @@ class OfflineSignDialog(_GuidedDialog):
         """
         self.details.setText(self.details_html())
         self._show_signature_count()
-        self.blocked = bool(engine.payment_problems(self.wallet, self.items))
+        problems = engine.payment_problems(self.wallet, self.items)
+        self.blocked = bool(problems)
         self.paper_tick.setChecked(False)
         self.paper_tick.setVisible(not self.blocked)
         self.paper_warning.setVisible(not self.blocked)
         self.sign_button.setVisible(not self.blocked)
         self.sign_button.setEnabled(False)
-        if self.blocked:
+        if engine.only_signatures(problems):
+            title = _("Do not sign this file")
+            line = _("A signature in this file is not valid, or cannot be "
+                     "checked here: do not sign it, and prepare a new one.")
+        elif self.blocked:
             title = _("Do not sign this file")
             line = _("This file pays what the will does not say. The online "
                      "computer may have been hacked: do not sign, and do not "
@@ -1502,7 +1512,9 @@ class OnlineSignDialog(_GuidedDialog):
             return False
         # The Merge of the Will tab (#158), without its message box: this
         # window says what happened once the Check has run.
-        self.bal_window.merge_will(items, show=False)
+        # #210: a refused file was told by merge_will; nothing to send then.
+        if not self.bal_window.merge_will(items, show=False):
+            return False
         self.run_check()
         self._show_after_send()
         return True
