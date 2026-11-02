@@ -96,10 +96,18 @@ def test_identical_copy_keeps_its_date():
 def test_fewer_coins_and_other_executor_unchanged():
     # A coin was spent: the old will cannot be executed any more anyway.
     assert Will.check_anticipate(_Item(["c1:0", "c2:0"]), _Item(["c1:0"])) == NO_CONSTRAINT
-    # Another executor: its copy is not a competitor (same coins, its own fee).
+    # Another executor with the same coins: not a competitor (its own fee).
     assert Will.check_anticipate(
-        _Item(["c1:0"], url=WE0), _Item(["c1:0", "c2:0"], url=WE1)
+        _Item(["c1:0"], url=WE0), _Item(["c1:0"], url=WE1)
     ) == NO_CONSTRAINT
+
+
+def test_new_funds_other_executor_one_day_earlier():
+    """#215: the old copy stays with the old will-executor, so it competes."""
+    old = _Item(["c1:0"], url=WE0)
+    assert int(Will.check_anticipate(old, _Item(["c1:0", "c2:0"], url=WE1))) == DELIVERY - DAY
+    assert int(Will.check_anticipate(old, _Item(["c1:0", "c2:0"], url=None))) == DELIVERY - DAY
+    assert Will.check_anticipate(old, _Item(["c1:0"], url=None)) == DELIVERY
 
 
 def test_fee_change_still_one_day_earlier():
@@ -124,6 +132,10 @@ def test_detector_finds_the_risky_state():
     will = {"old": _Item(["c1:0"], locktime=DELIVERY - DAY),
             "new": _Item(["c1:0", "c2:0"])}
     assert Will.find_same_date_copies(will) == WE0
+    # #215: the complete will is with another will-executor, or kept by the owner.
+    for url in (WE1, None):
+        will = {"old": _Item(["c1:0"], url=WE0), "new": _Item(["c1:0", "c2:0"], url=url)}
+        assert Will.find_same_date_copies(will) == WE0
 
 
 def test_detector_quiet_when_safe():

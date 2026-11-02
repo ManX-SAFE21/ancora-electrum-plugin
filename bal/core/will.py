@@ -337,12 +337,21 @@ class Will:
                             # (Without a will-executor BAL already anticipated
                             # here, on the changed amounts: see below.)
                             return anticipate
+                    elif Will.covers_more_coins(ow, nw):
+                        # #215: the same risk with another will-executor. The
+                        # old one still holds its copy: if it broadcasts first,
+                        # the new copies die and the new coins reach no heir.
+                        return anticipate
                 else:
                     if nw.we == ow.we:
                         if not Util.cmp_heirs_by_values(ow.heirs, nw.heirs, [0, 3]):
                             return anticipate
                         else:
                             return ow.tx.locktime
+                    elif Will.covers_more_coins(ow, nw):
+                        # #215: same risk, a will-executor against a backup
+                        # transaction the owner keeps.
+                        return anticipate
                     else:
                         return ow.tx.locktime
             else:
@@ -364,10 +373,12 @@ class Will:
         a new will with the old coins plus the new ones, dated like the old
         one (or later), and both stayed VALID. At the delivery date both can
         be executed; if the old one is mined the new coins never reach the
-        heirs. Returns the URL of the first executor in that state (the
-        caller then rebuilds: the new will is dated one day earlier), or
-        ``None``. Items without a will-executor are left out: BAL already
-        dates them earlier when the amounts change. Read-only.
+        heirs. #215: the new will can be held by another will-executor, or be
+        a backup transaction. Returns the URL of the first executor in that
+        state (the caller then rebuilds: the new will is dated one day
+        earlier), or ``None``. An old item without a will-executor is left
+        out: BAL already dates the new one earlier when the amounts change.
+        Read-only.
         """
         valid = [w for w in will.values() if w.get_status("VALID")]
         for old in valid:
@@ -375,7 +386,7 @@ class Will:
             if not url:
                 continue
             for new in valid:
-                if new is old or (new.we or {}).get("url") != url:
+                if new is old:
                     continue
                 if Will.covers_more_coins(old, new) and int(old.tx.locktime) <= int(
                     new.tx.locktime
