@@ -694,9 +694,12 @@ class Util:
             return False, False
 
     @staticmethod
-    def get_change_output(wallet, in_amount, out_amount, fee):
-        """Build a change ``PartialTxOutput`` if the leftover exceeds dust."""
-        change_amount = int(in_amount - out_amount - fee)
+    def get_change_output(wallet, in_amount, out_amount):
+        """Build a change ``PartialTxOutput`` if the leftover exceeds dust.
+
+        ``out_amount`` already holds the miner fee (#211).
+        """
+        change_amount = int(in_amount - out_amount)
         if change_amount > wallet.dust_threshold():
             change_addresses = wallet.get_change_addresses_for_new_transaction()
             out = PartialTxOutput.from_address_and_value(

@@ -29,6 +29,11 @@ from electrum.logging import get_logger
 
 from ..core import trace
 from ..core.checkalive import resolve_date_to_check
+from ..core.heirs import (
+    BalanceTooLowException,
+    DeliveriesNotFundedException,
+    HeirAmountIsDustException,
+)
 from ..core.util import LOCKTIME_THRESHOLD, Util, copy_structure
 from ..core.will import NoWillExecutorNotPresent, Will, WillItem
 from ..core.willexecutors import Willexecutors
@@ -156,7 +161,7 @@ def _build_will(host, *, with_creation_date):
         # current mode (the Check Alive in ADVANCED, "now" in BASIC). The
         # available-UTXO view restores coins that a newer, wallet-local will
         # tx (stored in the history with a later locktime) nominally spent.
-        txs = _transactions(host, heirs)
+        txs = _every_delivery_funded(host, heirs)
         if heirs is not host.heirs:
             # The reason of a build with no transaction is read from
             # host.heirs by the front-ends.
@@ -199,6 +204,53 @@ def _build_will(host, *, with_creation_date):
         _logger.info(f"Exception build_will: {e}")
         raise
     return host.willitems
+
+
+def _every_delivery_funded(host, heirs):
+    """:func:`_transactions`, refused when a delivery of the table is not paid.
+
+    #211 (owner, 2026-11-02): when the funds cannot pay every delivery with
+    its fees the will is refused, with what to do. Before, a delivery that
+    could not be built just was not there: the owner signed fewer deliveries
+    than the table says, and the rest stayed in the wallet. A delivery goes
+    missing in two ways: the build of a later delivery stops
+    (``BalanceTooLowException``, or all its shares are dust), or one delivery
+    leaves no change for the next one and nothing is raised, so the chain is
+    read too. Nothing is changed in the will: this runs before
+    ``Will.update_will``.
+
+    Raises :class:`bal.core.heirs.DeliveriesNotFundedException`. A will
+    without a table, or with one delivery left, behaves as before.
+    """
+    dates = heirs.get_locktimes(host.date_to_check)
+    if heirs is host.heirs or len(dates) < 2:
+        return _transactions(host, heirs)
+    balance = sum(u.value_sats() for u in context.available_utxos(host))
+    try:
+        txs = _transactions(host, heirs)
+    except (BalanceTooLowException, HeirAmountIsDustException) as e:
+        _logger.info(f"a delivery cannot be paid: {e}")
+        raise DeliveriesNotFundedException(balance, len(dates)) from e
+    if txs and not _chain_complete(txs, dates):
+        _logger.info(f"a delivery is missing, build error: {heirs.last_build_error}")
+        raise DeliveriesNotFundedException(balance, len(dates))
+    return txs
+
+
+def _chain_complete(txs, dates):
+    """True when every copy leads to every delivery in ``dates``.
+
+    ``txs``: ``{txid: tx}``. All the dates are there, and every copy but
+    those of the last date has a copy spending its change. One will-executor's
+    higher fee can end its chain alone, so the dates alone are not enough.
+    """
+    last = max(dates)
+    if not set(dates) <= {tx.my_locktime for tx in txs.values()}:
+        return False
+    parents = {txin.prevout.txid.hex() for tx in txs.values() for txin in tx.inputs()}
+    return all(
+        tx.my_locktime == last or txid in parents for txid, tx in txs.items()
+    )
 
 
 def _transactions(host, heirs):

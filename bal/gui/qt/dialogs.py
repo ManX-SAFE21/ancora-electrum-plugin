@@ -62,6 +62,7 @@ from ...core.messages import (
     build_failure_message,
     chain_refused_message,
     check_alive_message,
+    deliveries_not_funded_message,
     excluded_after_build_message,
     heir_label,
     low_fee_warning,
@@ -104,6 +105,7 @@ from .common import (
     Buttons,
     Callable,
     CancelButton,
+    DeliveriesNotFundedException,
     HeirAmountIsDustException,
     MessageBoxMixin,
     Network,
@@ -1277,6 +1279,12 @@ class BalBuildWillDialog(BalDialog):
                         )
                     )
                 )
+                return False, None
+
+            except DeliveriesNotFundedException as e:
+                # #211: the funds cannot pay every delivery: what to do, not
+                # the fee figures of one delivery.
+                self.msg_set_building(self.msg_error(deliveries_not_funded_message(e)))
                 return False, None
 
             except BalanceTooLowException as e:

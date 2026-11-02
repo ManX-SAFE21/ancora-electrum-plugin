@@ -53,6 +53,7 @@ from ..core.messages import (
     chain_refused_message,
     check_alive_message,
     check_alive_passed_sentence,
+    deliveries_not_funded_message,
     heir_error_message,
     low_fee_warning,
     protected_executor_message,
@@ -155,6 +156,9 @@ def _user_facing(e):
         )
     if isinstance(e, heirs_mod.WillExecutorFeeTooHighException):
         return UserFacingException(_("Will-executor fee too high: {}").format(e))
+    if isinstance(e, heirs_mod.DeliveriesNotFundedException):
+        # #211: the same sentence as the Check window.
+        return UserFacingException(deliveries_not_funded_message(e))
     if isinstance(e, heirs_mod.BalanceTooLowException):
         return UserFacingException(str(e))
     if isinstance(e, heirs_mod.HeirAmountIsDustException):
