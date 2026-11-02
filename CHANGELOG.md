@@ -14282,3 +14282,33 @@ Electrum 4.8.3. Ruff clean. No text changed. View only, so the whole suite was n
 Not covered: Windows, a real network.
 
 **Outcome:** DONE
+
+## 215. A new coin with other will-executors: the new copies go first
+
+**Why (audit of 2026-10-31, step agreed with the owner):** with all the will-executors
+changed and a new coin, the old copies and the new ones stayed valid on the same date, and
+nothing was asked. An old will-executor that broadcasts first kills the new copies: the new
+coin stays in the wallet and reaches no heir. Reproduced before the fix, with and without a
+password.
+
+**What changed:**
+
+- `bal/core/will.py`: `Will.check_anticipate` dates one day earlier a new copy that spends
+  the coins of the old one and more, also when the will-executor is another one or the new
+  copy is a backup transaction. A copy with the same coins keeps its date.
+- `Will.find_same_date_copies` looks across will-executors too: a will already in this state
+  is rebuilt by the Check, as since #91.
+- `tests/test_new_coin_executors_changed.py` (new). `tests/test_new_funds_anticipate.py`: new
+  cases; the #91 case of another will-executor now has the same coins.
+
+Limits, on purpose or for later:
+
+- In this case the delivery moves one day earlier, as for every new coin since #91.
+- An old backup transaction against a new copy keeps the rule of before, on the amounts.
+- The old copies stay with the old will-executors, valid until the earlier copy is mined.
+
+**Verified:** whole suite 3296 passed, 0 failed, 1 h 35 min, Electrum 4.8.3. Ruff clean. With
+three fake will-executors, with and without a password: all changed, one changed, no new
+coin (the date does not move), second Check clean. Not covered: Windows, a real network.
+
+**Outcome:** DONE
