@@ -263,7 +263,7 @@ def prepare_transactions(locktimes, available_utxos, fees, wallet):
             )
             continue
         heirsvalue = out_amount
-        change = get_change_output(wallet, in_amount, out_amount, fee)
+        change = get_change_output(wallet, in_amount, out_amount)
         if change:
             outputs.append(change)
         for _ in range(0, 100):
@@ -357,8 +357,14 @@ def invalidate_inheritance_transactions(wallet):
                 remaining[key] = value
 
 
-def get_change_output(wallet, in_amount, out_amount, fee):
-    change_amount = int(in_amount - out_amount - fee)
+def get_change_output(wallet, in_amount, out_amount):
+    """The change of a transaction, or ``None`` when it would be dust.
+
+    #211: ``out_amount`` already holds the miner fee (``prepare_transactions``
+    starts it from the fee). Taking the fee off here too made every delivery
+    with change pay it twice, out of what the later deliveries receive.
+    """
+    change_amount = int(in_amount - out_amount)
     if change_amount > wallet.dust_threshold():
         change_addresses = wallet.get_change_addresses_for_new_transaction()
         out = PartialTxOutput.from_address_and_value(change_addresses[0], change_amount)
@@ -1418,3 +1424,21 @@ class BalanceTooLowException(Exception):
         self.fees = fees
     def __str__(self):
         return f"Balance too low, balance: {self.balance}, dust threshold: {self.dust_threshold}, fees: {self.fees}"
+
+
+class DeliveriesNotFundedException(BalanceTooLowException):
+    """The funds cannot pay every delivery of a table, with its fees (#211).
+
+    ``balance``: the sats the will can spend; ``deliveries``: how many
+    deliveries the table asks for. A ``BalanceTooLowException``, so a caller
+    that knows only that one still stops. The sentence for the owner is
+    ``bal.core.messages.deliveries_not_funded_message``.
+    """
+
+    def __init__(self, balance, deliveries):
+        """No dust limit or fee figure: they do not say what the owner can do."""
+        super().__init__(balance, 0, 0)
+        self.deliveries = deliveries
+
+    def __str__(self):
+        return f"{self.balance} sat cannot pay {self.deliveries} deliveries"

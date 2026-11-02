@@ -14107,3 +14107,61 @@ will unchanged at 0 copies. Good file on merge: 39 copies (1/1 signed, 1/2 not s
 ZIP load test passed), a real Check with funds (fake will-executors only).
 
 **Outcome:** DONE
+
+## 211. One miner fee per copy, and a will that cannot pay every delivery is refused
+
+**Why (owner):** the audit of 2026-10-31 found that a delivery leaving change paid the
+miner twice: `prepare_transactions` starts `out_amount` from the fee and
+`get_change_output` subtracted the fee again. The money came out of the change, so the
+later deliveries received less. The owner added a rule: when the funds are not enough
+the will must be refused, saying to reduce the number of deliveries (for example from
+3 to 2) or to make a simple inheritance with one delivery. Today a delivery that leaves
+no change, or a later build that returns nothing, makes the next delivery vanish with
+no error.
+
+**What changed:**
+
+- `bal/core/heirs.py`: `get_change_output(wallet, in_amount, out_amount)` no longer
+  takes the fee, which is already inside `out_amount`. New
+  `DeliveriesNotFundedException`, a `BalanceTooLowException`.
+- `bal/core/util.py`: `Util.get_change_output` (no callers) has the same fix.
+- `bal/core/messages.py`: `deliveries_not_funded_message`, the sentence and the advice.
+- `bal/engine/build.py`: `_every_delivery_funded` runs on a table with two or more
+  dates. It turns a balance too low or an amount under dust into the new refusal, and
+  `_chain_complete` checks that every date was built and every copy except the last
+  date has a child. It runs before `Will.update_will`, so a will in force stays as it
+  is. Without a table, or with one date: as before.
+- `bal/gui/qt/common.py`, `dialogs.py`, `window.py`, `bal/cli/controller.py`: the
+  sentence is shown by Check, by Prepare and on the command line.
+- `bal/locale/`: the new texts in Italian and Spanish.
+- `tests/test_miner_fee.py` (new, 22 tests).
+
+Limits, on purpose or for later:
+
+- A multisig coin is measured as single-key when the copy is built (184 vB against the
+  real 220), so a finished 2-of-3 copy pays less than the chosen rate: 2392 sat on
+  220 vB and 2237 on 208 vB, about 10.9 sat/vB when 13 is chosen. Before this step only
+  the last delivery paid so, the double fee hid it on the others. At very low chosen
+  rates a copy could fall below what nodes accept. A step of its own, not done here.
+- A will built with the old code is not touched by Checks: its copies stay as they are
+  until the owner rebuilds. A rebuild with a new will-executor dates the first delivery
+  exactly one day earlier and the old copies stop being valid.
+- The Check log still ends with "OK" after a refusal (audit item 20).
+- Delivery 1 does not reserve the fees of the later ones: 35/35/30 becomes
+  36.4/35.2/28.4.
+- With one delivery the message "balance too low" is unchanged, and Prepare still lets
+  a `BalanceTooLowException` escape.
+- "Add funds" is left out of the new message: the owner named two options.
+
+**Verified:** whole suite 3261 passed, 1 h 17 min 32 s, Electrum 4.8.3. Ruff clean.
+Three deliveries at 20 sat/vB, 1,000,000 sat: build calls from 174 to 78; miner fees of
+one chain from 19,681 to 11,561 sat. With 30,000 sat the will goes from 2 deliveries to
+3. One delivery: amounts identical. Grid of 135 combinations of wallet size, rate and
+table: 74 complete, 61 refused, none with a missing delivery. Claude ran the ZIP in real
+Electrum 4.8.3 windows, offscreen, throw-away wallets, fake will-executors, no network,
+Italian. Single key and multisig with 30,000 sat at 100 sat/vB: Check and Prepare show
+the refusal with the advice, 0 copies, no exception. Single key with 1,000,000 sat at
+20 sat/vB, real Prepare: 39 copies, miner fees 4060/4060/3440, no exception. Not covered:
+Windows, the install from the Plugins dialog (the ZIP load test passed), a real network.
+
+**Outcome:** DONE

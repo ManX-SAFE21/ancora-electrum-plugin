@@ -53,6 +53,7 @@ from ...core.heirs import (
 from ...core.messages import (
     chain_refused_message,
     check_alive_message,
+    deliveries_not_funded_message,
     heir_error_message,
     staged_removed_message,
     will_change_message,
@@ -91,6 +92,7 @@ from .common import (
     BalPlugin,
     Buttons,
     CancelButton,
+    DeliveriesNotFundedException,
     ElectrumWindow,
     FileImportFailed,
     HeirChangeException,
@@ -2596,6 +2598,11 @@ class BalWindow:
                     # is logged), and no "preparing a new will" before it.
                     refused = True
                     self.show_error(chain_refused_message(chain_error))
+                    return None
+                except DeliveriesNotFundedException as not_funded:
+                    # #211: the same sentence as the Check window.
+                    refused = True
+                    self.show_error(deliveries_not_funded_message(not_funded))
                     return None
                 finally:
                     if not refused and change_text and not Will.only_brought_back(

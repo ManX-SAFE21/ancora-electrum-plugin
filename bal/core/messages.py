@@ -133,6 +133,31 @@ def chain_refused_message(e=None):
     )
 
 
+def deliveries_not_funded_message(e):
+    """The sentence shown when the funds cannot pay every delivery (#211).
+
+    ``e``: a ``DeliveriesNotFundedException``. Owner's rule (2026-11-02): the
+    will is refused and the owner reads what to do: fewer deliveries, or a
+    simple inheritance. With two deliveries the only way is one delivery, so
+    no "from 3 to 2" there.
+    """
+    if e.deliveries > 2:
+        advice = _(
+            "Reduce the number of deliveries (for example from {} to {}), or "
+            "make a simple inheritance with one delivery."
+        ).format(e.deliveries, e.deliveries - 1)
+    else:
+        advice = _("Make a simple inheritance with one delivery.")
+    return "{} {} {}".format(
+        _(
+            "The new will was not prepared: the {} satoshi of this wallet are "
+            "not enough to pay all {} deliveries with their fees."
+        ).format(int(e.balance), e.deliveries),
+        advice,
+        _("If you have a will in force, it stays as it is."),
+    )
+
+
 #: #192: under this miner fee rate (sat/vB) the plugin warns; the default
 #: fee of a new will (owner, multiverse plan section 4: a warning, never a
 #: block, for every will).
