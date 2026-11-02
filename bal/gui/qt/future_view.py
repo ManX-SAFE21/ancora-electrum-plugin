@@ -466,25 +466,30 @@ def _grey_colours(scene):
 #: The opacity of a Future view whose will no will-executor received (#134).
 _FADED_OPACITY = 0.48
 
+#: The marks of a will-executor that holds the will (#214): it accepted the
+#: copy, whether or not a check has confirmed it since.
+_HOLDS_THE_WILL = ("verified", "to_verify", "excluded")
+
 
 def nothing_received(model):
-    """True when no will-executor has received and verified the will the
-    view shows (#134, owner): a draft only, or a will signed but not sent
-    (e.g. signed offline). View-only: the #128 notion of "in force" is not
-    touched.
+    """True when no will-executor has received the will the view shows
+    (#134, owner): a draft only, or a will signed but not sent (e.g. signed
+    offline). View-only: the #128 notion of "in force" is not touched.
 
     The executor marks of the version shown (``Future.executors``, from
-    ``bal.core.summary.executor_states``, the source of the summary's "x of
-    N received and verified"): not one is ``"verified"``. A will with no
-    will-executor at all (the backup transaction kept by the owner) is not
-    "not sent": it was never meant to be, so it keeps its colours.
+    ``bal.core.summary.executor_states``): not one holds the will. WHY not
+    only ``"verified"`` (#214): a will-executor that accepted the copy and
+    did not answer the check, or was excluded after receiving it, can still
+    execute it, and "nothing happens on the date" would be false. A will
+    with no will-executor at all (the backup transaction kept by the owner)
+    is not "not sent": it was never meant to be, so it keeps its colours.
     """
     if model.state == core_future.STATE_DRAFT_ONLY:
         return True
     marks = [m for m in model.executors if m.state != "deselected"]
     if model.state != core_future.STATE_IN_FORCE or not marks:
         return False
-    return not any(mark.state == "verified" for mark in marks)
+    return not any(mark.state in _HOLDS_THE_WILL for mark in marks)
 
 
 def _faded_scene(scene):

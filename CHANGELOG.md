@@ -14253,3 +14253,32 @@ one will-executor down, second Check clean, partly signed, window closed before 
 and during the checks. Not covered: Windows, a real network.
 
 **Outcome:** DONE
+
+## 214. The Future view no longer says "not sent" for a will the will-executors hold
+
+**Why (audit of 2026-10-31, step agreed with the owner):** the view wrote "NOT SENT TO THE
+WILL-EXECUTORS YET. Until you send it, nothing happens on the date." unless a will-executor
+was verified. One that accepted the copy and did not answer the check, or was excluded after
+receiving it, holds the will: the coins can move on the date, the view said the opposite.
+
+**What changed:**
+
+- `bal/gui/qt/future_view.py`: `nothing_received` counts `verified`, `to_verify` and
+  `excluded` as holding the will.
+- `tests/test_gui_future_view.py`: the #134 case with one `to_verify` copy now expects no
+  overlay; new cases.
+
+Limits, on purpose or for later:
+
+- With no overlay the view has its normal colours and the title "Your will is in force". Its
+  Will-Executor row still says how many are to be verified.
+- `failed` still reads as not received, also when a will-executor said "already present" and
+  the check then failed. A will-executor with two copies is read by its worst one. Both can
+  still show the overlay.
+- The PDF report never had the overlay: not touched.
+
+**Verified:** the 14 test files that read the view or its goldens: 489 passed in 3 min 13 s,
+Electrum 4.8.3. Ruff clean. No text changed. View only, so the whole suite was not run (owner's rule for look-only steps).
+Not covered: Windows, a real network.
+
+**Outcome:** DONE
