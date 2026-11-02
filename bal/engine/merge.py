@@ -26,6 +26,11 @@ Owner decisions (#158):
   2 of 2), as before;
 * after a merge the owner is told what came in (:func:`merge_summary`).
 
+#210 (owner): the rules above trusted the transaction in the file. A file
+with redirected outputs replaced the will's copy, and a false signature made
+"2 of 2". Now :func:`merge_will` refuses such a file whole (:class:`MergeRefusedError`)
+and the will stays as it was.
+
 No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 """
 
@@ -38,6 +43,7 @@ from ..core.will import Will
 from ..i18n import _
 
 __all__ = [
+    "MergeRefusedError",
     "MergeSummary",
     "local_validity_pass",
     "merge_items",
@@ -50,6 +56,10 @@ _logger = get_logger(__name__)
 # The statuses a merged copy takes from the file when the file has them.
 # COMPLETE is not here on purpose: it follows the transaction (#158).
 _CARRIED = ("PUSHED", "CHECKED", "MEMPOOL", "CONFIRMED")
+
+
+class MergeRefusedError(Exception):
+    """A will file was not merged; the text says why, for the user (#210)."""
 
 
 def _is_complete(tx):
@@ -151,8 +161,20 @@ def merge_will(host, imported):
 
     #173: the command trace gets ``bal_will_import_merge`` with how many
     copies, then the outcome.
+
+    #210: raises :class:`MergeRefusedError` before touching anything when the file
+    has a problem (:func:`bal.engine.offline_sign.merge_problems`).
     """
     trace.command("bal_will_import_merge", _("{} copies").format(_count(imported)))
+    # Here, not at the top: offline_sign imports sign, which imports this module.
+    from . import offline_sign
+
+    problems = offline_sign.merge_problems(host.wallet, host.willitems, imported)
+    if problems:
+        header = _("The will file was not merged, nothing changed:")
+        trace.add(trace.ERROR, header)
+        raise MergeRefusedError(
+            "\n".join([header] + offline_sign.problem_lines(problems)))
     if getattr(host, "date_to_check", None) is None:
         host.date_to_check = resolve_date_to_check(
             host.bal_plugin.is_basic_mode(), host.will_settings

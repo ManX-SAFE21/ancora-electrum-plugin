@@ -613,7 +613,7 @@ def test_display_note_only_for_the_live_will():
     assert live.view_note.text() == note and not live.view_note.isHidden()
     assert live.vlayout.itemAt(0).widget() is live.view_note
 
-    bw.merge_will = lambda will: None
+    bw.merge_will = lambda will: list(will)
     imported = WillDetailDialog(bw, will=_make_willitems(2))
     assert imported.view_note.isHidden()
     imported.merge_will()

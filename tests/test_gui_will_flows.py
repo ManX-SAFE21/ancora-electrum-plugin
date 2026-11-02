@@ -43,6 +43,7 @@ from bal.core.plugin_base import BalPlugin  # noqa: E402
 from bal.core.util import Util  # noqa: E402
 from bal.core.willexecutors import Willexecutors  # noqa: E402
 from bal.engine import context  # noqa: E402
+from bal.engine import offline_sign as engine_offline_sign  # noqa: E402
 from bal.gui.qt.window import BalWindow  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -388,7 +389,10 @@ def test_export_and_merge_roundtrip():
         # Fresh controller receives the exported will.
         dst = make_controller()
         imported = dst._load_will_file(path)
-        dst.merge_will(imported)
+        # #210: this fake wallet has no keys to prove a signature with; real
+        # wallets do it in tests/test_verify_signatures.py.
+        with mock.patch.object(engine_offline_sign, "merge_problems", return_value=[]):
+            dst.merge_will(imported)
 
     assert len(dst.willitems) == 1
     dst_txid, dst_item = _single(dst)

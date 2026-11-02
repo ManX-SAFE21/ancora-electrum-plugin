@@ -66,8 +66,9 @@ from ..core.will import Will, WillItem
 from ..core.willexecutors import Willexecutors, is_onion_url, is_tor_active
 from ..engine import build, context, instalments
 from ..engine.invalidate import INVALIDATION_LABEL, build_invalidation
-from ..engine.merge import merge_summary
+from ..engine.merge import MergeRefusedError, merge_summary
 from ..engine.merge import merge_will as engine_merge_will
+from ..engine.offline_sign import file_summary, problem_lines
 from ..engine.push import (
     EXCLUDED_FEE,
     FAILED,
@@ -1357,6 +1358,10 @@ class BalController(BalSettingsController):
         the copies of deselected will-executors are skipped (owner); when a
         signing fails, the ones signed before are saved, then the error is
         raised.
+
+        #210: nothing is signed when a copy to sign pays what the will does
+        not say or holds a false signature (the checks of the offline window).
+        Testnet4, 2026-11-01: this command signed a redirected file silently.
         """
         self._refuse_when_held()
         willitems = self.willitems
@@ -1364,6 +1369,10 @@ class BalController(BalSettingsController):
             raise UserFacingException(_("Password required to sign transactions"))
 
         selected = selected_urls(self.willexecutors) if txids is None else None
+        targets = to_sign(willitems, txids, selected)
+        problems = file_summary(self.wallet, willitems, targets).problems
+        if problems:
+            raise UserFacingException("\n".join(problem_lines(problems)))
         result = sign_will(self.wallet, willitems, password, txids,
                            selected=selected)
         self.save_willitems()
@@ -1509,8 +1518,13 @@ class BalController(BalSettingsController):
         Returns ``{merged, signed, partly_signed, unsigned}``: the merged
         copies and, among the valid ones, how many are signed, partly signed
         (a multisig waiting for another signer) and not signed.
+
+        #210: a refused file raises ``UserFacingException`` and nothing changes.
         """
-        ids, error = engine_merge_will(self, imported)
+        try:
+            ids, error = engine_merge_will(self, imported)
+        except MergeRefusedError as e:
+            raise UserFacingException(str(e)) from None
         if error is not None:
             _logger.error(f"merge_will validity check failed: {error}")
         summary = merge_summary(self.willitems, ids)
@@ -1522,11 +1536,12 @@ class BalController(BalSettingsController):
         }
 
     def merge_will_from_file(self, path):
+        # #210: normalize_will reads the file too, and raises on a false coin.
         try:
             willitems = self._load_will_file(path)
+            Will.normalize_will(willitems, self.wallet)
         except Exception as e:
             raise UserFacingException(_("Invalid will file: {}").format(e)) from None
-        Will.normalize_will(willitems, self.wallet)
         return self.merge_will(willitems)
 
     # ------------------------------------------------------------------ #

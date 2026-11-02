@@ -40,6 +40,7 @@ import bal.cli.controller as controller_mod
 import bal.gui.qt.window as window_mod
 from bal.cli.controller import BalController
 from bal.core.will import Will
+from bal.engine.offline_sign import FileSummary
 from bal.engine.sign import SignResult, sign_targets, sign_will_item
 from bal.gui.qt.window import BalWindow
 
@@ -52,6 +53,7 @@ class _Item:
     def __init__(self, txt, valid=True, complete=False, outputs=()):
         self.tx = types.SimpleNamespace(text=txt, outputs=lambda: list(outputs))
         self.status = {"VALID": valid, "COMPLETE": complete}
+        self.we = None
 
     def get_status(self, name):
         """The stored status *name*."""
@@ -231,8 +233,11 @@ def test_cli_signs_through_the_engine_and_saves():
     ctl = _controller(items)
     ctl.willexecutors = {"https://a": {"selected": True},
                          "https://b": {"selected": False}}
-    with patch.object(controller_mod, "sign_will",
-                      return_value=_result({"new": "SIGNED"})) as sw:
+    # file_summary: #210, tested in tests/test_verify_signatures.py.
+    with patch.object(controller_mod, "file_summary",
+                      return_value=FileSummary()), \
+            patch.object(controller_mod, "sign_will",
+                         return_value=_result({"new": "SIGNED"})) as sw:
         out = BalController.sign_transactions(ctl, "pw", txids=None)
         assert sw.call_args.kwargs["selected"] == {"https://a"}
         BalController.sign_transactions(ctl, "pw", txids=["new"])
@@ -248,8 +253,10 @@ def test_cli_error_saves_then_raises():
     error reaches the command."""
     ctl = _controller({"a": _Item("a")})
     ctl.willexecutors = {}
-    with patch.object(controller_mod, "sign_will",
-                      return_value=_result({"a": "T"}, ValueError("bad"))):
+    with patch.object(controller_mod, "file_summary",
+                      return_value=FileSummary()), \
+            patch.object(controller_mod, "sign_will",
+                         return_value=_result({"a": "T"}, ValueError("bad"))):
         try:
             BalController.sign_transactions(ctl, "pw")
         except ValueError:

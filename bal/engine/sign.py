@@ -51,6 +51,7 @@ from ..core import trace
 from ..core.will import Will
 from ..i18n import _
 from .merge import merge_summary
+from .signatures import asks_unsafe_signature
 
 __all__ = [
     "SignResult",
@@ -167,11 +168,19 @@ def sign_will_item(wallet, willitems, txid, password):
 
     Errors of the wallet (a wrong password...) propagate; the item is then
     not touched.
+
+    #210: a transaction that asks for a signature leaving its outputs free is
+    never signed, on any route. ``ignore_warnings`` below would let it through
+    (a hacked computer can write that field, with all the outputs right).
     """
     wi = willitems[txid]
     tx = Will.get_tx_from_any(str(wi.tx))
     if wi.get_status("COMPLETE"):
         return tx, False
+    if asks_unsafe_signature(tx):
+        raise ValueError(_(
+            "A transaction asks for a signature that does not protect where "
+            "the money goes."))
     for txin in tx.inputs():
         prevout = txin.prevout.to_json()
         if prevout[0] in willitems:
