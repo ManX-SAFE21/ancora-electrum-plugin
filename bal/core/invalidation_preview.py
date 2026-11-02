@@ -20,6 +20,7 @@ it never signs, sends or changes anything.
 """
 
 from . import will_versions
+from .util import Util
 
 # The versions an invalidation really ends: those the will-executors hold
 # (in force, or replaced but still held and executable) and a partially
@@ -96,7 +97,9 @@ def invalidation_facts(tx, will, wallet=None, history=None):
         amount = int(tx.input_value())
         received = int(sum(o.value for o in outputs))
         fee = amount - received
-        size = int(tx.estimated_size()) or 1
+        # #212: the size the fee was worked out from (see Util.real_tx_size).
+        size = int(Util.real_tx_size(tx, wallet) if wallet is not None
+                   else tx.estimated_size()) or 1
         address = str(outputs[0].address) if outputs else ""
         mine = None
         if wallet is not None:

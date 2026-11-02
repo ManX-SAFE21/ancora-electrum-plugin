@@ -95,12 +95,12 @@ def _rows(dlg):
     return " ".join(str(row) for row in dlg.labels)
 
 
-def _assert_each_copy_pays_once(s, rate, low=1.0):
+def _assert_each_copy_pays_once(s, rate):
     """Every copy: inputs = heirs + will-executor + change + one miner fee.
 
-    ``low``: the part of the rate a copy may pay at least. A multisig coin is
-    measured as a single-key one when the will is built, a known limit of this
-    step: see :func:`test_multisig_pays_the_miner_once`.
+    A stored copy that spends the change of another one reads a smaller size
+    than it has, so this is the upper limit of its fee; the exact fee of a
+    multisig is in ``tests/test_multisig_fee_size.py`` (#212).
     """
     executors = {e["address"] for e in s.world.executors.values()}
     copies = _valid(s)
@@ -119,7 +119,7 @@ def _assert_each_copy_pays_once(s, rate, low=1.0):
         miner = spent - sum(paid.values())
         assert paid["heirs"] > 0 and paid["executor"] > 0
         # The build accepts a fee up to one dust limit over the size's.
-        assert low * size * rate <= miner <= size * rate + s.wallet.dust_threshold(), (
+        assert size * rate <= miner <= size * rate + s.wallet.dust_threshold(), (
             f"{miner} sat on {size} vB at {rate} sat/vB")
 
 
@@ -167,19 +167,14 @@ def test_more_coins_pay_the_miner_once(session):
 
 
 def test_multisig_pays_the_miner_once(world):  # noqa: F811
-    """The owner's 2-of-3: one fee, never two.
-
-    The build measures a multisig coin as a single-key one (184 vB against
-    220), so a copy pays about 83 % of the rate: not double, and a limit that
-    #211 did not make: the last delivery always paid so.
-    """
+    """The owner's 2-of-3: one fee at the chosen rate (#212 for the rate)."""
     s = world("msWatch")
     s.set_heirs(alice="50%", bob="50%")
     s.set_instalments((D[0], {"alice": "30%", "bob": "0%"}),
                       (D[1], {"alice": "0%", "bob": "30%"}),
                       (D[2], {"alice": "20%", "bob": "20%"}))
     s.check()
-    _assert_each_copy_pays_once(s, s.bw.will_settings["baltx_fees"], low=0.8)
+    _assert_each_copy_pays_once(s, s.bw.will_settings["baltx_fees"])
     assert len(_chain(s)) == 3
 
 

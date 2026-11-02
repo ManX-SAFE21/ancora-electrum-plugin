@@ -76,6 +76,10 @@ class _Karen7Wallet:
         self._utxos = utxos
         self.network = None
 
+    def get_script_descriptor_for_address(self, address):
+        """No script known: the size stays on Electrum's guess (#212)."""
+        return None
+
     def dust_threshold(self):
         return 546
 

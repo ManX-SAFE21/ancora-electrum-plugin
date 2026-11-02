@@ -1423,7 +1423,8 @@ class Will:
             # The network rate can be fractional (e.g. 1.5 sat/vbyte): round
             # the total fee UP to whole satoshis so the output value is an
             # integer and the rate is never below the one requested.
-            fee = int(math.ceil(tx.estimated_size() * fee_rate))
+            # #212: the real size, or a multisig pays less than this rate.
+            fee = int(math.ceil(Util.real_tx_size(tx, wallet) * fee_rate))
             _logger.info(
                 f"invalidation fee: {fee_rate} sat/vbyte ({fee_source}), "
                 f"total {fee} sat"

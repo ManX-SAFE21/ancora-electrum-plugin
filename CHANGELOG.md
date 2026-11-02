@@ -14165,3 +14165,56 @@ the refusal with the advice, 0 copies, no exception. Single key with 1,000,000 s
 Windows, the install from the Plugins dialog (the ZIP load test passed), a real network.
 
 **Outcome:** DONE
+
+## 212. A multisig pays the chosen miner fee on its real size
+
+**Why (audit of 2026-10-31, step agreed with the owner):** a coin from
+`wallet.get_utxos()` has no script, and Electrum then guesses a single key from any
+`bc1`/`tb1` address: 184 vB against the real 220 of a 2-of-3. The fee was worked out on
+that guess, so at a chosen 13 sat/vB a 2-of-3 copy paid 10.87 sat/vB, a 3-of-5 9.34, a
+1-of-2 12.33, and the invalidation of a 2-of-3 10.04. At low rates a copy could fall
+below what nodes accept.
+
+**What changed:**
+
+- `bal/core/util.py`: new `Util.real_tx_size(tx, wallet)`. It measures the size with the
+  script the wallet gives for each input, on copies of the inputs: the transaction and
+  its PSBT text do not change. An input whose script the wallet cannot give stays on
+  Electrum's guess. A signed transaction reads the size of its real bytes.
+- `bal/core/heirs.py`: the fee of each copy uses the real size.
+- `bal/core/will.py`: `Will.invalidate_will` too.
+- `bal/core/invalidation_preview.py`: the rate in the box before the password is read on
+  the same size.
+- `tests/test_multisig_fee_size.py` (new, 9 tests). `tests/test_miner_fee.py`: the
+  tolerance for multisig is gone.
+- `tests/test_auto_rebuild_on_new_tx.py`, `test_cli_autorebuild.py`,
+  `test_gui_will_flows.py`, `test_group_e_karen7_invalidate.py`: their fake wallets answer
+  "no script known", as a real wallet does for an address that is not its own.
+
+Limits, on purpose or for later:
+
+- A will built with the old code is not touched by Checks: its copies keep the old fee
+  until the owner rebuilds.
+- A stored copy that spends the change of another copy has no address or script when it
+  is read back, so `estimated_size()` reads less (184 vB against 220). The fee is right,
+  because the build works in memory. The detail window (`bal/gui/qt/widgets.py`) uses
+  that size, so it can show a rate higher than the real one (15.42 for 13). For the
+  list of texts; that window was not checked.
+- Not part of this step, found with the probes: wallets of older types (addresses
+  starting with `1` or `3`) build no will at all, `WILLEXECUTOR_TX_ERROR`, because an
+  unsigned `tx.txid()` is None. A step of its own, to report before the release.
+
+**Verified:** whole suite before the fake wallets were fixed: 3227 passed, 28 failed,
+15 errors, 1 h 19 min, Electrum 4.8.3, all 43 from the fake wallets missing the new
+method. After the fix those 5 files, the new tests and `test_miner_fee.py`: 86 passed in
+55 s. The whole suite was not run again: only the fake wallets changed. Ruff clean.
+At a chosen 13 sat/vB: 2-of-3, 3-of-5 and 1-of-2 first delivery 13.00, also with two
+real signatures (220 vB, 2860 sat instead of 2392); invalidation of a 2-of-3 13.00
+(2054 sat instead of 1586 on 158 vB). Single key: amounts unchanged. An existing will: a
+Check leaves it and asks nothing. Not covered: Windows, a real network.
+Owner ZIP test on Windows with Electrum Testnet4 4.8.3, wallet multisig_test_212 (2of3
+p2wsh, 1 input, 2.4651 mBTC): at 20 sat/vB the plugin built a fee of 2820 sat on 141 vB
+real size (2820 / 141 = 20.0 sat/vB). Electrum's detail window shows 15.9 sat/vbyte
+because it divides by its own guess of 177 vB (known limit, documented above).
+
+**Outcome:** DONE
