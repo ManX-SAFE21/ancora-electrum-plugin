@@ -699,12 +699,16 @@ def _marks(*states):
     (("verified", "failed", "to_verify"), False),
     (("to_send", "to_send", "to_send"), True),
     (("to_sign", "to_sign", "to_sign"), True),
-    (("to_verify", "failed", "to_send"), True),
+    (("failed", "failed", "to_send"), True),
+    # #214: they hold the will, a check confirmed it or not.
+    (("to_verify", "failed", "to_send"), False),
+    (("to_verify", "to_verify", "to_verify"), False),
+    (("excluded", "excluded", "deselected"), False),
 ])
-def test_colour_only_when_one_executor_verified_it(states, faded):
-    """#134 (owner): colours only when at least one will-executor received
-    and verified the will shown; else grey, faded, with the overlay. The
-    title keeps its text (grey). The report's scene never changes."""
+def test_colour_only_when_one_executor_holds_it(states, faded):
+    """#134 (owner), #214: colours only when at least one will-executor holds
+    the will shown; else grey, faded, with the overlay. The title keeps its
+    text (grey). The report's scene never changes."""
     model = _stage_model([fk.ts(2031, 2, 26)], None)
     model.executors = _marks(*states)
     scene = fv.view_scene(model)
