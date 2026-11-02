@@ -97,6 +97,10 @@ class FakeWallet:
         self._encrypted = encrypted
         self.labels = {}
 
+    def get_script_descriptor_for_address(self, address):
+        """No script known: the size stays on Electrum's guess (#212)."""
+        return None
+
     def save_db(self):
         pass
 

@@ -114,6 +114,10 @@ class FakeWallet:
         self.save_db_calls = 0
 
     # -- wallet API used by the BAL core ---------------------------------- #
+    def get_script_descriptor_for_address(self, address):
+        """No script known: the size stays on Electrum's guess (#212)."""
+        return None
+
     def save_db(self):
         self.save_db_calls += 1
 

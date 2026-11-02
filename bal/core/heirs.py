@@ -1095,7 +1095,7 @@ class Heirs(dict, Logger):
                     total_in = 0
                     for txid, tx in txs.items():
                         tx.willexecutor = willexecutor
-                        fee = tx.estimated_size() * tx_fees
+                        fee = Util.real_tx_size(tx, wallet) * tx_fees
                         txs[txid].tx_fees = tx_fees
                         total_fees += fee
                         total_fees_real += tx.get_fee()

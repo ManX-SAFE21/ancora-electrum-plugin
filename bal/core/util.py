@@ -18,11 +18,12 @@ original implementation.
 """
 
 import bisect
+import copy
 from datetime import datetime, timedelta, timezone
 
 from electrum.address_synchronizer import TX_HEIGHT_FUTURE, TX_HEIGHT_LOCAL
 from electrum.logging import get_logger
-from electrum.transaction import PartialTxOutput
+from electrum.transaction import PartialTransaction, PartialTxOutput
 
 _logger = get_logger(__name__)
 
@@ -76,6 +77,38 @@ def copy_structure(value, _path="copy"):
 class Util:
     """Namespace of static helpers (kept as a class to preserve the original
     ``Util.method(...)`` call sites used throughout the plugin)."""
+
+    # ------------------------------------------------------------------ #
+    # Transaction size
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def real_tx_size(tx, wallet):
+        """The size of ``tx`` in vbytes, measured with the wallet's real scripts.
+
+        #212: a coin from ``wallet.get_utxos()`` has no script. Electrum then
+        guesses from its address, and for a multisig address the guess is a
+        single key (184 vB against the 220 of a 2-of-3), so a fee worked out
+        from ``tx.estimated_size()`` paid less than the chosen rate.
+
+        WHY copies of the inputs: only the fee must change. A script set on
+        the input of ``tx`` would also go into the PSBT text that is stored
+        and moved to the second computer. An input whose script the wallet
+        cannot give stays on Electrum's guess. A transaction that is not
+        partial is signed: its size is that of its real bytes.
+        """
+        if not isinstance(tx, PartialTransaction):
+            return tx.estimated_size()
+        inputs = []
+        for txin in tx.inputs():
+            txin = copy.copy(txin)
+            if txin.script_descriptor is None:
+                descriptor = wallet.get_script_descriptor_for_address(txin.address)
+                if descriptor:
+                    txin.script_descriptor = descriptor
+            inputs.append(txin)
+        return PartialTransaction.from_io(
+            inputs, tx.outputs(), locktime=tx.locktime, version=tx.version
+        ).estimated_size()
 
     # ------------------------------------------------------------------ #
     # Locktime helpers
