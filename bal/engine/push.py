@@ -48,9 +48,15 @@ __all__ = [
     "EXCLUDED_FEE",
     "EXCLUDED_INVALID",
     "FAILED",
+    "NOTHING_ALL_SENT",
+    "NOTHING_NO_COPIES",
+    "NOTHING_NO_EXECUTOR",
+    "NOTHING_UNSIGNED",
     "RECEIVED",
     "TIMEOUT",
     "PushResult",
+    "not_delivered",
+    "nothing_sent_reason",
     "push_will",
     "select_push",
 ]
@@ -66,6 +72,12 @@ TIMEOUT = "timeout"
 # Why a will-executor is excluded before sending (D2).
 EXCLUDED_FEE = "fee_above_maximum"
 EXCLUDED_INVALID = "invalid"
+
+# Why nothing was sent (#213, see nothing_sent_reason).
+NOTHING_NO_COPIES = "no_copies"
+NOTHING_NO_EXECUTOR = "no_executor"
+NOTHING_UNSIGNED = "unsigned"
+NOTHING_ALL_SENT = "all_sent"
 
 
 def _exclusion_reason(current, max_fee):
@@ -126,6 +138,48 @@ class PushResult:
     def any_failed(self):
         """True when a will-executor did not get the will (FAILED or TIMEOUT)."""
         return any(o in (FAILED, TIMEOUT) for o in self.outcomes.values())
+
+
+def nothing_sent_reason(willitems, force=False):
+    """Why :func:`select_push` found no copy to send and excluded no one (#213).
+
+    ``NOTHING_NO_COPIES``: the will has no valid copy. ``NOTHING_NO_EXECUTOR``:
+    signed copies wait, but none of their will-executors is selected.
+    ``NOTHING_UNSIGNED``: some copy still needs a signature.
+    ``NOTHING_ALL_SENT``: every copy is signed and already sent.
+    """
+    valid = [w for w in willitems.values() if w.get_status("VALID")]
+    if not valid:
+        return NOTHING_NO_COPIES
+    if any(w.get_status("COMPLETE") and (force or not w.get_status("PUSHED"))
+           for w in valid):
+        return NOTHING_NO_EXECUTOR
+    if any(not w.get_status("COMPLETE") for w in valid):
+        return NOTHING_UNSIGNED
+    return NOTHING_ALL_SENT
+
+
+def not_delivered(willitems, selected, current_willexecutors):
+    """True when, after :func:`push_will`, some copy did not reach its place (#213).
+
+    A sent copy that is not PUSHED any more: its "already present" check found
+    something else (``set_check_willexecutor``). A copy of a selected
+    will-executor still unsigned: it was not part of the sending, so "all
+    transactions" would be false. WHY a check that did not answer in time does
+    not count: the will-executor said it holds the copy, it stays to be verified.
+    """
+    for record in selected.values():
+        for wid in record.get("txsids", []):
+            if not willitems[wid].get_status("PUSHED"):
+                return True
+    current_willexecutors = current_willexecutors or {}
+    for item in willitems.values():
+        if not item.get_status("VALID") or item.get_status("COMPLETE"):
+            continue
+        url = (item.we or {}).get("url")
+        if url and Willexecutors.is_selected(current_willexecutors.get(url)):
+            return True
+    return False
 
 
 def _traced(result):
