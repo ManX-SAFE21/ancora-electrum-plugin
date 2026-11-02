@@ -76,8 +76,14 @@ from ...engine.push import (
     ALREADY_PRESENT,
     EXCLUDED_FEE,
     FAILED,
+    NOTHING_ALL_SENT,
+    NOTHING_NO_COPIES,
+    NOTHING_NO_EXECUTOR,
+    NOTHING_UNSIGNED,
     RECEIVED,
     TIMEOUT,
+    not_delivered,
+    nothing_sent_reason,
     push_will,
     select_push,
 )
@@ -217,6 +223,28 @@ def rest_cancelled_text(hold):
     """The owner's text of a ``DeliveryRestCancelled`` hold (#201): which
     delivery was executed, that nothing is done, and how to go on."""
     return _(REST_CANCELLED).format(hold.executed)
+
+
+#: The waiting window was closed during the sending (#213).
+PUSH_STOPPED = "stopped"
+
+
+def _push_outcome_text(outcome):
+    """The warning for a sending that cannot be called a success (#213).
+
+    ``outcome``: ``PUSH_STOPPED`` or a ``NOTHING_*`` code of
+    :func:`~bal.engine.push.nothing_sent_reason`.
+    """
+    return {
+        PUSH_STOPPED: _("Sending stopped: some copies may not have been sent. "
+                        "Press Check to verify."),
+        NOTHING_UNSIGNED: _("Nothing sent: the will is not signed yet."),
+        NOTHING_ALL_SENT: _("Nothing to send: the will-executors have already "
+                            "received every copy."),
+        NOTHING_NO_EXECUTOR: _("Nothing sent: no selected will-executor can "
+                               "receive the will."),
+        NOTHING_NO_COPIES: _("Nothing sent: the will has no valid copy to send."),
+    }[outcome]
 
 
 def _stopped_by_hold(window):
@@ -3370,12 +3398,17 @@ class BalWindow:
                 self.show_error("\n".join(engine_problem_lines(problems)))
                 return
 
-        def on_success(sulcess):
+        def on_success(outcome):
+            """Say what really happened (#213: the task's return value)."""
             if not external:
                 self.will_list_widget.update()
-            if sulcess:
+            if outcome is True:
                 _logger.info("error, some transaction was not sent")
                 self.show_warning(_("Some transaction was not broadcasted"))
+                return
+            if outcome is not None:
+                _logger.info("nothing confirmed as sent: {}".format(outcome))
+                self.show_warning(_push_outcome_text(outcome))
                 return
             _logger.debug("OK, sulcess transaction was sent")
             self.show_message(
@@ -3412,6 +3445,13 @@ class BalWindow:
         excluded), so the caller shows "Some transaction was not
         broadcasted" instead of "All transactions are broadcasted".
 
+        #213: None only when the will really left. True also when a copy
+        fails its "already present" check or is still unsigned;
+        ``PUSH_STOPPED`` when the window was closed during the sending; a
+        ``NOTHING_*`` code (:func:`~bal.engine.push.nothing_sent_reason`)
+        when there was nothing to send. Before, all of these said "All
+        transactions are broadcasted".
+
         The sending is the Check's and the command line's too since #155
         (:mod:`bal.engine.push`, owner decisions D1-D3): before, a
         will-executor that did not answer in time was not noticed here, and
@@ -3424,11 +3464,12 @@ class BalWindow:
             }
         # Read the CURRENT executor list from the config, so an executor the
         # user deselected after building the will is not contacted anymore.
+        current = Willexecutors.get_willexecutors(
+            self.bal_plugin, update=False, task=False
+        )
         selected, excluded = select_push(
             willitems,
-            Willexecutors.get_willexecutors(
-                self.bal_plugin, update=False, task=False
-            ),
+            current,
             force=force,
             max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
             dust=self.wallet.dust_threshold(),
@@ -3492,7 +3533,7 @@ class BalWindow:
         # Unchanged: without a waiting window (the automatic rebuild) this
         # raises, so that copy never sends (D25 in tests/test_5e_divergences).
         if self.waiting_dialog._stopping:
-            return
+            return PUSH_STOPPED
         result = push_will(
             willitems,
             selected,
@@ -3502,9 +3543,14 @@ class BalWindow:
             on_check_done=on_check_done,
         )
         if result.stopped:
-            return
+            return PUSH_STOPPED
         if result.any_failed or excluded:
             return True
+        if not selected:
+            return nothing_sent_reason(willitems, force=force)
+        if not_delivered(willitems, selected, current):
+            return True
+        return None
 
     def export_json_file(self, path, will=None):
         """Write the will as a JSON file (``will``: an imported will instead).

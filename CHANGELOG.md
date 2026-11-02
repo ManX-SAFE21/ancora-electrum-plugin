@@ -14218,3 +14218,38 @@ real size (2820 / 141 = 20.0 sat/vB). Electrum's detail window shows 15.9 sat/vb
 because it divides by its own guess of 177 vB (known limit, documented above).
 
 **Outcome:** DONE
+
+## 213. Tools > Send says what really happened
+
+**Why (audit of 2026-10-31, step agreed with the owner):** Tools > Send showed "All
+transactions are broadcasted" also when 0 copies had left. An owner who reads it believes
+the heirs are protected while no will-executor holds the will.
+
+**What changed:**
+
+- `bal/engine/push.py`: new `nothing_sent_reason(willitems, force=False)`, why nothing
+  left (no copies, not signed, all sent already, no selected will-executor), and
+  `not_delivered(willitems, selected, current_willexecutors)`: a sent copy that is not
+  PUSHED, or a valid unsigned copy of a selected will-executor.
+- `bal/gui/qt/window.py`: `push_transactions_to_willexecutors` returns the real outcome and
+  `on_success` shows it. The success message stays only when every copy was delivered.
+- Closing the waiting window now gives "Sending stopped: some copies may not have been
+  sent. Press Check to verify." It has no Stop button: closing it is the way to stop.
+- A partly signed will gets "Some transaction was not broadcasted": the signed copies leave,
+  the others do not.
+- `bal/locale/`: catalogs refreshed, the five new texts in Italian and Spanish.
+- `tests/test_menu_send_outcome.py` (new).
+
+Limits, on purpose or for later:
+
+- A will-executor that says it holds the copy and then does not answer the check in time
+  stays "to be verified": no warning, as before. The next Check verifies it.
+- The messages change no status, so the Check after them asks nothing.
+
+**Verified:** whole suite 3284 passed, 0 failed, 1 h 20 min, Electrum 4.8.3. Ruff clean.
+Covered with three fake will-executors: real send, unsigned, already sent, none selected,
+already present with our copy, with another copy, with a broken answer, no answer in time,
+one will-executor down, second Check clean, partly signed, window closed before sending
+and during the checks. Not covered: Windows, a real network.
+
+**Outcome:** DONE
