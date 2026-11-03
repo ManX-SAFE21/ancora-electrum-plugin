@@ -205,6 +205,7 @@ class World:
         self.broadcast_log = []   # (kind, txid)
         self.down = set()         # executors that do not answer (#93)
         self.already = set()      # executors that answer "already present"
+        self.refused = set()      # executors that answer with an error (#222)
         # True: a broadcast reaches the network but the wallet does not see
         # it yet (Electrum has not registered it).
         self.wallet_lags = False
@@ -267,6 +268,11 @@ class World:
             if url in self.down:
                 if on_timeout:
                     on_timeout(url, we)
+                continue
+            if url in self.refused:
+                # It answers, but does not take the will: nothing is pushed.
+                if on_each:
+                    on_each(url, we, False, ConnectionError("refused (flowkit)"))
                 continue
             # Not strict: the plugin ends "txs" with a newline, so the split
             # gives one empty line more than there are transaction ids.
