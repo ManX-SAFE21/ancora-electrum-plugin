@@ -20,11 +20,13 @@ Contents:
     * BuildReportView                                       - Building Will report (#84b)
 """
 
+import copy
 import html
 from datetime import timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from electrum.transaction import PartialTransaction
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QPlainTextEdit
 
@@ -2319,6 +2321,89 @@ class BalSpinBox(QSpinBox):
         self.valueChanged.connect(on_value_changed)
 
 
+def _spent_tx(txin, will, wallet):
+    """The transaction whose output *txin* spends, or None (#223).
+
+    A later delivery spends an output of the copy before it, which is in the
+    will and not in the wallet's history; the first delivery spends wallet
+    coins.
+    """
+    txid = txin.prevout.txid.hex()
+    if txid in will:
+        return will[txid].tx
+    if wallet is not None:
+        return wallet.adb.get_transaction(txid)
+    return None
+
+
+def copy_fee(tx, will, wallet):
+    """What the copy *tx* leaves to the miner, in sat; None when unknown (#223).
+
+    WHY not ``tx.input_value()``: a signed copy, and a later copy read back
+    from the wallet file, keep no amount on their inputs, so it raised and
+    the Details window showed "-1". The amounts are read from the spent
+    outputs instead.
+    """
+    spent = 0
+    for txin in tx.inputs():
+        source = _spent_tx(txin, will, wallet)
+        if source is None:
+            return None
+        spent += source.outputs()[txin.prevout.out_idx].value
+    return spent - tx.output_value()
+
+
+def copy_size(tx, will, wallet):
+    """The size of the copy *tx* in vbytes, with the wallet's real scripts (#223).
+
+    Like ``Util.real_tx_size`` (#212), which is not changed here (owner: this
+    step touches only the Details window, not what builds the will), plus:
+    an input of a later copy has no address when read back, so the address
+    is taken from the output it spends. Without it a 2-of-3 read 184 vB
+    instead of 220 and the window showed 15.5 sat/vB for 13. The inputs are
+    copies: *tx* does not change.
+    """
+    if not isinstance(tx, PartialTransaction):
+        return tx.estimated_size()
+    inputs = []
+    for txin in tx.inputs():
+        txin = copy.copy(txin)
+        if txin.script_descriptor is None and wallet is not None:
+            address = txin.address
+            if address is None:
+                source = _spent_tx(txin, will, wallet)
+                if source is not None:
+                    address = source.outputs()[txin.prevout.out_idx].address
+            if address:
+                descriptor = wallet.get_script_descriptor_for_address(address)
+                if descriptor:
+                    txin.script_descriptor = descriptor
+        inputs.append(txin)
+    return PartialTransaction.from_io(
+        inputs, tx.outputs(), locktime=tx.locktime, version=tx.version
+    ).estimated_size()
+
+
+def fee_text(tx, will, wallet):
+    """The "Transaction fees" value of the Details window (#223).
+
+    "2860 (13.0 sats/vbyte)"; "?" for what cannot be read (before: "-1" and
+    a negative rate).
+    """
+    try:
+        fee = copy_fee(tx, will, wallet)
+    except Exception as e:
+        _logger.debug(f"fee of {tx.txid()}: {e!r}")
+        fee = None
+    if fee is None:
+        return "? (? sats/vbyte)"
+    try:
+        rate = round(fee / copy_size(tx, will, wallet), 3)
+    except Exception as e:
+        _logger.debug(f"size of {tx.txid()}: {e!r}")
+        rate = "?"
+    return "{} ({} sats/vbyte)".format(fee, rate)
+
 
 class WillWidget(QWidget):
     def __init__(self, father=None, parent=None, will=None):
@@ -2332,6 +2417,10 @@ class WillWidget(QWidget):
         self.setLayout(vlayout)
         self.will = will if will is not None else parent.bal_window.willitems
         self._bal_parent = parent
+        # #223: the children are built with parent=parent too, so each widget
+        # finds the wallet the same way.
+        self._wallet = lambda: getattr(
+            getattr(parent, "bal_window", None), "wallet", None)
         # #170: a will in deliveries names each heir with its delivery
         # ("Luca (delivery 2)"), never the row name "Luca§2".
         staged = any(
@@ -2372,15 +2461,9 @@ class WillWidget(QWidget):
 
                 detaillayout.addWidget(qlabel(_("Locktime"), locktime))
                 detaillayout.addWidget(qlabel(_("Creation Time"), creation))
-                try:
-                    total_fees = (
-                        self.will[w].tx.input_value() - self.will[w].tx.output_value()
-                    )
-                except Exception:
-                    total_fees = -1
-                decoded_fees = total_fees
-                fee_per_byte = round(total_fees / self.will[w].tx.estimated_size(), 3)
-                fees_str = str(decoded_fees) + " (" + str(fee_per_byte) + " sats/vbyte)"
+                # #223: amounts from the spent outputs, size with the real
+                # scripts (later copies showed "-1", a multisig 15.5 for 13).
+                fees_str = fee_text(self.will[w].tx, self.will, self._wallet())
                 detaillayout.addWidget(qlabel(_("Transaction fees"), fees_str))
                 # The saved status history is English: translate it for display.
                 detaillayout.addWidget(
