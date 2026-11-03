@@ -2467,7 +2467,7 @@ unchanged; the Qt plugin code is untouched.
 
 **Date:** 2026-07-22
 
-**Goal (Truman):** stop keeping the version in four places (`bal/VERSION`,
+**Goal (the BAL maintainer):** stop keeping the version in four places (`bal/VERSION`,
 `bal/manifest.json`, `bal/__init__.py`, `bal/core/plugin_base.py`) synced by a
 pre-commit hook. The version must be read at runtime from `manifest.json` only.
 
@@ -3552,7 +3552,7 @@ delivery; when it is not, the plugin raises an explicit error (see below).
 
 ---
 
-## 63. i18n review fixes (Truman's review of the translation PR)
+## 63. i18n review fixes (the BAL maintainer's review of the translation PR)
 
 **Date:** 2026-10-07
 
@@ -3612,7 +3612,7 @@ deselected executor) are not part of it and will be proposed separately.
   (`dialogs.py`, `test_core_animated_qr.py`, `test_core_qr_transfer.py`),
   none new.
 
-**Outcome:** DONE (pending Truman's review).
+**Outcome:** DONE (pending the BAL maintainer's review).
 
 ---
 
@@ -3785,7 +3785,7 @@ executor record (`selected` = True).
   protected when pushed/checked, protected backup tx) and new
   `tests/test_core_deselected_executor.py` (4).
 
-**Not changed (proposal for Truman, option "A"):** Check still does not treat
+**Not changed (proposal for the BAL maintainer, option "A"):** Check still does not treat
 a tx of a deselected executor as "not coherent" (no automatic rebuild).
 
 **Verification:** 483 passed, 1 failed (pre-existing missing `tests/karen7`);
@@ -3846,8 +3846,8 @@ config keys, wallet keys, data folder, CLI `bal_*` commands) do not.
 - Catalogs: `pybabel extract` + `pybabel update --no-fuzzy-matching` (new
   texts start empty instead of inheriting an old translation marked fuzzy;
   the catalogs carry no fuzzy entries). Italian: the 10 new texts
-  translated. Spanish: left untranslated (English shown) until Truman is
-  asked (decision D9). Most of the catalog diff is updated source line
+  translated. Spanish: left untranslated (English shown) until the BAL maintainer
+  is asked (decision D9). Most of the catalog diff is updated source line
   references.
 - Tests updated to the new defaults: `test_gui_will_flows.py` (history label
   of a rebuilt will), `test_group_c_settings.py` (calendar defaults).
@@ -3951,7 +3951,7 @@ tracked); all checks so far on a simulated wallet, not mainnet.
 **Date:** 2026-10-08
 
 **Why:** #68 left its 10 new texts untranslated in `es_ES` (English shown),
-waiting for Truman (decision D9). The owner then decided that Claude Code
+waiting for the BAL maintainer (decision D9). The owner then decided that Claude Code
 translates Spanish too (see #69).
 
 **What changed:** `bal/locale/es_ES/LC_MESSAGES/bal.po` only: the 10 texts
@@ -10634,6 +10634,28 @@ calendar defaults, kept by every translation. Updated:
 external zip load and smoke test OK on 4.8.2; screenshots checked; after the first ZIP the owner chose the light icon, then a larger anchor
 (choice B of three previews).
 
+## 164. Development line 0.8.0 (branch `dev/0.8.0`)
+
+**Date:** 2026-10-18
+
+**Goal:** Keep `main` as the tested 0.7.0 release and start the 0.8.0 line
+(the "multiverse" work) on its own branch, so that a test ZIP of the new line
+can be told apart from the official one in Electrum's plugin list.
+
+**What changed:**
+
+- `bal/manifest.json`: `version` 0.7.0 -> 0.8.0, on `dev/0.8.0` only. `main`
+  stays 0.7.0. Fixes made on `main` are merged into this branch from time to
+  time; if the work does not succeed, the branch is dropped and `main` is not
+  touched.
+
+**Tests:** none needed; no code changed (no test reads the manifest version:
+the report tests pass the version themselves).
+
+**Verification:** manifest still pure ASCII and valid JSON.
+
+**Outcome:** DONE.
+
 ## 165. Root LICENSE and "Origin and compatibility" in the README
 
 **Date:** 2026-10-18
@@ -10654,3 +10676,4139 @@ licence in the root, and readers must learn where Àncòra comes from.
 **Verification:** `LICENSE` identical to `bal/LICENSE`; ruff unchanged.
 
 **Outcome:** DONE.
+
+## 166. Rebuilding a will with delivery instalments (multiverse) gives a correct chain
+
+**Date:** 2026-10-19
+
+**Problem (probe M0, `context/reports/multiverse-probe-2026-10-19.md`,
+three fake will-executors, hidden option `bal_enable_multiverse` on):** with
+heirs on different dates the will is a chain (each later delivery spends the
+change of the one before; every will-executor holds a copy of every level:
+3 + 9 or 3 + 9 + 27 transactions). The first build worked. Every REBUILD
+that moved a date (new funds, a new miner fee rate, an heir address changed)
+failed with "list index out of range" or saved a broken will: children
+spending their own txid, one item under two keys, transactions without a
+txid. A later delivery's share changed left the old and the new first
+delivery both VALID on the same coins on the same day (78 VALID items). New
+funds that covered the first delivery alone were spent by it alone, the old
+coins went to a later delivery, and the old and the new first delivery could
+both be executed. Causes (multi-agent analysis + probes): `Will.change_input`
+relinked each child to its own key instead of the parent's new txid, deleted
+by `tx.txid()` (None for chain children right after the build: the PSBT
+re-parse drops their input data) so stale keys stayed, rebuilt the input with
+another sequence number; `normalize_will` works on copies; `check_anticipate`
+compares the heir rows, not the real amounts; the coin selection takes only
+the coins a delivery needs.
+
+**What changed:**
+
+- `bal/core/will.py` `Will.update_will`: a will whose new items spend
+  outputs of other new items (`Will.chain_links`) is dated by the new
+  `Will.date_chain`; a will with one date keeps `search_anticipate_rec`,
+  byte for byte. `date_chain`: the parent links are read once, by object;
+  each chain input gets the data of the output it spends
+  (`_fill_chain_input`, in memory only, as `add_info_from_will` does);
+  generation by generation the children are pointed at their parents' FINAL
+  txids (`_relink`: in place, same sequence number, inputs in BIP69 order as
+  `from_io`, cached txid cleared), then dated with today's rules plus the
+  #166 rule (`_chain_set_anticipate`: same will-executor, other REAL heir
+  amounts -> one day earlier, owner decision D6). The first delivery is dated
+  against the old items on the same coins; a later one only against old
+  items spending the same parent output. `_check_chain` refuses (new
+  `WillChainError`, the will in force untouched) a link not pointing at its
+  parent, a later delivery not dated after the one it spends, an old first
+  delivery left executable together with the new will, and an old and a new
+  transaction of the same will-executor executable together. The dict is
+  re-keyed once by the final txids and each `_id` follows.
+- `bal/core/heirs.py` `prepare_transactions` (owner decision, solution C):
+  with more than one delivery date the first delivery spends EVERY coin and
+  the later ones only its change. One date: unchanged (that transaction
+  already spends every coin). Noted in the module docstring as the only
+  exception to "kept byte-for-byte identical".
+- Not changed (owner decision, step M3 of `context/MULTIVERSE-PLAN.md`):
+  after a rebuild that anticipated the chain, the heirs' own dates stay the
+  old ones, so the next Check reads a postpone and asks for the paid
+  invalidation (F1); the multiverse option stays hidden. `change_input`,
+  `new_input` and `normalize_will` stay for the one-date path (cleanup
+  later). `WillChainError` is shown as raw English text (text step later).
+- `context/reports/multiverso-resoconto-per-bal-IT.md`: the bugs found
+  and the fix, in Italian, for BAL.
+
+**Tests:** `tests/test_multiverse_chain_rebuild.py` (new, three
+will-executors, two and three dates): first build; new coin; a new coin that
+covers the first delivery alone; three coins then a new one; fee rate
+change; a later delivery's share changed; a later delivery's address changed
+(the first delivery kept); delivery 1 or 2 earlier; each followed by a
+second build that changes nothing, and an audit of the chain (key = txid, no
+self-spend, child after parent, sequence 0xfffffffd, pushed raw = stored
+txid); the dispatch (one date never takes the chain path); broken links
+refused; F1 as a strict xfail. Before the fix the new-coin, fee, address,
+share and big-coin cases failed (probe on the same code).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+Whole `tests/` directory, normal order and files in reverse order: 2506
+passed, 1 xfailed (F1) each (23 and 19 minutes); golden files unchanged.
+Scenario harness (full matrix, the 2-coin scenarios 6 times, warn_matrix
+synced and not): log identical to the base `dev/0.8.0` (135 lines).
+`build_zip.py` + `external_zip_test.py` + `smoke_test.py` on Electrum
+4.8.2: pass. Test ZIP
+`test-zips/ancora_0.8.0-TEST-166-multiverse-chain-rebuild.zip`, sha256
+`c6ea1557...c6c5`.
+
+**Outcome:** DONE. The owner tested the ZIP on his test wallet (one date,
+four will-executors): Check "ok", preparation, signature and sending "not
+needed", verification 4/4, "Your will is in force".
+
+## 167. The rules of the staged deliveries (multiverse): the instalments table
+
+**Date:** 2026-10-19
+
+**Goal (step M2 of `context/MULTIVERSE-PLAN.md`, owner decisions of
+2026-10-19):** the pure rules of a will paid in up to three deliveries on
+the same dates for every heir. A table: one row per date, one cell per heir,
+each cell a share of the WHOLE estate. Nothing uses the rules yet: the
+engine, the command line and the schema 3 of the wallet settings come with
+M3 (owner choice B: the schema moves to 3 only when a table is really
+written), the editor with M4.
+
+**What changed:**
+
+- `bal/core/delivery.py`, new section "Staged deliveries":
+  - `INSTALMENTS_KEY` (`"instalments"`, the settings key M3 writes),
+    `INSTALMENTS_MIN` 2 (one date is a normal will), `INSTALMENTS_MAX` 3,
+    `MIN_GAP_DAYS` 28 (the will-executors never retry a failed broadcast:
+    twice Bitcoin Core's 14-day mempool expiry; monthly deliveries still
+    work across February).
+  - `instalments_of(settings)`: the stored table as a copy, `[]` when there
+    is none (one delivery); a value that is not a list raises `ValueError`
+    (read as "no table" it would pay everything at the first date).
+  - `as_share` / `share_text`: a share from 0 to 100 with two decimals at
+    most, read with `decimal.Decimal` (exact sums), stored as `"<n>%"`
+    without trailing zeros.
+  - `validate_instalments(rows, heirs, now)`: 2 or 3 rows with exactly
+    `locktime` and `shares`; dates after `now`, strictly increasing, at least
+    28 days apart (a period or a block height refused); a name that is not
+    an heir refused, a missing heir counts 0 %; every date pays one heir at
+    least; an heir with 0 % at every date refused ("remove the heir"); the
+    whole table exactly 100 %. Returns the normalized table (dates as ints,
+    every heir named in every row). `ValueError` in English on the first
+    broken rule.
+  - `default_instalments(heirs, first)`: the example the editor will start
+    from: the wallet's date, +12 and +24 months; 33 / 33 / 34 % of the
+    estate split equally among the heirs in cents, the cents left over to
+    the last heir (three heirs: 11 / 11 / 11, 11 / 11 / 11,
+    11.33 / 11.33 / 11.34 %).
+  - Module docstring: the new section listed. `SCHEMA_VERSION` stays 2.
+- `tests/test_core_delivery_settings.py`: `decimal` added to the standard
+  library modules `delivery.py` may import.
+
+**Tests:** `tests/test_core_delivery_instalments.py` (new, 116 tests): the
+constants; the reader (no table, a copy, not a list); `as_share` and
+`share_text` ("-0" stored as "0%"); the owner's example table valid and
+kept; a missing heir written as 0 %; numbers read exactly; exactly 28 days
+accepted (also across February); every rule refused with its message (1 or 4 dates, not a list,
+bad rows, bad dates, past dates, dates not increasing, 27 days, a name that
+is not an heir, bad shares, a date paying nobody, an heir getting nothing,
+99.99 % / 100.01 %, bad heir names); the default table for 1, 2, 3, 4 and 7
+heirs, valid for 1 to 12 heirs, its dates. No will-executor is involved.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory, normal order: 2621 passed, 1 xfailed (F1) (25 minutes);
+the "-0" test was added after it (the new file alone: 116 passed).
+Mutation check on a copy of the code: 25 rules broken one at a time, all 25
+caught by the new tests.
+No ZIP: nothing in the plugin calls the new functions yet (owner, choice B).
+
+**Outcome:** DONE.
+
+## 168. Staged deliveries in the engine: the table of deliveries builds the chain
+
+**Date:** 2026-10-19
+
+**Goal (step M3a of `context/MULTIVERSE-PLAN.md`; owner decisions of
+2026-10-19, M3 study):** a wallet with a table of deliveries
+(`will_settings["instalments"]`, rules of #167) gets a will in up to three
+deliveries, the same dates for every heir, each heir with a share of the
+whole estate at each date. BAL's hidden global option
+`bal_enable_multiverse` (each heir with its own date) is no longer read
+(D7). The command line (`bal_instalments_*`, M3b) and the editor (M4) come
+next: until then a table can only be written by the engine.
+
+**What changed:**
+
+- `bal/core/delivery.py`: `INSTALMENT_SEP` ("§") and the row names of each
+  delivery (owner decision 2): `instalment_key` ("Luca", "Luca§2",
+  "Luca§3": the delivery NUMBER, never the date), `instalment_number`,
+  `person_name`, `has_separator`; `is_message_row`, `payee_names` (the
+  OP_RETURN message is not a column); `table_rows` (delivery 1 is always
+  on the wallet's `locktime`, the one date every existing rule moves);
+  `effective_rows` (one row per person and delivery with a share above
+  0 %, the message with delivery 1, decision 4); `anticipated_rows` (F1:
+  deliveries 2 and 3 follow an EARLIER date of the will, never a later
+  one); `InstalmentsMismatch`; `INSTALMENTS_SCHEMA_VERSION` 3.
+  `validate_instalments(rows, heirs, now, gap=True)`: `now` None skips
+  "after today", `gap` False the 28 days (a stored table: delivery 1 may
+  be past, the automatic one-day anticipations may shorten a gap,
+  decision 5).
+- `bal/engine/instalments.py` (new): `DeliveryHeirs` (the rows of every
+  delivery, in memory only, never saved); `has_table`; `check_table` (the
+  table against the heirs at every flow: an heir added, removed or renamed
+  without the table stops everything, decision 3); `effective_heirs`
+  (`host.heirs` itself without a table); `first_delivery_heirs`;
+  `delivery_dates`; `sync_later_deliveries` (F1).
+- `bal/engine/context.py`: `init_class_variables` checks the table (after
+  the Check Alive gate, so a renewal is still offered; never in
+  `check_holds`, so an invalidation stays possible) and always gives the
+  person rows the will's date; `check_will` compares the items with the
+  rows of every delivery (renames and the will check);
+  `drop_anticipation_leftover` compares delivery 1 only; `_multiverse` =
+  the wallet has a table (no period form); the migration no longer reads
+  the global option. New `set_instalments(host, rows, now)` (the one
+  validated write: refused with the period form; the table stored whole,
+  schema 3 only together with a table, owner choice B; the wallet's date =
+  delivery 1) and `clear_instalments(host)`. `set_will_setting`: with a
+  table, a delivery date on or after delivery 2 is refused (the order only;
+  the 28 days are checked where the owner types the date).
+- `bal/engine/build.py`: the build uses the rows of every delivery (the
+  chain of #166, unchanged `heirs.py`); `last_build_error` is copied back;
+  `sync_delivery_date` also moves deliveries 2 and 3 earlier (F1 of #166:
+  the next Check no longer reads an anticipation as a postpone).
+  `bal/engine/check.py`, `bal/gui/qt/window.py` (Prepare) and
+  `bal/cli/controller.py`: the amounts check reads the rows of every
+  delivery; a table that does not fit stops Prepare with its message, and
+  the command line shows it. `bal/gui/qt/dialogs.py`: the Check's quiet
+  "Shares recalculated in proportion" line and its "shares changed"
+  comparison read the table's rows (delivery 1 for the comparison), not
+  the person rows.
+- `bal/core/will.py`: `_pure_rename` and `_renamed_to` match a row of the
+  same delivery only ("Marco§2" for "Luca§2"); `planned_delivery` reads the
+  earliest VALID item (delivery 1).
+- Display (the person, never "Luca§2"): `bal/core/future.py` (`_instalment`),
+  `bal/core/report.py` (`_addresses`, so `_heirs` sums by person),
+  `bal/core/will_versions.py` (`_heir_rows`). The other texts that may
+  show a row name (Check messages, the Will tab, the CLI output) come with
+  M3b and M4.
+- D7, BAL's global option no longer read: the heir dialog has no Locktime
+  row; `set_heir` always gives the will's date; the delivery form's period
+  choice is off with a table (`widgets.py`); the command line always
+  refuses `--locktime` and no longer checks the dates of an import
+  (`_check_locktime_value` removed). `plugin_base.py`: the key stays
+  defined, with a comment.
+- Heir names with "§" refused (decision 2): the heir dialog, `heirs_add`,
+  `heirs_import` (skipped with the reason). New texts, IT/ES catalogs
+  updated: "The table of the deliveries no longer matches the heirs...",
+  "An heir name cannot contain the sign {}."; "locktime" (the removed help
+  button) dropped.
+
+**Tests:**
+
+- `tests/test_engine_instalments.py` (new, three will-executors): the
+  chain of a table (3 + 9 + 27 items, the row names of each delivery,
+  amounts within 1 % of 10 / 10 / 30 % of the estate, the person rows
+  unchanged, one password prompt); a 0 % cell; the message with delivery
+  1; `planned_delivery`; `set_instalments` and four refused tables
+  (nothing written), the period form, a name with "§"; the wallet's date
+  kept before delivery 2; an heir added or removed without the table:
+  Check, Prepare and the command line stop, nothing built or sent; a rename
+  in the heirs and the table is a pure rename; delivery 2 later asks the
+  paid invalidation, earlier is free (D6); the table removed: one delivery
+  one day earlier; BAL's global option not read; two wallets keep their
+  own form; the table survives a reload; the amounts check reads the
+  table (it found the Check dialog's own shares line reading the person
+  rows: fixed in `bal/gui/qt/dialogs.py`, `_quiet_shares_line` and
+  `_shares_change`); no period form with a table.
+- `tests/test_core_delivery_instalments.py`: the row names, the message
+  rows, `effective_rows`, `table_rows`, a stored table checked without
+  `now` and the 28 days, `anticipated_rows`.
+- `tests/test_multiverse_chain_rebuild.py`: the shapes are tables now
+  (`context.set_instalments`); the share changes keep the table at 100 %;
+  "a later delivery's address changed" became "shares moved between
+  deliveries 2 and 3" (one address per person); F1 is no longer an xfail:
+  it passes, also after a delivery 2 anticipated.
+- Moved from the global option to a table (or to D7): 13 files
+  (`test_advanced_period_default`, `test_cli_command_layer`,
+  `test_cli_controller_offline`, `test_core_future`,
+  `test_core_will_versions`, `test_delivery_form_lock`,
+  `test_gui_date_form_change_flow` (the per-heir period kept by leaving the
+  heirs' dates alone), `test_gui_delivery_date_message`,
+  `test_gui_delivery_form`, `test_gui_will_flows`,
+  `test_gui_will_versions_list`, `test_inheritance_report`,
+  `test_per_wallet_settings_flow`). `tests/flowkit.py`:
+  `Session.set_instalments`.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory: normal order 2653 passed (45 minutes, before the last
+two fixes: the Check dialog's shares line and its test), files in reverse
+order 2655 passed (35 minutes, with them); no xfail left (F1 passes);
+golden files unchanged. Mutation check on a copy of the code: 16 rules
+broken one at a time, all 16 caught. Scenario harness (full matrix, the
+2-coin scenarios 6 times, warn_matrix synced and not): log identical to the
+base `dev/0.8.0` 412c88b (135 lines) and to the #166 log. `build_zip.py` +
+`external_zip_test.py` + `smoke_test.py` on Electrum 4.8.2: pass. Test ZIP
+`test-zips/ancora_0.8.0-TEST-168-instalments-engine.zip`, sha256
+`72cbfd12...423c`.
+
+**Outcome:** DONE. The owner tested the ZIP on his test wallet (one date,
+four will-executors): the heir dialog has no Locktime row; Check "ok",
+nothing to prepare, sign or send, verification 4/4; an heir's share from
+60 % to 70 %: the will rebuilt one day earlier (free), signed, verified
+4/4, in force.
+
+## 169. Staged deliveries on the command line: bal_instalments_show, set and clear
+
+**Date:** 2026-10-20
+
+**Goal (step M3b of `context/MULTIVERSE-PLAN.md`; owner answers of
+2026-10-19):** the table of deliveries of #168 can be written, read and
+removed from the command line (Electrum's Console, the terminal, JSON-RPC);
+the command-line texts name the people, never the row names "Luca§2".
+Owner answers: (1a) the heir commands keep working with a table and say
+what it needs; (2) the table as JSON in the command, or a JSON file; (3)
+the live test on the command line is made by Claude. After the review,
+owner decision (a): any change by which the heirs would receive part of
+the estate EARLIER needs `--confirm_earlier true` (not only a date moved
+earlier: also shares moved to an earlier delivery, delivery 3 removed, the
+table removed). WHY: earlier is a free, silent rebuild that only the paid
+invalidation can undo once sent, and in practice the command line is used
+by an AI (owner): the refusal tells it to ask the owner first.
+
+**What changed:**
+
+- `bal/cli/commands.py`: three commands. `bal_instalments_show` (read);
+  `bal_instalments_set` (`--table` JSON, `--path` a JSON file, or
+  `--example true`; `--confirm_earlier true`); `bal_instalments_clear`
+  (`--confirm_earlier true`). Set and clear are wallet writes, refused
+  while the wallet's plugin window is open (#148 list). The `--locktime`
+  help of `bal_heirs_add` and `bal_heirs_update` now says it is always
+  refused (#168, D7). The "%" of the help texts is written "%%": argparse
+  %-formats them.
+- `bal/cli/controller.py`:
+  - `instalments_show`: `staged`, `date`, `deliveries` (`delivery`,
+    `date`, `locktime`, `shares`: the form `bal_instalments_set` takes
+    back, also for a date not at 00:00 UTC), `fits_heirs` and `problem`
+    (owner decision 3), and when the table fits `delivery_totals`,
+    `heir_totals`, `total`, `gaps_days`, `min_gap_days` and `will_items`
+    (the VALID items per delivery).
+  - `instalments_set`: one source; refused in BASIC mode (owner decision
+    D5: staged inheritance is ADVANCED only), with the period form, without
+    heirs; the table read strictly (`date` or `locktime`, `shares`,
+    `delivery` that must match its place, as a number or a text such as
+    "1"; an unknown field, a period, a block height, a past date or two
+    different dates for one delivery are refused); every rule of #167
+    checked before anything is written. `--confirm_earlier true` needed
+    (decision (a)) for a date earlier than its reference (the VALID items
+    of that delivery, as `bal_delivery_set`; else the stored date, with
+    its own words "the current date of this delivery") and for a table
+    that pays more of the estate by one of its dates than now
+    (`_schedule_now`: the stored table's shares on the dates in force;
+    `_first_earlier`, date by date). Every refusal of this kind ends with
+    "Ask the owner; if this is what the owner wants, run the command again
+    with --confirm_earlier true." Then `context.set_instalments` (#168).
+    The message lists the dates, says when a delivery is later than the
+    will in force (the next prepare asks for the paid invalidation, D6)
+    and that the heirs' amounts are not used while the table is there.
+  - `instalments_clear`: one delivery again, with `--confirm_earlier true`
+    (the rest of the estate arrives at delivery 1); the answer lists the
+    heirs, whose amounts count again, and says to check them.
+  - `bal_delivery_set --date` and `bal_delivery_form fixed --date`: with a
+    table the date is delivery 1, at least 28 days before delivery 2 (owner
+    decision 5). `bal_delivery_form period` with a table: refused with
+    "remove the table first" (before the "will in force" refusal, which
+    pointed to an invalidation that does not help).
+  - `bal_delivery_show`: `staged` and `deliveries`.
+  - Heir commands (`add`, `update`, `delete`, `import`): with a table,
+    `instalments_note` says whether the heirs still fit it (owner answer
+    1a). A table that no longer fits: the message of #168 plus the commands
+    that fix it.
+  - `bal_will_status` (and every answer that shows the will): `heirs` and
+    `description` name the people; with a table each item has its
+    `delivery`. A will with one date gives the same answer as before (the
+    golden files are unchanged).
+- `bal/core/messages.py` (shared with the Check dialog): `heir_label`, the
+  person and the delivery: "Heir "Luca (delivery 2)" was removed", "The
+  amount of heir "Luca (delivery 2)" changed"; in a will in deliveries
+  delivery 1 too ("Luca (delivery 1)": "Heir Luca was removed" was wrong
+  when Luca still receives later); a rename "Luca → Marco"; "The date of
+  delivery N changed: preparing a new will." when every heir of that
+  delivery has the new date. `bal/core/will.py`:
+  `check_willexecutors_and_heirs` (docstring added) computes `all_heirs`
+  (the "same date" of #125) among the heirs of the same delivery and
+  passes `staged` (the will has deliveries 2 or 3) to
+  `HeirNotFoundException` (new attribute, docstring). A will with one date:
+  the same messages as before.
+- Catalogs: two new texts, "{name} (delivery {n})" and "The date of
+  delivery {} changed: preparing a new will.", translated (IT "consegna",
+  ES "entrega"). The command line stays English.
+- `README.md`: the commands, examples, the rules (also the confirmation of
+  decision (a)); the two sentences about `bal_enable_multiverse` (no
+  longer read since #168) updated.
+
+**Tests:**
+
+- `tests/test_cli_instalments.py` (new, three will-executors, 58 tests):
+  show without a table; set and show give back the same table (also from
+  the show answer, a JSON text, a file, a date at 01:00 UTC); the example
+  table; 19 bad tables write nothing, each with its message; a delivery
+  number as text or decimal; one source only; BASIC, period form and no
+  heirs refused; the whole cycle by command (3 + 9 + 27 items, the
+  people's names, `will_items`, then coherent); a will with one date has
+  no `delivery` field; an earlier delivery 1 or 2 needs the confirmation;
+  the reference is the will in force, else the stored table (with its
+  words); shares that arrive earlier (rows swapped, delivery 3 removed)
+  need the confirmation, shares moved later do not; a later delivery 2:
+  the message, then `postponed`; an earlier delivery 2: free rebuild,
+  reason "The date of delivery 2 changed"; shares moved: reason "luca
+  (delivery 2)"; luca out of delivery 1: "luca (delivery 1) was removed";
+  `bal_delivery_set` and `bal_delivery_form` keep the 28 days, the period
+  refused; the heir commands' note and the stop of prepare; clear: the
+  confirmation, the heirs' amounts, one delivery one day earlier; the
+  stored heirs untouched; Electrum's parser (`--table` JSON, bools); the
+  Check sentences with the delivery, and unchanged for one date.
+- `tests/test_cli_commands_registered.py`: the three commands, and the help
+  of every `bal_*` command printed (a lone "%" broke it).
+- `tests/test_cli_window_guard.py`: `instalments_show` is a read; the
+  snapshot includes the delivery settings (the table).
+- `tests/test_cli_delivery_commands.py`: `bal_delivery_show` has `staged`
+  and `deliveries`.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory: normal order 2716 passed (26 minutes), files in
+reverse order 2716 passed (27 minutes); golden files unchanged. Mutation
+check on a copy of the code: 37 rules broken one at a time, all 37
+caught. Independent review (one agent, read only): no crash, no partial
+write, no change for wallets without a table; its points fixed (decision
+(a), "delivery 1" in the messages, the delivery number, the words without
+a will, two docstrings, four more tests); its claim that a failed staged
+build loses its reason is not right (`engine/build.py` copies it back).
+Scenario harness (full matrix, the 2-coin scenarios 6 times, warn_matrix
+synced and not): log identical to the #168 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-169-instalments-cli.zip` (sha256
+`85d43ce7...6b1c`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2. Live command-line test on Electrum 4.8.2 (the ZIP's plugin,
+an offline daemon, a throw-away testnet wallet, three fake will-executors,
+removed afterwards): the help prints; a table with a 19-day gap refused;
+the owner's table stored; prepare, 39 transactions signed (3 + 9 + 27),
+the people's names, no "§" in any answer; broadcast says "You are
+offline" for each will-executor; `bal_delivery_set` 2031-02-15 refused
+(28 days); an heir added: the note, prepare stopped with the commands;
+delivery 2 later: the message, prepare `postponed`; clear refused without
+the confirmation, done with it; prepare: one delivery, one day earlier.
+
+Seen in passing, not changed here: with the command line the will stays
+unsigned between prepare and sign, and the "save to local history"
+convenience logs "save to history failed" for the items of deliveries 2
+and 3 (their parent is not in the wallet), log only;
+`bal_delivery_form fixed --date` can move the date earlier without a
+confirmation (since #127).
+
+**Outcome:** DONE.
+
+## 170. The window "Inheritance in several deliveries" (the table of the deliveries in Electrum's window)
+
+**Date:** 2026-10-20
+
+**Goal (step M4a of `context/MULTIVERSE-PLAN.md`; owner answers of
+2026-10-20):** the table of the deliveries of #168 / #169 can be written,
+changed and removed in Electrum's window, with the same rules as the
+command line. Owner answers to the M4 plan: (1) M4 in two steps, M4a this
+window, M4b the rest; (2) the window opens from the ADVANCED wizard (a third
+choice next to "Fixed date" / "Period") and from Tools in the Will tab;
+(3) with a table the date fields are read-only, the dates are changed only
+in the window; (4) an heir renamed keeps its shares in the table; (5) one
+message only, in delivery 1; (6) percentages only in the window (the real
+amounts per delivery are in the Future view after signing). The name, chosen
+by the owner: "Eredità in più consegne" / "Inheritance in several
+deliveries" / "Herencia en varias entregas" (it replaces "Staged
+inheritance" in the texts: the command line's refusal in BASIC, its help
+and the README). Three drafts of the window, the owner's choices: the
+table HORIZONTAL (the deliveries from left to right, as time in the Future
+view and the chain; the heirs in rows), the shares of the heirs bigger
+than the check sums (the totals small and grey, 100 % in green), at most 3
+deliveries today and everything visible; later up to 12 deliveries (owner,
+2026-10-20): only the deliveries scroll sideways then, with a bar at the
+bottom, the names and the totals stay in place.
+
+**What changed:**
+
+- `bal/core/delivery.py`: the rules the command line and the window share
+  (moved from `bal/cli/controller.py`, same behaviour): `schedule_of`,
+  `schedule_now`, `first_earlier`, `first_earlier_date` (owner decision
+  (a) of #169: what would arrive earlier), `later_than_in_force`,
+  `too_close_to_second` (the 28 days of delivery 1), and
+  `transactions_count` (N + N^2 + ... + N^K: the window's line, ready for
+  the future limit of 5000 transactions, which depends on the
+  will-executors). The rules of the table raise `TableRuleError` (a
+  `ValueError`): `str(e)` is the English text (the command line), its
+  template is in the catalogs (`N_`, a local marker: the module stays
+  standard library only) and `rule_text` translates it for the window.
+  Six of these texts lose the code word "instalments: " (#132: the owner
+  never reads "instalment"; the catalogs are checked for it): e.g. "the
+  shares add up to 95%, not 100%" (also on the command line).
+- `bal/engine/instalments.py`: `dates_in_force` (moved from the command
+  line), `rename_heir` (owner answer 4: the shares follow the new name;
+  nothing without a table, for a name not in it or onto one already in
+  it); the "Details" of the mismatch message are translated.
+- `bal/cli/controller.py`: uses the shared rules (`_dates_in_force`,
+  `_schedule_now` and `_first_earlier` removed; `_check_table_gap` calls
+  `too_close_to_second`); the answers are unchanged. `bal/cli/commands.py`:
+  the help names the inheritance in several deliveries.
+- `bal/gui/qt/deliveries.py` (new): the window. A line with a dot per
+  delivery, "Delivery n", a date picker (a date changed is 00:00 UTC of the
+  day, as on the command line; one not touched keeps its exact time) and
+  the time since the delivery before ("+2 years", "+4 years and 11
+  months"); one row per heir with its share (bold, bigger), "%" next to
+  it; the totals per heir and per delivery, 100 % ✓ in green. Every row
+  has a fixed height and every delivery column a fixed width, so the three
+  parts (names, deliveries, totals) line up; the deliveries are in a
+  scrolling area that shows 3 columns. "Add a delivery" (12 months after
+  the last, 0 %), "Remove the last delivery", "Example table" (33 / 33 /
+  34 %, one year apart); grey lines: the transactions to sign ("With 3
+  will-executors: 39 transactions to sign (3 + 9 + 27)", counted as the
+  build does: selected and valid will-executors, plus the copy without a
+  will-executor when that option is on), "Each will-executor takes its fee
+  at every delivery", and, with a message, "The message in the will is in
+  delivery 1". One problem at a time under the table, from
+  `validate_instalments`, translated (in English the code word
+  "instalments:" is left out); Save only without a problem. A delivery
+  later than the will in force says that the next Check asks for the paid
+  invalidation (D6). Save: what would arrive earlier is asked first (Yes /
+  No, No is the default), then `context.set_instalments`. "Back to one
+  delivery": asked (the rest of the estate would arrive at delivery 1, the
+  heirs' amounts count again), then `context.clear_instalments`. Opened
+  without a table: the example; with heirs changed since the table: a
+  column of 0 % for an heir added, an heir removed left out, a note to
+  check the shares. With a table, the date fields show "10/03/2030 (+2
+  deliveries)" (`staged_field_text`), read-only, with a tooltip saying
+  where the dates are changed.
+- `bal/gui/qt/widgets.py`: the wizard's delivery form has "Several
+  deliveries" (ADVANCED, a fixed date; with a table it is selected and
+  "Edit the deliveries…" opens the window; "Fixed date" asks to go back to
+  one delivery; the period is off with a table; BASIC shows a wallet's
+  table as it is, without changing it); `show_period` takes a tooltip and
+  `apply_delivery_form` shows the text of a table; the Will Details name
+  "luca (delivery 2)", never "luca§2".
+- `bal/gui/qt/lists.py`: Tools in the Will tab, "Inheritance in several
+  deliveries…" (ADVANCED only, checked each time the menu opens); the
+  Heirs list's Delete asks to open the table when it no longer fits. The
+  Will tab list (owner's ZIP test): in a will in deliveries every column
+  of a delivery-2 or delivery-3 row steps right by two figure spaces per
+  level (the tree indented only the first column); "Copy", the tooltips
+  and the search keep the plain values; a will with one date is
+  unchanged.
+- `bal/gui/qt/window.py`: `ask_deliveries` (the Yes / No questions of the
+  window of the table go through the window, as `ask_renew_will`; in the
+  test window of `tests/flowkit.py` they are answered No: a real box, never
+  clicked in a test without a screen, kept the first suite run waiting for
+  2 hours); `open_deliveries_editor` (refused with a message
+  in BASIC, with the period form, without heirs, with the settings on
+  hold); `table_mismatch` (Prepare with a table that no longer fits: in
+  ADVANCED the question "Open the table of the deliveries now?");
+  `offer_table_update` (after the heir window, an import or a delete, when
+  the heirs changed and the table no longer fits: asked once, after the
+  last "Add another heir"); the heir window says under the amount that it
+  is not used with a table, and a rename carries the shares
+  (`instalments.rename_heir`).
+- `bal/gui/qt/dialogs.py`: the Check's "Heir" rows name each person once;
+  the DUST rows name "luca (delivery 2)"; a rename is said once with the
+  persons' names (`person_renames`; also in the "What changes" box); the
+  Check stopped by a table that no longer fits has "Open the table of the
+  deliveries" (ADVANCED).
+- Catalogs: 53 new texts (the window, the 17 rules of the table), Italian
+  and Spanish.
+- `README.md`: the window; the new name.
+
+**Tests:**
+
+- `tests/flowkit.py`: `ask_deliveries` of the test window (recorded as a
+  "question" popup, answered No).
+- `tests/test_check_button.py`: the Tools menu has the new entry after
+  "Merge".
+- `tests/test_gui_deliveries.py` (new, three will-executors, 36 tests): the
+  example table and its Save, the date fields after it; the stored table,
+  its totals, gaps, no bar with 3 deliveries; 6 columns (maximum raised in
+  the test) scroll, names and totals outside; four problems (28 days, not a
+  share, 95 %, three decimals), Save off; the decimal comma and an empty
+  cell; add and remove; an earlier date asked (No: nothing stored; Yes:
+  stored); shares moved earlier asked; a later date not asked; a date
+  later than the will in force said; back to one delivery asked, then the
+  date editor again; heirs changed since the table; the wizard's choice
+  (ADVANCED only, not with the period form, opens the window, Cancel keeps
+  "Fixed date", "Fixed date" with a table asks); the Tools entry (ADVANCED
+  only); the refusals; "+1 delivery"; a rename in the real heir window
+  keeps the shares, nothing asked, the note shown; no note without a
+  table; an heir added or deleted asks to open the table (not when
+  nothing changed, not in BASIC, not after the heir window closed
+  unchanged); Prepare's question; the transactions to sign (39; 84 with
+  the copy without a will-executor); the flows' Prepare asks to open the
+  table and the Check stopped by it has the button; the Check's rows and
+  a rename (said once, "luca → marco") never show "§"; the Will Details.
+- `tests/test_gui_will_versions_list.py`: each delivery steps right in
+  every column, "Copy" plain, one date unchanged.
+- `tests/test_core_delivery_instalments.py`: the rule errors (English kept,
+  translatable, a broken translation falls back), every rule raises it,
+  the schedules, what arrives earlier, later than the will in force, the
+  28 days of delivery 1, the transaction counts (3 x 3 = 39, 2 x 11 = 4094,
+  2 x 12 = 8190, 3 x 7 = 3279, 3 x 8 = 9840).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole
+`tests/` directory, normal order: 2769 passed (33 minutes; a first run had
+7 failures, fixed above: the Tools menu of the test toolbar and the word
+"instalments" in the catalogs). Golden files unchanged. Mutation check on
+a copy of the code: 40 rules broken one at a time (the shared rules, the
+engine, the window, the wizard, Tools, the heirs, the Check texts), all 40
+caught (two needed new tests). Scenario harness (full matrix, the 2-coin
+scenarios 6 times, warn_matrix synced and not): log identical to the #169
+log (135 lines). Screenshots of the window (offscreen, English and, from
+the ZIP's catalog, Italian) checked: 3 deliveries fit, 6 scroll with the
+names and totals in place. Test ZIP
+`test-zips/ancora_0.8.0-TEST-170-several-deliveries.zip` (sha256
+`9300450e...c808`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2. Owner's ZIP test (2026-10-20, a new wallet, a base will
+then several deliveries, delivery 1 moved earlier, 4 will-executors):
+the will in force has 4 + 16 + 64 = 84 transactions, rebuilt from the
+log's pushes as a complete chain; we.safe21.io holds its 21, WAITING,
+each with its fee. Seen there, for the next steps (not changed here):
+the will-executors answer "429 Too Many Requests" to the check of every
+transaction (21 per server at once), so a 2nd or 3rd Check finishes the
+verification; old delivery-3 copies shown as separate "Invalidated"
+versions; "txid is none" log blocks from `Will.normalize_will` on
+unsigned children. The "no server" message after the date change was the
+owner's DNS failing at that moment.
+
+**Outcome:** DONE.
+
+## 171. The will export window works for a will too big for QR codes
+
+**Date:** 2026-10-20
+
+**Goal (owner's ZIP test of #170, 2026-10-20):** Tools > Export on the
+owner's will in several deliveries (about 244 transactions with all its
+versions) stopped with "BBQR transfer demands too many parts" and the
+window did not open: it prepared the animated QR codes at once, also for
+a file, and the BBQR format allows at most 1295 frames. Owner's decision:
+when the will is too big for the QR codes, the QR and audio choices
+disappear and only the file stays.
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`, `WillExportDialog`: the QR frames of the
+  selection are prepared in one place (`_refresh_transports`, at the
+  start and after a change of filter or of "Whole will"). When they do
+  not fit (`AnimatedQrError`), "QR Code" and "Audio" are hidden, "File"
+  is selected and a note says "This will is too big for QR codes and
+  audio: export it as a file. (The filter "Valid" makes it smaller.)";
+  when the selection fits again, they come back. `BalQrExportWidget`: a
+  QR size at which the will needs too many frames is not taken (the size
+  before stays). Owner, after trying it: the window starts on the filter
+  "Valid" (the will in force: what a copy, the offline signing or another
+  device need), "All" only when nothing is valid; in BASIC mode only
+  "File" is offered (QR and audio are ADVANCED tools; the guided offline
+  route of BASIC uses the file).
+- Catalogs: the note, in Italian and Spanish.
+
+**Tests:** `tests/test_gui_export_dialogs.py`: a will too big for the QR
+codes opens on "File" only, with the note, and QR and audio come back
+when the filter makes it fit; a QR size too small is not taken; the
+window starts on "Valid", else "All"; BASIC offers the file only.
+`tests/test_gui_qr_transfer.py`: the two filter tests start on "Valid".
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole `tests/` directory,
+normal order: 2773 passed (25 minutes). Golden files unchanged. Scenario
+harness: log identical to the #169 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-171-export-only-file.zip` (sha256
+`bf79e240...00d1`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2. Owner's ZIP test of the first version (2026-10-20): the
+window opens on his will (214 items), "File" only with the note; the
+filter "Valid" brings the QR codes back; the export file was written. Owner's ZIP test of this version: ADVANCED
+starts on "Valid" with File, QR and audio, "All" leaves the file only;
+BASIC offers the file only with both filters.
+
+**Outcome:** DONE.
+
+## 172. The Check asks the will-executors a few at a time
+
+**Date:** 2026-10-21
+
+**Goal (owner's ZIP test of #170, 2026-10-20):** on the owner's will in
+several deliveries (84 transactions, 4 will-executors) the Check sent one
+`searchtx` per transaction to every will-executor at once; the servers
+answered 429 Too Many Requests and only the 2nd or 3rd Check verified
+everything. Reading the code showed worse: a 429 was taken as "not
+received", so the copy was marked CHECK_FAIL and sent again. Owner's
+decisions: 3 requests at a time per will-executor; at most 2 minutes for a
+Check; a 429 never makes a copy "failed"; the waiting must be clearly
+visible and explained, so nobody worries.
+
+**What changed:**
+
+- `bal/core/willexecutors.py`:
+  - `check_transactions_parallel`: at most `CHECK_PER_SERVER` (3)
+    requests at a time to one will-executor (the next one leaves when one
+    answers), the will-executors in parallel, at most `CHECK_MAX_WORKERS`
+    (16) in all, sent in turn so a busy will-executor does not take every
+    worker. At the deadline the requests running AND the ones not sent yet
+    are reported as timed out. `on_busy(url, seconds)` reaches the calling
+    thread; `should_stop()` stops the waiting when the window is closed.
+  - `check_transaction`: a 429 (`busy_pause`) gives a pause (the server's
+    Retry-After, else 2 s, 4 s, 8 s; at most 10 s) and a new try, at most 3
+    times; still busy: `NO_ANSWER` (the copy stays sent, #147). Other
+    errors are raised as before.
+  - `check_deadline`: 20 s for a small will; 5 s for each round of
+    requests, the rounds being the larger of the busiest will-executor (3
+    at a time) and all the requests (16 at a time); at most 120 s. The
+    owner's will: 35 s.
+- `bal/engine/verify.py`: `verify_will` uses that deadline (or the one
+  given by the window) and passes `on_busy`.
+- `bal/engine/push.py`: the copies of a will-executor that answers
+  "already present" are checked with the same parallel check, no longer
+  one by one. Owner's test: we.divinaly.support answered "already
+  present" and no check, 31 copies x 16 s = 8 minutes with the window still
+  on "0 s / 20 s"; now at most the deadline (55 s for 31 copies), shown.
+- `bal/gui/qt/dialogs.py`: `check_wait_lines` (shared with the window):
+  "Copies checked: X of Y · N s (at most N s)" in bold, always; for a long
+  Check, in grey, "Many transactions: the will-executors are asked a few
+  at a time, so as not to overload them."; in orange, "<server> is busy:
+  new try in N s.". Shown under the Verification step and while the
+  "already present" copies are checked during the Sending step.
+- `bal/gui/qt/window.py`: the right click "check" shows the same lines,
+  with the grown deadline; its waiting text wraps at a normal width.
+- Catalogs: the new texts, in Italian and Spanish.
+
+**Tests:** `tests/test_check_throttle.py` (new, 17, three fake
+will-executors): never more than 3 at a time per will-executor; the
+deadline reports the running and the not sent; `on_busy` on the calling
+thread; 429 then an answer; still busy is `NO_ANSWER`, not a failure;
+Retry-After kept but capped; another error raised; `verify_will` with the
+real parallel check keeps a busy will-executor's copies sent; the deadline
+grows (owner's will 35 s, 10 x 30 copies 95 s, 30 x 1 copy 20 s, at most
+120 s); the Check window, a small will and the right click window show the
+lines; the "already present" copies are no longer checked one by one,
+closing the window stops them, the Sending step shows them.
+`tests/test_engine_push.py`, `tests/test_verify_in_dialog.py`,
+`tests/flowkit.py` (the fake waiting window has a `message_label`) and the
+golden file `copies/menus_prepare_sign_broadcast_check` follow the new
+texts. Mutation check: 12 of 12 deliberate faults caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole `tests/`
+directory, normal order: 2790 passed (32 minutes). Golden files: only the
+one above changed (the waiting window text). Scenario harness: log
+identical to the #171 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-172-check-throttle.zip`: `external_zip_test.py`
+and `smoke_test.py` pass on Electrum 4.8.2. Owner's ZIP test (2026-10-21,
+mainnet test wallet, 5 will-executors): 124 copies verified in one Check
+in about 33 s (limit 55 s); the servers answered 429 fourteen times, every
+new try succeeded; the waiting lines read clearly. The "already present"
+fix was not tried in the ZIP yet (the same test wallet then hit the
+separate local-history problem): owner's OK to commit with it covered by
+the tests only.
+
+**Outcome:** DONE.
+
+## 175. Saving an unsigned will in several deliveries no longer breaks the wallet's balance
+
+**Date:** 2026-10-21
+
+**Goal (owner's log, 2026-10-21 08:17:57Z, ZIP of #172, mainnet test
+wallet):** with "Save in the history" on (`bal_save_history`, default on),
+the save of the will into the local history logged 80 errors ("trying to add
+tx to db with inconsistent txid: ... != None", then "spending tx not in
+wallet db"), and from then on every refresh of the window failed with an
+AssertionError in Electrum's `get_balance`. Analysis, reproduced in a test:
+an unsigned transaction has a txid only while every input is known to be
+segwit; a later delivery spends an unsigned will transaction, and that
+knowledge is not in the text Electrum stores, so the stored copy has no txid
+(36 of the 39 transactions of a will in three deliveries with three
+will-executors). Electrum refused the copy only AFTER writing the spent
+coins and the outputs into the wallet index, so the index pointed at
+transactions the wallet did not have. The funds and the signed will were
+never touched (a signed transaction is never saved to the history), and
+Electrum clears such entries when it opens the wallet
+(`remove_local_transactions_we_dont_have`): with the option off, a restart
+repairs the wallet.
+
+**What changed:**
+
+- `bal/core/will.py`:
+  - `_survives_reparse(tx)`: True when the copy Electrum stores keeps the
+    txid (`tx_from_any(str(tx)).txid() == tx.txid()`).
+  - `save_valid_transactions_to_history`: a transaction that does not
+    survive is not given to Electrum; one INFO line counts them ("N
+    unsigned will transactions not saved to the local history: ..."). The
+    first delivery is saved as before.
+  - `_undo_partial_add(wallet, txid)`, safety net: when
+    `add_transaction` still fails, what Electrum already wrote for a txid
+    the wallet does not hold is removed (`adb.remove_transaction`, which
+    works without the transaction), then the error is raised as before.
+
+**Tests:** `tests/test_history_multiverse.py` (new, 4, three fake
+will-executors, throw-away testnet wallet): a will in three deliveries,
+unsigned, saved: no entry of the wallet index points at a missing
+transaction, the balance reads, no ERROR, the 36 later transactions are not
+stored and counted in the INFO line, the first delivery is stored; a will
+with one date is saved as before; an add refused half-way leaves no entry;
+`_survives_reparse` is True for the first delivery and False for the later
+one. Mutation check: 5 of 5 deliberate faults caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Whole `tests/`
+directory, normal order: 2794 passed (29 minutes). Golden files: none
+changed. Scenario harness: log identical to the #172 log (135 lines). Test
+ZIP `test-zips/ancora_0.8.0-TEST-175-history-reparse.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2. Owner's
+ZIP test (2026-10-21, the same mainnet test wallet): at the opening Electrum
+removed the 12 broken entries by itself; then several Checks with "Save in
+the history" on and off: no AssertionError, no "inconsistent txid", no
+traceback, the balance reads. The will there is fully signed, so the skip of
+unsigned later deliveries was not exercised in the ZIP: covered by the tests
+only.
+
+Seen, not changed here: at each rebuild `normalize_will` logs "txid is none"
+for 80 stored items of OLD versions of that will (later deliveries of
+invalidated or replaced versions, the same lost txid when read back); they
+are marked ERROR and skipped. Present before #172; a later step.
+
+**Outcome:** DONE.
+
+## 174. Going back to BASIC asks first; the mouse wheel no longer changes the user type
+
+**Date:** 2026-10-21
+
+**Goal (owner's report, 2026-10-21):** with the plugin Settings window open
+in ADVANCED, scrolling with the pointer over "User Type" (or a wrong click)
+put the mode back to BASIC without a word, and the advanced tools
+disappeared. Owner decisions: the mouse wheel does not change the user type;
+leaving ADVANCED asks "Go back to BASIC mode? The advanced tools will be
+hidden. The will does not change." with Yes / No, No by default (and on
+Escape); on No nothing changes. The same in the Settings dialog, its reset
+buttons and the wizard.
+
+**What changed:**
+
+- `bal/gui/qt/common.py`:
+  - `confirm_basic_mode(parent)`: the question box; True on Yes.
+  - `is_advanced_mode(plugin)`: the mode in force.
+  - `NoWheelComboBox`: a combo that leaves the wheel to the window, so
+    scrolling over it scrolls the window.
+  - `switch_user_type`: from ADVANCED to BASIC it asks first; on No it
+    returns False and touches nothing (no windows refreshed, the delivery
+    form not changed). From BASIC to BASIC nothing is asked.
+- `bal/gui/qt/plugin.py` (Settings dialog): the "User Type" combo is a
+  `NoWheelComboBox`; on No it goes back to ADVANCED. Its reset button and
+  "Reset to Default Setting" no longer write the user type themselves: the
+  combo's handler writes it after the question, so on No ADVANCED stays and
+  the other settings are still reset.
+- `bal/gui/qt/widgets.py` (wizard): the mode selector is a
+  `NoWheelComboBox`; on No it goes back to ADVANCED and the delivery form is
+  left as it is (a fixed date chosen in ADVANCED stays fixed).
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; four new entries
+  translated ("BASIC mode", the question, "Yes", "No"). In Italian and
+  Spanish the question says BASE / BÁSICO, as the "User Type" combo does.
+
+**Tests:** `tests/test_basic_mode_confirm.py` (new, 11): the question box
+(text, Yes / No, No by default and on Escape); No keeps ADVANCED and touches
+nothing; BASIC to BASIC asks nothing; the wheel does not change "User Type"
+in either mode (and a plain combo did, the control); the Settings combo, its
+reset button and "Reset to Default Setting" with No then Yes; the wizard
+with No then Yes (three fake will-executors, throw-away testnet wallet); a
+fixed date chosen in ADVANCED stays on No. `tests/conftest.py`: fixture
+`yes_to_basic` (answers Yes without showing the box), used by 8 earlier
+tests that leave ADVANCED and check what follows (in
+`test_advanced_period_default`, `test_auto_rebuild_hidden`,
+`test_gui_delivery_colours`, `test_gui_delivery_form`,
+`test_gui_will_versions_list`). Mutation check: 10 of 10 deliberate faults
+caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. Whole `tests/` directory, normal
+order: 2804 passed (37 minutes; the eleventh new test was added after it
+and passes). Golden files: none changed. Scenario harness: log identical to
+the #175 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-174-basic-confirm.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2. Owner's
+ZIP test (2026-10-21): OK.
+
+Seen, not changed here (owner, at the ZIP test): switching between BASIC
+and ADVANCED takes a few seconds to redraw the window on the mainnet test
+wallet. Each switch runs the window's full refresh over every stored will
+item (685 there, mostly old versions); not measured yet, a later step.
+
+**Outcome:** DONE.
+
+## 173. A read-only window shows the plugin's steps as command lines
+
+**Date:** 2026-10-21
+
+**Goal (owner's idea, 2026-10-21):** a window in the style of AutoCAD's
+command line that shows what the plugin is doing, written as the `bal_*`
+commands of the command line. Owner decisions: read-only (nothing can be
+typed: a command typed in Electrum's Console can overwrite a `bal_*`
+command, #148), black background, in BASIC and ADVANCED alike; the Tools
+entry reads "CLI command trace…" ("Comandi CLI…" in Italian), the subtitle
+"(CLI commands, view only)" ("(comandi CLI in sola visualizzazione)");
+last entry of Tools, under its own line; the trace lives only while
+Electrum is open ("Save to file…" keeps a copy).
+
+The GUI never runs the `bal_*` commands: the window and the command line
+call the same engine bricks, and each brick writes the line of the command
+that runs the same step.
+
+**What changed:**
+
+- `bal/core/trace.py` (new, no Qt): the trace. The last 5000 lines in
+  memory, numbered, thread-safe, never raises. Kinds: command, request,
+  answer, ok, warning, error; a "Full" flag for the details. Never a
+  secret: no password, seed, key or raw transaction is passed to it; a
+  full txid is shortened (`a1b2c3d4…9f0e`), and a long hex text or an
+  extended private key that would slip through is hidden. Plain text for
+  Copy / Save.
+- `bal/core/willexecutors.py`: `send_request` writes each request to a
+  will-executor (method, server and path; for `pushtxs` how many
+  transactions, for `searchtx` the shortened txid) and its answer with the
+  seconds: a short text answer as the server gives it ("thx", "already
+  present"), "answer with a transaction" (never the transaction), an HTTP
+  error with its code (429: busy), no answer in time and the new tries.
+  The copies' checks (`searchtx`) and the new tries are "Full" details.
+  `check_transaction` writes the busy (429) pauses; `ping_servers_parallel`
+  writes `bal_willexecutors_ping` and how many answered.
+- Engine bricks, each a command line then its outcome:
+  - `bal/engine/context.py` `check_will`: `bal_will_check`, then "the will
+    is coherent" or "not coherent:" with the command line's reason
+    (`will_change_message`);
+  - `bal/engine/build.py` `build_will`: `bal_will_prepare`, then the valid
+    transactions and the first delivery date (UTC), or the error;
+  - `bal/engine/sign.py` `sign_will`: `bal_will_sign`, then how many were
+    signed now, or which one failed and the error's text;
+  - `bal/engine/push.py` `push_will`: `bal_will_broadcast` with how many
+    will-executors, then the count of each outcome and each refusal;
+  - `bal/engine/verify.py` `verify_will`: `bal_will_check_executor` with
+    how many copies and the deadline, then the count of each outcome;
+  - `bal/engine/invalidate.py`: `bal_will_invalidate` for the build of the
+    invalidation, and Electrum's own `broadcast` (the plugin has no command
+    for it) for its sending;
+  - `bal/engine/merge.py` `merge_will`: `bal_will_import_merge`, then how
+    many copies were merged.
+- `bal/gui/qt/trace_window.py` (new): the window. Black, read-only, fixed
+  width font, colours by kind; reads the new lines every 0.3 s and follows
+  them when the view is at the bottom; Pause / Resume (the lines keep
+  coming and appear at Resume), Copy, Save to file… (plain text,
+  `ancora-cli-trace-<date>-<time>.txt`), Clear, Detail Normal / Full,
+  Close. One window per Electrum window.
+- `bal/gui/qt/window.py`: `BalWindow.show_trace`. `bal/gui/qt/lists.py`:
+  the Tools entry, last, under a line, in BASIC and ADVANCED.
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; 45 new entries
+  translated.
+
+**Tests:** `tests/test_cli_trace.py` (new, 30): the trace (numbers, the
+oldest lines dropped, clear, plain text, never a secret, never an error);
+the requests (`pushtxs` with the count and never the transactions,
+`searchtx` as a detail with the short txid, a busy will-executor and its
+new try, no answer in time, an HTTP error, the ping); a real Check on a
+throw-away testnet wallet with three fake will-executors (the five
+commands in order with their outcomes, then a second Check "coherent";
+neither the password nor a transaction in the trace) and the same
+`bal_will_check` line from the command line; the window (black,
+read-only, subtitle, colours, new lines, Pause, Detail, Copy, Save,
+Clear, the timer stops at Close, one window); the Tools entry in BASIC
+and ADVANCED; Italian. `tests/test_check_button.py`: the Tools order now
+ends with the line and the new entry. Mutation check: 14 of 14 deliberate
+faults caught.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. Whole `tests/` directory, normal
+order: 2835 passed (27 minutes). Golden files: none changed. Scenario
+harness: log identical to the #174 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-173-cli-trace.zip`: `external_zip_test.py`
+and `smoke_test.py` pass on Electrum 4.8.2. Owner's ZIP test
+(2026-10-21): OK.
+
+Seen, not changed here (owner, at the ZIP test):
+- the scroll bar shows only when the lines no longer fit the window (Qt's
+  default);
+- the button "Clear" reads "Cancella" in Italian, Electrum's own
+  translation of "Clear", which wins over the plugin's "Svuota";
+- with several wallets open their lines share one trace, without the
+  wallet's name.
+
+**Outcome:** DONE.
+
+## 176. A new delivery date uses a will-executor's new fee address; no more "Will-Executor excluded: Skipped"
+
+**Date:** 2026-10-21
+
+**Problem (the owner's ZIP test of #172, log 2026-10-21 07:16 UTC):** the
+Check showed a red row "Will-Executor excluded: Skipped", which named no
+will-executor and no reason.
+- `we.bitcoin-after.life` gave a new fee address (it changes with the
+  user's IP, #141) after it had received its copies.
+- The owner then moved the delivery date one day earlier (17 -> 16
+  October 2031): a new will.
+- The build kept the old fee address for that will-executor
+  (`Will.received_terms`, #141), because `Will.same_payments` compared
+  the coins and the outputs but not the date.
+- The new copies (new date, so new transactions, not received yet) had
+  the old address; the Check right after the build
+  (`check_willexecutors_and_heirs`) expects the new address for a copy
+  not received, raised `WillExecutorTermsChanged`, and the dialog wrote
+  its fixed text "Skipped" in red.
+- The flow went on anyway: it signed and sent the new copies with the
+  old address (the will-executor accepts every address it ever gave).
+  The red row was a false alarm, and the copies did not use the new
+  address as #141 says ("when the copy changes anyway, it is built again
+  with the will-executor's new data").
+
+**What changed:**
+
+- `bal/core/will.py` `Will.same_payments`: the same coins, the same
+  outputs **and the same date**. A new delivery date is a new copy, to
+  sign and send again, so it is built with the will-executor's new fee
+  address or fee; the build and the Check agree again. A received copy
+  whose date does not change is still kept as it is (#141, unchanged).
+- `bal/core/messages.py`: new `excluded_after_build_message(e)`, the text
+  of the "Will-Executor excluded" row right after a build: for a new fee
+  address or fee the owner's #141 sentence (`executor_terms_message`),
+  else "{host}: not in the will just prepared".
+- `bal/gui/qt/dialogs.py`: that row uses it, in orange (a warning: the
+  flow goes on and signs and sends) instead of "Skipped" in red. The
+  report already lists it among the warnings. With the fix above the row
+  should not show in normal use.
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; 1 new entry (Italian:
+  "{}: non è nel testamento appena preparato"; Spanish: "{}: no está en
+  el testamento recién preparado"). Texts and colour approved by the
+  owner (2026-10-21).
+
+**Tests:** `tests/test_executor_fee_address.py`, 4 new (14 in all; three
+fake will-executors, each with its own fee address):
+- the owner's case: every copy received, WE0 gives a new address, the
+  date moves 10 days earlier; no "excluded" row, the three copies have
+  the new date and are received, WE0's has its new address, WE1's its
+  own, and the next Check is clean;
+- `Will.same_payments` is False for the same coins and outputs on
+  another date;
+- the row's texts (both sentences, never "Skipped");
+- a will-executor still missing right after a build: one orange row
+  with its host, among the report's warnings.
+Mutation check: 4 of 4 deliberate faults caught (date ignored again,
+"Skipped" back, the #141 sentence lost, red again).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. The 67 test files near the
+change: 1675 passed (15 minutes). Whole `tests/` directory, normal
+order: 2839 passed (36 minutes). Golden files: none changed. Scenario
+harness: log identical to the #173 log (135 lines). Test ZIP
+`test-zips/ancora_0.8.0-TEST-175-executor-terms.zip` (built before the
+step got its number): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-21), read in his Electrum log:** after Pings,
+`we.divinaly.support` gave a new fee address; the owner moved the
+delivery date one day earlier and pressed Check. Log: "will-executor
+copies changed anyway, built with the new payment data:
+['https://we.divinaly.support']", the will coherent right after the
+build, signed and sent to the five will-executors, the next Check
+clean; a second try the same. Seen: a message stayed on screen only
+half a second (which one is not in the log; not changed here).
+
+**Outcome:** DONE.
+
+## 177. No more "txid is none" in the log when a will with more delivery dates is built
+
+**Date:** 2026-10-21
+
+**Problem (the owner's Electrum logs, 20 and 21 October 2026):** every
+build of a will with more delivery dates wrote, for each later delivery,
+five ERROR lines ending with "txid is none" (360 lines in the session of
+21 October 17:42 UTC, from 20 October 11:55, when the tests of wills with
+more delivery dates began). The will was right: it was signed, sent and
+verified, and the next Check was clean; the lines were noise only.
+- A later delivery spends the change of the delivery before it, which is
+  not signed yet.
+- `Will.normalize_will` completes every item with the wallet and with the
+  will itself (`add_info_from_will`: an input that spends another item's
+  output gets that output's address, value and script), then checks a
+  COPY of each item.
+- The copy (`WillItem(...)`) re-parses the transaction, so that input lost
+  its data again; Electrum cannot compute the txid of an unsigned
+  transaction with such an input, and `normalize_will` logged the item
+  (`##########`, its key, the item, its transaction, "txid is none").
+- It happened twice per build (`Will.update_will` and
+  `engine/build._build_will` both call `normalize_will`): 72 lines for a
+  will of 3 + 9 + 27 items with three will-executors.
+- Not caused by deleting rows in the List: the lines came also for the
+  transactions just built, half a second after they were built.
+
+**What changed:**
+
+- `bal/core/will.py` `Will.normalize_will`: the copies are completed from
+  the will of copies too (`add_info_from_will` on each copy), so their
+  txid is computed and equals their key. A txid that still cannot be
+  computed (an input whose previous output is really missing) gives one
+  WARNING line with the item's key instead of the five ERROR lines.
+  Docstring added.
+- Seen, not changed: `normalize_will` works on its copies, so its branch
+  for an item whose txid differs from its key (`to_add`, `to_delete`)
+  never reaches the caller's will. No effect today (the items are stored
+  under their txid); a separate step if the owner wants it.
+
+**Tests:** new `tests/test_normalize_will_chain.py`, 4 tests (three fake
+will-executors, each with its own fee address; the will with three
+delivery dates of `test_multiverse_chain_rebuild.py`):
+- the first build logs no "txid is none" and no "cannot be computed";
+- a rebuild with the first date 30 days earlier: the same;
+- at each `normalize_will` of a build, every completed copy has the txid
+  of its key, also for the third delivery;
+- the 9 second deliveries whose first delivery is removed: one WARNING
+  line each, no ERROR line.
+Mutation check: 4 of 4 deliberate faults caught (copies not completed,
+the five ERROR lines back, ERROR instead of WARNING, no line at all).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_normalize_will_chain.py` and `tests/test_multiverse_chain_rebuild.py`:
+19 passed. The 74 test files near the change: 1743 passed (20 minutes).
+Whole `tests/` directory, normal order: 2843 passed (30 minutes). Golden
+files: none changed. Scenario harness: log identical to the #176 log
+(135 lines). Test ZIP `test-zips/ancora_0.8.0-TEST-177-normalize-txid.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-21, 21:06 UTC), read in his Electrum log:** a
+will with three delivery dates and five will-executors built, signed,
+sent and verified: no "txid is none" line and no `##########` block (72
+lines per build before). 24 WARNING lines "cannot be computed" remain,
+one per item: old later deliveries of a version built that morning whose
+first delivery is no longer in the will (orphans, maybe left by deleting
+rows in the List; the List does not log its deletions). They were hidden
+in the noise before; they are the open point D (orphan descendants), not
+changed here.
+
+Seen in the same test, not changed here (a separate step):
+`we.divinaly.support` got its copies but answers "503 Service Temporarily
+Unavailable" to every verification. After "Exclude" (the will-executor is
+deselected, the copies it got are kept, #93/#137) and after the owner
+deleted its 2031 transaction in the List, each Check verifies again one
+copy of it still in the will (`b3f3432c...`, probably a later delivery);
+nothing is sent again. The Exclude question says it "did not receive your
+will", which does not fit a will-executor that got its copies.
+
+**Outcome:** DONE.
+
+## 178. An excluded will-executor is no longer verified; Exclude lasts until the user selects it again
+
+**Date:** 2026-10-21
+
+**Problem (the owner's ZIP test of #177, 2026-10-21 21:06 UTC, a will
+with three delivery dates and five will-executors):**
+`we.divinaly.support` accepted its copies ("pushed: thx"), then never
+answered the check in time (later "503 Service Temporarily
+Unavailable"). The owner pressed "Exclude" and, after more Checks,
+deleted its 2031 transaction in the List; every Check still asked it
+again: "received, verifying...", "Copies verified: 0 of 1".
+- "No answer in time" keeps a copy sent and to be verified (#147), so
+  the Check (`engine/verify.verify_targets`) asked it at every run.
+- "Exclude" keeps the copies a will-executor already got (it holds them
+  on its server; deleting them only here is what #129 forbids), and the
+  Check asked the copies of every will-executor, selected or not: the
+  copy `b3f3432c...` never answered in time, so it was asked for ever
+  and the summary kept "received, to be verified".
+- "Exclude" was the plugin's deselection (#137, case 3): selected again
+  as soon as the will-executor answered the ping, which divinaly does.
+- Nothing was sent again (one sending only, at 21:08 UTC): the Checks
+  only verified.
+
+**Owner's decisions (2026-10-21):** the copies of an excluded
+will-executor stay in the will (safety: they can be broadcast at the
+date; the plugin must know they exist), the Check no longer asks it, the
+box says "excluded"; "Exclude" lasts until the user selects it again.
+
+**What changed:**
+
+- `bal/gui/qt/window.py` `exclude_willexecutor`: recorded as the user's
+  deselection (`Willexecutors.set_user_choice`), like a deselection in
+  the Will-Executor tab: the automatic selection after a download and a
+  ping (`Willexecutors.select_after_ping`, #137 case 2) leaves it
+  deselected; the user selects it again in the Will-Executors window.
+  Exclude now drops only the copies NEVER sent (`engine.verify.ever_sent`,
+  made public: no PUSHED, CHECKED, CHECK_FAIL or PUSH_FAIL). Owner's ZIP
+  test 2026-10-22 07:14 UTC: divinaly accepted its copies ("pushed: thx"),
+  answered "503 Service Temporarily Unavailable" to the check of 25 of
+  them (CHECK_FAIL clears PUSHED), and Exclude, which dropped the copies
+  "not PUSHED" (#93), forgot 25 copies divinaly holds. A copy sent at
+  least once may be on the will-executor's server: it stays.
+  A will-executor the plugin deselects because it does not answer the
+  ping still comes back when it answers (#137 case 3, unchanged).
+  Docstrings of `select_after_ping`, `user_deselected` and
+  `download_and_select_willexecutors` updated.
+- `bal/engine/verify.py` `verify_targets`: new `selected` (the URLs
+  selected now); without `recheck`, a copy of a will-executor not
+  selected is not asked. The Check (`dialogs.py`, verification step) and
+  the command line `check_transactions` with no ids pass it; the right
+  click "check" and `check_transactions` with named ids still ask (the
+  user asks for them).
+- `bal/core/summary.py` `executor_states`: new state `excluded`, a
+  will-executor not selected that received the will, verified before or
+  not (before: "to_verify" for ever, or "verified" from an old check:
+  owner's ZIP test 2026-10-22 05:02 UTC, divinaly excluded read "received
+  and verified", which is no longer true once nobody asks it). It is not
+  counted in "x of N" (as
+  "deselected", #134): the Will tab summary, the "complete the sending"
+  note, the deselected line; it counts as having the will ("No
+  will-executor received your will" is not said when it holds it).
+- `bal/core/report.py`: its text "excluded: has the will, no longer
+  verified"; the report is no longer locked by it
+  (`report_block_reason`). `bal/core/build_report.py`: the state is
+  known.
+- `bal/gui/qt/dialogs.py`: the Sending runs only for the copies of the
+  will-executors selected now (the sending already skipped the others):
+  a signed, unsent copy of an excluded one, kept since this step, made a
+  "Broadcasting 0/0" run and "Sending 1/1" instead of "not needed". The
+  Sending step counts an excluded will-executor as received; the
+  Verification step does not count it ("2/2", not "2/3"); when every
+  will-executor is excluded (all deselected by hand after they received
+  the will; Exclude never leaves none) the Verification step says "not
+  needed" (Italian "non serviva", the word of the other steps with
+  nothing to do; owner's choice) instead of staying grey with no word.
+- `bal/gui/qt/widgets.py`: the box shows it grey with "–" and the text;
+  `bal/gui/qt/future_view.py`: in the legend's grey states;
+  `bal/gui/qt/lists.py`: the row of the will in force names it with the
+  deselected ones ("sent and verified 2 of 2 · 1 deselected", no new
+  text); the row of each of its copies of the will in force reads "In
+  force, excluded" on grey (`theme.EXCLUDED_COLOR` #d6d6d6) instead of
+  "In force, to be verified" on teal (owner's ZIP test). New
+  `summary.is_excluded` (the same rule, copy by copy); the selection is
+  read once per redraw (`WillList._selected_now`, also used by the
+  version row). The rows of older versions are history: unchanged. The
+  copies under an excluded will-executor's copy stay green when their
+  will-executors verified them (owner's question: each row is the copy
+  held by one will-executor; the branch matters only if that copy is
+  the one broadcast).
+- Catalogs: `bal.pot`, `it_IT`, `es_ES` refreshed; 2 new entries
+  (Italian: "escluso: ha il testamento, non più verificato", "In vigore,
+  escluso"; Spanish: "excluido: tiene el testamento, ya no se verifica",
+  "En vigor, excluido"). Texts approved by the owner.
+
+The same rule covers a will-executor deleted from the Will-Executors list
+after it received the will: it is not selected, so its copies stay and
+are "excluded", no longer verified (before: verified at every Check).
+
+Not in this step (next steps, agreed with the owner): deleting a copy
+in the List together with the copies of the later deliveries that spend
+it (#179); the text of the Exclude question for a will-executor that got
+its copies (#180); the old orphans (D).
+
+Note for the owner's wallet: divinaly was excluded there with the old
+rule (the plugin's deselection); after this version it may come back
+selected at the first ping: exclude it again, or deselect it in the
+Will-Executor window.
+
+**Golden files regenerated (owner OK, 2026-10-22), only these lines:**
+- `tests/golden/5e/check/executor_deselected.json` (we1 deselected after
+  the will was sent and verified): we1 "verified" -> "excluded",
+  Verification "2/2" -> "1/1";
+- `tests/golden/5e/copies/all_executors_deselected_after_sent.json`
+  (every will-executor deselected after the will was sent and verified):
+  we0 and we1 "verified" -> "excluded", Verification "ok 2/2" -> "not
+  needed".
+- `tests/golden/5e/check/exclude_down.json` (we1 down at the sending,
+  then Exclude): its copy (PUSH_FAIL) stays, T4 added; we1 "deselected"
+  in the box; every step unchanged (Sending "not needed").
+Every other golden file unchanged.
+
+**Tests:** new `tests/test_exclude_received.py`, 9 tests (three fake
+will-executors, each with its own fee address; the will with three
+delivery dates, 3 + 9 + 27 items; `we2` gets its 13 copies and never
+answers the check in time):
+- after Exclude the next Check asks it nothing and sends it nothing, its
+  13 copies stay; the box says "excluded", Verification "2/2"; the
+  summary is green, "2 of 2 received and verified it"; the report is
+  available; one more Check asks nothing;
+- the owner's ZIP test: copies verified before, then Exclude: "excluded",
+  Verification "2/2", summary "2 of 2", nothing asked or sent;
+- the owner's ZIP test: no answer in time for half of its copies, an
+  error (503) for the other half, then Exclude: all 13 copies stay,
+  nothing sent to it again, "excluded", Verification "2/2";
+- every will-executor deselected after it received the will: all
+  "excluded", nobody asked, Verification "not needed", will in force;
+- selected again by the user: the next Check asks its 13 copies;
+- `check_transactions` with no ids skips it, with two named ids asks
+  them;
+- the texts: the box, the Future legend, the List row of the version
+  ("2 of 2 · 1 deselected") and the row of its copy ("In force,
+  excluded", grey; an older version's row unchanged);
+- the rule of `executor_states` and of `verify_targets` on their own.
+`tests/test_executor_selection.py`: `test_exclude_then_back_is_selected_again`
+became `test_exclude_lasts_until_the_user_selects_it_again` (two downloads
+leave it deselected; selected again by the user, it stays selected); the
+module docstring follows the new case 2. Two test doubles now hold their
+will-executor as selected, as the real objects do:
+`tests/test_check_no_answer.py` (`test_cli_check_deadline_keeps_the_item_sent`:
+the controller's `willexecutors`) and `tests/test_inheritance_report.py`
+(`test_report_only_for_a_verified_will_in_force`: the plugin's list);
+without it their copy read "excluded" and the test lost its point.
+`tests/test_failed_executor.py`: `test_exclude_deselects_saves_and_drops_the_unsent_copies`
+became `test_exclude_deselects_saves_and_drops_only_the_copies_never_sent`
+(a copy with PUSH_FAIL or CHECK_FAIL stays, a copy never sent is dropped);
+the module docstring follows. `tests/test_core_will_versions.py`
+(`test_exclude_keeps_one_version_with_two_copies`): the version in force
+keeps 3 copies (we1's, PUSH_FAIL, stays), not 2.
+Mutation check: 19 of 19 deliberate faults caught (the Sending counts
+every will-executor, Exclude drops the
+copies not PUSHED again, the List row ignores the exclusion, is not
+grey, keeps the old text, the selection not read at the redraw, a
+verified copy of a deselected will-executor stays "verified", the Verification step grey
+when every will-executor is excluded, the Check asks every
+will-executor, `verify_targets` ignores the selection, no "excluded"
+state, Exclude back to the plugin's deselection, the Verification step
+or the summary row or the List row counts it, the report locked by it,
+the command line asks every will-executor, the box text or the legend
+entry missing).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed.
+`tests/test_translations.py`: 4 passed. Whole `tests/` directory, normal
+order: 2852 passed (34 minutes). Golden files: only the 3 above changed.
+Scenario harness: log identical to the #177 log (135 lines; A20, the
+Exclude flow, unchanged). Test ZIPs
+`test-zips/ancora_0.8.0-TEST-178-exclude-sticky.zip`, `-v2.zip`, `-v3.zip`:
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2; the
+v3 changes and both translations checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-22, read in his Electrum logs):**
+- v1 (05:02 UTC): divinaly excluded read "received and verified" (its
+  copies verified before) -> v2: "excluded" also then.
+- v2 (07:09 UTC): deselected -> "excluded", Verification 4/4. A new will
+  (4 October 2031, five will-executors) healed the missing 2031 copy.
+  divinaly answered 503 to 25 copies, Exclude dropped them -> v3: Exclude
+  keeps every copy sent once; the List row "In force, to be verified" ->
+  v3: "In force, excluded", grey.
+- v3 (11:41 UTC): divinaly selected, no answer to the check: the Check
+  ends with the warning "received, no answer to the check", 4/5 (no
+  freeze; no Exclude offered for that state: next step). Deselected
+  (11:44 UTC): "excluded", Verification 4/4, Sending "not needed", the
+  summary "4 of 4", the List row "In force, excluded" grey; no check and
+  no sending to divinaly in the log.
+
+**Next steps (agreed with the owner):** #179 the List deletes only drafts
+and old versions never sent; #180 a 503 to the check is "no answer";
+Exclude offered next to "received, no answer to the check", with its own
+question; the word under each step of the Check window more readable.
+
+**Outcome:** DONE.
+
+## 179. The Will tab list deletes only the old versions never sent
+
+**Date:** 2026-10-22
+
+**Problem (the owner's ZIP test of #178, 2026-10-22, a will with three
+delivery dates and five will-executors):** the owner deleted
+`we.divinaly.support`'s 2031 transaction (delivery 1) in the List. The
+Check looks for each will-executor in the copies of every delivery
+together (`Will.check_willexecutors_and_heirs`): divinaly's copies of
+deliveries 2-3, under the other will-executors' copies of delivery 1, hid
+the missing one, so nothing was rebuilt or sent for it and divinaly stayed
+without its delivery 1 (the owner healed it with a new will). Read in the
+code, the same hole comes from deleting ONE draft copy of delivery 1 (the
+password window closed): the next Check signs and sends the will without
+it. And the copies with a failed check (`CHECK_FAIL`: divinaly answered
+"pushed: thx", then "503" to the check) or a sending without an answer
+(`PUSH_FAIL`) could be deleted, though the will-executor may hold them.
+
+**Owner's decision (2026-10-22, "remove the ways to make mistakes, not
+add logic"; no delete of the later-delivery copies, no presence check per
+delivery):** the List deletes only what no will-executor can have and is
+not part of the will being prepared or in force. Choice B: also the drafts
+are not deleted by hand (the next Check drops them when the change is
+undone, #128/#135). The way to stop using a will-executor is "Exclude".
+No new text: the "delete" entry is grey, as before, when nothing selected
+may be deleted (owner: no explanation).
+
+**What changed:**
+
+- `bal/gui/qt/lists.py` `_can_delete`: not deletable, besides the #129
+  rules (PUSHED or CHECKED; a backup transaction in force), a copy sent at
+  least once (`engine.verify.ever_sent`: also `PUSH_FAIL` and
+  `CHECK_FAIL`) and every VALID copy (draft, partially signed, signed and
+  not sent yet), in every delivery. Deletable: the old versions (no longer
+  VALID: replaced, invalidated) never sent. A mixed selection still deletes
+  only the rows that may be deleted. Docstring rewritten with the WHY.
+- `tests/test_gui_will_menu.py`: the delete cases follow the rule (drafts,
+  partially signed, signed not sent, PUSH_FAIL, CHECK_FAIL: not deletable;
+  old versions never sent: deletable; old versions with PUSH_FAIL or
+  CHECK_FAIL: not deletable); the fake item gets `we = None`.
+- `tests/test_gui_will_versions_list.py`
+  `test_draft_on_top_unnumbered_and_not_deletable` (was
+  `..._and_deletable`): the draft row's "delete" is grey.
+- New `tests/test_list_delete_rule.py` (3 tests, flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`, 39 items): no copy of a sent will is
+  deleted, also after a 503 (CHECK_FAIL); a draft copy of delivery 1 is not
+  deleted and the next Check signs and sends the whole chain (3 + 9 + 27);
+  an old version never sent is deleted, and only it.
+
+**Verification:** `ruff check bal/ tests/` clean; affected tests 49 passed
+(16 s); mutation run 3/3 caught (the old rule; only `ever_sent`; only
+VALID); whole suite 2856 passed (30 min). Scenario harness not run: no scenario deletes in the
+List. ZIP `test-zips/ancora_0.8.0-TEST-179-list-delete-rule.zip` (b0cdd815...) loads as an external plugin and passes the smoke test on Electrum 4.8.2; the new rule checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-22):** an old "Discarded draft" version (its copies "Invalidated", never sent) was deleted ("Elimina" in Italian); every other row, divinaly's copy too, had "delete" grey and nothing else was deleted.
+
+**Outcome:** DONE.
+
+## 180. A 503 to the check is "no answer", not a failure
+
+**Date:** 2026-10-22
+
+**Problem (the owner's ZIP test of #178, 2026-10-22):**
+`we.divinaly.support` accepted its copies ("pushed: thx"), then answered
+"503 Service Temporarily Unavailable" to the check (`searchtx`) of 25 of
+them. `Willexecutors.check_transaction` raised the error like any other, so
+`WillItem.set_check_willexecutor` marked the copies `CHECK_FAIL` and no
+longer `PUSHED`: the next Check sent them again, though the will-executor
+holds them. A 429 still busy already gave `NO_ANSWER` (#172).
+
+**Owner's decision (2026-10-22):** choice B, a 503 is "no answer" at once,
+with no new try (a new try within seconds rarely helps a server that is
+down, and with 25 copies it would hold the Check up to its 2-minute
+deadline). Only the 503: the 502 and 504 and the other errors stay
+failures.
+
+**What changed:**
+
+- `bal/core/willexecutors.py`: new `CHECK_UNAVAILABLE = 503` with the WHY;
+  `check_transaction` returns `NO_ANSWER` for a 503, logs it and writes
+  "{url} unavailable (503): no answer this time" in the command trace (no
+  pause, no `on_busy`). The copy stays sent and to be verified, the summary
+  reads "received, no answer to the check" and the next Check asks again.
+  `_trace_error` shows "unavailable (503)" instead of "error 503".
+  Docstrings updated.
+- `bal/locale`: the two new texts, translated in Italian and Spanish.
+- New `tests/test_check_unavailable.py` (3 tests; the real
+  `check_transaction` on a fake `send_request`; flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`): a 503 is `NO_ANSWER` at once (one
+  request, no pause, no busy notice); a 500 is still raised; a
+  will-executor answering 503 to every check keeps its 13 copies sent (no
+  `CHECK_FAIL`), the others are verified, the next Check calls it "no
+  answer to the check" and sends nothing to it again.
+
+**Verification:** `ruff check bal/ tests/` clean; affected tests 103
+passed (19 s); mutation run (without the 503 rule) 2/3 caught as expected
+(the 500 test passes both ways); whole suite 2859 passed (29 min). Scenario harness
+not run: no scenario answers 503. ZIP
+`test-zips/ancora_0.8.0-TEST-180-503-no-answer.zip` (fca93c85...) loads as
+an external plugin and passes the smoke test on Electrum 4.8.2; the new
+rule and the Italian text checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-22, the three-date will, five will-executors,
+divinaly selected again after #178's Exclude):** seven Checks from several
+IP addresses. `we.divinaly.support` never answered 503 this time: it gave
+the right copy or no answer in time. The copies without an answer stayed
+sent (no `CHECK_FAIL`), nothing was sent to it again, and the last Check
+read "received and verified" for all five, Verification 5/5. The 503 branch
+itself is covered by the automatic tests only.
+
+**Outcome:** DONE.
+
+## 181. "Exclude" next to "received, no answer to the check"
+
+**Date:** 2026-10-22
+
+**Problem (the owner's ZIP tests of #178-#180, 2026-10-22):**
+`we.divinaly.support` received the will, then did not answer the check.
+The Check window showed "received, no answer to the check" (⚠) with no
+button: "Exclude" and "Retry" (#93) were offered only for a will-executor
+that did not get the will. The only way to drop it was the Will-Executor
+tab.
+
+**Owner's decision (2026-10-22):** offer "Exclude" there too, with its own
+question (the #93 text "did not receive your will" would be false), plus
+"You can also press Retry later"; keep the two texts distinct. Text
+approved by the owner.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py` `BuildReportView`: new `EXCLUDE_STATES` (the
+  #93 `FAILED_STATES` plus `no_check_answer`); the will-executors box
+  offers "Exclude" next to those rows and "Retry" under the box.
+  `FAILED_STATES` itself is unchanged.
+- `bal/gui/qt/dialogs.py` `_exclude_executor`: for a will-executor with no
+  answer to the check the question reads: "<host>" received your will, but
+  did not answer the check. / If you exclude it, it is no longer checked
+  and your next wills are no longer sent to it. The copies it already
+  received stay with it. You can select it again in the Will-Executor tab.
+  / You can also press Retry later. / Exclude it? The #93 question for a
+  will-executor that did not get the will is unchanged. After "Yes" the
+  #178 Exclude runs as before (deselected by the user, the copies sent
+  kept, the check runs again, "excluded" in the summary).
+- `bal/locale`: the three new texts in Italian and Spanish.
+- New `tests/test_exclude_no_check_answer.py` (5 tests; flowkit, three
+  fake will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`): the box offers "Exclude" and "Retry"
+  for the "no answer to the check" row only once asked, nothing when all
+  are verified; its own question; the #93 question unchanged for "failed"
+  and "timeout"; the whole way (a will-executor never answering the check,
+  its button, "Yes": deselected, its 13 copies kept, the next Check does
+  not ask it, sends it nothing and calls it "excluded").
+
+**Verification:** `ruff check bal/ tests/` clean; affected tests 133
+passed (38 s); mutation run 2/2 caught (the button only for the #93
+states; the #93 question for every state); whole suite 2864 passed (34 min).
+Scenario harness not run: the Exclude flow is covered by flowkit. ZIP
+`test-zips/ancora_0.8.0-TEST-181-exclude-no-check-answer.zip`
+(f70bd69b...) loads as an external plugin and passes the smoke test on
+Electrum 4.8.2; the new rule and the Italian text checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-22):** the ZIP loads; every Check (several IP
+addresses, also with the Wi-Fi off) read "received and verified" for all
+five will-executors, so no row offered "Exclude", as expected. The "no
+answer to the check" case could not be seen live: a copy verified once is
+never asked again by the Check (`Will.needs_server_check`), which the owner
+found to be a limit (next step #182). Owner: close #181 on the automatic
+tests.
+
+**Outcome:** DONE.
+
+## 182. The Check asks again the copies already verified
+
+**Date:** 2026-10-23
+
+**Problem (the owner's ZIP test of #181, 2026-10-22):** every Check, from
+several IP addresses and also with the Wi-Fi off, read "received and
+verified" 5/5. A copy verified once was never asked again
+(`Will.needs_server_check`): a will-executor that lost a copy (a server
+rebuilt) or closed would read "verified" for years, and with no
+connection the window still said "Verification 5/5".
+
+**Owner's decisions (2026-10-22):**
+
+- a will in several deliveries: its verified copies are asked again once
+  their verification is a day old (13 copies per will-executor with three
+  dates: every Check would be slow and bring 429 answers); a will with one
+  delivery, basic or advanced mode: at every Check;
+- a copy verified before that gets no answer now: "received, no answer to
+  the check" (no longer verified, with "Exclude" of #181), never sent
+  again;
+- no connection at all is "no answer" too, like the 503 of #180 (else,
+  offline, every copy asked again would be marked failed and sent again);
+- the time of the last verification is written, with the next one for a
+  will in several deliveries.
+
+**What changed:**
+
+- `bal/core/will.py`: `REVERIFY_SECONDS_MULTI` (one day) with the WHY;
+  `WillItem.checked_time` (saved as `checked_time` only when known: the
+  copies verified before keep their saved form, older plugins ignore it),
+  set by `set_check_willexecutor` when the will-executor confirms the copy;
+  `NO_ANSWER` on a verified copy clears CHECKED (PUSHED kept). New
+  `Will.now_seconds`, `Will.reverify_period` (one day when the sent copies
+  carry more than one date, else 0), `Will.needs_reverify`,
+  `Will.last_verified`.
+- `bal/engine/verify.py` `verify_targets`: without `recheck` (the Check,
+  the command line) it also asks the verified copies due again
+  (`Will.needs_reverify`), never those of an excluded will-executor (#178).
+  The right click "check" is unchanged.
+- `bal/core/willexecutors.py`: `Willexecutors.no_connection` (an
+  `OSError` or aiohttp's `ClientConnectionError`, not an HTTP answer);
+  `check_transaction` returns `NO_ANSWER` for it and writes "{url} not
+  reached: no answer this time" in the command trace. `send_request`'s
+  "You are offline." is now a `ConnectionError` (same text).
+- `bal/core/datetext.py` `local_short` ("23 Oct 2026, 13:52", local time
+  of the computer): owner's ZIP test, the long dates did not fit and
+  pushed "Exclude" and "Retry" out of the window.
+- `bal/core/summary.py`: `verified_times`, `verified_text`; the Will tab
+  line reads "5 of 5 received and verified it · last check 23 Oct 2026,
+  13:52 · next check from 24 Oct 2026, 13:52", the last part only for a
+  will in several deliveries.
+- `bal/core/build_report.py` `set_verified` and the snapshot's `verified`
+  (only when known); `bal/gui/qt/dialogs.py` fills it;
+  `bal/gui/qt/widgets.py`: the Check window's row reads "received and
+  verified on 23 Oct 2026, 13:52"; the next check of a will in several
+  deliveries once, a grey line under the box ("Next check from …"); the
+  right-hand texts of the boxes wrap, so the row's button stays in a
+  narrow window, and stay on one line up to `VALUE_ONE_LINE` (360 px):
+  owner's ZIP test, the first version wrapped "verified on …, 13:52" with
+  room to spare.
+- `bal/locale`: the five new texts in Italian and Spanish.
+- Golden files regenerated (33 in `tests/golden/5e/check`, 32 in
+  `tests/golden/5e/copies`): a Check of a one-delivery will now asks the
+  verified copies again (its rows), and the snapshots carry the
+  verification times. Nothing else changed in them.
+- Tests that held the old rule, updated with the reason:
+  `test_check_throttle.py` ("another error" is a `ValueError`: a
+  `ConnectionError` is "no answer"), `test_engine_verify.py` (the verified
+  copy is asked again; no answer: no longer verified),
+  `test_verify_in_dialog.py` (nothing to verify: a will in several
+  deliveries verified now), `test_exclude_received.py` and
+  `test_deselected_executors.py` (the Will tab line now ends with the last
+  check).
+- New `tests/test_reverify.py` (18 tests; flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py` and a one-date will): the time kept
+  and saved; the saved form of an old copy unchanged; no answer on a
+  verified copy; one delivery asked at every Check; several deliveries
+  after a day (39 copies asked again after a day, none within it); a copy
+  verified before #182 asked; excluded, drafts and replaced copies never;
+  no connection (offline, name not resolved, connection dropped) is no
+  answer, a 500 still raised; the texts; the Check window's row and its
+  "Next check" line (none for one delivery); "Exclude" and "Retry" inside
+  a 600 px window, the row texts wrapping; the longest rows in English,
+  Italian and Spanish (the real catalogs) whole on one line at 1000 px,
+  inside the window with both buttons at 600 px; offline,
+  a verified one-date will reads "no answer to the check" for the three
+  will-executors, nothing marked failed nor sent again, and back online
+  all verified.
+
+**Verification:** `ruff check bal/ tests/` clean; related tests 131
+passed (1 min 48 s); mutation run 5/5 caught (never ask a verified copy again; no day
+for several deliveries; no answer keeps verified; no connection a failure
+again; no time saved); whole suite 2880 passed and 1 failed (37 min): the Will tab line of
+`test_deselected_executors.py`, expected (the last check now follows),
+updated and its file rerun, 8 passed. After the one-line fix (look
+only, owner: no new whole-suite run): related tests 60 passed (10 s), the
+Check goldens and the Will menu 63 passed (10 s), the one-line width
+mutation caught. Scenario harness not run:
+the flows are covered by flowkit. ZIP
+`test-zips/ancora_0.8.0-TEST-182-reverify.zip` (34ddbc25...) loads as an
+external plugin and passes the smoke test on Electrum 4.8.2; the new rules
+and the Italian texts checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-23, the three-date will, five
+will-executors):** the first Check asked every copy again (98 of 114 on
+the way); `we.divinaly.support` did not answer: "received, no answer to
+the check (15 s)" with "Exclude" and "Retry" (#181 seen live), then
+"excluded", Verification 4/4. The first version's long dates pushed the
+buttons out of the window and then wrapped with room to spare: fixed
+(short dates, the next check once under the box, one line up to 360
+px); the last ZIP showed every row whole on one line and "Next check
+from 24 Oct 2026, 13:52" under the box. In basic mode the will (three
+deliveries) is not asked again within the day, as decided. The Wi-Fi off
+test is left for later (owner).
+
+**Outcome:** DONE.
+
+## 183. The word under each step of the Check window is easier to read
+
+**Date:** 2026-10-23
+
+**Problem (owner):** under the five step names of the Check window, the
+word or counter ("ok", "not needed", "4/5", "0/5 · 27 s / 45 s") was small
+(11 px) and grey (#555555), hard to read on the coloured cells.
+
+**Owner's decision (2026-10-23):** a preview of three versions, drawn with
+the plugin's own code in Italian (today; A: 12 px in the step's colour;
+B: 13 px in the step's colour): proposal B. Look only.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py` `BuildReportView`: `STEP_WORD_SIZE = 13` and
+  `STEP_WORD_GREY = "#444444"` with the WHY; `_steps_bar` writes the word
+  in the step's own colour (green, orange, red, blue), the darker grey for
+  the steps not reached or not needed.
+- New `tests/test_step_words.py` (1 test): 13 px everywhere, the colour of
+  a warning and of a running step, the grey of a step to do.
+
+**Verification (look-only step, owner's rule: no whole suite):** `ruff
+check bal/ tests/` clean; the Check window tests and goldens 110 passed
+(27 s); mutation run (11 px) caught. ZIP
+`test-zips/ancora_0.8.0-TEST-183-step-words.zip` (00875fa2...) loads as an
+external plugin and passes the smoke test on Electrum 4.8.2; the new size
+checked inside the ZIP.
+
+**Owner's ZIP test (2026-10-23):** OK, the words under the steps read well.
+
+**Outcome:** DONE.
+
+## 184. The Will tab has a "Graph" view of the will
+
+**Date:** 2026-10-23
+
+**Owner's idea (2026-10-20, draft approved; previews of 2026-10-23 in
+`safe21-ancora/previews/185-*` and `186-*`):** a third view next to "List"
+and "Future", to see a will in several deliveries at a glance: which copy
+holds which, where a will-executor did not receive or confirm its copy.
+
+**Owner's decisions (2026-10-23):**
+
+- time from left to right, one column per delivery with its date and, in
+  green, who receives what ("luca 10% · john 10%");
+- one box per transaction with the will-executor's NAME inside and the
+  colour of its STATE (the colours of the Check window's steps): verified,
+  no answer / to be verified, not received, draft not signed (dashed),
+  disabled or excluded (grey); one legend of the states (no colour per
+  will-executor, no number: the name is written);
+- curved links from each copy to its children; [+] / [−] open and close a
+  branch, "Expand all" / "Collapse all"; when the view appears the first
+  branch is open (owner's ZIP test);
+- the mouse over a box: the path from the wallet in green, the copies of
+  the same will-executor outlined, a tooltip (delivery, txid, will-executor
+  and fee, state and verification time); a click opens Electrum's
+  transaction window, as the List does; the copies in the blockchain keep
+  their path green;
+- the replaced versions hidden, shown in grey on demand;
+- owner's ZIP test: the bar in the middle with bigger buttons, and an
+  adjustable zoom (30 % to 150 %, also Ctrl + wheel) with "Fit" for the
+  whole open graph; boxes, links and texts scale together;
+- every row is a possible future (owner, preview approved): at each
+  delivery only one will-executor publishes its copy, the first to arrive,
+  so every path to the last delivery is one future (3 x 3 x 3 = 27 with
+  three will-executors and three deliveries); the rows on bands light and
+  darker in turn, "Future n" at the right of each row ("Futures 10–18"
+  for a closed branch, instead of "n hidden"), green on the path under the
+  mouse, and a sentence over the graph that says what a row means;
+- light colours like the rest of the Will tab; not in the PDF report.
+
+**What changed:**
+
+- New `bal/core/graph.py` (no Qt): `build_graph` (the tree from the will
+  items: a copy is the child of the copy whose output it spends; children
+  in the order of the Will-Executor tab), `node_state` (states and
+  details), `shown`, `column_dates`, `column_shares` (the delivery table,
+  or the heirs of a one-delivery will), `future_ranges` (the possible
+  futures under each node).
+- New `bal/gui/qt/graph_view.py`: `GraphView` (drawing, branches, hover,
+  tooltip, click, zoom, fit) and `GraphPanel` (the bar and the scroll
+  area). Display only: nothing builds, signs, sends or changes a date.
+- `bal/gui/qt/future_view.py` `WillViewSwitch`: a third button "Graph"
+  (`VIEW_GRAPH`, stored in `bal_will_view` like the others; without a
+  graph widget the switch is as before). `bal/gui/qt/window.py`: the panel
+  in the Will tab, refreshed with the will summary (only while shown).
+- `bal/locale`: the new texts in Italian and Spanish.
+- New `tests/test_graph_view.py` (15 tests; flowkit, three fake
+  will-executors with their own fee addresses, the three-date will of
+  `test_multiverse_chain_rebuild.py`): the tree (3 + 9 + 27, the tab's
+  order, the depths, the dates, the shares), the states, a draft, one
+  delivery, the first branch open then branches open and close, expand /
+  collapse all, the hover path and tooltip, a click opening the
+  transaction window, painting, the replaced versions on demand, the
+  switch's third button, the zoom (sizes and clicks), "Fit", the bar and
+  Ctrl + wheel, the futures (1 to 27, the groups of the closed branches,
+  one delivery) and the sentence.
+
+**Verification:** `ruff check bal/ tests/` clean; graph tests 15 passed
+(11 s); related tests (Future view, translations, i18n, the List, the Will
+menu) 269 passed (29 s); whole suite 2898 passed (38 min). ZIP
+`test-zips/ancora_0.8.0-TEST-184-graph-view.zip` (87c4f339...) loads as an
+external plugin and passes the smoke test on Electrum 4.8.2; the new files
+and the Italian texts checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-23):** first ZIP: "molto bene", asked for the
+bar in the middle with more visible buttons, an adjustable zoom and the
+first branch open; second ZIP: OK ("stupendo"); third ZIP, with the
+futures: OK. The view reopens on the
+last tab chosen (List, Future or Graph), as before: owner OK.
+
+**Outcome:** DONE.
+
+## 185. The texts of a will in several deliveries: "What changes", the version row, the Heirs tab, the heir window
+
+**Date:** 2026-10-23
+
+**Goal (step M4b of `context/MULTIVERSE-PLAN.md`, owner's plan of
+2026-10-23, preview `safe21-ancora/previews/189-m4b-testi-consegne.html`
+approved):** three places read a will in several deliveries as if it had
+one date. M4b is split in three steps (owner): this one (#185), the
+low-fee warning for every will, the message help text and BASIC with a
+table (option (a): the table kept, the BASIC summary shows the
+deliveries read-only).
+
+**What changed:**
+
+- `bal/core/will_changes.py`: the "What changes" box compared delivery 1
+  alone and recalculated its shares inside it (10 % + 10 % read 50 % +
+  50 %: the owner's "Real shares 33% → 50%", seen in the #172 ZIP test).
+  Now a side may hold its deliveries (`WillSide.deliveries`: the date and
+  the shares of the WHOLE estate of each delivery, from the will items or,
+  with `table=`, from the wallet's table: `settings_table`). When a side
+  is a will in several deliveries the box has "Deliveries: one delivery →
+  3 deliveries" when the number changes, then one row per delivery whose
+  date or shares changed ("Delivery 2: 10 Mar 2032 (new): luca 10% · john
+  10%", "luca 50% → 10%", "removed (it was …)"), the note "The
+  percentages are shares of the whole estate." on the last one and the
+  note of the delivery row (earlier: free; later: invalidation) on
+  delivery 1; no "Real shares" row. An heir added is written with its new
+  share only, one removed only in the Heirs row. `will_changes(...,
+  staged=False)` keeps the comparison of delivery 1 alone.
+- `bal/engine/context.py`: `drop_anticipation_leftover` passes
+  `staged=False` (a precaution: with a table its date test already stops
+  before, see below).
+- `bal/gui/qt/dialogs.py` (the box before the paid invalidation) and
+  `bal/gui/qt/basic_wizard.py` (the summary's box): the settings side
+  reads the table (before, the heirs' amounts, not used with a table).
+- `bal/core/will_versions.py`: each heir row of a version carries its
+  delivery. `bal/gui/qt/lists.py`: the version row of a will in several
+  deliveries reads "Delivery 10 Mar 2030, 00:00 UTC (+2 deliveries)" and
+  names each person once, "luca 10% + 10% + 30% · john 10% + 10% + 30%"
+  ("0%" where the person receives nothing); one date: unchanged.
+- `bal/gui/qt/deliveries.py` `person_shares` and `bal/gui/qt/lists.py`:
+  with a table the Heirs tab's Amount column shows "10% + 10% + 30%" (the
+  amount is not used), one line per delivery in the tooltip, "Delivery 1
+  (10/03/2030): 10%"; no table: unchanged.
+- After the owner's first ZIP test (2026-10-23):
+  - `bal/gui/qt/window.py` `update_all`: the Heirs list is rebuilt too.
+    `heirs_tab` is Electrum's plain tab widget, its `update()` only
+    repaints: the Amount column kept "70%" after the table was saved, until
+    the wallet was opened again (the test had rebuilt the list by hand).
+  - The language's decimal separator: "16,5%" in the version row, the
+    Amount column and its tooltip (`deliveries.shown_percent`); the stored
+    "16.5%" is unchanged (the box already wrote "16,5%").
+  - The heir window, owner's choice "B grey" (previews `190-*`, `191-*`,
+    the real window `192-*`): with a table a row "Shares" over the amount
+    ("16,5% + 16,5% + 17%", one line per delivery with its date, "Edit the
+    deliveries…" in ADVANCED, opening the window of the deliveries over
+    this one); an heir already saved shows its amount grey and locked, the
+    mode buttons off, with "it counts only if you go back to one delivery,
+    and then you can change it": OK saves the stored amount as it is. A
+    new heir writes its amount (`Heirs.validate_amount` wants more than 0
+    and the table has no share for it yet), "0% + 0% + 0%" and "After OK
+    you will be asked to open the table of the deliveries". The amount
+    and message rows move one row down.
+  - `bal/gui/qt/deliveries.py` `confirm_back_to_one`: the question names
+    the amounts that count again ("luca 50%, john 50%",
+    `heir_amounts_text`).
+- Catalogs: 13 new texts in Italian and Spanish ("Deliveries", "one
+  delivery", "{} deliveries", "{} (new)", "removed (it was {})", the
+  note, the tooltip line, "Shares", the two sentences of the heir
+  window, its "?", "After OK…", the question's new sentence).
+
+**Tests:** new `tests/test_staged_texts.py` (17 tests; the core with will
+items, then flowkit with three fake will-executors, each with its own fee
+address, and the owner's table 10/10, 10/10, 30/30 %): one date to three
+deliveries, identical, one delivery changed, dates moved and a delivery
+removed, back to one date, an heir added and one removed, `staged=False`,
+the settings side from the table, one date unchanged; the Check window's
+box, the box before the invalidation of a later delivery 3, the wizard
+summary's box; the version row (+2 deliveries, a 0 % cell, one date); the
+Heirs tab column and its tooltip. On the code before this step 14 of the
+17 fail (the 3 others check what must not change).
+
+**Seen in passing (not changed here, owner informed):** with a will in
+several deliveries, a change cancelled at the password and then undone
+(e.g. the fee) makes the next Check ask to sign again:
+`drop_anticipation_leftover` was written for one date and stops when a
+draft is not on delivery 1's day, which is always so with deliveries 2-3.
+Proposed as the next step.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the box, the versions list, the deliveries window, the graph, the
+BASIC wizard, the heirs and the heir window, translations, the golden-file
+tests) 548 passed (8.5 minutes). Whole `tests/` directory: 2922 passed (32
+minutes). Golden files unchanged. The real heir windows rendered offscreen
+in Italian and checked (a wrapped line was cut: fixed). Test ZIPs
+`test-zips/ancora_0.8.0-TEST-185-staged-texts.zip` (`e64b4ddd...1c41`)
+and `...-185-staged-texts-2.zip` (`860418ac...d757`):
+`external_zip_test.py` and `smoke_test.py` pass on Electrum 4.8.2; the
+Italian texts checked inside the ZIP.
+
+**Owner's ZIP tests (2026-10-23):** first ZIP: the box and the version
+row as in the preview; seen: "16.5%" with a dot, the Heirs tab still
+"70%" until Electrum was restarted, and the heir window showing only the
+amount not used; the owner chose "B grey". Second ZIP: OK, commit and push asked.
+Seen there, for a later step: in BASIC with a table a new heir shows "0% +
+0% + 0%"; adding or deleting an heir in BASIC leaves a table that no
+longer fits the heirs and the Check stops (its window is ADVANCED only).
+Owner's choice (1): in BASIC, with a will in several deliveries, "New
+heir" and "Delete" do not go on and explain why (the step "BASIC with a
+table").
+
+**Outcome:** DONE.
+
+## 186. A change undone in a will in several deliveries no longer asks to sign again
+
+**Date:** 2026-10-24
+
+**Seen in #185 (owner informed; plan of 2026-10-24 approved, then "do all
+the tests needed until the solution is robust and safe", with
+independent reviews, judges and critics):** with one date, a change
+cancelled at the password and then undone (e.g. the fee changed and put
+back) brings the will in force back, nothing to sign (#135,
+`engine.context.drop_anticipation_leftover`). With a table of deliveries
+every Check asked to sign again: the rebuild dates ONE day earlier only
+the deliveries it changes (seen in flowkit: the fee anticipates delivery 1
+only, the drafts of deliveries 2-3 keep their dates; delivery 3's shares
+rebuild only its 27 copies, its table date one day earlier), and the rule,
+written for one date, wanted every draft on delivery 1's day.
+
+**What changed:**
+
+- `bal/engine/context.py`: `drop_anticipation_leftover` sends a will in
+  several deliveries (a table in force or in the settings) to the new
+  `_drop_staged_leftover`; the one-date branch is unchanged. The rule,
+  all of it must hold: the settings (Heirs tab, the table, the
+  will-executors selected now, the fee) compared with the will in force
+  delivery by delivery (#185) differ ONLY by deliveries exactly one day
+  earlier with exactly the same shares (two decimals); every draft is on
+  the stored date of its delivery; every delivery moved has drafts on that
+  day; no signed copy spends a draft's output. Then the dates go back to
+  the will in force's first (delivery 1 through the validated write and
+  read back, the later ones in the table, replaced whole), and only then
+  are the drafts dropped (unsigned, only in this wallet: free). Signed or
+  sent items are never touched; when in doubt the rule does nothing and the
+  will is asked to sign, as before.
+- `bal/core/will_changes.py` (also the "What changes" box of #185):
+  - the will in force keeps older generations of copies (a delivery
+    rebuilt one day earlier and signed leaves the old copies in force,
+    pre-empted; after going back to one date the old deliveries 2-3 hang
+    on a replaced delivery 1). A later delivery is now read along the
+    chain: the copies that spend an output of the delivery before, of
+    those the ones with the earliest date (`_item_deliveries`, `_parents`);
+    before, the first copy found was read (often the old one);
+  - the persons of the will in force are read from every delivery (an
+    heir with 0 % at delivery 1 was read as "added"), each address under
+    the names of the first delivery that pays it (a rename next to a
+    rebuilt delivery read "removed luca");
+  - two tables are compared and written with two decimals ("30.04%");
+    no "→ 0%" when the new shares are not known (fixed amounts after the
+    table removed); no error when the only name left at an address is new
+    (`_heirs_change`); a rename already said is not repeated
+    (`with_renames`);
+  - `delivery_number` and `same_shares(decimals=)` public (the engine
+    uses them).
+
+**Reviews:** a first independent review found 5 problems, 3 confirmed in
+flowkit (old generations read, the one-date rule no longer firing after
+going back to one date, an heir with 0 % at delivery 1); a multi-agent
+review (9 agents, read-only) found 3 more problems of the box and confirmed
+the design; a second independent review found no serious bug, 3 test
+gaps; judges and critics (9 agents, 4 new angles) found nothing that could
+change what is paid, lose data or move a date silently, and 6 test gaps.
+All fixed, each with a test written first and seen failing.
+
+**Seen, not changed here (for the owner, separate steps):**
+
+- R-1 (confirmed in flowkit, pre-existing): a will-executor excluded after
+  it received the will keeps a branch with the OLD shares: after a change
+  of delivery 3's shares, 5 of the 9 delivery-2 copies still in force have
+  only delivery-3 children with the old shares; if the excluded
+  will-executor's delivery 1 is published first, delivery 3 pays the old
+  shares.
+- R-2 (confirmed in flowkit, pre-existing, rare): going back to one date
+  when the heirs' own amounts equal delivery 1's cells keeps delivery 1's
+  date (no day earlier): the old will and the new one are both valid that
+  day. With other amounts the new will is one day earlier (checked).
+- U1 (pre-existing): a fee change cancelled and put back, then a real
+  change of a later delivery: delivery 1 keeps the day (all copies to
+  sign, shown in the box).
+- U2 (pre-existing, old wallets only): two heirs on one address, the
+  second paid only from delivery 2: the rule does nothing.
+- R-7/R-8: a delivery the owner moved exactly one day earlier himself
+  and whose rebuild he cancelled is put back (the limit of #135); a
+  later delivery's day left by a cancelled round goes with the next real
+  change. R-9: a will with one date, a table added then removed: one extra
+  signature. R-11: the command line never runs the rule (as before).
+
+**Tests:** new `tests/test_staged_leftover.py` (22 tests; flowkit, three
+fake will-executors each with its own fee address, the owner's table
+10/10, 10/10, 30/30 %): the fee and the shares of delivery 2 or 3 changed,
+cancelled and put back (nothing to sign, the will in force kept, the
+wallet file and a second clean Check); twice in a row; a new will in force
+never dropped; two deliveries moved back together; what is NOT a leftover
+(a change kept, other shares, two days earlier, the table removed, a
+draft off its delivery's date, hundredths, a refused or silently refused
+date write, drafts signed after the Cancel, a delivery without drafts, a
+will with one date and a table added then removed), each checked as a
+decision of the rule (not an error swallowed); after a later delivery was
+signed; after going back to one date; an heir with 0 % at delivery 1.
+`tests/test_staged_texts.py`: the fakes carry the chain; 7 more box tests
+(two names on one address, hundredths, fixed amounts, an heir only at
+delivery 2, a strange copy, a rename with a share of delivery 2, a rename
+of an heir paid later). On the code before the fixes the new tests fail;
+mutation checks (each guard removed in turn: read-back, two decimals,
+moved deliveries with drafts, draft dates, signed copies) are each caught
+by their test. The new tests 5 times in a row: always 64 passed.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the leftover rules, the box, the deliveries, the chain, the
+versions list, the wizard, the golden-file tests) 561 passed (10
+minutes). Whole `tests/` directory: 2951 passed in the normal order (37
+minutes) and 2951 passed in the reverse file order (31 minutes). Golden
+files unchanged. Scenario harness (full matrix, the 2-coin scenarios 6
+times, warn_matrix synced and not): log identical to the #178 log (135
+lines, 65 s). Test ZIP `test-zips/ancora_0.8.0-TEST-186-staged-leftover.zip`
+(sha256 `8c615967...6bde`): `external_zip_test.py` and `smoke_test.py`
+pass on Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-24, test wallet, a will in three deliveries
+at four will-executors):** the fee changed, Cancel, put back: nothing
+asked (the log: "84 unsigned drafts dropped, deliveries [1] back to the
+will in force's dates: ['2032-10-02']", 4 + 16 + 64 copies); delivery 3's
+shares changed, Cancel, put back: nothing asked ("64 unsigned drafts
+dropped, deliveries [3] ... ['2034-10-03']"); a change not undone: asked to
+sign. "will ok" after each; no error in the log. Owner: OK.
+
+**Studied with the owner afterwards (decisions and open points in
+`context/STUDY-2026-10-24-staged-will-safety.md`):** going back from
+several deliveries to one will need the on-chain invalidation, with a
+warning before a will in several deliveries is made (owner decided); the
+anticipation keeps ONE day (owner decided); R-1 to fix in its own step.
+
+**Outcome:** DONE.
+
+## 187. A will in several deliveries is always redone from delivery 1, and the Check verifies its possible futures
+
+**Date:** 2026-10-24
+
+**Owner's study (2026-10-24, `context/STUDY-2026-10-24-staged-will-safety.md`,
+R-1; re-verified in flowkit with 13 variants, each run on its own):** a
+will-executor excluded, deselected or removed after it received the will
+keeps copies nobody can recall. The build makes new copies only for the
+selected will-executors, and a later delivery was dated only against its
+own parent: after a change of delivery 3's shares, deliveries 1 and 2 were
+kept (same txids) and that will-executor's copies (its delivery 1; its
+delivery 2 under everyone's delivery 1) kept OLD subtrees nothing
+pre-empted. Counting every possible future (at each delivery only a copy
+with the earliest date can be mined first): **15 of 23 paid the old
+shares** with three will-executors, **6 of 7 with two**; the Check said
+"will ok", and selecting the will-executor again changed nothing. The
+owner's choices: every change redoes the whole chain (the future of 12
+deliveries is set aside); the Check verifies the futures and rebuilds by
+itself; the anticipation stays one day.
+
+**What changed:**
+
+- New `bal/core/futures.py` (no Qt): `possible_futures` (the tree from
+  the copies' inputs; only the earliest-dated delivery-1 copies start a
+  future, at each level only the earliest-dated children go on, as the
+  Graph view counts them), `plan_of_rows` / `rows_paid` (what each
+  delivery pays: address and amount as written, names left out),
+  `futures_off_plan`, `future_text`.
+- `bal/core/will.py` `date_chain`, rule 1: after delivery 1 is dated,
+  `_pre_empt_whole_chain`: when the rebuild does not keep every VALID copy
+  of the will in force as it is (other shares, another date, a
+  will-executor no longer selected), delivery 1 is dated one day before
+  the earliest delivery 1 in force, of ANY will-executor (the backup copy
+  too), so the whole old tree dies when the new delivery 1 is mined; the
+  later deliveries keep their dates on the new parents. Only the copies
+  somebody HOLDS count (`_held_branch`, after the independent review:
+  received by their will-executor, or the backup copy, and every copy they
+  hang on held too): a copy never received (a sending that failed, #141)
+  exists only in this wallet and is simply redone, no day lost; with a
+  will-executor excluded or removed that still holds copies, any later
+  change (a will-executor added too) redates the chain, the new delivery 1
+  pre-empts them. A will-executor added later with every copy in force held
+  and kept: nothing moves. Then
+  `_check_futures`, rule 2's safety net: every possible future of the will
+  in force plus the new chain must pay the new plan, else
+  `WillChainError` (nothing saved).
+- `bal/core/will.py` `is_will_valid`, rule 2: with a plan of two
+  deliveries or more, every possible future of the VALID copies must pay
+  it, else the new `FuturesOffPlanException` ("a new will must be
+  prepared", the first such future and the count in the log): the Check
+  rebuilds from delivery 1 by itself. One date: untouched.
+- `bal/core/messages.py`: the sentence of the Check ("A copy of the will
+  held by a will-executor no longer selected could still deliver the old
+  shares (15 of 23 possible ways): preparing a new will, dated one day
+  earlier."), Italian and Spanish.
+- Gone with rule 1: U1 and R-8 of the #186 reviews (a day taken by a later
+  delivery in a cancelled round; a leftover of delivery 1 carried into a
+  later change).
+
+**Tests:** new `tests/test_staged_futures.py` (21 tests): the core
+(plan, a full tree of 27 futures, only the earliest copies start a future,
+a subtree with old shares, a missing level, strange copies); flowkit with
+three fake will-executors, each with its own fee address: delivery 3
+changed without exclusion (the whole chain one day earlier, 39 copies, a
+clean second Check), with a will-executor excluded / deselected / removed,
+delivery 2 changed, twice, two will-executors, with the backup copy, the
+fee, one date then three deliveries, a will-executor added later (no day
+lost), the Check finding an old future in a wallet left as before #187
+(rules off while the change was signed) and healing, a will with one date
+not checked; after the review: a new fee address of a copy never received
+costs no day, a will-executor added while another is excluded redates the
+chain. On the code before: 9 fail. Mutation checks: rule 1 off (9
+caught), rule 2 off (1 caught), both off (9 caught). Updated, with the
+reason in their docstrings: `test_multiverse_chain_rebuild.py` (two tests
+of #168/#169 said "delivery 1 is the signed one, not sent again": now
+the whole chain, 39 copies, delivery 1 one day earlier) and
+`test_staged_leftover.py` (seven tests said a later delivery's table date
+moved: now delivery 1's date; the leftover rule of #186 unchanged) and
+`test_engine_instalments.py` (one test of #169, "delivery 1 stays the
+signed one" when delivery 2 is moved earlier: now one day earlier too).
+
+**Reviews:** an independent review (read-only) found nothing unsafe and
+three cases where rule 1 cost a day for nothing (a copy never received
+redone for a new fee address or fee; a partial signature left over): fixed
+with `_held_branch`; a second review of that refinement found the "kept"
+comparison reading the txids of deliveries 2+ as the build set them,
+before the first delivery was dated (a day lost for nothing when the
+stored date lags the one in force; not reachable through the plugin's own
+flows, which keep the stored date on the one in force): the children are
+now relinked to their parents' current txids first. Noted for later: when
+the safety net refuses a chain (`WillChainError`), its text is technical;
+a friendlier sentence is a small step of its own.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the futures, the chain rebuilds, the leftover rule, the #141 fee
+address, the deliveries window, the golden-file tests) 823 passed (10
+minutes). Whole `tests/` directory: 2972 passed in the normal order (52
+minutes) and in the reverse file order (47 minutes); the one failure of
+those runs, the #169 test above, was then updated and its file run again
+(a test-only change). Golden files unchanged. Scenario harness (full
+matrix, the 2-coin scenarios 6 times, warn_matrix synced and not): log
+identical to the #186 log (135 lines, 74 s). Test ZIP
+`test-zips/ancora_0.8.0-TEST-187-staged-futures.zip` (sha256
+`f8286060...8cf9`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2; the new module, the rules and the Italian sentence checked
+inside the ZIP.
+
+**Owner's ZIP test (2026-10-24, test wallet, a will in three deliveries):**
+a will-executor excluded, delivery 3's shares changed and signed: the log
+says "chain: the will in force changes, the first delivery is dated one
+day before the earliest one in force (#187)", the copies signed and sent,
+the next Check "will ok"; no error in the log. Owner: "tutto ok".
+
+**Outcome:** DONE.
+
+## 188. Back to one delivery needs the invalidation on the blockchain
+
+**Date:** 2026-10-25
+
+**Owner decision (2026-10-24, `context/STUDY-2026-10-24-staged-will-safety.md`,
+section 5):** going back from several deliveries to one is a change of the
+TYPE of will, not a routine update: the copies in several deliveries held
+by the will-executors are invalidated on the blockchain first (a network
+fee; the coins spent together), then the one-date will is prepared. Before,
+a one-date will dated one day earlier was built over them (the Check even
+said "heir luca (delivery 2) removed"): pre-empted by one day only, and in
+the R-2 case (the heirs' own amounts equal to delivery 1's cells) not even
+that, two wills valid the same day. The owner must be warned BEFORE a will
+in several deliveries is made: going back is not free. Going from one to
+several deliveries stays free (the pre-emption of delivery 1, #187); from
+three to two deliveries stays a normal change.
+
+**What changed:**
+
+- `bal/core/will.py`: new `StagedWillRemovedException`, a
+  `WillPostponedException` (the Check and the command line already know
+  that road: invalidation first, then the new will). `is_will_valid` →
+  `check_staged_will_removed`, BEFORE the heirs check (which read the
+  table's removal as heirs removed and built a one-date will over the
+  copies in force): the rows the build uses have one delivery while copies
+  of a delivery 2 or later are in force (`staged_in_force`: the #128
+  notion, signed and/or sent, still executable; drafts never, so a table
+  never sent is removed for free as before). Nothing with a table of
+  several deliveries.
+- `bal/gui/qt/dialogs.py`: the Check row "Back to one delivery:
+  invalidating the will in several deliveries", the "Invalidate" step as
+  for a postpone; cancelled there: no date is put back (there is none to
+  put back; the #134 revert is for a postpone), the sentence says the
+  copies stay in force, the next Check asks again, and the table window
+  brings the deliveries back. After the broadcast the one-date will is
+  prepared and sent in the same Check, as for a postpone.
+- `bal/gui/qt/deliveries.py`: "Back to one delivery" says the
+  invalidation FIRST when a will in several deliveries is in force, and
+  then not "It is free" (true only for drafts: the question of before
+  otherwise); its sentence on the dates says "With one delivery only, the
+  heirs receive the whole estate on {}, the date of delivery 1. Today they
+  receive {} by that date: the rest would arrive earlier than planned."
+  (before "Without the table ...", not understood; the command line says
+  the same); the FIRST table of a wallet asks
+  "Think it over: going back ... will need an invalidation ... Changing
+  the dates or the shares later stays free: it is going back to one
+  delivery that costs. Save the table?" (`back_to_one_warning`, also under
+  the example in the window); without a table but with a will in several
+  deliveries in force (its removal not invalidated yet) the window opens
+  on ITS dates and shares (`in_force_table`, read along the chain of
+  copies, #186) with "save them to keep it (nothing to sign)", no warning
+  asked: changing one's mind is one Save.
+- `bal/core/messages.py` `staged_removed_message`: the sentence of the
+  Check row's reason and of the command line ("Back to one delivery: your
+  will in 3 deliveries is held by the will-executors and must be
+  invalidated on the blockchain first (a network fee); then the new will
+  is prepared.").
+- `bal/cli/controller.py`, `commands.py`: `bal_instalments_clear` with a
+  will in several deliveries in force is refused without
+  `--confirm_invalidation true` (the sentence, the privacy note and the
+  hint to ask the owner); `bal_will_check` / `prepare` return "postponed"
+  with the sentence and the invalidation transaction, as for a postpone.
+- Catalogs: 7 new texts and 1 changed, Italian and Spanish (the command line stays
+  English by design, `babel.cfg`).
+
+**Tests:** new `tests/test_staged_back_to_one.py` (16 tests; three fake
+will-executors with their own fee addresses, the owner's table): the core
+(`staged_in_force` 36 of 39, the rule only with a one-delivery plan, none
+for one date); the Check: the invalidation asked first and cancelled
+(nothing built or sent, 39 copies in force, the date untouched, the
+sentence), asked again at the next Check, accepted (the invalidation
+broadcast, then the 3 copies of the one-date will sent in the same Check,
+a clean Check after), drafts only (free), the R-2 amounts, three to two
+deliveries (normal, #187); the window: the question with the invalidation
+(No keeps, Yes removes) and without a will in force, the first table's
+warning (No, Yes, not repeated, shown under the example), the will in
+force offered back (its cells, Save without a question, the next Check
+clean), nothing offered without one; the command line: refused without
+the confirmation, removed with it, "postponed" with the sentence, drafts
+without confirmation; after the owner's ZIP test: the question starts with
+the invalidation, before the dates, without "It is free" (with it for
+drafts only); after the review: the note when an heir was
+added since, no automatic invalidation (the headless flow itself).
+Mutation check: the rule off, 6 tests catch it. Updated, with the reason
+in their docstrings: `test_engine_instalments.py` and
+`test_cli_instalments.py` (one test each of #169 said the table's removal
+built a one-date will one day earlier, free: now the invalidation first,
+then the one delivery on the wallet's date; the command refused without
+the confirmation, prepare "postponed"); `test_gui_deliveries.py` and
+`test_staged_texts.py` (three tests saving the first table of a wallet
+answer the new question; one of them had no scripted answer and opened a
+real window: the first run of the affected tests hung for six hours, then
+a timeout was put on every run).
+
+**Review (Opus 5.5, read-only, on the owner's request of two models
+checking each other):** nothing that asks a healthy wallet to invalidate,
+the flow the same as a postpone (after the broadcast the one-date will is
+built in the same Check, as for a postpone). Fixed from its findings: the
+automatic rebuild (off by default, `GUI_AUTO_REBUILD_ENABLED`) would have
+invalidated on its own after the owner said no in the Check: never for a
+back to one delivery (the command line's `bal_will_autorebuild` returns
+the reason "back_to_one", it never sends by itself); the Will tab's
+"Prepare" road showed the postpone's words: its own now; the window
+offering the will in force back said "nothing to sign" even when an heir
+was added or removed since: it says to check the shares; whether a copy in
+force is still executable is asked whatever the wallet's sync state (a
+spend the wallet already knows counts: this check leads to a paid action).
+Known, for the owner: a wallet made before #188 that went back to one
+delivery the old way (a one-date will over the staged copies, still
+executable) is asked the invalidation at its first Check after the update;
+the "Think it over" question is asked whenever no table is stored, so
+also before a table made again after a back to one. Not counted: copies
+of a will in several deliveries only partially signed (a co-signer could
+complete one; the new will is dated one day before them, as #128).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed (four
+import blocks sorted by `ruff --fix` on the files touched). Related tests
+191 passed (2 minutes). Whole `tests/` directory: 2988 passed in the
+normal order (50 minutes); in the reverse file order the first run had 8
+failures, all in `test_gui_delivery_field_refresh.py` and
+`test_delivery_field_keeps_value.py` (the period form, "today + the
+period"): both files compute `TODAY` when the module is imported, and that
+run crossed midnight UTC between the collection and those tests (a
+fragility of those tests, not of #188: alone, together with every file of
+#185-#188, and in a second complete reverse run, 44 minutes, all passed).
+Golden files unchanged. Scenario harness (full matrix, the 2-coin
+scenarios 6 times, warn_matrix synced and not): log identical to the #187
+log (135 lines, 74 s). Test ZIP
+`test-zips/ancora_0.8.0-TEST-188-back-to-one.zip` (sha256
+`69de2c1c...a16711`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2; the rule and the Italian texts checked inside the ZIP.
+After the owner's ZIP test (two text fixes, the order of the question and
+its sentence on the dates): ruff clean, the related tests (the deliveries
+window, the staged texts, the command line, the translations) 165 passed
+(1 minute), a new ZIP (sha256 `bd485072...def6f4`) loaded and smoke-tested
+on Electrum 4.8.2.
+
+**Owner's ZIP test (2026-10-25, test wallet, a will in three deliveries
+sent):** "Back to one delivery", then the Check: it asks the invalidation
+first (the log: "one delivery wanted, 196 copies of a will in 3
+deliveries in force: the invalidation first (#188)"); cancelled: the
+sentence "Interrupted ... stays in force"; the window "Inheritance in
+several deliveries" opened on the dates and shares in force, saved: the
+will in force again, nothing to sign. The owner found the question said
+the invalidation last and "It is free" too, and did not understand
+"Without the table": both fixed (above), a new ZIP checked by the owner:
+"mi pare ok".
+
+**Outcome:** DONE.
+
+## 189. Plain texts: the refused chain, translated Yes / No, today in two tests
+
+**Date:** 2026-10-25
+
+**Owner decision (2026-10-25):** three small steps in one, as only texts,
+translations and tests change (the text-only rule: ruff and the whole
+suite, no scenario harness, no owner ZIP test). Noted in #187 and #188.
+
+**What changed:**
+
+- `bal/core/messages.py`: new `chain_refused_message`. When the safety net
+  refuses a chain of deliveries (`WillChainError`), the owner read the raw
+  reason ("chain: a loop between the transactions"). Now one plain
+  sentence: "The new will was not prepared: a safety check found a problem
+  in the chain of deliveries. Nothing was changed: if you have a will in
+  force, it stays as it is. The details are in Electrum's log." The raw
+  reason goes to the log.
+- `bal/gui/qt/dialogs.py` (the Check): the sentence in the build row, and
+  the dialog stops there (before, the raw text in red, then the error went
+  up to the thread). `bal/gui/qt/window.py` (Prepare): the sentence in an
+  error box, without the "preparing a new will" message before it.
+  `bal/cli/controller.py`: `build_will` gives a `UserFacingException` with
+  the sentence (the command line stays English, as before).
+- `bal/gui/qt/common.py`: new `ask_yes_no`, a Yes / No question with the
+  buttons added with their own `_()` text; No is the default button and
+  the Esc key. Qt's standard Yes / No buttons (Electrum's `question`)
+  stayed in English, because Electrum loads no Qt translation (checked in
+  `electrum/gui/qt/util.py`), although the catalogs had "Sì" / "Sí". Used
+  by `BalDialog.question` (Exclude the will-executor, close the offline
+  signing with a will not saved), by `deliveries.ask` (the questions of
+  the deliveries window, #188's included) and by `confirm_basic_mode`
+  (#174, unchanged for the owner).
+- `bal/locale/`: catalogs extracted and updated; the new sentence in
+  Italian and Spanish, no fuzzy entries.
+- `tests/test_gui_delivery_field_refresh.py`,
+  `tests/test_delivery_field_keeps_value.py`: TODAY (and the date D built
+  on it) computed again when each test starts (an autouse fixture). Computed
+  once when the file was loaded, they went stale when the whole suite
+  crossed midnight UTC before these files ran: the 8 failures of the #188
+  reverse-order run. A test only change.
+- Not changed (owner decision): the "OK" button of the plain message boxes
+  stays in English, for the same reason (a step of its own if wanted).
+
+**Tests:** `tests/test_texts_189.py` (new, 12 tests): the translated Yes /
+No box (Yes, No, Escape; No by default and on Esc), `BalDialog.question`,
+the deliveries question and "Go back to BASIC mode?" through it; "Yes" /
+"No" in the Italian and Spanish catalogs; the plain chain sentence, the raw
+reason only in the log, its Italian and Spanish texts not fuzzy; the
+command line's `build_will` with a refused chain.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (the new file, the BASIC question, the deliveries window, #188, the
+Exclude question, the two date files, the chain rebuilds, the command line
+deliveries, the offline signing, the messages) 244 passed (3.5 minutes).
+Whole `tests/` directory in the normal order: 3000 passed (44 minutes).
+Golden files unchanged. The date fix itself shows only in a run that
+crosses midnight UTC.
+
+**Outcome:** DONE.
+
+## 190. The excluded will-executor that still holds a copy is said
+
+**Date:** 2026-10-26
+
+**Owner decision (study of 2026-10-24, `context/STUDY-2026-10-24-staged-will-safety.md`,
+point 4; texts and look 2026-10-25):** a will-executor excluded, or removed
+from the list, that still holds a copy of the will in force is said in the
+summary, permanently, with what it means. Before, after an Exclude the
+summary no longer counted it (#178) and nothing said that it still holds an
+executable will: a copy sent cannot be recalled. A grey note, its first
+sentence in bold; the box keeps its colour (owner: orange is "something to
+do", here usually there is nothing to do). Also in the PDF report (owner).
+
+**What changed:**
+
+- `bal/core/summary.py`: new `excluded_holders(in_force, selected)`: the
+  URLs of the will-executors not selected now with a copy SENT (`PUSHED` or
+  `CHECKED`) among the items of the will in force (`Will.in_force_items`,
+  the #128 notion: VALID or REPLACED, not invalidated or executed, still
+  executable). A copy signed and never sent is not with it; a will-executor
+  deselected before it received anything stays the #134 note only. New
+  `excluded_holders_paragraphs` / `excluded_holders_html`: "<host> is
+  excluded but still holds a copy of your will, and a will-executor cannot
+  be asked to delete it." (plural: "2 excluded will-executors (a, b) still
+  hold ...") / "If you change your will, the new one is dated one day
+  earlier: when the other will-executors publish it, the network executes
+  it first and the old copy is no longer valid." / "Only an invalidation on
+  the blockchain cancels the old copy too." `will_summary(held=...)` adds
+  `held` and `held_text` (nothing while busy).
+- `bal/engine/context.py`: `excluded_holders(host, selected)`, read only.
+- `bal/gui/qt/widgets.py`: the Will tab's summary box shows the note under
+  the #134 line; the Check window (`BuildReportView`) under the
+  will-executors box (`BuildReport.set_held`, snapshot key `held` only when
+  shown). `bal/gui/qt/window.py`, `bal/gui/qt/dialogs.py`: they pass the
+  list. `bal/core/report.py`, `bal/gui/qt/report_actions.py`,
+  `bal/gui/qt/report_pages.py`: the PDF prints the note under the state box.
+- `bal/locale/`: the four sentences in Italian (the owner's text) and
+  Spanish, no fuzzy entries.
+- `tests/golden/5e/`: three Check snapshots gain the `held` line (the
+  scenarios where a will-executor was deselected or excluded AFTER it
+  received the will: `executor_deselected`, `exclude_down`,
+  `all_executors_deselected_after_sent`); nothing else changed in them.
+
+**Tests:** `tests/test_excluded_holder_note.py` (new, 10 tests, three fake
+will-executors with their own fee addresses): the rule (sent or verified
+and not selected; signed only, selected, backup: not counted); the texts,
+one and two will-executors, bold first sentence; excluded after it
+received the will (summary green with the note, Check window, Will tab
+box); still said after a change signed and sent to the other two (its
+copies REPLACED, still executable); gone after an invalidation and when
+selected again; removed from the list: said; deselected before the first
+sending: not said; the PDF report prints the three sentences.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (summary, Check window, report, exclusion, selection) 493 passed (3
+minutes). Whole `tests/` directory in the normal order: 3007 passed, 3
+failed (44 minutes): the three golden files above, only the new `held`
+line; updated after the owner's OK, the two golden test files then 94
+passed (52 s). Scenario harness (full matrix, the 2-coin scenarios 6
+times, warn_matrix synced and not): log identical to #188's (135 lines,
+87 s). Test ZIP `test-zips/ancora_0.8.0-TEST-190-excluded-holder.zip`
+(sha256 `9507b251...6e7193`): `external_zip_test.py` and `smoke_test.py`
+pass on Electrum 4.8.2; the rule and the Italian sentence checked inside.
+
+**Owner's ZIP test (2026-10-26, test wallet, a will in three deliveries,
+we.divinaly.support excluded earlier):** a fourth will-executor added,
+Check, signed and sent: the Will tab shows the note (orange box while to
+sign, green once in force, "4 of 4 received and verified it"); the PDF
+report prints it under the state box. Seen, for later steps: the PDF says
+"Delivery form: Fixed date" for a will in three deliveries; in the
+toolbar "before the delivery (2032-03-29)" overlaps another date.
+
+**Outcome:** DONE.
+
+## 191. The Multiverse: the delivery form of a will in several deliveries, and the Check Alive sentence in one label
+
+**Date:** 2026-10-26
+
+**Owner (ZIP test of #190, 2026-10-26):** the PDF report of a will in three
+deliveries said "Delivery form: Fixed date" (the settings' form of such a
+will is "fixed"), and in the toolbar the Check Alive sentence "before the
+delivery (≈ 6 months) →" and its date were drawn over each other. Owner
+decisions: the will in several deliveries is nicknamed "Multiverse" (IT
+"Multiverso", ES "Multiverso"), next to the name where the user meets the
+form, not in every sentence; the delivery form lists the dates; for the
+toolbar, choice A: one shorter sentence "before the delivery → <date>",
+the approximate months in the tooltip.
+
+**What changed:**
+
+- `bal/core/future.py`: `delivery_form_text(form, months, locktimes=())`:
+  with more than one delivery "Multiverse — 3 deliveries: 1 Mar 2030,
+  1 Mar 2033, 1 Mar 2036" (the short UTC day); one delivery unchanged
+  ("Fixed date" / "Period (renewable) — N months").
+- `bal/gui/qt/report_pages.py` (PDF state box) and
+  `bal/gui/qt/future_view.py` (Will tab, Future view): pass the dates of
+  the deliveries of the will in force.
+- The nickname: the wizard's choice "Several deliveries (Multiverse)"
+  (`bal/gui/qt/widgets.py`), the window "Inheritance in several deliveries
+  (Multiverse)" (`bal/gui/qt/deliveries.py`, title and heading) and its
+  entry in Tools (`bal/gui/qt/lists.py`). Warnings, errors and help keep
+  "several deliveries".
+- `bal/gui/qt/widgets.py`, the Check Alive field: one label "before the
+  delivery → 2032-03-29" (the date red when past); "(≈ 6 months)" and
+  "This Check Alive date has already passed" in its tooltip. Cause of the
+  overlap: on a screen narrower than the Will tab's top row (a maximized
+  window, about 1365 points), Qt squeezes the row below its minimum; the
+  sentence kept its whole width (#146) and the separate date label was
+  laid over it. One label can only be cut at its end; the row's minimum
+  also drops (547 -> 458 points in the probe). The old date label stays,
+  hidden, for the callers of `editor.label`.
+- `bal/locale/`: "Multiverse" and the three titles in Italian and Spanish,
+  no fuzzy entries.
+
+**Tests:** `tests/test_delivery_form_multiverse.py` (new, 3 tests, three
+fake will-executors with their own fee addresses): the text of each form;
+the Will tab and the PDF of a will in three deliveries say "Multiverse —
+3 deliveries: ..." and no "Fixed date". `tests/test_gui_deliveries.py`:
+the window title and the wizard's choice with the nickname;
+`tests/test_check_button.py`: the Tools entry. `tests/test_check_alive_days.py`,
+`tests/test_advanced_period_default.py`: the months read from the tooltip,
+the date (red when past) inside the sentence.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests (delivery form, Future view, report, deliveries window, Tools menu,
+Check Alive, #189 texts) 310 passed (35 s). No golden file holds these
+texts. Text and look step: no whole suite and no scenario harness. A
+probe of the Will tab squeezed to 1200 points (bigger font, Italian)
+reproduced the owner's overlap before the change and shows the whole
+sentence after it. Test ZIP `test-zips/ancora_0.8.0-TEST-191-multiverse.zip`
+(sha256 `e40f8192...42bea2a0b`): `external_zip_test.py` and
+`smoke_test.py` pass on Electrum 4.8.2; the Italian texts checked inside.
+
+**Owner's ZIP test (2026-10-26):** toolbar, Future view, PDF report and
+the nickname in the menu, window and wizard: all good.
+
+**Outcome:** DONE.
+
+## 192. The warning for a miner fee below 20 sat/vB
+
+**Date:** 2026-10-26
+
+**Owner decision (multiverse plan, section 4; text of 2026-10-26):**
+lowering the miner fee is the user's choice, but years later, on the
+delivery date, a busy network may not accept a transaction with a low fee.
+A WARNING only, never a block, for every will, also one whose fee was
+stored before this step. Owner's Italian text: "Commissione inferiore a 20
+sat/vB: è una tua scelta. Alla data di consegna del tuo testamento la rete
+Bitcoin potrebbe essere molto trafficata, e i nodi potrebbero non accettare
+una transazione con una commissione bassa. Con 20 sat/vB o più questo
+rischio si riduce molto e l'eredità ha più probabilità di essere eseguita
+nei tempi stabiliti, senza ritardi."
+
+**What changed:**
+
+- `bal/core/messages.py`: `LOW_FEE_LIMIT = DEFAULT_FEE` (20 sat/vB) and
+  `low_fee_warning(fee)`: the text below the limit, "" at 20 or more or
+  for a value that is not a number.
+- `bal/gui/qt/widgets.py`, the miner fee field (Will tab toolbar and the
+  wizard's settings page, the same widget): an orange "⚠" next to it while
+  the fee is below 20, the text in its tooltip; it follows the value typed.
+- `bal/core/build_report.py`, `bal/gui/qt/dialogs.py`,
+  `bal/gui/qt/widgets.py` (`BuildReportView`): the Check window shows an
+  orange line "⚠ Miner fee below 20 sat/vB: ..."; the snapshot has a
+  `low_fee` key only when the warning is shown. The will is signed and
+  sent as before.
+- `bal/cli/controller.py`: `bal_delivery_set --fee` with a fee below 20
+  stores it and adds the warning to the answer.
+- `bal/locale/`: the text in Italian (the owner's) and Spanish, no fuzzy
+  entries.
+
+**Tests:** `tests/test_low_fee_warning.py` (new, 5 tests, three fake
+will-executors with their own fee addresses): the rule and the text; the
+sign in both toolbars (a fee stored before, 20 hides it, 19 shows it and
+is stored); the wizard's page; the Check window warns and the will is
+pushed to the three will-executors, no warning at 20; the command line
+warns at 19, not at 20. Golden files: 68 Check and copies goldens gained
+the `low_fee` line (the test fee of flowkit is 13 sat/vB), nothing else
+changed (owner OK).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. Related
+tests 109 passed (28 s); goldens 94 passed (56 s). Whole suite, normal
+order: 3018 passed (49 min). Test ZIP
+`test-zips/ancora_0.8.0-TEST-192-low-fee.zip` (sha256
+`af738d2b...a88f91cedf0`): `external_zip_test.py` and `smoke_test.py`
+pass on Electrum 4.8.2; the rule and the Italian text checked inside.
+
+**Owner's ZIP test (2026-10-26):** all good.
+
+**Outcome:** DONE.
+
+## 193. BASIC with a will in several deliveries: no heir added, deleted or imported
+
+**Date:** 2026-10-27
+
+**Owner decision (1), 2026-10-23; Import too, 2026-10-26:** in BASIC the
+table of the deliveries is read-only and its window exists only in
+ADVANCED. An heir added, deleted or imported in BASIC would leave the table
+out of step with the heirs, and the next Check would stop with no way to
+fix it there. So in BASIC, with a will in several deliveries, "New heir",
+"Delete" and "Import" do not go on and say: "This will is in several
+deliveries: to add or remove an heir, switch to ADVANCED, where you give
+them their shares in the table." Editing an heir and the message (it has
+no share in the table) still work; ADVANCED and a will with one delivery
+are unchanged.
+
+**What changed:**
+
+- `bal/gui/qt/window.py`: `basic_table_blocks(keys=None)` shows the
+  sentence and returns True only in BASIC with a table (and, with `keys`,
+  when at least one key is an heir and not the message). Used by
+  `new_heir_dialog` (no key: a new heir; also the wizard's "+ Add heir")
+  and `import_heirs`.
+- `bal/gui/qt/window.py`, `new_heir_dialog`: a key that is not a string
+  is taken as "new heir". WHY (owner's ZIP 1 test): the "👤 New Heir"
+  button is connected straight to this method and Qt's `clicked` passes
+  its `checked` flag (False); it was taken as the name of an heir to
+  edit, so the block did not apply and, after OK, a phantom delete of
+  "False" ran.
+- `bal/gui/qt/lists.py`, `HeirListWidget.delete_heirs`: the same block;
+  deleting the message alone goes on.
+- `bal/gui/qt/widgets.py`: the message's "?" gains "In a will in several
+  deliveries the message travels in delivery 1." (`message_delivery_text`);
+  the message window shows the same sentence as a grey line, only with a
+  table.
+- `bal/locale/`: the texts in Italian and Spanish, no fuzzy entries.
+
+**Tests:** `tests/test_basic_table_block.py` (new, 12 tests, three fake
+will-executors with their own fee addresses, the real `BalWindow`): New
+heir blocked; the real button and the real menu entries (New Heir,
+Import) blocked; in ADVANCED the button opens a NEW heir window (fails
+without the fix: `[False, None]`); Edit not blocked; Delete blocked, the
+message alone deleted; Import blocked; ADVANCED and one delivery
+unchanged; the "?" and the grey line of the message window.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+12 passed (5 s); related tests 149 passed (49 s); goldens 94 passed
+(60 s). Test ZIP `test-zips/ancora_0.8.0-TEST-193-basic-table-2.zip`
+(sha256 `3333898a...d4d2882`).
+
+**Owner's ZIP test (2026-10-27):** ZIP 1: the block worked from the menu
+but the "👤 New Heir" button still opened the window (fixed above). ZIP 2:
+all nine checks good. The owner's extra check (back from several
+deliveries to one) found a fault in the invalidation, older than this
+step (#188): it is the next step.
+
+**Outcome:** DONE.
+
+## 194. The invalidation spends only coins that exist on the network
+
+**Date:** 2026-10-27
+
+**Owner's ZIP test of #193 (2026-10-27):** going back from a will in
+several deliveries to one, the Check asked for the invalidation and the
+network refused it: "bad-txns-inputs-missingorspent". The log showed
+three inputs: the real coin and the outputs of two will transactions
+(delivery 1 and delivery 2 of a discarded draft) kept only in the wallet's
+LOCAL history, never broadcast. The summary said "Amount moved 2.5317
+mBTC": the real coin (1.35258) plus those two outputs. Older than #193:
+it comes from #188.
+
+**Cause:** Electrum counts the outputs of a local transaction as wallet
+coins (`get_addr_outputs`), and `Util.get_available_utxos` looks through
+the local will copies that spend them. A later delivery of a will in
+several deliveries spends exactly such an output, so
+`Will.invalidate_will` took it as a coin to invalidate. Its docstring
+said these inputs "are naturally skipped": only while that transaction is
+not in the wallet.
+
+**What changed:**
+
+- `bal/core/will.py`, `Will.invalidate_will`: a coin whose transaction is
+  local or future (not on the network) is skipped. The real coins are
+  enough: every will transaction descends from them. The docstring says
+  why. Every invalidation goes through this function (Tools > Invalidate,
+  the automatic one, the Check, the command line), and so does its
+  summary (amount moved, wills made useless).
+- `tests/flowkit.py`: the fake network refuses, like a real node, a
+  transaction that spends an output it has never seen
+  (`bad-txns-inputs-missingorspent`). Before it accepted anything, so the
+  tests of #188 could not see the fault.
+
+**Tests:** `tests/test_invalidation_local_coins.py` (new, 5 tests, three
+fake will-executors with their own fee addresses; the owner's wallet: the
+copies of delivery 1 and delivery 2 kept in the local history): the built
+invalidation spends the real coins only; the fake network refuses a
+missing coin; back to one delivery, the invalidation is accepted and the
+one-date will is sent to the three will-executors; Tools > Invalidate;
+one delivery without local copies unchanged. Without the fix 3 fail with
+the owner's error.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+5 passed (9 s); related tests 249 passed (124 s); goldens 130 passed
+(51 s). Whole suite, normal order: 3035 passed (46 min 48 s). Test ZIP
+`test-zips/ancora_0.8.0-TEST-194-invalidation-local-coins.zip` (sha256
+`94e02d8e...a483eec9d`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2; the fix checked inside.
+
+**Owner's ZIP test (2026-10-27):** same wallet, local copies kept: "Amount
+moved 1.35258 mBTC", one input (the real coin), fee 118 sat; the network
+accepted the invalidation; the one-date will was signed and verified by
+4 of 4 will-executors; Electrum removed the three local copies by itself.
+Seen in the same test and left to #195: the final report said "The wallet
+contains funds that the current will does not cover yet: a new will must
+be prepared." (a false alarm: most likely an output of the new will's
+local copy to an address of the same wallet), and the copies of a
+discarded draft stay in the local history.
+
+**Outcome:** DONE.
+
+## 195. The will's copies in the local history: no false "new funds", a cleaner history
+
+**Date:** 2026-10-27
+
+**Owner's ZIP test of #194 (2026-10-27):** after the invalidation the new
+will was prepared and, at the end, the report said "The wallet contains
+funds that the current will does not cover yet: a new will must be
+prepared." Twice in a row (17:32 and 17:33) the Check found "Some utxo in
+the wallet is not included", rebuilt the will and asked to sign it again.
+The log line "utxo is not spent" did not say which coin. The copies of a
+discarded draft also stayed in the LOCAL history.
+
+**Cause:**
+
+- One heir was paid at an address of the wallet itself (the owner took it
+  from Electrum's own addresses). Before it was signed, the will's copy
+  stayed in the LOCAL history (by design, while the will is unsigned).
+  Electrum counts the output of a local transaction as a coin of the
+  wallet (`get_addr_outputs`), so `Will.is_will_valid` saw a coin the will
+  does not spend: a false alarm, that coin is not on the network.
+- The clean-up after a Check removed only the copies labelled for a
+  will-executor of the current will: a copy of a will-executor no longer
+  in the will stayed. The copies of the drafts of 2026-10-26 came from
+  signings cancelled at the password (no "adding signature" in the log).
+- Found while testing: the clean-up chose by the label alone, so a
+  transaction ON THE NETWORK carrying the history label was removed from
+  the wallet (the test removed the funding transaction).
+- With "Save inheritance transactions in history" off, the copies saved
+  while it was on stayed until a rebuild.
+
+**What changed:**
+
+- `bal/core/will.py`, `Will.is_will_valid`: the outputs of transactions
+  not on the network (local or future) are not coins to cover, the same
+  rule as the invalidation (#194). The log line names the coin
+  (outpoint, amount, height).
+- `bal/core/will.py`, new `Will.history_copies`: the txids of the will
+  copies kept in the LOCAL history (label matching the history label for
+  any will-executor, transaction local or future, never one on the
+  network). It reads the height with `force_local_if_missing_tx=False`:
+  by default Electrum reports a mined transaction whose raw data is not
+  stored as local.
+- `Will.save_valid_transactions_to_history`: removes every copy from
+  `history_copies` that is not among the copies just saved, for any
+  will-executor. The docstring notes that Electrum keeps one copy per
+  coin: the copies of the will-executors spend the same coin and the last
+  one added replaces the others ("removing tx from history" in the log).
+- `Will.remove_stale_wallet_history`: uses `history_copies` too (never a
+  network transaction).
+- `bal/engine/context.py`, `save_to_history`: with the setting off, the
+  copies saved while it was on are removed, then the History is redrawn;
+  with no such copy nothing is done.
+- The history label stays as it is (owner's choice).
+
+**Tests:**
+
+- `tests/test_local_copies_history.py` (new, 8 tests, three fake
+  will-executors with their own fee addresses). An heir at an address of
+  the wallet and the will left unsigned: the next Check has no alarm and
+  the same will to sign; signed after it, no rebuild. A real new coin:
+  the alarm stays and the log line names it. A copy of a will-executor no
+  longer in the will is removed. A labelled transaction on the network is
+  never removed. Setting off: the old copies are removed.
+  `history_copies` lists the local copies only. Setting on: the copy of
+  the will to sign stays (unchanged). Without the fix 7 of the 8 fail.
+- `tests/test_engine_context.py`: setting off with old copies: removed,
+  nothing saved, then the redraw.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+8 passed (6 s); related tests 353 passed (3 min 50 s); goldens 231 passed
+(2 min 11 s). Whole suite, normal order: 3043 passed (47 min 57 s). Test
+ZIP `test-zips/ancora_0.8.0-TEST-195-local-copies-history.zip` (sha256
+`ee0e45e6...df0da4a6b`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2; the fix checked inside.
+
+**Owner's ZIP test (2026-10-27):** the same wallet, the heir still at an
+address of the wallet:
+
+- fee changed (20 -> 19), Cancel at the password: the copy stays in the
+  History as "Local";
+- the second Check: "will ok", no "utxo is not spent", no rebuild, the
+  same will to sign;
+- signed: accepted by 4 of 4 will-executors, the local copies removed;
+- setting on, fee changed, Cancel: a copy in the History; setting off,
+  Check, Cancel: the four labelled copies removed, nothing saved.
+
+Seen in the same test and left for later: the final row "All done: Will
+still to sign" reads as a contradiction.
+
+**Outcome:** DONE.
+
+## 196. "Not finished", not "All done", when the will is still to sign
+
+**Date:** 2026-10-27
+
+**Owner's ZIP test of #195 (2026-10-27):** after a Cancel at the password
+the "Attention" box of the Check said "All done: Will still to sign"
+("Tutto fatto: Testamento ancora da firmare"): a contradiction.
+
+**Owner's choice (option A):** change the label of the last row, not the
+row itself. Option B (hide the row when the orange line "Interrupted: the
+new will was not signed." already says it) was left out: that line shows
+only after a Cancel, while the row also shows for a watch-only wallet and
+for a multisig waiting for another signer (#159), where it may be the only
+"still to sign" message.
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`: the last row of the Check is "Not finished:
+  Will still to sign" and "Not finished: Will partly signed: complete it
+  with the missing signatures."; "All done: Ok" stays for a signed will.
+- Catalogs: `pybabel extract` and `update`; "Not finished" is "Non finito"
+  in Italian and "Sin terminar" in Spanish (pybabel had proposed the fuzzy
+  "Finito" / "Terminado", the opposite: corrected, no fuzzy entry left).
+
+**Tests:** `tests/test_check_signing_honest.py`: watch-only (single and
+multisig) and a multisig at "1 of 2" say "Not finished" with the same
+text as before, never "All done", also in the "Attention" box. The golden
+files `check/cancel_at_sign`, `check/auto_sign_off`, `check/phase2_error`
+and `check/owner_drafts_128` change only in that row (3 lines each:
+"All done:" -> "Not finished:"); before the update they were the only 4
+goldens that failed.
+
+**Verification (text-only step):** `ruff check bal/ tests/`: all checks
+passed. Touched tests (signing, translations, and the flows that read the
+last row) 120 passed (52 s); goldens 243 passed (2 min 4 s). No whole
+suite and no ZIP (owner rule for text-only steps).
+
+**Outcome:** DONE.
+
+## 197. A question when an heir is paid at an address of the wallet itself
+
+**Date:** 2026-10-27
+
+**Owner's idea (test of #195, 2026-10-27):** the false "new funds" of #195
+came from an heir paid at an address copied from the wallet's own Receive
+list. On the delivery date that heir's bitcoin would stay in the wallet.
+Warn when an heir address belongs to the wallet itself: with a question,
+never a block (the owner tests with his own addresses).
+
+**Owner's choices:** the question text as proposed; the import asks once
+for the whole file; the command line asks nothing and saves as before,
+with only a "warning" line in its answer (choice c1); the heirs already
+saved at such an address are not flagged (only an address entered or
+changed is checked).
+
+**What changed:**
+
+- `bal/core/heirs.py`: new `is_own_address(wallet, address)` (compared
+  with `address_key`, so a bech32 address typed in capitals is found; an
+  OP_RETURN message is never one; never raises) and
+  `own_address_heirs(wallet, heirs, stored=None)` (the names in order; a
+  name saved in `stored` with the same address is left out).
+  `Heirs.import_file` takes `confirm_own(names)`: on False nothing is
+  imported and the new `OwnAddressImportDeclined` is raised. None (the
+  default) asks nothing, as before.
+- `bal/gui/qt/window.py`: the "New heir" / "Edit heir" window asks "This
+  address belongs to this same wallet: on the delivery date this heir's
+  bitcoin would stay in this wallet instead of going to the heir. It is
+  usually a mistake (an address copied from Receive). Use it anyway?"
+  (title "Heir address", No by default) after the checks already there;
+  No leaves the window with what was typed; an edit that keeps the stored
+  address asks nothing. The import asks once with the names: Yes imports
+  the whole file, No imports nothing and says "Nothing was imported."
+  (Electrum's `import_meta_gui` catches only `FileImportFailed`, an error
+  box "Failed to import from file.": the No is caught in `import_heirs`).
+- `bal/cli/controller.py`: `heirs_add`, `heirs_update` and
+  `heirs_import` add `warning` to the answer when an heir saved there is
+  at an address of the wallet; nothing else changes. The help of the three
+  commands says so (`bal/cli/commands.py`). The command line stays in
+  English (`babel.cfg`).
+- Catalogs: the four texts of the window in Italian and Spanish
+  ("portafoglio" / "cartera", the word of the rest of the plugin).
+
+**Tests:** `tests/test_own_address_heir.py` (new, 12 tests). The check:
+receive and change addresses, capitals, never an address of someone
+else, a message or an empty text, a wallet that raises. The window (the
+REAL dialog on flowkit wallets with three fake will-executors, each with
+its own fee address): Yes saves, No saves nothing, an address of someone
+else asks nothing, an edit keeping the address asks nothing and a change
+asks again; after Yes the Check prepares the will and the second Check is
+clean (no "new funds", #195). The import: No imports nothing, Yes the
+whole file, the same saved heirs imported again ask nothing. The command
+line: the heir saved and the "warning" (one heir, several heirs), none
+for an update that keeps the address.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests
+12 passed (6 s); related tests 286 passed (2 min 7 s); goldens 243 passed
+(1 min 42 s). Whole suite, normal order: 3056 passed (49 min 30 s). Test
+ZIP `test-zips/ancora_0.8.0-TEST-197-own-address-warning.zip` (sha256
+`301bf3da...ac021f32`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2; the change checked inside.
+
+**Owner's ZIP test (2026-10-27):** `wallet_test_ottobre2026`, an address
+of the wallet copied from Receive: the question "Indirizzo dell'erede"
+shows with Sì / No; the steps (No, Yes, an edit, the import with No and
+Yes, the same file again) "tutto bene". The log of the session has no
+error of the plugin.
+
+**Outcome:** DONE.
+
+## 198. Electrum 4.8.3: the plugin's bold, colours and links show again
+
+**Why:** Electrum 4.8.3 (23 Oct 2026, a security update, its #10972)
+shows as plain text every label left on Qt's default AutoText, and the
+help of the "?" buttons unless `rich_text=True` is passed (an argument
+4.8.2 does not have). The plugin's own HTML then showed its tags: the
+whole suite run on 4.8.3 with a probe found 12 places (the "?" of
+"Delivery date", "Delivery time" and "Check alive"; the will details;
+"What changes compared with the will in force"; the step numbers and the
+result line of the offline signing; the Check's log; "Support:" and the
+safe21.io link, which no longer opened). The logic was not touched by
+4.8.3: before this change the whole suite already passed on it (3056
+passed).
+
+**What changed:**
+
+- `bal/gui/qt/common.py`: new `rich_text(label)` (says RichText
+  explicitly: the same on 4.8.2 and 4.8.3; it also renders escaped
+  entities such as `&amp;`, which AutoText showed raw in a text without
+  tags) and `help_button(text)` (Electrum's HelpButton; `rich_text=True`
+  only on 4.8.3 and only for a help that looks like HTML, so a plain help
+  keeps its line breaks). `add_widget` uses it.
+- Every "?" of the plugin is made by `help_button` (`basic_wizard.py`,
+  `lists.py`, `plugin.py`, `widgets.py`, `window.py`; a local variable
+  `help_button` became `help_btn`).
+- Labels marked with `rich_text`: the will details (Locktime, Heirs,
+  Willexecutor; the titles and values are now escaped, as they are data:
+  heir names, URLs), the "What changes" box (title, names, values on the
+  right, notes), the quiet note of the Check, the Check's log, the step
+  numbers and the result line of "Sign the will offline", "Support:" and
+  the safe21.io link of the Settings.
+- Tooltips: 4.8.3 makes them plain text too; none of the plugin's has
+  HTML, nothing to change.
+
+**Tests:** `tests/rich_text_guard.py` (new) does what 4.8.3 does to the
+labels, also on 4.8.2, and records each label that would show raw HTML
+(at its first show, or given HTML later); `tests/conftest.py` installs it
+around every test (`_no_raw_html_labels`, autouse) and fails the test that
+left one. `tests/test_rich_text_483.py` (new, 5 tests): `rich_text`,
+`help_button` on both versions, no plain `HelpButton(` left in the plugin,
+the guard itself, the "What changes" box with an "&" in a name.
+`tests/test_heir_notes_and_address.py`: the spy of the "?" texts follows
+`help_button`.
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. New tests 5
+passed on 4.8.2 and on 4.8.3. Whole suite with the guard, normal order:
+Electrum 4.8.3: 3060 passed, 1 failed (the spy above, then fixed and
+passed on both: 17 passed, 6 s each) (54 min 36 s); Electrum 4.8.2: 3061
+passed (45 min 42 s). Electrum 4.8.3 in WSL from the official tag `4.8.3`
+(a separate git worktree; 4.8.2 kept). Test ZIP
+`test-zips/ancora_0.8.0-TEST-198-electrum-483.zip` (sha256
+`0c676cce...01f4c818`): `external_zip_test.py` and `smoke_test.py` pass
+on Electrum 4.8.2 and 4.8.3 (11 s).
+
+**Note:** 4.8.3 upgrades the wallet file (seed version 72 to 74, only
+Lightning invoices and channels change): a wallet opened once with 4.8.3
+no longer opens with 4.8.2.
+
+**Outcome:** DONE.
+
+## 199. The new logo: the "à" icon and "àncòra" with the slogan
+
+**Why:** the owner made a new logo (2026-10-28) in place of the anchor of
+#163: a lower-case "à" with two teal accents as the icon, and the word
+"àncòra" with the slogan "àncora per te, ancòra per loro." below it. The
+name does not change. Owner's choices: the icon on a white square with
+rounded corners, so that it stands out on a dark theme too, with the "à"
+at 90% of the square; the big logo only in the PDF report, which is always
+printed on a light background (white paper); the Settings keep the small
+icon. Then (same day): every page of the PDF is signed "àncòra di
+Safe21" in the footer (proposal 4). Electrum's plugin dialog and plugin
+list keep the "à": the owner tried the word "àncòra" on the white
+square there, but Electrum takes one icon from the manifest for both
+places (checked in its code, 4.8.2 and 4.8.3), and in the list the word
+is too small to read.
+
+**What changed:**
+
+- `assets/brand/`: the files of the old kit (anchor, mark, wordmark,
+  vertical and mono lockups) are replaced by `svg/ancora-mark.svg`,
+  `svg/ancora-icon.svg`, `svg/ancora-lockup.svg` and
+  `svg/ancora-lockup-dark.svg` with their PNGs (icon 16-1024 px, lockup
+  1200 and 2400 px). They come from the owner's traced SVGs with the
+  shapes and colours unchanged: the background is removed (the holes of
+  the letters become real holes) and the drawing is cut out with a small
+  margin. The dark lockup is the light one with the word in white: the
+  owner's dark trace had dark slivers along the first "a". `README.md`
+  describes the new files.
+- `bal/icons/`: `ancora-icon-16/64/128.png` (the icon on its white square)
+  replace `ancora-icon-light-*.png`; `ancora-lockup.png` is the new logo.
+  The names are updated in `manifest.json` (Electrum's plugin list and
+  plugin dialog), `bal_resources.py`, `dialogs.py`, `plugin.py` (status
+  bar, Settings) and `window.py`.
+- `bal/core/brand.py`: `INK` and `WATER` are the ink and the teal of the new
+  logo (`#0D0E12`, `#1DAA9B`); the interface colours do not change.
+- `bal/gui/qt/report_pages.py`: page 1 shows the logo with the slogan,
+  40 points high (was 30) so the slogan can be read; the small header of
+  the other pages shows only the word (`LOGO_WORD_PART`, the top part of the
+  same image). The fallback when the image cannot be read is now text:
+  "àncòra" in bold and, on page 1, the slogan, made smaller until it fits
+  (the old fallback drew the anchor). The footer of every page shows, in
+  the middle, the signature "àncòra by Safe21 · safe21.io" (new
+  `signature_text()`; Italian "di Safe21", Spanish "de Safe21"): the
+  name and the site stay out of the text to translate; "PRIVATE" gets
+  the room on its left, so the two never overlap. `bal/locale`: the
+  catalogs refreshed with the new text and its two translations.
+
+**Tests:** `tests/test_brand.py`: the new icon names; new
+`test_the_icon_is_the_a_on_a_white_rounded_square` (16, 64 and 128 px:
+square, transparent corners, white edge, the ink "a" and the teal accents).
+`tests/test_inheritance_report.py`: the logo test checks the word, its
+accents and the slogan in the logo's colours with the image, the text
+fallback, and the word alone on the pages after the first; every page has
+the signature in the footer; new `test_footer_signature_in_every_language`
+(English, Italian, Spanish: the three footer texts, each on one line,
+never overlapping, the signature centred).
+
+**Verification:** `ruff check bal/ tests/`: all checks passed. The
+affected tests (test_brand, test_inheritance_report, test_build_report,
+test_pdf_heirs_qr, test_will_message, test_excluded_holder_note,
+test_delivery_form_multiverse, test_version_source, test_translations,
+test_i18n): 118 passed on Electrum 4.8.2 (32 s) and on 4.8.3 (32 s). Pages 1
+and 2 of a report rendered and checked by eye, with the image and with the
+fallback; the footer rendered in English, Italian and Spanish. Test ZIP
+`test-zips/ancora_0.8.0-TEST-199-new-icon.zip` (sha256
+`6707b88f...bcb7944b`): `external_zip_test.py` and `smoke_test.py` pass on
+Electrum 4.8.2 and 4.8.3 (13 s); the new icons are in it, the old ones are
+not.
+
+**Outcome:** DONE.
+
+## 200. A new will on a coin that came back from an executed will is a will of its own
+
+**Why:** the owner's wallet (2026-10-28). A one-date will (an heir 70%,
+30% to an address of the wallet itself) was executed:
+one copy was mined, the heir got 70% and 30% came back to the wallet as a
+new coin. Then a new will on that coin (other heirs, 15 October 2030),
+signed and sent. Its copies spend an output of the executed copy, exactly
+like a later delivery of a will in several deliveries, so the Will tab
+grouped them as the next delivery of the executed will: the List showed
+no row for the new will (its copies were counted under the executed will
+#34), Future said in
+red "The delivery date has passed" with the old date (16 October 2026),
+the Graph drew the old will as delivery 1 and the new one as delivery 2,
+and the box before an invalidation would have said that it ends no will.
+The wallet and the will were right: only the grouping of what is shown
+was wrong. The rule was chosen by a panel (three proposals tried on test
+wallets, two independent judges) and the owner approved it before it was
+written. A review (three critics, three verifiers) found that the first
+version also made the rest of a will in several deliveries, rebuilt after
+its delivery 1 was executed, a version of its own, with a wrong List row
+("(+1 delivery) · bob 0% + 40%") and its deliveries numbered differently
+in Future and in the Graph; rule 5 below keeps that case as it was (owner
+OK).
+
+**What changed:**
+
+- `bal/core/will_versions.py`: new `new_will_links()`,
+  `built_after_on_chain()` and `_later_delivery_copy()`. A will item that
+  spends an output of another will item starts a will of its own when 1.
+  that item reached the blockchain (CONFIRMED or MEMPOOL), 2. it was built
+  by a later build (its build `time`; an executed item without a time and
+  a new one with a time are two builds) and 3. it was built after that
+  item's delivery date: the blockchain accepts a transaction only after
+  its locktime, so a coin that comes back from an executed copy exists
+  only after that date, while the deliveries of one will are built before
+  the date of delivery 1. 4. A copy with the content of a delivery the
+  executed copy already had (a will-executor added after delivery 1 was
+  executed) stays with that delivery, the #129 rule. 5. A copy that pays
+  only persons of delivery 2 or later (the `§n` names; OP_RETURN message
+  rows and the will-executor fee outputs do not count) is the rest of a
+  will in several deliveries rebuilt after its delivery 1 was executed (a
+  new coin, another fee): it stays with that delivery 1, as before. Unknown
+  data (no build time, a time or a date that cannot be read, a date in
+  blocks) keeps the old link. Only stored data is read (flags, build time,
+  date): the same result without a wallet or before the wallet is
+  synchronized. `_fathers()` uses it, so the List, Future, the PDF report
+  and the invalidation box see the new will. Known limit, written in the
+  module docstring: condition 3 reads the build time on the computer's
+  clock; with a clock some hours slow, a new will built a few hours after
+  the delivery date keeps the old grouping (display only).
+- `bal/core/graph.py`: `build_graph()` uses the same rule on the whole
+  will, so the Graph and the List never group the copies differently, and
+  one rule of the Graph only: without "Show replaced versions", when a
+  copy in force is drawn, a copy that reached the blockchain with nothing
+  in force under it is left out (the old executed will; the List keeps it
+  as a version, and "Show replaced versions" draws it again). This rule
+  also changes BASIC, for a will executed and then a new will on a new
+  coin: the Graph draws only the new will, under its own date (before,
+  the executed copy stood in the same column and the column read its old
+  date).
+- Not changed, on purpose: the `father` and `children` stored in the wallet
+  (`Will.add_willtree`), `check_invalidated`, `set_invalidate`,
+  `search_rai`, the build, signing, sending and invalidation. The stored
+  tree is a real spending dependency: when the executed copy disappears
+  (another copy mined instead), it is what invalidates the new will. The
+  "Display" window of the Will tab menu still draws that stored tree (the
+  new will under the executed copy): a possible step of its own.
+- Fact corrected during the analysis: a one-date will with fixed amounts
+  does not give change back today (the fixed amounts are scaled up to the
+  whole balance, #76); a coin comes back from an executed one-date will
+  only through an heir that is an address of the wallet itself (#197), or
+  from a will built before #76.
+
+**Tests:** new `tests/test_new_will_after_executed.py` (flowkit, three fake
+will-executors with their own fee addresses): the owner's case with the
+executed copy in the mempool, mined and not verified, mined and verified
+(versions, will in force, Future, Graph also with "Show replaced", nothing
+written, the stored father unchanged); without a wallet and not
+synchronized; the PDF report (one delivery, 2030); the invalidation box
+(it names #2); a second Check (nothing sent, the new copies stay valid);
+the paid invalidation of the new will (only its copies, the invalidation
+row ends #2); the executed copy replaced by another copy (the stored tree
+invalidates the new will); the new will cancelled at the password (a draft
+on top); a will-executor added to the new will; BASIC, a will executed and
+a new will on a new coin (the Graph draws only the new will under its
+date, "Show replaced" draws the executed copy again); wills in several
+deliveries: delivery 1 executed, a will-executor added before delivery 1
+was mined, delivery 2 rebuilt after delivery 1 was executed (new coin,
+other fee: one version, the table's two columns in the Graph), a
+will-executor added after delivery 1 was executed (one version), a new will
+in several deliveries on the coin that came back.
+`tests/test_core_will_versions.py`: the edges with small synthetic wills
+(either output, mined or in the mempool, with or without a wallet; an
+executed copy without a build time; unknown or unreadable data and a date
+in blocks; the same build or an older one; a father not on the chain; a
+copy rebuilt before the father's date; the content of a kept delivery with
+any flags; a copy that pays only later deliveries, with a message row and
+each will-executor's own fee output, in the List and the Graph; a loop in
+corrupted data; the Graph's own rule) and a thousand items whose
+deliveries 1 were executed, with and without copies built after the
+execution (list and Graph, each well under a second).
+`tests/test_gui_will_versions_list.py`: the owner's case in the real List
+(#2 in force on top, #1 executed, the menu of row #2 sends the copies of
+the new will).
+
+**Verification:** `ruff check bal/ tests/` clean; the whole suite on
+Electrum 4.8.3, normal order: 3106 passed (53 min); the affected test files
+646 passed; the tests of the owner's case fail on the code before #200,
+and the four tests of rule 5 fail with that rule switched off; the test ZIP loads on Electrum
+4.8.2 and 4.8.3 (external zip and smoke test). Owner ZIP test
+(2026-10-29, Electrum 4.8.2, the owner's wallet): the List shows #35 in
+force on top and #34 executed below; Future says the will is in force on
+15 October 2030, no red text; the Graph leaves out the executed copy and
+"Show replaced versions" draws it again (green).
+
+**Outcome:** DONE.
+
+## 201. After delivery 1 of a will in several deliveries, nothing on its own
+
+**Why:** owner's rule (2026-10-29): once delivery 1 of a will in several
+deliveries (a Multiverse) was executed, the plugin builds, signs and sends
+nothing on its own. While the plan is running it leaves it alone; when the
+owner stopped it (Tools > Invalidate, or the coins spent) it does not
+prepare it again. Two probe rounds (fake will-executors, Electrum 4.8.2
+and 4.8.3) showed that the plugin did not respect it:
+
+- with three deliveries, the first Check, wallet close or
+  `bal_will_autorebuild` after delivery 1 built 12 new copies, which differed
+  from the copies held only in the change address, and sent them: each
+  will-executor then held two conflicting copies of delivery 2. On a
+  wallet without a password this happened with no question at all. Cause:
+  the rows of delivery 1 were never found in a VALID copy (the executed
+  copy is on the chain, no longer VALID), so the will was "not coherent"
+  ("heir alice (delivery 1) added") and was prepared again at every flow;
+- after the owner's Invalidate, every Check, wallet close, GUI automatic
+  rebuild and `bal_will_autorebuild` prepared delivery 2 again on the coin
+  that came back (a wallet without a password signed and sent it with no
+  question). Nothing stored said that the owner had stopped the plan.
+
+Two rebuilds stay, on purpose (owner, 2026-10-29): new coins in the wallet
+after delivery 1 (delivery 2 is prepared again with them, one day earlier,
+password asked as usual) and a will-executor added (its own copy).
+Wallets without a password stay supported (owner: useful for automations).
+
+**What changed:**
+
+- New `bal/core/delivery_progress.py`, read from the wallet only (never
+  from the stored flags, which may not be refreshed yet when a flow
+  starts). `plan_outputs()`: the outputs of a copy that the copies of the
+  next delivery spend; a copy executed counts for this plan only when the
+  next delivery hangs on it, so a will executed earlier with a new will in
+  several deliveries on the coin that came back (#200) is not "delivery 1
+  done" of the new will. `done_deliveries()`: deliveries 1..n executed while
+  some are left. `cancelled_rest()`: a copy of delivery n (not the last) is
+  in a block or in the mempool, the change that pays the next delivery is
+  spent by a transaction that is not a copy of the will, and no copy could
+  still be mined (signed, every coin it spends unspent, or the output of
+  another copy that could be mined). In doubt a copy is not live, so the
+  hold applies (owner's rule, 2026-10-30: in doubt, stop): a draft (not
+  signed), a copy spending a coin the wallet does not know, or one that
+  cannot be read.
+- `bal/core/will.py`: `is_will_valid(done_deliveries=)` and
+  `check_willexecutors_and_heirs(done=)`: the rows of the deliveries
+  already executed are not looked for in the VALID copies, and the plan of
+  the possible futures (#187) starts at the next delivery. The default (0)
+  changes nothing for the other callers.
+- `bal/core/delivery.py`: a new hold, `DeliveryRestCancelled` (code
+  `delivery_rest_cancelled`), next to the two of #123.
+  `bal/engine/context.py`: `check_holds()` raises it when `cancelled_rest()`
+  finds the rest cancelled; `check_will()` passes `done_deliveries()`.
+  Every flow passes through `check_holds()` first, before the Check Alive
+  gate, so one test covers the Check, Prepare, wallet close (skipped with
+  one log line), the GUI automatic rebuild (skipped), the command line
+  (result `delivery_rest_cancelled` with a message), and the Sign /
+  Broadcast / Invalidate commands (refused with the message).
+- The text (`bal/gui/qt/flow_adapter.py`, `REST_CANCELLED`; the Check shows
+  it after "Checking variables: Stopped", amber): delivery N was executed
+  and the remaining deliveries were cancelled; no will is in force and
+  nothing is prepared, signed or sent; to prepare a new will, "Back to one
+  delivery" in the window "Inheritance in several deliveries" (Tools in the
+  Will tab, ADVANCED mode), a new date, then "Check your will". The
+  command line names `bal_instalments_clear`, `bal_delivery_set --date` and
+  `bal_will_prepare`. Italian and Spanish translations.
+- Not changed, on purpose: one-date wills (after Invalidate the Check
+  prepares the will again, the usual way to postpone); what the List,
+  Future, the Graph and the PDF show for a will in several deliveries
+  after delivery 1 (separate steps); an Invalidate while delivery 1 is only
+  in the mempool (held as stopped; if another will-executor's copy of
+  delivery 1 is the one mined, Electrum drops the copy in the mempool and
+  the invalidation, the plan runs again: a warning is a separate step).
+
+**Tests:** new `tests/test_multiverse_after_delivery_1.py` (flowkit, three
+fake will-executors with their own fee addresses, wallets with and without
+a password): the plan running, two and three deliveries, the first flow
+right after delivery 1 is mined then a Check, for the Check, wallet close,
+GUI automatic rebuild and `bal_will_autorebuild` (no new copy, nothing
+sent, no question); delivery 2 executed too; new coins while running
+(delivery 2 prepared again with them, one day earlier, then nothing); a
+will-executor added while running (one copy for it); the plan stopped
+after Invalidate, two and three deliveries, every flow (nothing prepared,
+the Check's text, the command line's code and message); Sign, Broadcast
+and Invalidate refused with the text; new coins after Invalidate stay out; "Back to one
+delivery" and a new date prepare a new will; Invalidate with delivery 1 in
+the mempool, then another copy mined the way Electrum learns it; a
+one-date will after Invalidate is prepared again; nothing decided without
+a wallet; in doubt the plan stays stopped, every flow, with and without a
+password: an old copy whose coin the wallet does not know, and a draft of
+delivery 2 on the coin that came back (a signed copy there is still live). `tests/test_gui_flow_adapter.py`: the new note's row.
+
+**Verification:** `ruff check bal/ tests/` clean; the whole suite on
+Electrum 4.8.3, normal order: 3151 passed, no failure (1 h 02 min); 16
+setup errors came from the logging plugin switched off in that run (the
+`caplog` tests), and those files rerun with it on: 81 passed. With the
+previous "in doubt, live" rule 16 of the 17 new tests fail (the other is
+the signed copy that must stay live). The test ZIP loads on Electrum 4.8.3
+(external zip). `tests/test_engine_context.py`: the call of
+`Will.is_will_valid` now carries `done_deliveries=0` without a table.
+
+**Owner's test of 2026-10-30 (first ZIP):** delivery 1 executed on
+mainnet; the Check after it did nothing (no password, nothing signed). After
+Tools > Invalidate the Check prepared the rest again and asked to sign
+(cancelled by the owner): the wallet held 1037 copies of earlier wills,
+and one whose coin the wallet did not know counted as "could still be
+mined", so the hold never applied. Reproduced with flowkit; fixed by
+"in doubt, not live" above (the new tests: 16 of them fail with the
+previous rule).
+
+**Owner's test of the second ZIP (2026-10-30, mainnet, Electrum 4.8.2, wallet
+with a password):** Tools > Invalidate, signed and sent, still in the
+mempool; "Check your will" stopped with the text (no password, nothing
+prepared, signed or sent); the wallet close asked nothing. Before that, the
+close of the old plugin, still loaded while the second ZIP was installed,
+signed and sent the draft left by the first test (a new will on the
+coin that came back, then invalidated by this test).
+
+**Outcome:** DONE.
+
+## 202. "(today)" follows the UTC day, not 24 hours
+
+**Why:** on the owner's real testnet test (2026-10-30) a delivery date of
+the next day was shown as "(today)", because any date less than 24 hours
+away counted as today, also on another UTC day.
+
+**What changed:**
+
+- `bal/core/summary.py`: new `same_utc_day`; `relative_date` says "(today)"
+  only on the same UTC day. Another UTC day less than 24 hours away says
+  "(in 1 day)" or "(passed 1 day ago)", never "0 days".
+- `bal/core/future.py`: `time_left_text` does the same.
+- `tests/test_will_summary.py`, `tests/test_core_future.py`: the new cases.
+
+No new text to translate; display only: nothing that builds, signs or sends
+changes.
+
+**Verified:** ruff clean; 469 tests passed (the ones on these dates and the
+golden files of the Check and of the copies, unchanged), 3 min 44 s, Electrum
+4.8.3.
+
+**Outcome:** DONE
+
+## 203. The Check says nothing "changed" on a first will
+
+**Why:** on the owner's real testnet test (2026-10-30) the first will showed
+"What changed: The will contains no valid transaction: a new will must be
+prepared", although no will had ever existed and nothing had changed.
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`: new `_first_will`; with no valid transaction and
+  no copy in the wallet, the "Checking your will" row says Ok and the "What
+  changed" box is not drawn. With copies, none valid, the sentence stays.
+- `tests/test_first_will_no_change_sentence.py`: the rule.
+- `tests/golden/5e/`: 66 files updated; the only difference is this sentence.
+
+The command line keeps its `reason`. Display only: nothing that builds, signs
+or sends changes. No new text to translate.
+
+**Verified:** ruff clean; 716 tests run (the ones on the Check rows and the
+golden files), 13 min 41 s, Electrum 4.8.3: the one failure was the 66th golden
+file, updated in the same way; that file's tests and the golden tests were then
+run again and passed.
+
+**Outcome:** DONE
+
+## 204. A stop the owner chose is not shown as an error
+
+**Why:** when the owner stopped a will in several deliveries after delivery 1
+(#201), the plugin did the right thing, but the Check window showed it in red:
+"Check: error" and a red final sentence. It looked like a fault.
+
+**What changed:**
+
+- `bal/engine/check.py`: new step state `held` for this stop; the settings that
+  cannot be prepared keep `stopped`.
+- `bal/gui/qt/flow_adapter.py`: `held` writes "Stopped" in amber.
+- `bal/gui/qt/dialogs.py`: for this stop the step and the final sentence are
+  amber; the warnings box does not repeat the bare word "Stopped".
+  `have_to_sign` gets a class-level default, so the report also works on a
+  dialog whose `__init__` did not run.
+- `tests/test_multiverse_after_delivery_1.py`, `tests/test_gui_flow_adapter.py`:
+  the new cases.
+
+Real errors stay red. Look only: the stop works as before; nothing is built,
+signed or sent. No new text to translate.
+
+**Verified:** ruff clean; 273 tests passed (these flows and the golden files,
+unchanged), 4 min 37 s, Electrum 4.8.3.
+
+**Outcome:** DONE
+
+## 205. The invalidation sentence translated into Italian and Spanish
+
+**Why:** going back from several deliveries to one (#188), the plugin asks to
+sign and send the invalidation transaction. The sentence "Please sign and
+broadcast the invalidation transaction now, then press 'Prepare' again." had no
+translation, so it stayed in English in the Italian and Spanish plugin.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`, `bal/locale/es_ES/LC_MESSAGES/bal.po`:
+  the translation of that sentence.
+
+Text only: no code changed.
+
+**Verified:** ruff clean; 58 translation and text tests passed, 15 s, and 152
+golden tests, 2 min 7 s, unchanged, Electrum 4.8.3. No catalog has an empty
+translation now.
+
+**Outcome:** DONE
+
+## 206. The Italian postponing message names the invalidation transaction
+
+**Why:** when a will already sent is postponed, the Italian message said "trasmetti
+il piano" and "invalidare il piano": the owner signs and sends the invalidation
+transaction, and what is invalidated is the coins already committed. The English
+and Spanish texts already said so.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`: the translation of that message.
+
+Text only: no code changed.
+
+**Verified:** ruff clean; 156 translation and golden tests passed, 1 min 39 s,
+goldens unchanged, Electrum 4.8.3.
+
+**Outcome:** DONE
+
+## 207. The Italian invalidation messages speak of the old will
+
+**Why:** after #206, two Italian messages still said "invalidare il piano": the one
+for an expired will and the one shown after the invalidation. The other messages
+already say that the old will is invalidated, and so do the English and Spanish
+texts.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`: the translation of those two messages.
+
+Text only: no code changed.
+
+**Verified:** ruff clean; 156 translation and golden tests passed, 2 min 32 s,
+goldens unchanged, Electrum 4.8.3.
+
+**Outcome:** DONE
+
+## 208. One name for the Check button: "Controlla" in Italian, "Comprobar" in Spanish
+
+**Why (owner):** the same button had several names. The button itself read
+"Verifica/Aggiorna", while the menu and many messages said "Controlla" and others
+"il prossimo Check". "Verifica" also recalled "Verifica se sei vivo", which is
+another thing.
+
+**What changed:**
+
+- `bal/locale/it_IT/LC_MESSAGES/bal.po`: the button and the messages naming it read
+  "Controlla"; "il prossimo Check" reads "il prossimo Controllo".
+- `bal/locale/es_ES/LC_MESSAGES/bal.po`: the same with "Comprobar" and "la próxima
+  Comprobación", the word the plugin already uses.
+- `bal/gui/qt/lists.py`, `tests/test_check_button.py`: a comment and a docstring
+  that quoted the old name.
+
+Text only: no logic changed. "Check Alive" keeps its names.
+
+**Verified:** ruff clean; 213 translation, button and golden tests passed,
+2 min 48 s, goldens unchanged, Electrum 4.8.3.
+
+**Outcome:** DONE
+
+## 209. The second computer shows the real outputs and asks to compare them with paper
+
+**Why (owner):** the multisig is one person, one key on the online computer and one
+on an offline computer, against a hacked online computer. Testnet4, 2026-11-01: a
+file whose heir output was redirected showed the same heirs and was signed. The
+owner: the reference is the address on paper, and the plugin must warn when signing
+offline, "and probably always".
+
+**What changed:**
+
+- `bal/engine/offline_sign.py`: `file_summary`, `payment_problems`, `problem_lines`
+  read each copy to sign from its transaction, delivery by delivery: heirs,
+  will-executors, change (only if this wallet's keys derive it, a path in the file
+  proves nothing), messages. `sign_file` refuses a file with problems: an address
+  the will does not name, an heir receiving less, one person with two addresses in
+  a delivery, a transaction that ignores the date, an unreadable copy.
+- `bal/gui/qt/offline_sign.py`: the check lists every payment with its full address.
+  "Sign all" stays off until the tick "I compared the addresses with the ones on
+  paper". A file with problems: "Do not sign this file", no tick, no button.
+  `SigningWarningDialog` is the same check for the other signing routes. A whole
+  amount loses Electrum's lonely point ("0. mBTC").
+- `bal/gui/qt/window.py`, `plugin.py`, `dialogs.py`: `confirm_signing` before the
+  password, on the Check, the Will tab and Will Details, with or without a wallet
+  password; Will Details refuses a file with problems. Not on a watch-only wallet,
+  on the unattended automatic rebuild or on the invalidation signature.
+- `bal/locale/`: 12 new texts in Italian and Spanish.
+- `tests/test_offline_real_outputs.py` (new), `tests/flowkit.py`,
+  `tests/test_sign_offline_online.py`.
+
+Limits, on purpose or for later: a file coherent with itself (names rewritten in all
+copies) cannot be stopped, the false address is shown in full and the paper is the
+defence. `bal_will_sign` on the command line and the file import do not check yet,
+and signatures are not verified yet: next step.
+
+**Verified:** whole suite 3192 passed, 1 h 8 min 28 s, Electrum 4.8.3, with a logger
+of false stops: 951 signings, 9797 copies, no good will stopped (one signal, on a
+fixed fake transaction of an old test). After the last small fixes: ruff clean,
+51 tests of the offline windows passed in 53 s, 95 golden tests in 1 min 6 s. The owner asked Claude to make the ZIP test: real Electrum 4.8.3
+windows, offscreen, throw-away wallets, no network, Italian: single key and multisig
+2 of 3 to 39 of 39 signed, altered file stopped on both routes, tick and warning
+working, no exception. Not covered: Windows, the install from the Plugins dialog
+(the ZIP load test passed), a real Check with funds (fake will-executors only).
+
+**Outcome:** DONE
+
+## 210. Every signature is verified: a false one stops the file
+
+**Why (owner):** #209 reads what a file pays, but a signature in the file was only
+counted: "2 of 2" could be false. A hacked online computer could give the second
+computer a made-up first signature, or the online computer a file that looks signed.
+A will that looks signed and is not reaches the heirs as nothing. The owner asked for
+real verification, the same address check on import, merge and `bal_will_sign`, and
+tests with and without password, single key and multisig, tried in the real Electrum.
+
+**What changed:**
+
+- `bal/engine/signatures.py` (new): `check_copy` verifies each signature against the
+  key and the transaction, on a clean copy of it: what proves a signature (scripts,
+  coin) is rebuilt from this wallet, never taken from the file. A coin read from
+  another copy counts only if its hash is the txid. Only `Sighash.ALL` counts: a file
+  asking for a weaker signature is refused. When the coin cannot be known here the
+  answer is "cannot be checked", not "false".
+- `bal/engine/offline_sign.py`: new reasons to stop: false signature, signature that
+  cannot be checked, a different transaction under the same id, an executor paid more
+  than its fee, copies of one delivery paying different people. New `merge_problems`
+  and `send_problems`.
+- `bal/engine/merge.py`: `merge_will` refuses before anything changes
+  (`MergeRefusedError`), for the window and the command line.
+- `bal/engine/sign.py`: a copy asking for a weaker signature is never signed.
+- `bal/core/will.py`: `Will.set_input_coin`, extracted from `add_info_from_will`.
+- `bal/gui/qt/window.py`, `offline_sign.py`, `dialogs.py`: the refusal is shown and the
+  file stays out; "Broadcast" of an imported will in Will Details also refuses copies
+  flagged signed without proof; the second computer's count comes from the transaction,
+  not from the file.
+- `bal/cli/controller.py`: `bal_will_import_merge` and `bal_will_sign` use the same
+  checks.
+- `bal/locale/`: the new texts in Italian and Spanish.
+- `tests/test_verify_signatures.py` (new, 39 test functions); adapted fakes in
+  `tests/test_engine_sign.py`, `test_import_will_details.py`, `test_gui_will_flows.py`,
+  `test_offline_real_outputs.py`, `test_gui_future_view.py`.
+
+Limits, on purpose or for later:
+
+- The statuses sent/checked/confirmed still come from the file into the will (#158
+  rule): visible and recoverable, a later step.
+- A finished file on a wallet that knows no coin is refused with "cannot be checked on
+  this computer"; at the offline window a file already finished still says "already
+  signed, take it back": nothing is signed there and the online computer refuses it if
+  false.
+- A file coherent with itself (all copies rewritten) is only stopped by the paper. One
+  copy with an heir lowered and a new executor URL is not blocked but is visible ("at
+  least", one more will-executor). The command line has no paper warning.
+- "Merge transaction" of a partly signed later delivery is refused; a finished new copy
+  with change beyond the gap limit is refused.
+- Not confirmed: how real will-executors treat an unsigned copy; `dialogs.py` reads the
+  whole-will QR with `normalize_will` outside a `try`. Seen in the test harness only and
+  not touched: wallets that are not native segwit build no will at all, silently.
+
+**Verified:** whole suite 3238 passed and 1 failed, 1 h 15 min 4 s, Electrum 4.8.3, with
+a logger of false stops: 1041 signings, 11831 copies, no good will stopped (one signal,
+on a made-up transaction of an old test). The failure was a fake returning nothing in
+`test_gui_future_view.py`; fixed, that file then 184 passed in 5 s; the plugin did not
+change after the suite. Ruff clean. Two independent reviews: all they found fixed except
+the limits above. The owner asked Claude to make the ZIP test: real Electrum 4.8.3
+windows, offscreen, throw-away wallets, no network, Italian. Single key 39 of 39;
+multisig 2 of 3: first signer "1 of 2", second 39 of 39. False first signature on the
+second signer: "Do not sign this file", no button. False signatures on merge: refused,
+will unchanged at 0 copies. Good file on merge: 39 copies (1/1 signed, 1/2 not signed,
+2/2 signed). No exception. Not covered: Windows, the install from the Plugins dialog (the
+ZIP load test passed), a real Check with funds (fake will-executors only).
+
+**Outcome:** DONE
+
+## 211. One miner fee per copy, and a will that cannot pay every delivery is refused
+
+**Why (owner):** the audit of 2026-10-31 found that a delivery leaving change paid the
+miner twice: `prepare_transactions` starts `out_amount` from the fee and
+`get_change_output` subtracted the fee again. The money came out of the change, so the
+later deliveries received less. The owner added a rule: when the funds are not enough
+the will must be refused, saying to reduce the number of deliveries (for example from
+3 to 2) or to make a simple inheritance with one delivery. Today a delivery that leaves
+no change, or a later build that returns nothing, makes the next delivery vanish with
+no error.
+
+**What changed:**
+
+- `bal/core/heirs.py`: `get_change_output(wallet, in_amount, out_amount)` no longer
+  takes the fee, which is already inside `out_amount`. New
+  `DeliveriesNotFundedException`, a `BalanceTooLowException`.
+- `bal/core/util.py`: `Util.get_change_output` (no callers) has the same fix.
+- `bal/core/messages.py`: `deliveries_not_funded_message`, the sentence and the advice.
+- `bal/engine/build.py`: `_every_delivery_funded` runs on a table with two or more
+  dates. It turns a balance too low or an amount under dust into the new refusal, and
+  `_chain_complete` checks that every date was built and every copy except the last
+  date has a child. It runs before `Will.update_will`, so a will in force stays as it
+  is. Without a table, or with one date: as before.
+- `bal/gui/qt/common.py`, `dialogs.py`, `window.py`, `bal/cli/controller.py`: the
+  sentence is shown by Check, by Prepare and on the command line.
+- `bal/locale/`: the new texts in Italian and Spanish.
+- `tests/test_miner_fee.py` (new, 22 tests).
+
+Limits, on purpose or for later:
+
+- A multisig coin is measured as single-key when the copy is built (184 vB against the
+  real 220), so a finished 2-of-3 copy pays less than the chosen rate: 2392 sat on
+  220 vB and 2237 on 208 vB, about 10.9 sat/vB when 13 is chosen. Before this step only
+  the last delivery paid so, the double fee hid it on the others. At very low chosen
+  rates a copy could fall below what nodes accept. A step of its own, not done here.
+- A will built with the old code is not touched by Checks: its copies stay as they are
+  until the owner rebuilds. A rebuild with a new will-executor dates the first delivery
+  exactly one day earlier and the old copies stop being valid.
+- The Check log still ends with "OK" after a refusal (audit item 20).
+- Delivery 1 does not reserve the fees of the later ones: 35/35/30 becomes
+  36.4/35.2/28.4.
+- With one delivery the message "balance too low" is unchanged, and Prepare still lets
+  a `BalanceTooLowException` escape.
+- "Add funds" is left out of the new message: the owner named two options.
+
+**Verified:** whole suite 3261 passed, 1 h 17 min 32 s, Electrum 4.8.3. Ruff clean.
+Three deliveries at 20 sat/vB, 1,000,000 sat: build calls from 174 to 78; miner fees of
+one chain from 19,681 to 11,561 sat. With 30,000 sat the will goes from 2 deliveries to
+3. One delivery: amounts identical. Grid of 135 combinations of wallet size, rate and
+table: 74 complete, 61 refused, none with a missing delivery. Claude ran the ZIP in real
+Electrum 4.8.3 windows, offscreen, throw-away wallets, fake will-executors, no network,
+Italian. Single key and multisig with 30,000 sat at 100 sat/vB: Check and Prepare show
+the refusal with the advice, 0 copies, no exception. Single key with 1,000,000 sat at
+20 sat/vB, real Prepare: 39 copies, miner fees 4060/4060/3440, no exception. Not covered:
+Windows, the install from the Plugins dialog (the ZIP load test passed), a real network.
+
+**Outcome:** DONE
+
+## 212. A multisig pays the chosen miner fee on its real size
+
+**Why (audit of 2026-10-31, step agreed with the owner):** a coin from
+`wallet.get_utxos()` has no script, and Electrum then guesses a single key from any
+`bc1`/`tb1` address: 184 vB against the real 220 of a 2-of-3. The fee was worked out on
+that guess, so at a chosen 13 sat/vB a 2-of-3 copy paid 10.87 sat/vB, a 3-of-5 9.34, a
+1-of-2 12.33, and the invalidation of a 2-of-3 10.04. At low rates a copy could fall
+below what nodes accept.
+
+**What changed:**
+
+- `bal/core/util.py`: new `Util.real_tx_size(tx, wallet)`. It measures the size with the
+  script the wallet gives for each input, on copies of the inputs: the transaction and
+  its PSBT text do not change. An input whose script the wallet cannot give stays on
+  Electrum's guess. A signed transaction reads the size of its real bytes.
+- `bal/core/heirs.py`: the fee of each copy uses the real size.
+- `bal/core/will.py`: `Will.invalidate_will` too.
+- `bal/core/invalidation_preview.py`: the rate in the box before the password is read on
+  the same size.
+- `tests/test_multisig_fee_size.py` (new, 9 tests). `tests/test_miner_fee.py`: the
+  tolerance for multisig is gone.
+- `tests/test_auto_rebuild_on_new_tx.py`, `test_cli_autorebuild.py`,
+  `test_gui_will_flows.py`, `test_group_e_karen7_invalidate.py`: their fake wallets answer
+  "no script known", as a real wallet does for an address that is not its own.
+
+Limits, on purpose or for later:
+
+- A will built with the old code is not touched by Checks: its copies keep the old fee
+  until the owner rebuilds.
+- A stored copy that spends the change of another copy has no address or script when it
+  is read back, so `estimated_size()` reads less (184 vB against 220). The fee is right,
+  because the build works in memory. The detail window (`bal/gui/qt/widgets.py`) uses
+  that size, so it can show a rate higher than the real one (15.42 for 13). For the
+  list of texts; that window was not checked.
+- Not part of this step, found with the probes: wallets of older types (addresses
+  starting with `1` or `3`) build no will at all, `WILLEXECUTOR_TX_ERROR`, because an
+  unsigned `tx.txid()` is None. A step of its own, to report before the release.
+
+**Verified:** whole suite before the fake wallets were fixed: 3227 passed, 28 failed,
+15 errors, 1 h 19 min, Electrum 4.8.3, all 43 from the fake wallets missing the new
+method. After the fix those 5 files, the new tests and `test_miner_fee.py`: 86 passed in
+55 s. The whole suite was not run again: only the fake wallets changed. Ruff clean.
+At a chosen 13 sat/vB: 2-of-3, 3-of-5 and 1-of-2 first delivery 13.00, also with two
+real signatures (220 vB, 2860 sat instead of 2392); invalidation of a 2-of-3 13.00
+(2054 sat instead of 1586 on 158 vB). Single key: amounts unchanged. An existing will: a
+Check leaves it and asks nothing. Not covered: Windows, a real network.
+Owner ZIP test on Windows with Electrum Testnet4 4.8.3, wallet multisig_test_212 (2of3
+p2wsh, 1 input, 2.4651 mBTC): at 20 sat/vB the plugin built a fee of 2820 sat on 141 vB
+real size (2820 / 141 = 20.0 sat/vB). Electrum's detail window shows 15.9 sat/vbyte
+because it divides by its own guess of 177 vB (known limit, documented above).
+
+**Outcome:** DONE
+
+## 213. Tools > Send says what really happened
+
+**Why (audit of 2026-10-31, step agreed with the owner):** Tools > Send showed "All
+transactions are broadcasted" also when 0 copies had left. An owner who reads it believes
+the heirs are protected while no will-executor holds the will.
+
+**What changed:**
+
+- `bal/engine/push.py`: new `nothing_sent_reason(willitems, force=False)`, why nothing
+  left (no copies, not signed, all sent already, no selected will-executor), and
+  `not_delivered(willitems, selected, current_willexecutors)`: a sent copy that is not
+  PUSHED, or a valid unsigned copy of a selected will-executor.
+- `bal/gui/qt/window.py`: `push_transactions_to_willexecutors` returns the real outcome and
+  `on_success` shows it. The success message stays only when every copy was delivered.
+- Closing the waiting window now gives "Sending stopped: some copies may not have been
+  sent. Press Check to verify." It has no Stop button: closing it is the way to stop.
+- A partly signed will gets "Some transaction was not broadcasted": the signed copies leave,
+  the others do not.
+- `bal/locale/`: catalogs refreshed, the five new texts in Italian and Spanish.
+- `tests/test_menu_send_outcome.py` (new).
+
+Limits, on purpose or for later:
+
+- A will-executor that says it holds the copy and then does not answer the check in time
+  stays "to be verified": no warning, as before. The next Check verifies it.
+- The messages change no status, so the Check after them asks nothing.
+
+**Verified:** whole suite 3284 passed, 0 failed, 1 h 20 min, Electrum 4.8.3. Ruff clean.
+Covered with three fake will-executors: real send, unsigned, already sent, none selected,
+already present with our copy, with another copy, with a broken answer, no answer in time,
+one will-executor down, second Check clean, partly signed, window closed before sending
+and during the checks. Not covered: Windows, a real network.
+
+**Outcome:** DONE
+
+## 214. The Future view no longer says "not sent" for a will the will-executors hold
+
+**Why (audit of 2026-10-31, step agreed with the owner):** the view wrote "NOT SENT TO THE
+WILL-EXECUTORS YET. Until you send it, nothing happens on the date." unless a will-executor
+was verified. One that accepted the copy and did not answer the check, or was excluded after
+receiving it, holds the will: the coins can move on the date, the view said the opposite.
+
+**What changed:**
+
+- `bal/gui/qt/future_view.py`: `nothing_received` counts `verified`, `to_verify` and
+  `excluded` as holding the will.
+- `tests/test_gui_future_view.py`: the #134 case with one `to_verify` copy now expects no
+  overlay; new cases.
+
+Limits, on purpose or for later:
+
+- With no overlay the view has its normal colours and the title "Your will is in force". Its
+  Will-Executor row still says how many are to be verified.
+- `failed` still reads as not received, also when a will-executor said "already present" and
+  the check then failed. A will-executor with two copies is read by its worst one. Both can
+  still show the overlay.
+- The PDF report never had the overlay: not touched.
+
+**Verified:** the 14 test files that read the view or its goldens: 489 passed in 3 min 13 s,
+Electrum 4.8.3. Ruff clean. No text changed. View only, so the whole suite was not run (owner's rule for look-only steps).
+Not covered: Windows, a real network.
+
+**Outcome:** DONE
+
+## 215. A new coin with other will-executors: the new copies go first
+
+**Why (audit of 2026-10-31, step agreed with the owner):** with all the will-executors
+changed and a new coin, the old copies and the new ones stayed valid on the same date, and
+nothing was asked. An old will-executor that broadcasts first kills the new copies: the new
+coin stays in the wallet and reaches no heir. Reproduced before the fix, with and without a
+password.
+
+**What changed:**
+
+- `bal/core/will.py`: `Will.check_anticipate` dates one day earlier a new copy that spends
+  the coins of the old one and more, also when the will-executor is another one or the new
+  copy is a backup transaction. A copy with the same coins keeps its date.
+- `Will.find_same_date_copies` looks across will-executors too: a will already in this state
+  is rebuilt by the Check, as since #91.
+- `tests/test_new_coin_executors_changed.py` (new). `tests/test_new_funds_anticipate.py`: new
+  cases; the #91 case of another will-executor now has the same coins.
+
+Limits, on purpose or for later:
+
+- In this case the delivery moves one day earlier, as for every new coin since #91.
+- An old backup transaction against a new copy keeps the rule of before, on the amounts.
+- The old copies stay with the old will-executors, valid until the earlier copy is mined.
+
+**Verified:** whole suite 3296 passed, 0 failed, 1 h 35 min, Electrum 4.8.3. Ruff clean. With
+three fake will-executors, with and without a password: all changed, one changed, no new
+coin (the date does not move), second Check clean. Not covered: Windows, a real network.
+
+**Outcome:** DONE
+
+## 216. Wallets with addresses starting with 1 or 3: a clear "not supported"
+
+**Why (release list for 0.8.0, step agreed with the owner):** on a wallet whose addresses
+start with `1` or `3` the build stopped with a message about a will-executor. The real cause:
+an unsigned transaction on those coins has no transaction id, and the build needs it to link
+the copies. Owner's decision: these wallets stay out. Every copy of the will would also pay a
+higher miner fee, and a will with several deliveries has many copies.
+
+**What changed:**
+
+- `bal/core/heirs.py`: new `only_native_segwit(utxos)`. `buildTransactions` stops with the
+  new code `WALLET_TYPE_NOT_SUPPORTED` when one coin is not on a `bc1q` address. No copy is
+  built and nothing is sent.
+- `bal/core/messages.py`: the text for the new code. Catalogs refreshed, Italian and Spanish
+  translated, 0 fuzzy.
+- Software notes and manual: `README.md`, `COMPATIBILITY.md`, `docs/manual/README.md`,
+  `docs/manual/manual.html` say that the addresses must start with `bc1q`, and why.
+- `tests/test_old_wallet_types.py` (new). `tests/test_group_e_mock_karen7.py` and
+  `tests/test_reproduce_none_type.py`: their fake coins now have a `bc1q` address.
+
+Limits, on purpose or for later:
+
+- Not supported: wallets with addresses starting with `1` or `3`, also when only one coin is
+  on such an address (an imported wallet can mix them).
+- The command line shows only the code `WALLET_TYPE_NOT_SUPPORTED`, as for the other codes.
+
+**Verified:** whole suite 3302 passed, 2 failed, 1 h 28 min, Electrum 4.8.3: the two failures
+were the fake coins without an address, fixed; those files, the new tests and the
+translations then 36 passed. Ruff clean. With three fake will-executors, with and without a
+password: `1` and `3` wallets build nothing and say why, a `bc1q` wallet builds one copy per
+will-executor as before. Not covered: Windows, a real network.
+
+**Outcome:** DONE
+
+## 217. The BAL maintainer's personal name out of the current files
+
+**Why (release list for 0.8.0):** the BAL maintainer wants to stay anonymous. Their personal
+name was still in 7 lines of `CHANGELOG.md` and 4 lines of `PLAN_I18N.md`.
+
+**What changed:**
+
+- `CHANGELOG.md` and `PLAN_I18N.md`: the name is now "the BAL maintainer". Nothing else
+  changes in those lines.
+- The CHANGELOG points to the renamed note `context/reports/multiverso-resoconto-per-bal-IT.md`
+  (outside the repository).
+
+Limits, on purpose:
+
+- The commits already published keep the old text: the owner decided not to rewrite the
+  history.
+
+**Verified:** text only. A search of the repository finds the name in no file. No code,
+no tests changed.
+
+**Outcome:** DONE
+
+## 218. Stale documents brought up to date for 0.8.0
+
+**Why (release list for 0.8.0, audit 2026-10-31 point 29):** the documents still
+described BAL or older versions: Electrum 4.7.2/4.8.0, multisig "not supported",
+hardware wallets "supported" without any test, a "Server" column that no longer exists
+(#83), and a manual saying the staggered inheritance is not possible and pointing to
+BAL's site for the download.
+
+**What changed:**
+
+- `README.md` and `COMPATIBILITY.md`: Electrum 4.8.2 or later (tests on 4.8.3).
+- Multisig: supported (2-of-3 testnet4 test delivered on 2026-11-03, from the command
+  line; signing on a second computer through the windows not tested yet).
+- Hardware wallets: "not tested yet". TrustedCoin (2FA): unknown. Both to be looked
+  at after 0.8.0 (owner).
+- `README.md` and `bal/README.md`: the "Server" column part now describes the Status
+  column.
+- Manual (`docs/manual/README.md` and `manual.html`): a note at the top says it is
+  BAL's manual adapted to Àncòra; the installation points to the Àncòra releases page;
+  "Staggered inheritance over time" and "Practical example — multiple dates" describe
+  the several deliveries (Multiverse, ADVANCED, 2 to 3 deliveries); the report section
+  no longer calls the several deliveries "not active today"; "Using hardware keys"
+  says Àncòra has not been tested with them.
+
+**Verified:** text only. The facts were checked in the code (`bal/core/delivery.py`:
+2 to 3 deliveries, 28 days apart, 0 % allowed, 100 % in all; `bal/gui/qt/widgets.py`
+and `lists.py`: the button and menu names) and in the multisig test report. No code,
+no tests changed.
+
+**Outcome:** DONE
+
+## 219. The release ZIP is reproducible: the same sources give the same SHA-256
+
+**Why (release list for 0.8.0, audit 2026-10-31 point 28):** `build_zip.py` said the
+archive had a stable SHA-256, but every entry kept its file's modification time (and
+`z.write` its permissions and "made on" system). A fresh checkout, or a save without
+changes, gave another SHA-256 for the same plugin, so nobody could rebuild the ZIP and
+match the published one. Electrum works the same way: its release files are
+reproducible, so several people can rebuild and check them.
+
+**What changed:**
+
+- `build_zip.py`: every entry is written with the same fixed date (1980-01-01, the
+  earliest a ZIP can store), permissions (`rw-r--r--`), "made on" system (Unix) and
+  compression level. Only the paths and the contents of the files change the archive.
+- The files inside the ZIP and their bytes are the same as before.
+
+**Verified:**
+
+- Two builds, the second from a copy of the sources with other file times (one file
+  dated 2031): byte-identical ZIPs, same SHA-256.
+- A build with Windows Python gives the same SHA-256 as the one in WSL.
+- Against the ZIP built before the change: the same 95 names, the same bytes.
+- `tests/external_zip_test.py`: the ZIP loads as Electrum loads it. `ruff check`: clean.
+
+**Outcome:** DONE
+
+## 220. Àncòra's own release script, with the SAFE21dev signature
+
+**Why (release list for 0.8.0, audit 2026-10-31 point 27):** `make-release.sh` was still
+BAL's: BAL's Gitea and repository, BAL's signing key, the `vX.Y.Z` tag pushed with
+`--force`, the ZIP name `bal_vX.Y.Z.zip`, a test list that skipped the Multiverse, engine
+and invalidation tests, and a version bump that was never committed. Àncòra 0.7.0 was
+released by hand. The owner chose Electrum as the model: reproducible files and a GPG
+signature.
+
+**What changed:**
+
+- `make-release.sh` rewritten. In order, stopping at the first problem:
+  - checks: a clean working tree, the tag `ancora-v<version>` not used yet (here and on
+    origin), Babel, ruff, gpg, the public key file. The version is read from
+    `bal/manifest.json`; the script never edits a tracked file;
+  - the whole test suite in the normal and in the reverse file order, and ruff;
+  - `dist/ancora_<version>.zip` built twice: the two must be identical (#219); then its
+    `.sha256` file;
+  - the owner signs the ZIP in PowerShell with the SAFE21dev key (the command is
+    printed; the private key never leaves Gpg4win). The script accepts only a good
+    signature made by the primary key `33E3393DFB10F4C45AE6F1E8206C20114CA96172`,
+    checked in an empty keyring holding only `SAFE21dev.asc`;
+  - asks whether the ZIP was tried in Electrum (ZIP first);
+  - creates the annotated tag (tagger ManX, as the commits) and pushes it only after
+    one more "yes", never with `--force`;
+  - writes `dist/RELEASE-NOTES-ancora-v<version>.md` with the SHA-256 and the commands
+    to verify. The owner creates the GitHub release on the website.
+- `SAFE21dev.asc`: the public signing key, in the repository (no secret part).
+- `.gitignore`: `dist/`. `README.md`: two lines on the reproducible ZIP and the script.
+
+**Verified (in a throwaway clone, with a throwaway key standing in for SAFE21dev, a few
+test files instead of the whole suite):**
+
+- a false signature is refused; a good one is accepted;
+- the two builds are identical; `sha256sum -c` passes on the `.sha256` file;
+- the tag is created and, answering "no", not pushed;
+- a second run stops on the existing tag; a changed file stops the run; a tag already
+  on origin stops the run;
+- the reverse order runs the same files; `bash -n` passes.
+- Found and fixed by the try: the tag needs a git identity, which the computer may not
+  have.
+
+**Outcome:** DONE
+
+## 221. Electrum 4.8.3 or later, and how to update the plugin
+
+**Why (owner, 2026-11-03):** on Electrum 4.8.1 the owner added a newer plugin ZIP with
+another file name while the old one was installed, and loading broke ("Error pre-loading
+electrum_external_plugins.bal: AttributeError("'NoneType' object has no attribute
+'loader'")"). Up to 4.8.2 Electrum copies the new ZIP next to the old one, so the
+plugins folder holds two copies of the plugin `bal`. Electrum 4.8.3 (2026-10-23) added
+"allow external plugin upgrades": it replaces the old ZIP and asks for a restart. The
+tests run on 4.8.3 only, and 4.8.3 is a security update. The owner chose 4.8.3 as the
+minimum.
+
+**What changed:**
+
+- `bal/manifest.json`: `"min_electrum_version": "4.8.3"`. Electrum 4.8.0 and later read
+  this field; an older Electrum skips the plugin ("version mismatch" in its log)
+  instead of loading it.
+- `README.md`, `COMPATIBILITY.md`, the manual (`docs/manual/README.md`, `manual.html`)
+  and the release notes written by `make-release.sh`: Electrum 4.8.3 or later, and a
+  short "Update to a new version" part (add the new ZIP in Tools -> Plugins, restart
+  Electrum; the heirs, the will and the settings are kept).
+- `tests/test_manifest_min_electrum.py` (new): reads the manifest with Electrum's own
+  `PluginMetadata`; 4.8.3 and later accept the plugin, 4.8.2 and older skip it.
+
+Limits, on purpose:
+
+- The code that still lets the plugin run on older Electrum versions stays (CLAUDE.md:
+  it is removed only in a step of its own).
+
+**Verified:**
+
+- `tests/test_manifest_min_electrum.py`, `tests/test_version_source.py`,
+  `tests/test_brand.py`: 16 passed. `ruff check bal/ tests/`: clean. `bash -n
+  make-release.sh`: OK.
+- The test ZIP read with Electrum's `Plugins.read_manifest`: loaded on 4.8.3, skipped
+  as 4.8.2. `tests/external_zip_test.py`: the ZIP loads.
+- Owner, Electrum 4.8.3, with Àncòra installed: Tools -> Plugins -> Add the test ZIP
+  `ancora_0.8.0-TEST-221-electrum-483-minimum.zip` -> "Please restart Electrum to use
+  the new version." -> after the restart Àncòra works.
+
+**Outcome:** DONE
+
+## 222. The Check says "Ok" for the sending only when the will reached them all
+
+**Why (audit 2026-10-31, item 20):** after the sending, the Check's row "Broadcasting
+your will to executors" always said "Ok" (`task_phase2` wrote it after `loop_push`
+whatever happened), also when no will-executor received the will, and it covered the
+error of a failed sending. The last row "All done: Ok" looked only at the signing. The
+golden files of the Check recorded it: "1/2", then "Ok", then "All done: Ok".
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`: `loop_push` keeps how the sending ended
+  (`_sending_outcome`: `SEND_ALL`, `SEND_SOME`, `SEND_NONE`; `SEND_ERROR` when the
+  sending itself failed). The rule is the one of Tools > Send
+  (`bal.engine.push.not_delivered`, #213); an excluded will-executor makes the sending
+  incomplete too. The sending row says "Ok" (all), "Not sent to every will-executor"
+  in orange (some), "Not sent" in red (none), or keeps the error.
+- The last row: a signed will that did not reach every will-executor is "Not finished:
+  Will not sent to every will-executor", or "Will not sent to the will-executors" when
+  none received it (owner: "to every" read as if some had). As for the signing (#196),
+  the line also shows in the window's "Attention" box.
+- Italian and Spanish translations of the four new texts.
+- `tests/flowkit.py`: `World.refused`, will-executors that answer with an error.
+- `tests/test_check_send_outcome.py` (new, three fake will-executors): all received,
+  one without answer, one refusing, none, and the silent one back at the next Check.
+- `tests/test_engine_push.py`: the fake dialog gets the real `_sending_outcome`; both
+  will-executors excluded gives `SEND_NONE`.
+- Golden files `executor_down`, `retry_after_down`, `exclude_down`: the sending row,
+  the last row, the "Attention" box and the sending step ("attention" instead of
+  "1/2"). Nothing else changed in them.
+
+Limits, on purpose:
+
+- The command line is unchanged: when no will-executor receives the will it already
+  answers `rebuilt_not_sent`.
+
+**Verified:**
+
+- Whole suite, normal order, Electrum 4.8.3: 3311 passed, 1 failed (1 h 46 min). The
+  failure was `test_check_writes_the_exclusion_row`, whose fake dialog lacked the new
+  method; fixed as above. Then the affected tests (`test_engine_push.py`,
+  `test_check_send_outcome.py`, `test_check_signing_honest.py`,
+  `test_translations.py`, `test_5e_char_check.py`, `test_5e_char_copies.py`): 120
+  passed. `ruff check bal/ tests/`: clean.
+- Owner, Electrum 4.8.3, testnet4, test ZIP `ancora_0.8.0-TEST-222-check-send-outcome.zip`:
+  delivery date moved earlier with internet off -> "Not sent" in red, "Not finished",
+  the Will tab says no will-executor received the will; internet on, Check -> sending
+  2/2, verification 2/2, "Your will is in force". The last-row text for "none" was
+  changed after this test (text only).
+
+**Outcome:** DONE
+
+## 223. The Details window shows the miner fee each copy really pays
+
+**Why (limit written in #212, checked 2026-11-03):** the "Transaction fees" row of the
+Details window (Will tab > Tools > Display, `WillWidget`) read the amount with
+`tx.input_value()`. A signed copy, and a later delivery read back from the wallet file,
+keep no amounts on their inputs, so it showed "-1 (-0.006 sats/vbyte)". For a multisig
+it also divided by Electrum's single-key guess of the size: a later copy of a 2-of-3
+read 184 vB against 220, 15.5 sat/vB for a chosen 13. The fee paid was right; only the
+window was wrong.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py`: new `copy_fee` (the amounts from the outputs the copy spends:
+  the copy before it, or the wallet's history), `copy_size` (the size with the wallet's
+  real scripts, also for an input that spends the change of the copy before) and
+  `fee_text`. "?" when something cannot be read, never "-1".
+- Owner: only the Details window changes. `Util.real_tx_size` and the code that builds,
+  signs and sends the will are not touched, so `copy_size` repeats its few lines.
+- `tests/test_details_fee_rate.py` (new): single key and 2-of-3, three deliveries, in
+  memory and after reopening; the unknown amount; the window itself.
+
+**Verified:**
+
+- `tests/test_details_fee_rate.py`: 6 passed. The tests that use `widgets.py` or the
+  Details window, plus `test_multisig_fee_size.py` and `test_engine_merge.py`: 642
+  passed (5 min). `ruff check bal/ tests/`: clean. The whole suite was not run: only the
+  window changed; it runs before the release.
+- Real Electrum 4.8.3 windows, Italian, plugin from the test ZIP
+  `ancora_0.8.0-TEST-223-details-fee-rate.zip`, throw-away testnet wallets, no network:
+  Tools > Display, three deliveries. Single key 2236 sat at 13.0 sat/vB on every
+  delivery (one copy 13.076: a signature one byte shorter); 2-of-3 2860, 2860 and 2704
+  sat, all 13.0. The same after reading the will back from the wallet file.
+
+**Outcome:** DONE
+
+## 224. "Merge" no longer takes from the file what only this computer knows
+
+**Why (limit written in #210, checked 2026-11-03):** "Merge" took from the will file the
+statuses sent / verified / in the mempool / confirmed (#158 rule). Probed on throw-away
+wallets (watch-only online, keys offline, three fake will-executors), a signed file that
+also said:
+
+- "sent" or "verified" (an old file, a damaged one, one altered by a hacked computer): the
+  first Check sent nothing and ended "All done: Ok" (the verification row red "Ko"); the
+  will-executors got the signed will only at the second Check;
+- "in the mempool" or "confirmed": the copies were no longer valid, the Check rebuilt them
+  and the signatures just brought back were lost ("Will still to sign").
+
+Nothing false reached the heirs, but the first Check said "Ok" while no will-executor had
+the signed will.
+
+**What changed:**
+
+- `bal/engine/merge.py`: `merge_items` never takes these four statuses from the file. A copy
+  already in the will keeps its own; a new copy is added without them and without the time
+  of its verification (`_drop_local_only`). The Check finds them: it sends, asks the
+  will-executors, reads the chain. A will-executor that already has a copy answers "already
+  present", counted as received (#213). The window, the offline signing window and
+  `bal_will_merge` use the same code.
+- `tests/test_merge_local_statuses.py` (new): every claim, watch-only with keys offline
+  (password), watch-only 2-of-3 with A and B offline, new copies into an empty will
+  (password), copies sent here keep their statuses, the command line. 8 of its 10 tests fail
+  on the code before this step.
+- `tests/test_import_will_details.py`: 4 tests now expect the statuses not taken.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. The merge, offline, Check and Future tests: 291 passed
+  (2 min 49 s). Whole suite, one order, Electrum 4.8.3: 3328 passed in 1 h 35 min 30 s.
+- Owner, test ZIP `ancora_0.8.0-TEST-224-merge-local-statuses.zip`, Electrum 4.8.3 on
+  Windows, testnet, watch-only wallet and its wallet with the keys, four will-executors:
+  Check (prepared, to sign offline), Tools > Sign the will offline, signed on the wallet
+  with the keys, brought back: "Will signed and sent"; then Check: verification 4/4, every
+  will-executor "received and verified", "All done: OK". A file with false statuses was
+  tried only in the tests (it needs editing the file by hand).
+
+**Outcome:** DONE
+
+## 225. A will-executor that lost the will gets it again in the same Check
+
+**Why (seen at #224, probed 2026-11-03, owner: "fai test approfonditi"):** the Check's
+verification saw a will-executor that no longer held the will (its server emptied, or it
+held another transaction): "Verifying: Ko", the Check window "In force, but 1
+will-executor did not receive it", the executor "not received". But the copy was sent
+again only at the NEXT Check, weeks or months later, and the last row said "All done:
+Ok". Probed on test wallets with three fake will-executors: one, two or all three losing
+it, one holding an old copy, three deliveries (found the day after, #182), the Check at
+wallet close, the command line. Also: a failed resend to the one that lost it said "The
+will was not sent to the will-executors" while the other two held it.
+
+**What changed (`bal/gui/qt/dialogs.py`):**
+
+- `loop_verify` remembers the copies it found missing; the new `_resend_lost` sends them
+  again at once, to those will-executors only (`loop_push(only=...)`: one that did not
+  answer the sending is not waited for twice), and verifies only them again
+  (`loop_verify(only_ids=...)`). Once: a will-executor that takes the will and does not
+  keep it does not make the Check loop. The log says "Not held by {}: sent again". The
+  Check at wallet close does the same.
+- The last row: "Not finished: Will not held by every will-executor" when one still does
+  not hold it after that (`_not_held_everywhere`), "Will not sent to every
+  will-executor" when the resend failed; "All done: Ok" only when every will-executor
+  holds it.
+- `_sending_outcome`: "Not sent" only when no will-executor of the will holds it
+  (`_held_somewhere`).
+- Not changed: no answer to the verification (#147: still sent, warning, asked again at
+  the next Check); a will in several deliveries is verified once a day (#182); an
+  excluded will-executor (#178) is never sent anything; the command line's
+  `bal_will_check_transactions` only verifies, as before.
+- `bal/locale/`: the two new texts in Italian and Spanish.
+- `tests/test_check_resend_lost.py` (new, 12 tests): one, two or three losing it, an old
+  copy, three deliveries, wallet close, watch-only signed offline (no password), 2-of-3
+  multisig, the resend refused, nobody holding it, taken and not kept (one resend, no
+  loop), no answer left as before. 11 of them fail on the code before this step.
+  `tests/test_engine_push.py`: the fake Check of one test gets `_held_somewhere`.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. The Check tests (404, 5 min). Whole suite, one order,
+  Electrum 4.8.3: 3340 passed in 1 h 50 min 34 s.
+- Real Electrum 4.8.3 windows, Italian, plugin from the test ZIP
+  `ancora_0.8.0-TEST-225-check-resend-lost.zip`, throw-away testnet wallet with
+  password, three fake will-executors, no network: Check; we1 loses the will, Check:
+  "Ko", "Not held by we1.test: sent again", verified again, "Your will is in force",
+  sending 3/3, verification 3/3, "All done: OK"; we1 loses it and refuses it, Check:
+  "In force, but 1 will-executor did not receive it", "Not finished: Will not sent to
+  every will-executor", verification "Ko". This try found that the second verification
+  asked all three again (and then said "Ok"): fixed before the whole suite.
+- Owner, same ZIP, Electrum 4.8.3 on Windows, testnet, real will-executors: a normal
+  Check, "Your will is in force", verification 2/2, and with one will-executor
+  deselected "excluded: has the will, no longer verified" (#178), as before.
+
+**Outcome:** DONE
+
+## 226. The window "How BAL PROTOCOL works" shows the simple version (8 steps)
+
+**Why (owner, 2026-11-03):** the plugin's animation (#162) still told the first 17-step
+story, while the owner's green web pages had moved on (new titles that tell the story
+alone, the medals 1-2-3, the other copies waiting under the block, the delivery and the
+refusals in one step, "software" instead of "plugin"). The owner first asked for a
+simple and a detailed version, then chose: "teniamo solo la semplice". No voice and no
+music in the plugin (owner: with the voice they can go to the BAL or SAFE21 web site).
+
+**What changed:**
+
+- `bal/core/explainer.py`: the 8 steps of the green simple page
+  (`come-funziona-bal-protocol-semplice.html`): write the will; one copy for each
+  will-executor; each keeps it, with its fee; while you are here nothing is sent; the
+  delivery date arrives; the copies are sent (will-executor 2 first, then 1 and 3, each
+  with its medal); the block accepts the first one, the others wait under it; the
+  bitcoin to the heirs, the fee to will-executor 2, then the other two copies are torn.
+  The page's geometry (servers, heirs, transaction, notes) and its pace (3 words a
+  second plus 2.5 s, at least 9 s, halved). Gone: the amount and heirs changes, the
+  postponed date and its red copies, the question, "one is enough" and its note.
+- `bal/gui/qt/explainer.py`: draws the new scene (medals, gold stars and medal of the
+  will-executor that earned the fee, the torn copies with the red cross in the middle,
+  the screen fading from the sending signal to the fees); the window has 8 step numbers
+  and no note line.
+- `bal/locale/`: the 16 texts in Italian and Spanish, the same words as the web page;
+  the texts of the old steps removed.
+- `tests/test_gui_explainer.py`: rewritten for the 8 steps (titles, copies, fees,
+  medals, block, today reaching the date, coins, fee, joy, refusals only at the end,
+  pace, window controls, Italian).
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. `tests/test_gui_explainer.py`,
+  `tests/test_check_button.py`, `tests/test_translations.py`,
+  `tests/test_gui_basic_wizard.py`: 63 passed in 17 s (Electrum 4.8.3). Look-only step:
+  no whole suite.
+- The real window in Italian, 11 screenshots (one or two per step), seen and approved
+  by the owner.
+
+**Outcome:** DONE
+
+## 227. Postponing on a watch-only or multisig wallet: the invalidation is signed elsewhere
+
+**Why (found 2026-11-03 while preparing the test of audit item 33):** the owner's setup is
+a watch-only wallet (or one cosigner of a multisig) on the online computer and the keys on a
+second computer. With a will signed there and sent, a later delivery date is a postpone:
+the old will must be invalidated on the blockchain first. The Check asked "Invalidate now"
+and then stopped with "Invalidating old will: Error: not tx" (watch-only) or "Error: tx not
+complete" (multisig), said nothing about the other computer, and put the date back. Only
+Tools > Invalidate opened the transaction to export.
+
+**What changed (`bal/gui/qt/dialogs.py`):**
+
+- `invalidate_task`: on a wallet that cannot complete a signature alone (`_signs_elsewhere`:
+  watch-only, or a multisig) an incomplete invalidation is not an error: it returns
+  `("sign_elsewhere", tx)`; the later date stays (it may be signed and broadcast elsewhere,
+  as on the command line, #134).
+- `_invalidate_elsewhere`: the invalidation is labelled as every invalidation and opened in
+  Electrum's transaction window (with its Share, as Tools > Invalidate); the row "Invalidating
+  old will" says "To sign on the offline computer" or "To sign on the cosigners' computers";
+  the result says the old will stays in force until the invalidation is signed and broadcast,
+  then press Check again.
+- `_show_instructions`: the message lists 6 numbered steps (save with Share to a file, sign it
+  on the other computer with Tools > Load transaction after checking that the bitcoin go back
+  to an address of yours, bring it back, broadcast it, Check, sign the new will with Tools >
+  Sign the will offline), easy to copy on paper (owner), with "Copy the instructions" next to
+  OK: it copies the steps (plain text) and the message stays open. The first line, why and
+  where to sign, is in bold (owner; the whole line, so no markup in the translations). The
+  file or the QR code: the
+  invalidation is one small transaction (owner; a will in several deliveries goes by file).
+- Not changed: a wallet that signs alone signs and broadcasts by itself; a signing that fails
+  there still puts the date back (#134). Owner decision: a draft never signed and moved so
+  far later that its Check Alive passes keeps asking for the paid invalidation (not changed).
+- `bal/locale/`: the new texts in Italian and Spanish. `tests/flowkit.py`: the message is
+  recorded as a popup.
+- `tests/test_postpone_sign_elsewhere.py` (new, 7 tests): watch-only, 2-of-3 watch-only and
+  2-of-3 with one cosigner's keys (one signature of two in the transaction shown); what the
+  window shows (the coin of the will in force back to the wallet), the label, the message,
+  nothing broadcast, the later date kept; the numbered steps and the copy; the real message
+  box (copy keeps it open, OK closes it); the whole road: signed offline, on the chain, the
+  next Check prepares the will with the new date and asks no invalidation again.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. Postpone, multisig, offline signing, merge and resend
+  tests: 95 passed. Whole suite, one order, Electrum 4.8.3: 3349 passed in 1 h 58 min.
+- Owner, ZIP `ancora_0.8.0-TEST-227` on Windows, Electrum 4.8.3, a watch-only wallet with a
+  will in force: "Invalidate now", the message, the transaction window (the will's coin back
+  to an address of the wallet, "Safe21 Heartbeat invalidation", not signed); the texts and
+  the copy button asked after that test are in 227g.
+
+**Outcome:** DONE
+
+## 228. Test: postponing a will in several deliveries, to the end
+
+**Why (audit 2026-10-31, item 33):** the postpone of a will in several deliveries (a
+Multiverse) was tested only up to the question "Invalidate now". The whole road was not
+covered: invalidation, the new copies, the sending, and the Check after the confirmation.
+
+**What changed:** only a new test, no plugin code.
+
+- `tests/test_multiverse_postpone.py` (new, 4 tests, with and without password): a will in
+  three deliveries (2030, 2033, 2036) signed, sent and verified by three fake will-executors,
+  each with its own fee address; every date one year later, one Check. It asks "Invalidate
+  now", broadcasts the invalidation once and, in the same Check, prepares the 39 copies of the
+  new dates, sends and verifies them; the old copies are invalidated; the first delivery
+  spends the coin the invalidation gave back; every copy pays heirs + will-executor + change +
+  one miner fee (#211). Once the invalidation is on the chain, a Check changes nothing, asks
+  nothing and sends nothing (#136).
+- Probed first on 2026-11-03 (#227): no fault found, so the test only keeps it so.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. The new test with the miner-fee and postpone tests
+  (Electrum 4.8.3): 59 passed in 49 s. No whole suite (test-only step; owner rule).
+
+**Outcome:** DONE

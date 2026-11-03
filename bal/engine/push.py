@@ -39,16 +39,24 @@ from dataclasses import dataclass, field
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.willexecutors import Willexecutors
+from ..i18n import _
 
 __all__ = [
     "ALREADY_PRESENT",
     "EXCLUDED_FEE",
     "EXCLUDED_INVALID",
     "FAILED",
+    "NOTHING_ALL_SENT",
+    "NOTHING_NO_COPIES",
+    "NOTHING_NO_EXECUTOR",
+    "NOTHING_UNSIGNED",
     "RECEIVED",
     "TIMEOUT",
     "PushResult",
+    "not_delivered",
+    "nothing_sent_reason",
     "push_will",
     "select_push",
 ]
@@ -64,6 +72,12 @@ TIMEOUT = "timeout"
 # Why a will-executor is excluded before sending (D2).
 EXCLUDED_FEE = "fee_above_maximum"
 EXCLUDED_INVALID = "invalid"
+
+# Why nothing was sent (#213, see nothing_sent_reason).
+NOTHING_NO_COPIES = "no_copies"
+NOTHING_NO_EXECUTOR = "no_executor"
+NOTHING_UNSIGNED = "unsigned"
+NOTHING_ALL_SENT = "all_sent"
 
 
 def _exclusion_reason(current, max_fee):
@@ -126,6 +140,69 @@ class PushResult:
         return any(o in (FAILED, TIMEOUT) for o in self.outcomes.values())
 
 
+def nothing_sent_reason(willitems, force=False):
+    """Why :func:`select_push` found no copy to send and excluded no one (#213).
+
+    ``NOTHING_NO_COPIES``: the will has no valid copy. ``NOTHING_NO_EXECUTOR``:
+    signed copies wait, but none of their will-executors is selected.
+    ``NOTHING_UNSIGNED``: some copy still needs a signature.
+    ``NOTHING_ALL_SENT``: every copy is signed and already sent.
+    """
+    valid = [w for w in willitems.values() if w.get_status("VALID")]
+    if not valid:
+        return NOTHING_NO_COPIES
+    if any(w.get_status("COMPLETE") and (force or not w.get_status("PUSHED"))
+           for w in valid):
+        return NOTHING_NO_EXECUTOR
+    if any(not w.get_status("COMPLETE") for w in valid):
+        return NOTHING_UNSIGNED
+    return NOTHING_ALL_SENT
+
+
+def not_delivered(willitems, selected, current_willexecutors):
+    """True when, after :func:`push_will`, some copy did not reach its place (#213).
+
+    A sent copy that is not PUSHED any more: its "already present" check found
+    something else (``set_check_willexecutor``). A copy of a selected
+    will-executor still unsigned: it was not part of the sending, so "all
+    transactions" would be false. WHY a check that did not answer in time does
+    not count: the will-executor said it holds the copy, it stays to be verified.
+    """
+    for record in selected.values():
+        for wid in record.get("txsids", []):
+            if not willitems[wid].get_status("PUSHED"):
+                return True
+    current_willexecutors = current_willexecutors or {}
+    for item in willitems.values():
+        if not item.get_status("VALID") or item.get_status("COMPLETE"):
+            continue
+        url = (item.we or {}).get("url")
+        if url and Willexecutors.is_selected(current_willexecutors.get(url)):
+            return True
+    return False
+
+
+def _traced(result):
+    """Write the outcomes of :func:`push_will` in the command trace; return
+    *result* (#173). Never raises: a trace line must not stop the sending."""
+    try:
+        counts = {kind: 0 for kind in (RECEIVED, ALREADY_PRESENT, FAILED, TIMEOUT)}
+        for outcome in result.outcomes.values():
+            counts[outcome] = counts.get(outcome, 0) + 1
+        text = _(
+            "received {received}, already present {already}, refused {failed}, "
+            "no answer {timeout}"
+        ).format(received=counts[RECEIVED], already=counts[ALREADY_PRESENT],
+                 failed=counts[FAILED], timeout=counts[TIMEOUT])
+        trace.add(trace.WARNING if result.any_failed else trace.OK, text)
+        for url, error in result.errors.items():
+            if error:
+                trace.add(trace.ERROR, "{}: {}".format(trace.short_url(url), error))
+    except Exception as e:
+        _logger.debug(f"trace of the sending failed: {e!r}")
+    return result
+
+
 def _mark(willitems, record, status):
     """Set *status* on every transaction of the will-executor *record*."""
     for wid in record.get("txsids", []):
@@ -133,7 +210,8 @@ def _mark(willitems, record, status):
 
 
 def push_will(willitems, selected, *, on_result=None, on_tick=None,
-              should_stop=None, on_check_start=None, on_check_done=None):
+              should_stop=None, on_check_start=None, on_check_done=None,
+              on_checks_begin=None, on_check_tick=None, on_busy=None):
     """Send the will to the *selected* will-executors and record the outcome.
 
     *selected* comes from :func:`select_push`. The will-executors are
@@ -152,15 +230,26 @@ def push_will(willitems, selected, *, on_result=None, on_tick=None,
     is called about once a second while waiting (the caller's counter).
 
     Then each transaction of an "already present" will-executor is checked
-    (``Willexecutors.check_transaction``, one by one) and the answer stored
-    with ``set_check_willexecutor``. An error is logged and stored as
-    ``None`` (not verified), and the next check goes on (D3).
-    ``on_check_start(url, txid)`` / ``on_check_done(url, txid, answer)``
-    surround each check; ``should_stop()`` True stops before the next one.
+    and the answer stored with ``set_check_willexecutor``. #172: with the
+    Check's verification (``Willexecutors.check_transactions_parallel``: a
+    few at a time per will-executor, a new try after a 429, the deadline of
+    ``Willexecutors.check_deadline``); no answer in time is ``NO_ANSWER``.
+    An error is logged and stored as ``None`` (not verified), and the other
+    checks go on (D3). ``on_checks_begin(count, deadline)`` comes first
+    (the window shows the count and the seconds), then
+    ``on_check_start(url, txid)`` for every copy; ``on_check_done(url,
+    txid, answer)`` for each answer, ``on_check_tick()`` about once a
+    second and ``on_busy(url, seconds)`` after a 429, all from the thread
+    that runs this function. ``should_stop()`` True stops the waiting (the
+    copies not answered yet stay as they were).
 
     Nothing is saved here: each caller saves as before. Returns a
     :class:`PushResult`.
+
+    #173: the command trace gets ``bal_will_broadcast`` with how many
+    will-executors, then the count of each outcome (:func:`_traced`).
     """
+    trace.command("bal_will_broadcast", _("{} will-executors").format(len(selected)))
     result = PushResult()
     already = []
 
@@ -198,21 +287,45 @@ def push_will(willitems, selected, *, on_result=None, on_tick=None,
         if url not in result.outcomes:
             on_timeout(url, record)
 
-    for url in already:
-        for wid in selected[url].get("txsids", []):
-            if should_stop is not None and should_stop():
-                result.stopped = True
-                return result
-            item = willitems[wid]
-            if on_check_start is not None:
-                on_check_start(url, wid)
-            try:
-                answer = Willexecutors.check_transaction(wid, item.we["url"])
-            except Exception as e:
-                _logger.error(f"check after already-present failed for {wid}: {e}")
-                answer = None
-            item.set_check_willexecutor(answer)
-            result.checks[wid] = answer
-            if on_check_done is not None:
-                on_check_done(url, wid, answer)
-    return result
+    # #172 (owner's test 2026-10-21): these checks went one by one, 16 s
+    # each for a will-executor that does not answer them; 31 copies of a will
+    # in several deliveries kept the window still for 8 minutes. Now they go
+    # through the Check's own verification: a few at a time per
+    # will-executor, a new try after a 429, a deadline that grows with the
+    # copies (at most 2 minutes); not answered in time: NO_ANSWER (#147).
+    targets = [(wid, url) for url in already
+               for wid in selected[url].get("txsids", [])]
+    if not targets:
+        return _traced(result)
+    if should_stop is not None and should_stop():
+        result.stopped = True
+        return _traced(result)
+    deadline = Willexecutors.check_deadline(targets)
+    if on_checks_begin is not None:
+        on_checks_begin(len(targets), deadline)
+    if on_check_start is not None:
+        for wid, url in targets:
+            on_check_start(url, wid)
+
+    def record(wid, url, answer):
+        """Store one answer on its copy and tell the caller."""
+        willitems[wid].set_check_willexecutor(answer)
+        result.checks[wid] = answer
+        if on_check_done is not None:
+            on_check_done(url, wid, answer)
+
+    def on_answer(wid, url, answer, exc):
+        """An answer, or an error (stored as None: not verified, D3)."""
+        if exc is not None:
+            _logger.error(f"check after already-present failed for {wid}: {exc}")
+            answer = None
+        record(wid, url, answer)
+
+    Willexecutors.check_transactions_parallel(
+        targets, on_each=on_answer, deadline=deadline,
+        on_timeout=lambda wid, url: record(wid, url, Willexecutors.NO_ANSWER),
+        on_tick=on_check_tick, on_busy=on_busy, should_stop=should_stop,
+    )
+    if should_stop is not None and should_stop() and len(result.checks) < len(targets):
+        result.stopped = True
+    return _traced(result)

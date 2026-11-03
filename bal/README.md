@@ -17,10 +17,8 @@ Svatantrya — MIT licence (see `LICENSE`).
   never broadcast the earlier-locktime transaction and execute the inheritance
   too early), then lets you rebuild and re-send the new one via the
   **Prepare** button on the **WILL** tab.
-- **"Server" column**: the will transaction list shows whether each transaction
-  is actually stored on the will-executor servers
-  (`Confirmed on server`, `Sent (not checked)`, `Send failed`,
-  `Not on server`, `Signed (not sent)`, `Not sent`), with a tooltip showing the
-  will-executor URL.
+- **"Status" column**: the will transaction list shows, for each
+  will-executor's copy, where that will-executor stands (for example whether
+  it confirmed it holds the transaction), with a tooltip giving the details.
 
 See the top-level [`README.md`](../README.md) for installation and testing.

@@ -214,12 +214,12 @@ def test_an_executor_that_did_not_receive_it(make):
 
 
 def test_multiverse_two_instalments(make):
-    """Multiverse on (hidden option): alice at D, bob one year later. No
-    crash; two instalments, earliest first; shares over both."""
+    """A table of deliveries (#168; BAL's hidden option before): alice at
+    D, bob one year later. No crash; two instalments, earliest first;
+    shares over both; the person's name, never the row "bob§2"."""
     s = make()
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    s.bw.heirs["bob"] = [fk.HEIR_ADDR["bob"], "40%", D + 365 * fk.DAY]
-    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "60%", D]
+    s.set_instalments((D, {"alice": "60%", "bob": "0%"}),
+                      (D + 365 * fk.DAY, {"alice": "0%", "bob": "40%"}))
     s.check()
     f = _future(s)
     assert f.state == cf.STATE_IN_FORCE
@@ -250,6 +250,11 @@ def test_time_left_texts():
     assert cf.time_left_text(fk.ts(2027, 12, 10), now) == "(in 1 year and 2 months)"
     assert cf.time_left_text(fk.ts(2028, 10, 10), now) == "(in 2 years)"
     assert cf.time_left_text(now + 3600, now) == "(today)"
+    # #202: by UTC day, not by 24 hours; never "0 days".
+    late = fk.ts(2026, 10, 10, 23)
+    assert cf.time_left_text(fk.ts(2026, 10, 10), late) == "(today)"
+    assert cf.time_left_text(late + 3600, late) == "(in 1 day)"
+    assert cf.time_left_text(late - fk.DAY, fk.ts(2026, 10, 10, 1)) == "(passed 1 day ago)"
     assert cf.time_left_text(now - 3 * fk.DAY, now) == "(passed 3 days ago)"
 
 

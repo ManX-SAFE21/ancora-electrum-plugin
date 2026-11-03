@@ -32,7 +32,8 @@ from ...core import datetext, heir_notes, will_state, will_versions
 from ...core.heirs import message_names, message_text, shared_addresses
 from ...core.messages import protected_executor_message
 from ...core.report import executor_fee
-from ...core.summary import executor_states
+from ...core.summary import executor_states, is_excluded
+from ...engine.verify import ever_sent
 from .calendar import BalCalendarButton
 from .common import (
     N_,
@@ -40,7 +41,6 @@ from .common import (
     BalTimestamp,
     Buttons,
     CancelButton,
-    HelpButton,
     MessageBoxMixin,
     MyTreeView,
     OkButton,
@@ -77,6 +77,7 @@ from .common import (
     enum,
     export_meta_gui,
     getOpenFileName,
+    help_button,
     import_meta_gui,
     is_op_return_address,
     partial,
@@ -123,13 +124,30 @@ def _can_delete(will_item):
           will-executor can hold: the backup transaction (no executor), as
           before.
 
-    Deletable: the drafts, the partially signed ones, and the transactions
-    never sent (a signed copy whose push failed or was never made; an old
-    one never sent).
+    #179 (owner, 2026-10-22: "remove the ways to make mistakes"), also not
+    deletable:
+        * a transaction sent at least once (``engine.verify.ever_sent``:
+          also a push without an answer, PUSH_FAIL, or a failed check,
+          CHECK_FAIL). WHY: the will-executor may hold it all the same
+          (we.divinaly.support answered "pushed: thx", then 503 to the
+          check). The way to stop using a will-executor is "Exclude";
+        * every copy of the will being prepared or in force (VALID: draft,
+          partially signed, signed and not sent yet). WHY: the Check looks
+          for each will-executor in the copies of every delivery together.
+          In a will in several deliveries the copies of deliveries 2-3 hide
+          a deleted copy of delivery 1: the Check rebuilds nothing and that
+          will-executor stays without it (owner's ZIP test of #178). The
+          drafts need no delete: the next Check drops them when the change
+          is undone.
+
+    Deletable: the old versions (no longer VALID: replaced, invalidated)
+    never sent.
     """
     if not will_item:
         return False
     if will_item.get_status("PUSHED") or will_item.get_status("CHECKED"):
+        return False
+    if ever_sent(will_item) or will_item.get_status("VALID"):
         return False
     if will_state.classify(will_item) == will_state.IN_FORCE:
         return bool(getattr(will_item, "we", None))
@@ -238,8 +256,20 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
         self.update()
 
     def delete_heirs(self, selected_keys):
+        """Delete the selected heirs; #170: then, when the table of the
+        deliveries no longer fits them, the question to open it. #193: not
+        in BASIC with a table of the deliveries, unless only messages are
+        selected (``basic_table_blocks``)."""
+        blocks = getattr(self.bal_window, "basic_table_blocks", None)
+        if callable(blocks) and blocks(selected_keys):
+            return
+        snapshot = getattr(self.bal_window, "_heirs_snapshot", None)
+        before = snapshot() if callable(snapshot) else None
         self.bal_window.delete_heirs(selected_keys)
         self.update()
+        offer = getattr(self.bal_window, "offer_table_update", None)
+        if callable(offer) and before is not None:
+            offer(before)
 
     def create_menu(self, position):
         menu = QMenu()
@@ -295,10 +325,18 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
             else:
                 labels[self.Columns.ADDRESS] = heir[0]
             # #140: a message receives nothing: no "0.00000000" amount.
+            staged = None
             if is_op_return_address(heir[0]):
                 labels[self.Columns.AMOUNT] = ""
             else:
-                labels[self.Columns.AMOUNT] = Util.decode_amount(
+                # #185 (owner's preview): with a table the amount is not
+                # used; the column shows the person's share at each
+                # delivery ("10% + 10% + 30%"), the dates in the tooltip.
+                from .deliveries import person_shares
+
+                staged = person_shares(
+                    getattr(self.bal_window, "will_settings", None), key)
+                labels[self.Columns.AMOUNT] = staged[0] if staged else Util.decode_amount(
                     heir[1], self.decimal_point
                 )
 
@@ -311,6 +349,8 @@ class HeirListWidget(MyTreeView, MessageBoxMixin):
                 # #140 (owner's ZIP test): the column shows 40 characters;
                 # the whole message in the tooltip.
                 items[self.Columns.ADDRESS].setToolTip(message_text(heir[0]))
+            if staged:
+                items[self.Columns.AMOUNT].setToolTip(staged[1])
             # #135: not editable in place (see __init__).
             for item in items:
                 item.setEditable(False)
@@ -624,6 +664,11 @@ class _GapDelegate(ElectrumItemDelegate):
         size = super().sizeHint(option, idx)
         size.setWidth(size.width() + _COLUMN_GAP)
         return size
+
+
+#: One step right per level of a will in deliveries (#170, owner: "two
+#: characters"): two figure spaces, as wide as two digits.
+_LEVEL_STEP = "\u2007\u2007"
 
 
 def _host_of(url):
@@ -1112,18 +1157,46 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         except Exception:
             return self._format_sats(sats)
 
+    def _spec_text(self, spec):
+        """An amount as set: ``"60%"`` with the language's decimal
+        separator ("16,5%", #185, owner's ZIP test), sats in the wallet's
+        unit."""
+        spec = str(spec).strip()
+        if spec.endswith("%"):
+            from .deliveries import shown_percent
+
+            return shown_percent(spec)
+        try:
+            spec = self._format_sats(int(spec))
+        except (TypeError, ValueError):
+            pass
+        return spec
+
+    @staticmethod
+    def _deliveries_of(version):
+        """How many deliveries ``version`` has (1 for a will with one date;
+        #185: the highest delivery of its heir rows)."""
+        return max((h[3] for h in version.heirs), default=1)
+
     def _heirs_text(self, version):
-        """``"alice 60%, bob 40%"``: each heir with the amount as set."""
-        parts = []
-        for name, spec, _sats in version.heirs:
-            spec = str(spec).strip()
-            if not spec.endswith("%"):
-                try:
-                    spec = self._format_sats(int(spec))
-                except (TypeError, ValueError):
-                    pass
-            parts.append("{} {}".format(name, spec))
-        return ", ".join(parts)
+        """``"alice 60%, bob 40%"``: each heir with the amount as set.
+
+        #185 (owner's preview): a will in several deliveries names each
+        person once with the share of each delivery, in order:
+        ``"luca 10% + 10% + 30% · john 10% + 10% + 30%"`` ("0%" where the
+        person receives nothing at that delivery).
+        """
+        count = self._deliveries_of(version)
+        if count <= 1:
+            return ", ".join("{} {}".format(name, self._spec_text(spec))
+                             for name, spec, _sats, _n in version.heirs)
+        people = {}
+        for name, spec, _sats, n in version.heirs:
+            people.setdefault(name, {})[n] = self._spec_text(spec)
+        return " · ".join(
+            "{} {}".format(name, " + ".join(shares.get(n, "0%")
+                                            for n in range(1, count + 1)))
+            for name, shares in people.items())
 
     def _version_texts(self, version):
         """``(number, headline, second line)`` of a version row.
@@ -1136,7 +1209,15 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         if version.state == will_versions.VERSION_OTHER:
             head = _("Other transactions")
         elif version.locktime:
-            head = "{} {}".format(_("Delivery"), _delivery_text(version.locktime))
+            date = _delivery_text(version.locktime)
+            # #185 (owner's preview): "(+2 deliveries)", the texts of the
+            # date fields with a table (``deliveries.staged_field_text``).
+            more = self._deliveries_of(version) - 1
+            if more == 1:
+                date = _("{date} (+1 delivery)").format(date=date)
+            elif more > 1:
+                date = _("{date} (+{n} deliveries)").format(date=date, n=more)
+            head = "{} {}".format(_("Delivery"), date)
         else:
             head = version_state_text(version.state)
         parts = []
@@ -1152,30 +1233,44 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             parts.append(self._sent_text(version))
         return number, head, " · ".join(parts)
 
+    def _selected_now(self):
+        """The URLs of the will-executors selected now (#134, #178), or None.
+
+        ``BalWindow.selected_willexecutors``; anything that is not a set (a
+        window built another way, a test double, an error) means "no rule".
+        """
+        try:
+            selected = self.bal_window.selected_willexecutors()
+        except Exception:
+            return None
+        return selected if isinstance(selected, (set, frozenset)) else None
+
     def _sent_text(self, version):
         """"sent and verified 3 of 3 · 2 deselected" (#134).
 
         The will in force follows the rule of the will summary
         (``summary.executor_states`` with the will-executors selected now):
         a deselected will-executor that never received the will is not
-        counted, and is named after the count. The other versions are
-        history: their own counts, as built (#129).
+        counted, and is named after the count; so is (#178) an excluded one
+        (deselected after it received the will, no longer verified). The
+        other versions are history: their own counts, as built (#129).
         """
         plain = _("sent and verified {} of {}").format(
             version.executors_verified, version.executors_total)
         if version.state != will_versions.VERSION_IN_FORCE:
             return plain
-        try:
-            selected = self.bal_window.selected_willexecutors()
-        except Exception:
-            selected = None
-        if not isinstance(selected, (set, frozenset)):
+        selected = self._selected_now()
+        if selected is None:
             return plain
         will = getattr(self.bal_window, "willitems", None) or {}
         items = {wid: will[wid] for wid in version.items if wid in will}
         states = executor_states(items, selected)
-        deselected = sum(1 for st in states.values() if st == "deselected")
-        counted = [st for st in states.values() if st != "deselected"]
+        # #178: an excluded will-executor (deselected after it received the
+        # will, no longer verified) is named with the deselected ones.
+        deselected = sum(1 for st in states.values()
+                         if st in ("deselected", "excluded"))
+        counted = [st for st in states.values()
+                   if st not in ("deselected", "excluded")]
         if not deselected or not counted:
             return plain
         text = _("sent and verified {} of {}").format(
@@ -1209,7 +1304,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
                 item.setBackground(QColor(background))
         return items
 
-    def _variant_row(self, txid, item, in_force=False):
+    def _variant_row(self, txid, item, in_force=False, level=0):
         """The row of one transaction (a will-executor's copy or the backup).
 
         In columns, as the owner asked: the delivery, the txid, the
@@ -1217,7 +1312,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         will-executor" for the backup), its fee, and the status of #83, the
         whole row in the colour of its status. ``in_force``: the item is in
         force (``will_state``), so a REPLACED flag left by a later draft
-        does not make it read "Replaced" (owner, #129).
+        does not make it read "Replaced" (owner, #129). ``level``: 0 for a
+        delivery-1 copy, 1 for delivery 2, 2 for delivery 3 (#170, owner's
+        ZIP test: the whole row steps right, not only its first column).
 
         #136 (owner: the row ran off the right edge): the delivery in the
         short date style of the version rows, not bold; the txid and the
@@ -1268,9 +1365,23 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # CHANGELOG #83: what this row is for the will today, coherent with
         # its colour (where its will-executor stands); the executor and the
         # whole history are in the tooltip.
-        labels[self.Columns.STATUS] = will_status_text(item, in_force=in_force)
-        items = [QStandardItem(str(text)) for text in labels]
-        colour = QColor(status_color(item, in_force=in_force))
+        # #178: a copy of the will in force held by an excluded
+        # will-executor reads "In force, excluded", in grey.
+        excluded = in_force and is_excluded(item, getattr(self, "_selected", None))
+        labels[self.Columns.STATUS] = will_status_text(
+            item, in_force=in_force, excluded=excluded)
+        # #170 (owner): in a will in deliveries each level steps right by two
+        # digit widths in every column (the tree indents only the first
+        # one), so the steps of the chain read at a glance. Display only:
+        # the search, the tooltips and "Copy" keep the plain values.
+        step = _LEVEL_STEP * level
+        items = [QStandardItem((step if column != self.Columns.LOCKTIME and text
+                                else "") + str(text))
+                 for column, text in enumerate(labels)]
+        # The status had no copy value of its own (its text was copied).
+        full[self.Columns.STATUS] = labels[self.Columns.STATUS]
+        tips[self.Columns.STATUS] = ""
+        colour = QColor(status_color(item, in_force=in_force, excluded=excluded))
         for cell in items:
             cell.setEditable(False)
             cell.setBackground(colour)
@@ -1317,7 +1428,7 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         items[0].setData("subheader", self.ROLE_KIND)
         return items
 
-    def _add_variants(self, parent_item, wid, version, will):
+    def _add_variants(self, parent_item, wid, version, will, level=0):
         """Add the row of ``wid`` under ``parent_item``, then its instalments.
 
         Only the rows of THE version in force read "In force" (green), even
@@ -1325,7 +1436,8 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         older version still held by the will-executors keep their own
         status ("Replaced", in its colour), like the version's state:
         CHANGELOG #130, owner's ZIP test (#15 showed green "In force" rows
-        under "Replaced (still held by the will-executors)").
+        under "Replaced (still held by the will-executors)"). ``level``:
+        the depth in the chain (#170: the rows step right).
         """
         states = self.history.states if self.history is not None else {}
         current = self.history.current if self.history is not None else None
@@ -1333,10 +1445,11 @@ class PreviewList(MyTreeView, MessageBoxMixin):
             wid, will[wid],
             in_force=(version.vid == current
                       and states.get(wid) == will_state.IN_FORCE),
+            level=level,
         )
         parent_item.appendRow(row)
         for child in version.children.get(wid, []):
-            self._add_variants(row[0], child, version, will)
+            self._add_variants(row[0], child, version, will, level + 1)
 
     def _invalidation_items(self, inv):
         """The row of a paid invalidation (between the versions it ended)."""
@@ -1453,6 +1566,9 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         current = self._row_info(self.selectionModel().currentIndex())
         scroll = self.verticalScrollBar().value()
         will = self._will_items()
+        # #178: the will-executors selected now, read once per redraw for
+        # the rows of an excluded will-executor (None: no rule).
+        self._selected = self._selected_now()
         wallet = getattr(self.bal_window, "wallet", None)
         try:
             self.history = will_versions.build_history(will, wallet)
@@ -1614,6 +1730,16 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         menu.addAction(_("Export"), self.export_will)
         menu.addAction(_("Import"), self.import_will)
         menu.addAction(_("Merge"), self.merge_will)
+        # #170 (owner answer 2 of the M4 plan): the window of the deliveries,
+        # ADVANCED only: shown or hidden each time the menu opens, so it
+        # follows a change of mode. A lambda: Qt would pass "checked".
+        self.deliveries_action = menu.addAction(
+            _("Inheritance in several deliveries (Multiverse)…"),
+            lambda: self.bal_window.open_deliveries_editor())
+        # Through the class: a test host built without __init__ has the
+        # toolbar's attributes only.
+        menu.aboutToShow.connect(lambda: PreviewList._show_deliveries_action(self))
+        PreviewList._show_deliveries_action(self)
         menu.addSeparator()
         # #161 (owner): the guided route of a cold wallet is also here,
         # where the owner first looked for it (and in Electrum's Tools).
@@ -1669,9 +1795,14 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         # will-executors, after the report (a lambda: Qt passes "checked").
         menu.addAction(_("How BAL PROTOCOL works"),
                        lambda: self.bal_window.show_explainer())
+        # #173 (owner): the command trace, the last entry under its own
+        # line, in BASIC and ADVANCED alike (read-only: it cannot do harm).
+        menu.addSeparator()
+        menu.addAction(_("CLI command trace…"),
+                       lambda: self.bal_window.show_trace())
         # Toolbar order (left -> right):
         #   Wizard | Delivery time | Check Alive | fee ... Check | Calendar
-        # #161 (owner): the Check ("Verifica/Aggiorna" in Italian) on the
+        # #161 (owner): the Check ("Controlla" in Italian) on the
         # right, just before the calendar.
         # The settings widget shows its fields in ADVANCED only (#130). The
         # row takes the toolbar's free width (stretch 1), so the Wizard
@@ -1687,6 +1818,16 @@ class PreviewList(MyTreeView, MessageBoxMixin):
         self.menu = menu
         self.toolbar = toolbar
         return toolbar
+
+    def _show_deliveries_action(self):
+        """The Tools entry of the deliveries: ADVANCED only (D5, #170)."""
+        action = getattr(self, "deliveries_action", None)
+        if action is None:
+            return
+        try:
+            action.setVisible(not self.bal_window.bal_plugin.is_basic_mode())
+        except Exception as e:
+            _logger.debug(f"deliveries entry not shown: {e!r}")
 
     def _big_button(self, text, icon_path, tooltip, slot, framed=False):
         """A main toolbar command: bold name next to a larger icon.
@@ -2455,7 +2596,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(sync_btn, row, 2)
         grid.addWidget(loading_label, row, 3)
         grid.addWidget(
-            HelpButton(_("Will executor server URL (e.g. http://192.168.1.100:8080)")),
+            help_button(_("Will executor server URL (e.g. http://192.168.1.100:8080)")),
             row,
             4,
         )
@@ -2464,7 +2605,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(QLabel(_("Info")), row, 0)
         grid.addWidget(info_edit, row, 1)
         grid.addWidget(
-            HelpButton(_("A short description or name for this executor")),
+            help_button(_("A short description or name for this executor")),
             row,
             2,
         )
@@ -2473,7 +2614,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(QLabel(_("Base Fee (sats)")), row, 0)
         grid.addWidget(base_fee_spin, row, 1)
         grid.addWidget(
-            HelpButton(_("Base fee in satoshis")),
+            help_button(_("Base fee in satoshis")),
             row,
             2,
         )
@@ -2482,7 +2623,7 @@ class WillExecutorWidget(QWidget, MessageBoxMixin):
         grid.addWidget(QLabel(_("Address")), row, 0)
         grid.addWidget(address_edit, row, 1)
         grid.addWidget(
-            HelpButton(_("Bitcoin address for fee payments (optional)")),
+            help_button(_("Bitcoin address for fee payments (optional)")),
             row,
             2,
         )

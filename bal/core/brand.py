@@ -26,7 +26,9 @@ NAME_ASCII = "Ancora"
 #: "ancòra" (still) for them.
 SLOGAN = "Àncora per te, ancòra per loro."
 
-#: The colours of the logo (brand kit), used only to draw the logo itself;
-#: the colours of the plugin's interface do not change (owner, 2026-10-18).
-INK = "#101214"
-WATER = "#1AB5A3"
+#: The colours of the logo, used only to draw the logo itself; the colours of
+#: the plugin's interface do not change (owner, 2026-10-18). #199: the ink
+#: and the teal of the accents of the new logo, as they are in
+#: ``assets/brand/svg/ancora-lockup.svg``.
+INK = "#0D0E12"
+WATER = "#1DAA9B"

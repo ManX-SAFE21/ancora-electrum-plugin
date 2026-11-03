@@ -26,16 +26,31 @@ Owner decisions (#158):
   2 of 2), as before;
 * after a merge the owner is told what came in (:func:`merge_summary`).
 
+#210 (owner): the rules above trusted the transaction in the file. A file
+with redirected outputs replaced the will's copy, and a false signature made
+"2 of 2". Now :func:`merge_will` refuses such a file whole (:class:`MergeRefusedError`)
+and the will stays as it was.
+
+#224 (owner): the statuses sent / verified / in the mempool / confirmed
+came from the file too. A file saying "sent" (old, damaged or altered)
+made the first Check send nothing and end "All done: Ok"; one saying "in
+the mempool" lost the signatures just brought back. Only this computer
+knows them (it sends, it asks the will-executors, it reads the chain): a
+merge never takes them from the file, the Check finds them.
+
 No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 """
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.checkalive import resolve_date_to_check
 from ..core.util import Util
 from ..core.will import Will
+from ..i18n import _
 
 __all__ = [
+    "MergeRefusedError",
     "MergeSummary",
     "local_validity_pass",
     "merge_items",
@@ -45,9 +60,14 @@ __all__ = [
 
 _logger = get_logger(__name__)
 
-# The statuses a merged copy takes from the file when the file has them.
-# COMPLETE is not here on purpose: it follows the transaction (#158).
-_CARRIED = ("PUSHED", "CHECKED", "MEMPOOL", "CONFIRMED")
+# The statuses a merge never takes from the file (#224): only this
+# computer knows them, the Check sets them (sent, verified by the
+# will-executor, seen on the chain). COMPLETE follows the transaction (#158).
+_LOCAL_ONLY = ("PUSHED", "CHECKED", "MEMPOOL", "CONFIRMED")
+
+
+class MergeRefusedError(Exception):
+    """A will file was not merged; the text says why, for the user (#210)."""
 
 
 def _is_complete(tx):
@@ -70,19 +90,37 @@ def _signed_count_full(wi):
         wi.sigs_have = required
 
 
+def _drop_local_only(wid, wi):
+    """Clear on the new copy *wi* the statuses only this computer knows (#224).
+
+    Also its ``checked_time``: a time read from a file would put off the
+    next verification (#182).
+    """
+    dropped = [status for status in _LOCAL_ONLY if wi.get_status(status)]
+    for status in dropped:
+        wi.set_status(status, False)
+    wi.checked_time = None
+    if dropped:
+        # WHY: the file said so; the Check will find out (#224).
+        _logger.info(f"merge: {wid} statuses from the file not taken: {dropped}")
+
+
 def merge_items(willitems, imported):
     """Merge the copies *imported* into *willitems* (the rules, no check).
 
     For a copy already in the will, the live item is kept (never
-    replaced): it takes the statuses sent / verified / in the mempool /
-    confirmed that the imported copy has. When the live copy is not signed
+    replaced) with its own statuses: sent / verified / in the mempool /
+    confirmed never come from the file (#224). When the live copy is not signed
     yet, the imported transaction is merged into it (the signatures are
     combined when both are the same transaction, otherwise the transaction
     is replaced); a signed live copy is left as it is. It becomes signed
     only when the resulting transaction is complete.
 
     A new copy is added as it is, except that "signed" is dropped when its
-    transaction is not complete.
+    transaction is not complete, and sent / verified / in the mempool /
+    confirmed (with the time of the verification) are dropped (#224): the
+    next Check sends it, and a will-executor that already has it answers
+    "already present" (counted as received, #213).
 
     Returns the ids of *imported*, in order.
     """
@@ -90,9 +128,6 @@ def merge_items(willitems, imported):
         if wid in willitems:
             live = willitems[wid]
             was_complete = live.get_status("COMPLETE")
-            for status in _CARRIED:
-                if wi.get_status(status):
-                    live.set_status(status, True)
             if not was_complete:
                 try:
                     if live.tx.txid() == wi.tx.txid():
@@ -110,6 +145,7 @@ def merge_items(willitems, imported):
                 # WHY: the file says signed, the transaction is not (#158).
                 _logger.info(f"merge: {wid} is marked signed but is not")
                 wi.set_status("COMPLETE", False)
+            _drop_local_only(wid, wi)
             if wi.get_status("COMPLETE"):
                 _signed_count_full(wi)
             willitems[wid] = wi
@@ -146,7 +182,23 @@ def merge_will(host, imported):
     after the merge and again after the check. Returns
     ``(ids, error)``: the merged ids and the error of the check, if any
     (the merge itself is kept).
+
+    #173: the command trace gets ``bal_will_import_merge`` with how many
+    copies, then the outcome.
+
+    #210: raises :class:`MergeRefusedError` before touching anything when the file
+    has a problem (:func:`bal.engine.offline_sign.merge_problems`).
     """
+    trace.command("bal_will_import_merge", _("{} copies").format(_count(imported)))
+    # Here, not at the top: offline_sign imports sign, which imports this module.
+    from . import offline_sign
+
+    problems = offline_sign.merge_problems(host.wallet, host.willitems, imported)
+    if problems:
+        header = _("The will file was not merged, nothing changed:")
+        trace.add(trace.ERROR, header)
+        raise MergeRefusedError(
+            "\n".join([header] + offline_sign.problem_lines(problems)))
     if getattr(host, "date_to_check", None) is None:
         host.date_to_check = resolve_date_to_check(
             host.bal_plugin.is_basic_mode(), host.will_settings
@@ -166,7 +218,20 @@ def merge_will(host, imported):
         _logger.error(f"merge: validity check failed: {e!r}")
         error = e
     host.save_willitems()
+    if error is None:
+        trace.add(trace.OK, _("{} copies merged").format(_count(ids)))
+    else:
+        trace.add(trace.WARNING, _("{count} copies merged, check failed: {reason}").format(
+            count=_count(ids), reason=trace.reason(error)))
     return ids, error
+
+
+def _count(items):
+    """How many *items* there are, for the trace; ``"?"`` when unknown (#173)."""
+    try:
+        return len(items)
+    except TypeError:
+        return "?"
 
 
 class MergeSummary:

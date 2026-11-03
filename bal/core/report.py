@@ -33,6 +33,7 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from ..i18n import N_, _, number_separators
+from . import delivery as core_delivery
 from . import future as core_future
 from . import will_versions
 from .heirs import HEIR_ADDRESS, is_op_return_address, message_text
@@ -49,6 +50,8 @@ _EXECUTOR_TEXTS = {
     "failed": N_("not received"),
     # #134: a deselected will-executor that never received the will.
     "deselected": N_("deselected: not sent"),
+    # #178: excluded after it received the will; the Check no longer asks it.
+    "excluded": N_("excluded: has the will, no longer verified"),
 }
 
 # The reserved name prefix of the will-executor pseudo-heirs (their fee
@@ -215,7 +218,8 @@ def _levels(version):
 
 
 def _addresses(items):
-    """``{heir name: address}`` of the heirs of ``items`` (people only)."""
+    """``{heir name: address}`` of the heirs of ``items`` (people only; the
+    rows of later deliveries under the person's name, #168)."""
     out = {}
     for item in items:
         for name, heir in (getattr(item, "heirs", None) or {}).items():
@@ -226,7 +230,8 @@ def _addresses(items):
             except (TypeError, IndexError):
                 continue
             if address and not is_op_return_address(address):
-                out.setdefault(str(name), address)
+                # #168: by person (the rows "Luca§2"... are Luca's).
+                out.setdefault(core_delivery.person_name(name), address)
     return out
 
 
@@ -284,7 +289,7 @@ def _tx_order(tx):
 def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
                 wallet_name="", plugin_version="", electrum_version="",
                 still_active=None, now=None, created=None, warn_months=None,
-                selected=None):
+                selected=None, held=None):
     """The :class:`WillReport` of the wallet's will (see the module docstring).
 
     ``heirs``: the Heirs tab (only its size, for the summary); ``now``: the
@@ -292,6 +297,9 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
     printed as "Created on" (default: now, local); ``selected``: the URLs of
     the will-executors selected now (#134, ``summary.selected_urls``): a
     deselected one that never received the will is "deselected: not sent".
+    ``held`` (#190, ``engine.context.excluded_holders``): the will-executors
+    not selected that hold a copy of the will in force; the summary's note
+    (``held_text``) is printed under the state box.
     Raises what the data raises: the GUI catches it and says the report
     could not be prepared.
     """
@@ -300,6 +308,7 @@ def will_report(willitems, heirs, will_settings, is_basic_mode, *, wallet=None,
     summary = will_summary(
         willitems, len(heirs or {}), will_settings, is_basic_mode, now=now,
         still_active=still_active, warn_months=warn_months, selected=selected,
+        held=held,
         # #135: the will in force by the one rule of the Will tab.
         in_force=will_versions.in_force_delivery(history, will),
     ) or {}
@@ -355,10 +364,12 @@ def report_block_reason(summary, willitems=None, selected=None):
     to be verified"). A will with only a backup transaction (no
     will-executor) is allowed once signed, and the report says that nobody
     else holds it. ``selected`` (#134): a deselected will-executor that never
-    received the will is not required.
+    received the will is not required; nor (#178) an excluded one, which
+    the Check no longer asks (the report would stay locked for ever).
     """
     states = executor_states(Will.only_valid_list(willitems or {}), selected)
-    verified = all(state in ("verified", "deselected") for state in states.values())
+    verified = all(state in ("verified", "deselected", "excluded")
+                   for state in states.values())
     if summary and summary.get("state") == "ok" and verified:
         return None
     return _(

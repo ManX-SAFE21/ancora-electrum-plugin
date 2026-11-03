@@ -46,7 +46,8 @@ from electrum.util import (
 )
 
 from ..i18n import N_, _
-from . import will_state
+from . import delivery, futures, will_state
+from .delivery import instalment_number
 from .heirs import WillExecutorFeeTooHighException, address_key, is_op_return_address
 from .util import Util, copy_structure
 from .willexecutors import Willexecutors
@@ -60,6 +61,13 @@ MIN_BLOCK = 1
 # deliberately high rate reserved for inheritance txs that may be broadcast
 # years from now. 2 blocks is Electrum's own default target (owner decision).
 INVALIDATION_FEE_ETA_BLOCKS = 2
+# #182 (owner, 2026-10-22): the Check asks the will-executors again for the
+# copies they already confirmed: one may lose a copy (a server rebuilt) or
+# close, and "verified" must not stay true for years. A will in several
+# deliveries has many copies per will-executor (13 with three dates): asked
+# again at most once a day, so a Check stays quick and the servers do not
+# answer 429. A will with one delivery: at every Check (period 0).
+REVERIFY_SECONDS_MULTI = 24 * 60 * 60
 _logger = get_logger(__name__)
 
 
@@ -129,6 +137,62 @@ class Will:
         )
 
     @staticmethod
+    def now_seconds():
+        """Now, in seconds since the epoch (#182).
+
+        Read through this module's ``datetime`` so the tests' clock
+        (``tests/flowkit.py`` ``install_clock``) applies.
+        """
+        return datetime.now(timezone.utc).timestamp()
+
+    @staticmethod
+    def reverify_period(willitems):
+        """How old a verification may be before the Check asks again (#182).
+
+        :data:`REVERIFY_SECONDS_MULTI` (one day) when the copies sent to the
+        will-executors (VALID, sent) carry more than one date: a will in
+        several deliveries. Otherwise 0: a will with one delivery is asked
+        again at every Check (owner, basic and advanced mode alike).
+        """
+        dates = {
+            w.tx.locktime for w in willitems.values()
+            if w.get_status("VALID") and w.we and w.get_status("PUSHED")
+        }
+        return REVERIFY_SECONDS_MULTI if len(dates) > 1 else 0
+
+    @staticmethod
+    def needs_reverify(w, now, period):
+        """True when the verified copy ``w`` is to be asked again (#182).
+
+        VALID, sent and verified, and its verification (``checked_time``) is
+        at least ``period`` seconds old at ``now``, or of unknown time (a copy
+        verified before #182). Never a copy not verified yet: that is
+        :meth:`needs_server_check`.
+        """
+        if not (w.get_status("VALID") and w.we and w.get_status("PUSHED")
+                and w.get_status("CHECKED")):
+            return False
+        checked = getattr(w, "checked_time", None)
+        return checked is None or now - checked >= period
+
+    @staticmethod
+    def last_verified(willitems, url=None):
+        """When the oldest verification of the will was made (#182), or None.
+
+        Over the VALID verified copies (only those of ``url`` when given);
+        None when there is none, or one has no time (verified before #182):
+        the date shown is then left out rather than made up.
+        """
+        times = [
+            getattr(w, "checked_time", None) for w in willitems.values()
+            if w.get_status("VALID") and w.we and w.get_status("CHECKED")
+            and (url is None or w.we.get("url") == url)
+        ]
+        if not times or any(t is None for t in times):
+            return None
+        return min(times)
+
+    @staticmethod
     def get_tx_from_any(x):
         try:
             a = str(x)
@@ -140,6 +204,23 @@ class Will:
         return x
 
     @staticmethod
+    def set_input_coin(txin, output):
+        """Tell the input *txin* that it spends *output*: value, address, script.
+
+        For a coin of the will itself, not on the blockchain yet (a later
+        delivery spends the change of the one before).
+        """
+        txin._trusted_value_sats = output.value
+        try:
+            txin.script_descriptor = output.script_descriptor
+        except Exception:
+            pass
+        txin.is_mine = True
+        txin._TxInput__address = output.address
+        txin._TxInput__scriptpubkey = output.scriptpubkey
+        txin._TxInput__value_sats = output.value
+
+    @staticmethod
     def add_info_from_will(will, wid, wallet):
         if isinstance(will[wid].tx, str):
             will[wid].tx = Will.get_tx_from_any(will[wid].tx)
@@ -148,20 +229,25 @@ class Will:
         for txin in will[wid].tx.inputs():
             txid = txin.prevout.txid.hex()
             if txid in will:
-                change = will[txid].tx.outputs()[txin.prevout.out_idx]
-                txin._trusted_value_sats = change.value
-                try:
-                    txin.script_descriptor = change.script_descriptor
-                except Exception:
-                    pass
-                txin.is_mine = True
-                txin._TxInput__address = change.address
-                txin._TxInput__scriptpubkey = change.scriptpubkey
-                txin._TxInput__value_sats = change.value
-                txin._trusted_value_sats = change.value
+                Will.set_input_coin(txin, will[txid].tx.outputs()[txin.prevout.out_idx])
 
     @staticmethod
     def normalize_will(will, wallet=None, others_inputs=None):
+        """Check every item of ``will`` on independent copies.
+
+        Each item is completed with the wallet and with the will itself
+        (``add_info_from_will``: an input that spends another item's
+        output gets that output's address, value and script), then copied.
+
+        CHANGELOG #177: the copy re-parses the transaction, so an input
+        that spends another unsigned item of the will (a later delivery
+        spending the change of the one before) lost that information
+        again, Electrum could not compute the copy's txid, and every build
+        of a will with more delivery dates logged five ERROR lines "txid is
+        none" per later delivery. The copies are now completed from the
+        will of copies too. A txid that still cannot be computed is logged
+        in one WARNING line.
+        """
         others_input = others_inputs if others_inputs is not None else {}
         to_delete = []
         to_add = {}
@@ -171,18 +257,17 @@ class Will:
             Will.add_info_from_will(will, wid, wallet)
             willitems[wid] = WillItem(will[wid], wallet=wallet)
         will = willitems
+        for wid in will:
+            Will.add_info_from_will(will, wid, wallet)
         errors = {}
         for wid in will:
 
             txid = will[wid].tx.txid()
 
             if txid is None:
-                _logger.error("##########")
-                _logger.error(wid)
-                _logger.error(will[wid])
-                _logger.error(will[wid].tx.to_json())
-
-                _logger.error("txid is none")
+                _logger.warning(
+                    f"normalize_will: the txid of {wid} cannot be computed "
+                    f"(an input without its previous output's data)")
                 will[wid].set_status("ERROR", True)
                 errors[wid] = will[wid]
                 continue
@@ -252,12 +337,21 @@ class Will:
                             # (Without a will-executor BAL already anticipated
                             # here, on the changed amounts: see below.)
                             return anticipate
+                    elif Will.covers_more_coins(ow, nw):
+                        # #215: the same risk with another will-executor. The
+                        # old one still holds its copy: if it broadcasts first,
+                        # the new copies die and the new coins reach no heir.
+                        return anticipate
                 else:
                     if nw.we == ow.we:
                         if not Util.cmp_heirs_by_values(ow.heirs, nw.heirs, [0, 3]):
                             return anticipate
                         else:
                             return ow.tx.locktime
+                    elif Will.covers_more_coins(ow, nw):
+                        # #215: same risk, a will-executor against a backup
+                        # transaction the owner keeps.
+                        return anticipate
                     else:
                         return ow.tx.locktime
             else:
@@ -279,10 +373,12 @@ class Will:
         a new will with the old coins plus the new ones, dated like the old
         one (or later), and both stayed VALID. At the delivery date both can
         be executed; if the old one is mined the new coins never reach the
-        heirs. Returns the URL of the first executor in that state (the
-        caller then rebuilds: the new will is dated one day earlier), or
-        ``None``. Items without a will-executor are left out: BAL already
-        dates them earlier when the amounts change. Read-only.
+        heirs. #215: the new will can be held by another will-executor, or be
+        a backup transaction. Returns the URL of the first executor in that
+        state (the caller then rebuilds: the new will is dated one day
+        earlier), or ``None``. An old item without a will-executor is left
+        out: BAL already dates the new one earlier when the amounts change.
+        Read-only.
         """
         valid = [w for w in will.values() if w.get_status("VALID")]
         for old in valid:
@@ -290,7 +386,7 @@ class Will:
             if not url:
                 continue
             for new in valid:
-                if new is old or (new.we or {}).get("url") != url:
+                if new is old:
                     continue
                 if Will.covers_more_coins(old, new) and int(old.tx.locktime) <= int(
                     new.tx.locktime
@@ -408,6 +504,461 @@ class Will:
         if redo:
 
             Will.search_anticipate_rec(will, old_inputs)
+
+    # ------------------------------------------------------------------ #
+    # Chains of wills (multiverse): one explicit dating pass (#166)
+    # ------------------------------------------------------------------ #
+    #: How many times one generation of a chain may be dated again before
+    #: the pass gives up (each pass only moves locktimes EARLIER, so a few
+    #: passes always settle a real will; the guard stops a loop on data that
+    #: cannot be settled).
+    CHAIN_MAX_PASSES = 20
+
+    @staticmethod
+    def chain_links(will):
+        """The parent links of a freshly built ``will``: a list of
+        ``(child, txin, parent, out_idx)`` (CHANGELOG #166).
+
+        One entry for every input whose previous transaction is an item of
+        ``will`` (the multiverse instalments: each later delivery spends the
+        change of the one before). Read once, while the keys are still the
+        txids the build gave (``bal/core/heirs.py``), and kept by OBJECT:
+        the item and the input themselves, never an index, because the
+        relink below re-sorts the inputs. A will with one delivery date has
+        no link: ``[]``.
+
+        Raises :class:`WillChainError` for an input that spends its own
+        item, or an output its parent does not have.
+        """
+        links = []
+        for key, item in will.items():
+            for txin in item.tx.inputs():
+                ptxid = txin.prevout.txid.hex()
+                if ptxid not in will:
+                    continue
+                parent = will[ptxid]
+                if parent is item or ptxid == key:
+                    raise WillChainError(
+                        "chain: transaction {} spends its own output".format(key[:8]))
+                idx = txin.prevout.out_idx
+                if idx >= len(parent.tx.outputs()):
+                    raise WillChainError(
+                        "chain: transaction {} spends output {} that {} does not "
+                        "have".format(key[:8], idx, ptxid[:8]))
+                links.append((item, txin, parent, idx))
+        return links
+
+    @staticmethod
+    def _fill_chain_input(txin, parent_out):
+        """Give the chain input ``txin`` the data of the output it spends.
+
+        The same fields :meth:`add_info_from_will` writes, in memory only:
+        the build's re-parse (``WillItem`` from the PSBT text) drops them for
+        an input whose previous transaction is not in the wallet, and
+        without them Electrum cannot compute the txid of an unsigned
+        transaction (``Transaction.txid`` returns None). Nothing new is
+        written into the stored PSBT.
+        """
+        txin._trusted_value_sats = parent_out.value
+        try:
+            txin.script_descriptor = parent_out.script_descriptor
+        except Exception:
+            pass
+        txin.is_mine = True
+        txin._TxInput__address = parent_out.address
+        txin._TxInput__scriptpubkey = parent_out.scriptpubkey
+        txin._TxInput__value_sats = parent_out.value
+
+    @staticmethod
+    def _relink(child, txin, parent, idx):
+        """Point ``txin`` of ``child`` at the CURRENT txid of ``parent``.
+
+        WHY in place: the input keeps its sequence number and every other
+        field, so a relinked child is the transaction a fresh build of the
+        same chain would give (the #122 reuse and the "second Check is
+        clean" rule need that). The inputs are then sorted as Electrum's
+        ``PartialTransaction.from_io`` sorts them (BIP69), which also clears
+        the cached txid. A previous transaction attached to the input is
+        dropped when it is not the new parent (Electrum refuses an input
+        whose ``utxo`` has another txid). Returns True when the input moved.
+        """
+        ptxid = parent.tx.txid()
+        if ptxid is None:
+            raise WillChainError(
+                "chain: the txid of {} cannot be computed".format(
+                    (parent._id or "?")[:8]))
+        if txin.prevout.txid.hex() == ptxid and txin.prevout.out_idx == idx:
+            return False
+        utxo = getattr(txin, "_utxo", None)
+        if utxo is not None and utxo.txid() != ptxid:
+            txin._utxo = None
+        txin.prevout = TxOutpoint(txid=bfh(ptxid), out_idx=idx)
+        Will._fill_chain_input(txin, parent.tx.outputs()[idx])
+        child.tx.BIP69_sort(outputs=False)
+        return True
+
+    @staticmethod
+    def _real_heir_amounts(item):
+        """``{(address, amount)}`` the item really pays its heirs (#166).
+
+        Only the real amounts (index 3, an int) of the heirs that are not
+        the will-executor pseudo-heirs; the DUST rows and stored errors are
+        left out.
+        """
+        out = set()
+        for name, heir in (item.heirs or {}).items():
+            if str(name).startswith('w!ll3x3c"'):
+                continue
+            try:
+                amount = heir[3]
+            except (IndexError, TypeError):
+                continue
+            if isinstance(amount, int) and not isinstance(amount, bool):
+                out.add((str(heir[0]), amount))
+        return out
+
+    @staticmethod
+    def _same_url(a, b):
+        """True when items ``a`` and ``b`` are for the same will-executor
+        (both with one and the same URL, or both without: the backup)."""
+        return (a.we or {}).get("url") == (b.we or {}).get("url")
+
+    @staticmethod
+    def _chain_set_anticipate(item, ow):
+        """Date the new chain item ``item`` against the old item ``ow``.
+
+        Today's rule first (:meth:`WillItem.set_anticipate`, which applies
+        :meth:`check_anticipate`). Then the multiverse rule of #166 (owner
+        decision D6: changing the deliveries while a will is in force gives
+        a new will one day earlier): for the same will-executor, when the
+        heirs' REAL amounts differ, one day before ``ow``. WHY: in a chain a
+        share of a later delivery changes the amounts paid by the earlier
+        ones (the percentages are shared out over every later delivery),
+        while the heir rows they carry stay the same, so
+        :meth:`check_anticipate` keeps the old date and the old and the new
+        transaction could both be executed on the same coins on the same
+        day. Returns True when the locktime moved.
+        """
+        moved = item.set_anticipate(ow)
+        if (
+            Will._same_url(item, ow)
+            and Will._real_heir_amounts(item) != Will._real_heir_amounts(ow)
+        ):
+            earlier = int(Util.anticipate_locktime(ow.tx.locktime, days=1))
+            if int(item.tx.locktime) > earlier:
+                item.tx.locktime = earlier
+                moved = True
+        return moved
+
+    @staticmethod
+    def _chain_generations(will, links):
+        """``{id(item): n}``: 0 for the first delivery, 1 for the items
+        spending its change, and so on. Raises :class:`WillChainError` on a
+        loop."""
+        parents = {}
+        for child, _txin, parent, _idx in links:
+            parents.setdefault(id(child), []).append(parent)
+        gen = {}
+
+        def depth(item, seen):
+            """The generation of ``item`` (``seen``: the path, for loops)."""
+            key = id(item)
+            if key in gen:
+                return gen[key]
+            if key in seen:
+                raise WillChainError("chain: a loop between the transactions")
+            seen.add(key)
+            ps = parents.get(key, [])
+            value = 0 if not ps else 1 + max(depth(p, seen) for p in ps)
+            gen[key] = value
+            return value
+
+        for item in will.values():
+            depth(item, set())
+        return gen
+
+    @staticmethod
+    def date_chain(new_will, links, references, old_will):
+        """Date and relink a freshly built CHAIN against the will in force.
+
+        CHANGELOG #166. Used by :meth:`update_will` instead of
+        :meth:`search_anticipate_rec` when the new will has delivery
+        instalments (``links`` from :meth:`chain_links` not empty). The old
+        relinking (``change_input`` over the dict, by keys) pointed every
+        child at its own txid and left stale keys: every rebuild of a chain
+        that moved a date failed or saved a broken will.
+
+        ``new_will``: ``{txid: WillItem}`` of the build, changed in place;
+        ``references``: the items the new will is dated against
+        (:meth:`anticipation_references`); ``old_will``: the will so far.
+
+        1. Every chain input gets the data of the output it spends, so each
+           item's txid can be computed (and equals its key).
+        2. Generation by generation (first delivery, then the next...):
+           the children are pointed at their parents' FINAL txids, then the
+           generation is dated to a fixed point with today's rules
+           (:meth:`WillItem.set_anticipate`) plus the rule of
+           :meth:`_chain_set_anticipate`. The first delivery is dated against
+           the old items that spend the same coins; a later one only against
+           old items that spend the same parent output (an old child of a
+           parent kept unchanged): when its parent changed, the new parent,
+           dated earlier, already makes the old one and its children
+           unexecutable.
+        3. Checks that refuse the will (:class:`WillChainError`, nothing is
+           changed in the will in force) instead of saving a chain that
+           could be executed wrongly: see :meth:`_check_chain`.
+        4. The dict is re-keyed once by the final txids, in the same order
+           (parents before children), and each item's ``_id`` follows.
+
+        #187 (owner's study of 2026-10-24, R-1): after the first delivery is
+        dated, :meth:`_pre_empt_whole_chain`: when the rebuild does not keep
+        every VALID copy of the will in force as it is, the first delivery
+        is dated one day before the earliest first delivery in force, of
+        ANY will-executor (also one excluded or removed, whose copies cannot
+        be recalled), so the whole old tree dies when the new first delivery
+        is mined; the later deliveries are then dated on the new parents.
+        Before, a change of delivery 3 kept deliveries 1 and 2 (same txids)
+        and the copies of a will-executor no longer selected kept old
+        subtrees nothing pre-empted. Then :meth:`_check_futures`: every
+        possible future of the will in force plus the new chain must pay
+        the new plan, else the chain is refused (the safety net).
+        """
+        for _child, txin, parent, idx in links:
+            Will._fill_chain_input(txin, parent.tx.outputs()[idx])
+        for key, item in new_will.items():
+            if item.tx.txid() is None or item.tx.txid() != key:
+                raise WillChainError(
+                    "chain: transaction {} has no computable txid".format(key[:8]))
+        gen = Will._chain_generations(new_will, links)
+        link_parent_outputs = {id(txin) for _c, txin, _p, _i in links}
+        ref_inputs = Will.get_all_inputs(references)
+        items = list(new_will.values())
+        for g in range(max(gen.values()) + 1):
+            for child, txin, parent, idx in links:
+                if gen[id(child)] == g:
+                    Will._relink(child, txin, parent, idx)
+            members = [it for it in items if gen[id(it)] == g]
+            for _pass in range(Will.CHAIN_MAX_PASSES):
+                if not Will._date_chain_pass(
+                    new_will, members, ref_inputs, link_parent_outputs, g
+                ):
+                    break
+            else:
+                raise WillChainError("chain: the delivery dates do not settle")
+            if g == 0:
+                # #187: the parents' txids may change here; the children
+                # are relinked to them at the next generation.
+                Will._pre_empt_whole_chain(items, gen, references, old_will, links)
+        Will._check_chain(new_will, links, references, old_will, ref_inputs,
+                          link_parent_outputs, gen)
+        Will._check_futures(items, gen, references)
+        new_will.clear()
+        for item in items:
+            txid = item.tx.txid()
+            if txid is None or txid in new_will:
+                raise WillChainError("chain: two transactions with one txid")
+            item._id = txid
+            new_will[txid] = item
+
+    @staticmethod
+    def _pre_empt_whole_chain(items, gen, references, old_will, links):
+        """Date the first delivery of the new chain one day before the
+        earliest first delivery in force when the rebuild changes anything
+        of the will in force (#187, rule 1). Returns True when it moved.
+
+        ``items``: the new chain (dated at generation 0); ``gen``: their
+        generations; ``references``: the items the chain is dated against
+        (the will in force and the partially signed copies); ``old_will``:
+        the will so far; ``links``: the chain links (:meth:`chain_links`),
+        so the children are first pointed at their parents' CURRENT txids
+        (second review of #187: read as the build set them, a first
+        delivery moved by its dating pass made every later copy look new,
+        a day lost for nothing when the stored date lags the one in force). "Changes anything": a VALID reference that
+        somebody HOLDS (received by its will-executor, :meth:`received`, or
+        the backup copy without one, given to the heirs) whose txid is not
+        among the new chain's txids (a copy that is not kept as it is: other
+        shares, another date, a will-executor no longer selected). A copy
+        never received (a sending that failed, #141; a partial signature)
+        exists only in this wallet: nothing to pre-empt, it is simply
+        redone (independent review of #187); so is a copy under it (a
+        received copy of delivery 2 spending the output of a first delivery
+        nobody received can never be mined: :meth:`_held_branch`). A
+        will-executor added later
+        keeps every copy in force: nothing moves, as with one date; with a
+        will-executor excluded or removed that still holds copies, any
+        later change (a will-executor added too) redates the chain: those
+        copies cannot be recalled, the new first delivery pre-empts them.
+        The first deliveries in force are the references that spend no
+        output of the will (the copies of any will-executor, the backup copy
+        too); a first delivery already dated earlier stays.
+        """
+        for g in range(1, max(gen.values()) + 1):
+            for child, txin, parent, idx in links:
+                if gen[id(child)] == g:
+                    Will._relink(child, txin, parent, idx)
+        new_ids = {it.tx.txid() for it in items}
+        kept = all(
+            r.tx.txid() in new_ids
+            for r in references.values()
+            if r.get_status("VALID") and Will._held_branch(r, references)
+        )
+        if kept:
+            return False
+        roots = []
+        for r in references.values():
+            spent = futures.spent_ids(r)
+            if spent is not None and not (spent & set(old_will)):
+                roots.append(int(r.tx.locktime))
+        if not roots:
+            return False
+        target = int(Util.anticipate_locktime(min(roots), days=1))
+        moved = False
+        for item in items:
+            if gen[id(item)] == 0 and int(item.tx.locktime) > target:
+                item.tx.locktime = target
+                moved = True
+        if moved:
+            _logger.info(
+                "chain: the will in force changes, the first delivery is dated "
+                "one day before the earliest one in force (#187)")
+        return moved
+
+    @staticmethod
+    def _held_branch(item, references):
+        """True when somebody holds ``item`` and every copy it hangs on
+        (#187): received by its will-executor (:meth:`received`) or the
+        backup copy without one, and so is each parent in ``references``
+        (the copy whose output it spends), up to the wallet's coins. A
+        branch broken by a copy nobody received can never be mined. A
+        loop or an unreadable transaction counts as not held."""
+        by_id = {}
+        for r in references.values():
+            txid = r.tx.txid()
+            if txid:
+                by_id[txid] = r
+        seen = set()
+        node = item
+        while True:
+            if not (Will.received(node) or not node.we):
+                return False
+            spent = futures.spent_ids(node)
+            if spent is None:
+                return False
+            parents = [by_id[p] for p in spent if p in by_id]
+            if not parents:
+                return True
+            if len(parents) > 1 or id(parents[0]) in seen:
+                return False
+            seen.add(id(node))
+            node = parents[0]
+
+    @staticmethod
+    def _check_futures(items, gen, references):
+        """Refuse the chain when a possible future of the will in force
+        plus the new chain would pay another plan (#187, rule 2: the safety
+        net of :meth:`_pre_empt_whole_chain`; :mod:`bal.core.futures`).
+        Raises :class:`WillChainError`."""
+        combined = {}
+        for r in references.values():
+            txid = r.tx.txid()
+            if txid:
+                combined[txid] = r
+        plan = {}
+        for item in items:
+            combined[item.tx.txid()] = item
+            plan.setdefault(gen[id(item)], futures.rows_paid(item.heirs))
+        levels = [plan[g] for g in sorted(plan)]
+        off = futures.futures_off_plan(combined, levels)
+        if off:
+            raise WillChainError(
+                "chain: a possible future would pay another plan ({} of {}: {})".format(
+                    len(off), len(futures.possible_futures(combined)),
+                    futures.future_text(off[0], combined)))
+
+    @staticmethod
+    def _date_chain_pass(new_will, members, ref_inputs, link_parent_outputs, g):
+        """One dating pass over the generation ``members`` (see
+        :meth:`date_chain`, step 2). Returns True when a locktime moved."""
+        moved = False
+        new_inputs = Will.get_all_inputs(new_will, only_valid=True)
+        for item in members:
+            for txin in item.tx.inputs():
+                prevout = txin.prevout.to_str()
+                for _wid, other, _i in new_inputs.get(prevout, []):
+                    if other is not item and item.set_anticipate(other):
+                        moved = True
+                if g > 0 and id(txin) not in link_parent_outputs:
+                    # A later delivery is dated only through its parent's
+                    # output (see date_chain, step 2).
+                    continue
+                for _wid, old, _i in ref_inputs.get(prevout, []):
+                    if Will._chain_set_anticipate(item, old):
+                        moved = True
+        return moved
+
+    @staticmethod
+    def _check_chain(new_will, links, references, old_will, ref_inputs,
+                     link_parent_outputs, gen):
+        """Refuse a chain that could be executed wrongly (#166).
+
+        Raises :class:`WillChainError` when:
+
+        * a link does not point at its parent's txid and output, or the
+          input's amount is not that output's amount;
+        * a later delivery is not dated strictly after the one it spends
+          (the will-executors would broadcast it before its parent exists,
+          and they never try again);
+        * a transaction of the will in force that starts a chain (it spends
+          only wallet coins) is for a will-executor that gets new
+          transactions, and none of its new first deliveries spends one of
+          its coins with an earlier date: it would stay executable together
+          with the new will. Since #166 the first delivery spends every coin
+          (``heirs.prepare_transactions``), so this is a safety net;
+        * a new transaction and an old one of the same will-executor share
+          a coin, pay other amounts to the heirs and the new one is not
+          dated earlier.
+        """
+        for child, txin, parent, idx in links:
+            if (txin.prevout.txid.hex() != parent.tx.txid()
+                    or txin.prevout.out_idx != idx):
+                raise WillChainError("chain: an instalment is not linked to its parent")
+            if txin.value_sats() != parent.tx.outputs()[idx].value:
+                raise WillChainError("chain: an instalment spends a wrong amount")
+            if int(child.tx.locktime) <= int(parent.tx.locktime):
+                raise WillChainError(
+                    "chain: a later delivery is not dated after the one before")
+        new_keys = {item.tx.txid() for item in new_will.values()}
+        firsts = [it for it in new_will.values() if gen[id(it)] == 0]
+        for _oid, old in references.items():
+            spends_will = any(
+                i.prevout.txid.hex() in old_will for i in old.tx.inputs())
+            if spends_will or old.tx.txid() in new_keys:
+                continue
+            same = [n for n in firsts if Will._same_url(n, old)]
+            if not same:
+                continue
+            if not any(
+                Will._shares_coins(n, old) and int(n.tx.locktime) < int(old.tx.locktime)
+                for n in same
+            ):
+                raise WillChainError(
+                    "chain: the will in force would stay executable "
+                    "together with the new one")
+        for item in new_will.values():
+            g = gen[id(item)]
+            for txin in item.tx.inputs():
+                if g > 0 and id(txin) not in link_parent_outputs:
+                    continue
+                for _wid, old, _i in ref_inputs.get(txin.prevout.to_str(), []):
+                    if (
+                        Will._same_url(item, old)
+                        and old.tx.txid() != item.tx.txid()
+                        and int(item.tx.locktime) >= int(old.tx.locktime)
+                        and Will._real_heir_amounts(item) != Will._real_heir_amounts(old)
+                    ):
+                        raise WillChainError(
+                            "chain: an old and a new transaction would be "
+                            "executable together")
 
     @staticmethod
     def wallet_synced(wallet):
@@ -574,7 +1125,10 @@ class Will:
            then ``search_anticipate_rec`` and ``normalize_will``). A sent
            item that an unsigned draft had marked REPLACED is still in force
            (the will-executors hold it), so a new will is never dated after
-           it.
+           it. A will with delivery instalments (multiverse) is dated by
+           :meth:`date_chain` instead of ``search_anticipate_rec`` (CHANGELOG
+           #166); it may raise :class:`WillChainError`. NB ``normalize_will``
+           works on copies: it does not date the caller's items.
         3. A new transaction with the txid of a VALID old item is the SAME
            transaction (the txid covers inputs, outputs and locktime, not
            the signatures), so (CHANGELOG #122):
@@ -613,7 +1167,13 @@ class Will:
         references = Will.anticipation_references(old_will, in_force)
         # check if the new input is already spent by a transaction of the
         # will in force: if it is, use the same locktime, or anticipate.
-        Will.search_anticipate_rec(new_will, Will.get_all_inputs(references))
+        # CHANGELOG #166: a will with delivery instalments (multiverse) is
+        # dated by one explicit pass; a will with one date keeps today's.
+        links = Will.chain_links(new_will)
+        if links:
+            Will.date_chain(new_will, links, references, old_will)
+        else:
+            Will.search_anticipate_rec(new_will, Will.get_all_inputs(references))
         other_inputs = Will.get_all_inputs(old_will, {})
         try:
             Will.normalize_will(new_will, others_inputs=other_inputs)
@@ -811,8 +1371,20 @@ class Will:
         to an executor (REPLACED, or wrongly marked INVALIDATED, see BUG-2)
         could stay executable after "Tools > Invalidate". The item statuses
         are the plugin's bookkeeping; only spending a coin really kills the
-        transactions that use it. Inputs that spend the output of another
-        will transaction are not wallet coins and are naturally skipped.
+        transactions that use it.
+
+        WHY only coins on the network (#194, owner's ZIP test): an input
+        that spends the output of another will transaction is skipped only
+        while that transaction is not in the wallet. When it is kept in the
+        wallet's LOCAL history (a copy never broadcast), Electrum counts its
+        outputs as wallet coins (``get_addr_outputs`` returns them, and
+        ``Util.get_available_utxos`` looks through the local will copies
+        that spend them), and a later delivery of a will in several
+        deliveries spends exactly such an output. The invalidation then
+        spent outputs the network does not know, and the network refused
+        the whole transaction (``bad-txns-inputs-missingorspent``). A coin
+        whose transaction is local or future is therefore skipped: the real
+        coins are enough, since every will transaction descends from them.
 
         Fee: the CURRENT network fee for a confirmation within
         ``INVALIDATION_FEE_ETA_BLOCKS`` blocks (see
@@ -838,6 +1410,10 @@ class Will:
             if utxo.is_coinbase_output() and utxo.block_height < current_height+100:
                 _logger.debug("is not mature coinbase output")
                 continue
+            # An output of a transaction not on the network (see the
+            # docstring: #194).
+            if utxo.block_height in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
+                continue
             utxo_str = utxo.prevout.to_str()
             if utxo_str in prevout_to_spend:
                 balance += utxo.value_sats()
@@ -858,7 +1434,8 @@ class Will:
             # The network rate can be fractional (e.g. 1.5 sat/vbyte): round
             # the total fee UP to whole satoshis so the output value is an
             # integer and the rate is never below the one requested.
-            fee = int(math.ceil(tx.estimated_size() * fee_rate))
+            # #212: the real size, or a multisig pays less than this rate.
+            fee = int(math.ceil(Util.real_tx_size(tx, wallet) * fee_rate))
             _logger.info(
                 f"invalidation fee: {fee_rate} sat/vbyte ({fee_source}), "
                 f"total {fee} sat"
@@ -1526,8 +2103,14 @@ class Will:
         date when the setting is unchanged (``in_force`` True), the date a
         changed setting would give, or - with no will in force - the date a
         new will gets (``in_force`` False). Read-only.
+
+        #168: the setting is the date of the FIRST delivery, so it is read
+        against the earliest VALID item (in a chain of deliveries the dict
+        order may give a later one first).
         """
-        for w in Will.only_valid_list(will).values():
+        valid = sorted(Will.only_valid_list(will).values(),
+                       key=lambda w: int(w.tx.locktime))
+        for w in valid:
             for name, their in (w.heirs or {}).items():
                 if name[:9] == 'w!ll3x3c"':
                     continue
@@ -1575,14 +2158,24 @@ class Will:
         2. if the transaction is NOT complete, stores it via
            ``wallet.adb.add_transaction`` (merging signatures when an
            already-stored partial transaction is upgraded by a more complete
-           one) and tags it with the decoded label,
+           one) and tags it with the decoded label; a transaction whose
+           stored copy would lose its txid (``_survives_reparse``, #175) is
+           not stored, with one INFO line for all of them,
         3. if the transaction IS complete, does not store it: its matching
            local-history entry is removed by the cleanup below.
 
-        Finally it deletes every wallet-local transaction whose label exactly
-        matches the decoded label of a current valid item but that is no longer
-        among the just-saved transactions, so fully-signed, rebuilt or replaced
-        wills do not pile up stale entries.
+        Finally it deletes every wallet-local (or future) transaction whose
+        label matches the history label template (any will-executor) but that
+        is not among the just-saved transactions, so fully-signed, rebuilt,
+        replaced or discarded wills do not pile up stale entries. WHY any
+        will-executor (#195): before, only the labels of the current valid
+        items were looked at, so the copies of a draft for a will-executor
+        no longer in the will stayed in the history for good. A transaction
+        on the network is never removed (before, the label alone decided).
+
+        Note: the copies of one coin for several will-executors spend the
+        same coin, and Electrum keeps only the last one added (it removes a
+        conflicting local transaction): the history shows one copy per coin.
 
         This method must never raise: history persistence is a convenience on
         top of the will check, so any failure is logged and ignored.
@@ -1597,16 +2190,8 @@ class Will:
         if not wallet or not getattr(wallet, "adb", None):
             return
         saved_txids = []
+        not_storable = []
         try:
-            current_labels = {
-                history_label.replace(
-                    "{willexecutor}", (wi.we or {}).get("url", "")
-                )
-                for wi in will.values()
-                if wi.get_status("VALID")
-                and wi.tx is not None
-                and wi.tx.txid() is not None
-            }
             for wi in will.values():
                 if not wi.get_status("VALID"):
                     continue
@@ -1619,6 +2204,12 @@ class Will:
                 # stored. Note that fully-segwit partial txs have a txid even
                 # when incomplete, so the txid() check alone is not enough.
                 if wi.tx.is_complete():
+                    continue
+                # #175: a later delivery of a will in several deliveries
+                # spends an unsigned parent; its stored copy loses the txid
+                # and Electrum's half-done add broke the wallet's balance.
+                if not Will._survives_reparse(wi.tx):
+                    not_storable.append(wi._id)
                     continue
                 try:
                     txid = wi.tx.txid()
@@ -1633,14 +2224,18 @@ class Will:
                     saved_txids.append(txid)
                 except Exception as e:
                     _logger.error(f"save to history failed for item {wi._id}: {e}")
-            # Delete stale wallet-local txs whose label matches a current valid
-            # item but that are no longer among the saved ones. This removes
-            # entries for fully-signed (complete) items and for rebuilt/replaced
-            # wills with the same executor.
-            for txid, label in Will._wallet_labels(wallet):
+            if not_storable:
+                _logger.info(
+                    f"{len(not_storable)} unsigned will transactions not saved "
+                    "to the local history: they spend a will transaction not "
+                    "on the network yet, so the wallet cannot store them"
+                )
+            # Delete the stale wallet-local will txs: labelled for any
+            # will-executor (#195, see the docstring) and not among the saved
+            # ones. This removes entries for fully-signed (complete) items and
+            # for rebuilt, replaced or discarded wills.
+            for txid in Will.history_copies(wallet, history_label):
                 if txid in saved_txids:
-                    continue
-                if label not in current_labels:
                     continue
                 try:
                     wallet.adb.remove_transaction(txid)
@@ -1671,15 +2266,7 @@ class Will:
         if not wallet or not getattr(wallet, "adb", None):
             return []
         removed = []
-        for txid, label in Will._wallet_labels(wallet):
-            if not label or not Util._label_matches_history(label, history_label):
-                continue
-            try:
-                height = int(wallet.adb.get_tx_height(txid).height())
-            except Exception:
-                continue
-            if height not in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
-                continue
+        for txid in Will.history_copies(wallet, history_label):
             try:
                 wallet.adb.remove_transaction(txid)
                 removed.append(txid)
@@ -1724,6 +2311,47 @@ class Will:
             _logger.error(f"save_db failed after {after}: {e}")
 
     @staticmethod
+    def _survives_reparse(tx):
+        """True when the wallet can store *tx*: its copy keeps the txid.
+
+        Electrum stores a transaction as its text and reads it back
+        (``WalletDB.add_transaction``), and refuses it when the txid read
+        back differs. An unsigned transaction has a txid only while every
+        input is known to be segwit; for an input that spends another
+        unsigned will transaction (a later delivery of a will in several
+        deliveries) that knowledge is not in the text, so the copy has no
+        txid (#175, owner's log 2026-10-21: 80 such transactions). The
+        refusal came AFTER Electrum had already written the spent coins and
+        the outputs into the wallet's index, so the index pointed at
+        transactions the wallet did not have and the balance failed with an
+        AssertionError at every refresh. Never raises.
+        """
+        try:
+            txid = tx.txid()
+            return bool(txid) and tx_from_any(str(tx), sanitize=False).txid() == txid
+        except Exception as e:
+            _logger.debug(f"reparse check failed: {e!r}")
+            return False
+
+    @staticmethod
+    def _undo_partial_add(wallet, txid):
+        """Remove what a failed ``add_transaction`` left in the wallet index.
+
+        Safety net of #175: when Electrum refuses a transaction half-way, the
+        spent coins and outputs it already wrote stay in the index. If the
+        wallet does not hold *txid*, ``adb.remove_transaction`` clears those
+        entries (Electrum does the same at start-up,
+        ``remove_local_transactions_we_dont_have``). A stored txid is left
+        alone. Never raises.
+        """
+        try:
+            if wallet.db.get_transaction(txid) is not None:
+                return
+            wallet.adb.remove_transaction(txid)
+        except Exception as e:
+            _logger.error(f"undo of a failed history add not done for {txid}: {e}")
+
+    @staticmethod
     def _add_transaction_to_history(wallet, tx, txid):
         """Store *tx* into the wallet's local history via ``adb``.
 
@@ -1744,6 +2372,9 @@ class Will:
         "new transaction" event is not raised. That event also cleared the
         wallet's tx-parents cache, so that is done here; the History tab is
         refreshed by the caller (``BalWindow._schedule_history_refresh``).
+
+        #175: when the add fails, ``_undo_partial_add`` clears what Electrum
+        already wrote into the wallet index, then the error is raised.
         """
         adb = wallet.adb
         existing = None
@@ -1765,11 +2396,60 @@ class Will:
                 except UnrelatedTransactionException:
                     adb.add_transaction(tx, allow_unrelated=True, is_new=False)
         except Exception as e:
+            Will._undo_partial_add(wallet, txid)
             raise RuntimeError(f"add_transaction failed for {txid}: {e}") from e
         try:
             wallet.clear_tx_parents_cache()
         except Exception as e:
             _logger.debug(f"clear_tx_parents_cache not done: {e!r}")
+
+    @staticmethod
+    def history_copies(wallet, history_label):
+        """The txids of the will copies kept in the wallet's LOCAL history.
+
+        A txid is one when its label matches the ``history_label`` template
+        (for any will-executor, ``Util._label_matches_history``) and it is
+        local or future (:meth:`_is_local_tx`): a transaction on the network
+        is never one. Shared by the two clean-ups (the history update and
+        the purge before a rebuild) and by the Check with SAVE_HISTORY off
+        (#195). Never raises: an empty list on failure.
+        """
+        try:
+            return [
+                txid
+                for txid, label in Will._wallet_labels(wallet)
+                if label
+                and Util._label_matches_history(label, history_label)
+                and Will._is_local_tx(wallet, txid)
+            ]
+        except Exception as e:
+            _logger.error(f"history copies not read: {e}")
+            return []
+
+    @staticmethod
+    def _is_local_tx(wallet, txid):
+        """True when ``txid`` is wallet-local or future: not on the network.
+
+        Used before removing a labelled will transaction from the history
+        (#195): a transaction on the network is never removed. A label whose
+        transaction is no longer stored counts as local (Electrum reports an
+        unknown txid so), and its label is cleared with it.
+
+        WHY ``force_local_if_missing_tx=False``: by default Electrum reports
+        a mined or mempool transaction whose raw data has not arrived yet as
+        local. On any lookup failure this returns False: nothing is removed
+        on uncertain data.
+        """
+        try:
+            try:
+                info = wallet.adb.get_tx_height(txid, force_local_if_missing_tx=False)
+            except TypeError:
+                # An Electrum without that argument.
+                info = wallet.adb.get_tx_height(txid)
+            height = int(info.height())
+        except Exception:
+            return False
+        return height in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE)
 
     @staticmethod
     def _wallet_labels(wallet):
@@ -1888,11 +2568,16 @@ class Will:
         self_willexecutor=False,
         wallet=False,
         callback_not_valid_tx=None,
+        done_deliveries=0,
     ):
         """Check whether the whole will is valid at the given timestamp.
 
         Locktimes are always UNIX timestamps, so the validity check only needs
         a single reference timestamp (no block height).
+
+        Every coin of the wallet must be spent by the will, except the
+        outputs of transactions not on the network (#195: a will copy kept
+        in the local history may pay an address of the wallet itself).
 
         Args:
             will: The will dictionary (WillItem entries keyed by txid).
@@ -1904,6 +2589,12 @@ class Will:
             self_willexecutor: Whether the user acts as their own executor.
             wallet: The Electrum wallet object.
             callback_not_valid_tx: Optional callback invoked for invalid txs.
+            done_deliveries: #201, a will in several deliveries whose
+                deliveries 1..n were executed while some are left
+                (``bal.core.delivery_progress.done_deliveries``): their rows
+                are not looked for in the VALID copies (the executed copy
+                is no longer VALID), and the plan of the possible futures
+                starts at delivery n + 1, where the VALID copies start.
 
         Returns:
             True if the will is valid; raises an exception otherwise.
@@ -1913,6 +2604,11 @@ class Will:
 
         Will.check_will(will, all_utxos, wallet, timestamp_to_check)
         if heirs:
+            # #188: one delivery wanted while a will in several deliveries
+            # is in force: the invalidation first. Before the heirs check,
+            # which would read "heir luca (delivery 2) removed" and build a
+            # one-date will over the copies in force.
+            Will.check_staged_will_removed(will, heirs, wallet)
             # BUG-2 (CHANGELOG #72): a sent tx that is no longer VALID can
             # still be postponed; checked before the VALID-only check below.
             Will.check_sent_txs_not_postponed(will, heirs, wallet)
@@ -1923,17 +2619,51 @@ class Will:
                 self_willexecutor,
                 timestamp_to_check,
                 tx_fees,
+                done=done_deliveries,
             ):
                 raise NotCompleteWillException()
+
+        # #187 (rule 2): a will in several deliveries: every possible
+        # future of the VALID copies must pay the plan (a copy held by a
+        # will-executor no longer selected may keep an old subtree). The
+        # VALID copies, not the will in force: after the build of the same
+        # Check the new chain (earlier) is what counts.
+        plan = futures.plan_of_rows(heirs) if heirs else []
+        # #201: the deliveries already executed are behind: the VALID
+        # copies start at the next one.
+        plan = plan[done_deliveries:]
+        if len(plan) >= 2:
+            valid_items = {wid: w for wid, w in will.items() if w.get_status("VALID")}
+            off = futures.futures_off_plan(valid_items, plan)
+            if off:
+                total = len(futures.possible_futures(valid_items))
+                _logger.info(
+                    "futures off plan: {} of {} (e.g. {})".format(
+                        len(off), total, futures.future_text(off[0], valid_items)))
+                raise FuturesOffPlanException(
+                    futures.future_text(off[0], valid_items), len(off), total)
 
         all_inputs = Will.get_all_inputs(will, only_valid=True)
 
         _logger.info("check all utxo in wallet are spent")
         if all_inputs:
             for utxo in all_utxos:
+                # #195: an output of a transaction not on the network is
+                # not a coin to cover. Owner's wallet: an heir paid at an
+                # address of the wallet itself, the will's copy kept
+                # unsigned in the local history; Electrum counts its output
+                # as a coin, and every Check said "new funds" and rebuilt.
+                # The same rule as the invalidation (#194).
+                if utxo.block_height in (TX_HEIGHT_LOCAL, TX_HEIGHT_FUTURE):
+                    continue
                 if utxo.value_sats() > 68 * tx_fees:
                     if not Util.in_utxo(utxo, all_inputs.keys()):
-                        _logger.info("utxo is not spent", utxo.to_json())
+                        # #195: name the coin (the old line printed none).
+                        _logger.info(
+                            f"utxo is not spent: {utxo.prevout.to_str()} "
+                            f"({utxo.value_sats()} sat, height "
+                            f"{utxo.block_height})"
+                        )
                         _logger.debug(all_inputs.keys())
                         raise NotCompleteWillException(
                             "Some utxo in the wallet is not included"
@@ -2063,6 +2793,52 @@ class Will:
             if wi.get_status("VALID") or wi.get_status("REPLACED"):
                 out.append(wid)
         return out
+
+    @staticmethod
+    def staged_in_force(will, wallet):
+        """The copies of the will in force that belong to a delivery 2 or
+        later (#188), ``{wid: item}``; ``{}`` for a will with one date.
+        The will in force is the #128 notion (:meth:`in_force_items`:
+        signed and/or sent, still executable; drafts never). Whether a copy
+        is still executable is asked whenever the wallet can be asked, also
+        while it is not synchronized (Opus' review: this check leads to a
+        paid action; a spend the wallet already knows must count)."""
+        synced = Will.wallet_synced(wallet) or bool(
+            wallet and getattr(wallet, "adb", None))
+        in_force = Will.in_force_items(will, wallet or None, synced)
+        return {
+            wid: w for wid, w in in_force.items()
+            if any(
+                not str(name).startswith('w!ll3x3c"')
+                and delivery.instalment_number(name) >= 2
+                for name in (w.heirs or {})
+            )
+        }
+
+    @staticmethod
+    def check_staged_will_removed(will, heirs, wallet):
+        """Raise :class:`StagedWillRemovedException` when ``heirs`` (the
+        rows the build uses) have one delivery while copies of a delivery
+        2 or later are in force (#188): the will in several deliveries must
+        be invalidated on the blockchain before the one-date will. Nothing
+        when the plan has several deliveries (a change of dates or shares
+        stays a normal rebuild, #187) or when such copies were never
+        signed nor sent (drafts only: the table is simply gone)."""
+        plan = futures.plan_of_rows(heirs)
+        if len(plan) != 1:
+            return
+        staged = Will.staged_in_force(will, wallet)
+        if not staged:
+            return
+        count = max(
+            delivery.instalment_number(name)
+            for w in staged.values() for name in (w.heirs or {})
+            if not str(name).startswith('w!ll3x3c"')
+        )
+        _logger.info(
+            "one delivery wanted, {} copies of a will in {} deliveries in force: "
+            "the invalidation first (#188)".format(len(staged), count))
+        raise StagedWillRemovedException(count)
 
     @staticmethod
     def check_sent_txs_not_postponed(will, heirs, wallet):
@@ -2227,7 +3003,8 @@ class Will:
         ``their``: its entry in the item; ``current``: the Heirs tab. The
         ONE heir of the tab that the item does not carry, at the same
         address (``heirs.address_key``) with the same amount (compared by
-        value: "20%" and "20.0%" are the same share). Logged when it is not
+        value: "20%" and "20.0%" are the same share). #168: with a table of
+        deliveries, a row of the same delivery only. Logged when it is not
         a pure rename, so the reason can be read in the log.
         """
         try:
@@ -2238,9 +3015,15 @@ class Will:
         if key is None:
             return None
         found = []
+        # #168: with a table of deliveries a person has one row per
+        # delivery on the same address ("Marco", "Marco§2"): only the row
+        # of the SAME delivery can be the new name. Without a table every
+        # row is delivery 1, as before.
+        number = instalment_number(name)
         for new_name, heir in current.items():
             try:
-                if address_key(heir[0]) == key and new_name not in item_heirs:
+                if (address_key(heir[0]) == key and new_name not in item_heirs
+                        and instalment_number(new_name) == number):
                     found.append(new_name)
             except (IndexError, TypeError):
                 continue
@@ -2280,14 +3063,18 @@ class Will:
         ``heirs``: the Heirs tab now; ``will_heirs``: the item's heirs. The
         new name is the ONE heir of the Heirs tab with the same address that
         the item does not carry; ``None`` otherwise (removed, or ambiguous).
-        Used only to word the Check message (#135 follow-up).
+        Used only to word the Check message (#135 follow-up). #168: only a
+        row of the same delivery counts.
         """
         try:
             address = str(their[0])
         except (IndexError, TypeError):
             return None
+        # #168: only the row of the same delivery (see _pure_rename).
+        number = instalment_number(old_name)
         found = [name for name, heir in (heirs or {}).items()
-                 if name not in (will_heirs or {}) and str(heir[0]) == address]
+                 if name not in (will_heirs or {}) and str(heir[0]) == address
+                 and instalment_number(name) == number]
         return found[0] if len(found) == 1 else None
 
     @staticmethod
@@ -2346,16 +3133,19 @@ class Will:
     @staticmethod
     def same_payments(new_tx, will, url):
         """True when ``new_tx`` spends and pays the same as a received copy
-        for ``url`` in ``will``, the date apart (#141).
+        for ``url`` in ``will``, on the same date (#141, #176).
 
-        The date may still be moved by ``update_will`` (anticipation); the
-        inputs and outputs tell whether the build with the kept payment
-        data gave the transaction the will-executor already holds.
+        The inputs, the outputs and the date tell whether the build with the
+        kept payment data gave the transaction the will-executor already
+        holds. CHANGELOG #176: a new delivery date is a new copy, to sign and
+        send again; before, the date was left out, so that copy kept the old
+        fee address and the Check, right after the build, called the
+        will-executor "excluded: Skipped".
         """
         def payments(tx):
             ins = sorted(i.prevout.to_str() for i in tx.inputs())
             outs = sorted((o.scriptpubkey.hex(), o.value) for o in tx.outputs())
-            return ins, outs
+            return ins, outs, int(tx.locktime)
 
         target = payments(new_tx)
         for w in Will.only_valid_list(will).values():
@@ -2366,13 +3156,33 @@ class Will:
 
     @staticmethod
     def check_willexecutors_and_heirs(
-        will, heirs, willexecutors, self_willexecutor, check_date, tx_fees
+        will, heirs, willexecutors, self_willexecutor, check_date, tx_fees,
+        done=0,
     ):
+        """Check that the VALID will items still match the heirs and the
+        will-executors; raise the reason when they do not.
+
+        ``done`` (#201): deliveries 1..done of a will in several deliveries
+        were executed; their rows are not missing heirs.
+
+        ``heirs``: the heir rows the will is built from (with a table of
+        the deliveries, the rows of every delivery, #168). A postpone of a
+        signed or sent item raises ``WillPostponedException``; an heir
+        removed, renamed, added or changed raises ``HeirNotFoundException``
+        (with ``all_heirs`` when the heirs of the same delivery all have
+        the new date, #125 and #169, and ``staged`` when the will has
+        deliveries 2 or 3, so the messages name the delivery);
+        a will-executor change raises its own exception. Returns False when
+        there is no VALID item.
+        """
         _logger.debug("check willexecutors heirs")
         no_willexecutor = 0
         willexecutors_found = {}
         terms_changed = {}
         heirs_found = {}
+        # #169: a will in deliveries ("Luca§2" rows): the messages name the
+        # delivery of every row, also "Luca (delivery 1)".
+        staged = any(instalment_number(x) > 1 for x in heirs)
         will_only_valid = Will.only_valid_list(will)
         if len(will_only_valid) < 1:
             return False
@@ -2494,10 +3304,11 @@ class Will:
                         if renamed_to is not None:
                             raise HeirNotFoundException(
                                 wheir, HeirNotFoundException.HEIR_RENAMED,
-                                new_name=renamed_to,
+                                new_name=renamed_to, staged=staged,
                             )
                         raise HeirNotFoundException(
-                            wheir, HeirNotFoundException.HEIR_REMOVED
+                            wheir, HeirNotFoundException.HEIR_REMOVED,
+                            staged=staged,
                         )
 
             if willexecutor := w.we:
@@ -2522,7 +3333,10 @@ class Will:
         # CHANGELOG #77: report an ADDED heir before a CHANGED one, so that
         # "carol added" (with the others' shares adjusted) names carol, not
         # the first heir whose share changed.
-        missing = [h for h in heirs if h not in heirs_found]
+        # #201: the rows of an executed delivery are paid by a copy that is
+        # no longer VALID (it is on the chain): never "added".
+        missing = [h for h in heirs
+                   if h not in heirs_found and instalment_number(h) > done]
         if missing:
             changes = {
                 h: Will._heir_change(h, heirs[h], will_only_valid) for h in missing
@@ -2533,11 +3347,17 @@ class Will:
             _logger.debug(f"heir: {h} not found ({changes[h]})")
             # CHANGELOG #125: when every heir has the same delivery date (the
             # normal case: multiverse off gives them the will's date), a new
-            # date concerns the whole will, not the heir named first.
-            same_date = len({str(heirs[x][2]) for x in heirs}) == 1
+            # date concerns the whole will, not the heir named first. #169:
+            # with a table of the deliveries, the heirs of the SAME delivery
+            # ("Luca§2", "John§2") share its date: a new date concerns that
+            # delivery. A will with one date has delivery 1 only: as before.
+            number = instalment_number(h)
+            same_date = len({str(heirs[x][2]) for x in heirs
+                             if instalment_number(x) == number}) == 1
             raise HeirNotFoundException(
                 h, changes[h],
                 all_heirs=changes[h] == HeirNotFoundException.HEIR_DATE and same_date,
+                staged=staged,
             )
         count_heirs = 0
         for h in heirs:
@@ -2759,6 +3579,9 @@ class WillItem(Logger):
         self.sigs_have = int(w.get("sigs_have", 0))
         self.father = w.get("Father", None)
         self.children = w.get("Children", None)
+        # #182: when its will-executor last confirmed this copy (seconds),
+        # or None (never, or before #182).
+        self.checked_time = w.get("checked_time", None)
         self.STATUS = WillItem.copy_status_table(WillItem.STATUS_DEFAULT)
         for s in self.STATUS:
             self.STATUS[s][1] = w.get(s, WillItem.STATUS_DEFAULT[s][1])
@@ -2819,6 +3642,10 @@ class WillItem(Logger):
             "Father": self.father,
             "Children": self.children,
         }
+        if self.checked_time is not None:
+            # #182: only when known, so the items verified before keep the
+            # same saved form.
+            out["checked_time"] = self.checked_time
         for key in self.STATUS:
             try:
                 out[key] = self.STATUS[key][1]
@@ -2867,24 +3694,35 @@ class WillItem(Logger):
                     iw = inp[1]
                     self.set_anticipate(iw)
 
-    def set_check_willexecutor(self,resp):
+    def set_check_willexecutor(self, resp, now=None):
         """Record the will-executor's answer ``resp`` to the check (searchtx).
 
-        It holds exactly our transaction: PUSHED and CHECKED. Any other
-        answer, or ``None`` (no usable answer): CHECK_FAIL and no longer
-        PUSHED, so the copy is sent again. #147: ``Willexecutors.NO_ANSWER``
-        (it did not answer in time) changes nothing: the copy stays sent and
-        to be verified, and the next check asks again. Returns True for an
-        answer, False otherwise.
+        It holds exactly our transaction: PUSHED and CHECKED, and (#182) the
+        time ``now`` (default: :meth:`Will.now_seconds`) in
+        ``checked_time``. Any other answer, or ``None`` (no usable answer):
+        CHECK_FAIL and no longer PUSHED, so the copy is sent again. #147:
+        ``Willexecutors.NO_ANSWER`` (it did not answer in time) leaves the
+        copy sent and to be verified, and the next check asks again. #182: a
+        copy verified before that gets no answer now loses CHECKED (owner:
+        "no answer to the check", not "verified" any more); it is not sent
+        again. Returns True for an answer, False otherwise.
         """
         if resp is Willexecutors.NO_ANSWER:
-            _logger.info(f"no answer to the check for {self._id}: left as it was")
+            if self.get_status("CHECKED"):
+                _logger.info(
+                    f"no answer to the check for {self._id}: no longer verified"
+                )
+                self.set_status("CHECKED", False)
+            else:
+                _logger.info(f"no answer to the check for {self._id}: left as it was")
             return False
         try:
             if resp :
                 if "tx" in resp and resp["tx"] == str(self.tx):
                     self.set_status("PUSHED")
                     self.set_status("CHECKED")
+                    self.checked_time = int(
+                        Will.now_seconds() if now is None else now)
                 else:
                     self.set_status("CHECK_FAIL")
                     self.set_status("PUSHED", False)
@@ -2910,6 +3748,12 @@ class WillException(Exception):
     def __str__(self):
         return self.msg
 
+
+
+class WillChainError(WillException):
+    """A chain of delivery instalments (multiverse) that cannot be built
+    safely (CHANGELOG #166). Not a "will to prepare again" case: the will
+    in force is left as it is and the reason is shown."""
 
 
 class WillExpiredException(WillException):
@@ -2938,7 +3782,10 @@ class HeirNotFoundException(NotCompleteWillException):
     :data:`HEIR_RENAMED` (#135 follow-up, with ``new_name``), or ``None``
     when unknown. ``all_heirs`` (CHANGELOG #125) is True for a date
     change when every heir has the same delivery date: the will's date
-    changed, not one heir's.
+    changed, not one heir's. Since #169, with a table of the deliveries,
+    every heir OF THE SAME DELIVERY: that delivery's date changed.
+    ``staged`` (#169): the will has deliveries 2 or 3, so a row of
+    delivery 1 is named "Luca (delivery 1)" too.
     """
 
     HEIR_REMOVED = "removed"
@@ -2949,16 +3796,19 @@ class HeirNotFoundException(NotCompleteWillException):
     # #135 follow-up: same address, new name (``new_name``).
     HEIR_RENAMED = "renamed"
 
-    def __init__(self, heir, change=None, all_heirs=False, new_name=None):
+    def __init__(self, heir, change=None, all_heirs=False, new_name=None,
+                 staged=False):
         """Keep ``heir`` as the only arg so ``str(e)`` stays the heir name.
 
         ``new_name``: the heir's new name for :data:`HEIR_RENAMED`.
+        ``staged``: the will has deliveries 2 or 3 (#169).
         """
         super().__init__(heir)
         self.heir = heir
         self.change = change
         self.all_heirs = all_heirs
         self.new_name = new_name
+        self.staged = staged
 
 
 class WillPostponedException(NotCompleteWillException):
@@ -2978,6 +3828,43 @@ class WillPostponedException(NotCompleteWillException):
 
 class WillexecutorChangeException(NotCompleteWillException):
     pass
+
+
+class StagedWillRemovedException(WillPostponedException):
+    """The settings say one delivery while a will in several deliveries is
+    in force (#188, owner decision of 2026-10-24).
+
+    Going back to one delivery is a change of the TYPE of will: the copies
+    in several deliveries held by the will-executors are invalidated on the
+    blockchain first (a network fee), then the new will is prepared, as for
+    a postpone (the parent class: the Check and the command line already
+    know that road). Before, a one-date will dated one day earlier was
+    built over them (the old copies stayed valid, pre-empted by one day
+    only; in the R-2 case not even that). ``deliveries``: how many the will
+    in force has.
+    """
+
+    def __init__(self, deliveries):
+        """``deliveries``: the number of deliveries of the will in force."""
+        super().__init__("staged will removed")
+        self.deliveries = deliveries
+
+
+class FuturesOffPlanException(NotCompleteWillException):
+    """A possible future of the will in force pays another plan (#187).
+
+    ``bal.core.futures``: a copy kept by a will-executor no longer selected
+    (it cannot be recalled) has a subtree with old shares that nothing
+    pre-empts. The will is prepared again from delivery 1, one day earlier.
+    ``str(e)``: the first such future, for the log; ``count`` / ``total``:
+    how many of the possible futures.
+    """
+
+    def __init__(self, text, count, total):
+        """``text``: the future (``futures.future_text``)."""
+        super().__init__(text)
+        self.count = count
+        self.total = total
 
 
 class SameDateCopiesException(NotCompleteWillException):

@@ -39,7 +39,7 @@ from urllib.parse import urlparse
 from electrum.util import MyEncoder
 from PyQt6.QtCore import QEvent
 
-from ...core import datetext, invalidation_preview, will_changes
+from ...core import datetext, delivery, invalidation_preview, will_changes
 from ...core.animated_qr import (
     AnimatedQrError,
     AnimatedQrSession,
@@ -60,7 +60,12 @@ from ...core.checkalive import (
 from ...core.messages import (
     amounts_message,
     build_failure_message,
+    chain_refused_message,
     check_alive_message,
+    deliveries_not_funded_message,
+    excluded_after_build_message,
+    heir_label,
+    low_fee_warning,
     no_valid_transaction,
     rebuild_reason_message,
     will_change_message,
@@ -72,16 +77,22 @@ from ...core.qrtransfer import (
     preset_index_for_chunk_size,
 )
 from ...core.reminders import build_ics_reminders
-from ...core.summary import executor_states, will_summary
+from ...core.summary import executor_states, verified_times, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
-from ...engine.invalidate import broadcast_invalidation, build_invalidation
+from ...engine import instalments as engine_instalments
+from ...engine.invalidate import (
+    INVALIDATION_LABEL,
+    broadcast_invalidation,
+    build_invalidation,
+)
 from ...engine.merge import local_validity_pass
 from ...engine.push import (
     ALREADY_PRESENT,
     EXCLUDED_FEE,
     RECEIVED,
     TIMEOUT,
+    not_delivered,
     push_will,
     select_push,
 )
@@ -99,6 +110,7 @@ from .common import (
     Buttons,
     Callable,
     CancelButton,
+    DeliveriesNotFundedException,
     HeirAmountIsDustException,
     MessageBoxMixin,
     Network,
@@ -123,11 +135,13 @@ from .common import (
     QTimer,
     QVBoxLayout,
     QWidget,
+    StagedWillRemovedException,
     TaskThread,
     TxBroadcastError,
     Util,
     WaitingDialog,
     Will,
+    WillChainError,
     WillExecutorNotPresent,
     Willexecutors,
     WillExpiredException,
@@ -135,6 +149,7 @@ from .common import (
     WillPostponedException,
     _,
     _logger,
+    ask_yes_no,
     bring_to_front,
     decimal_point_to_base_unit_name,
     draw_qr,
@@ -145,6 +160,7 @@ from .common import (
     pyqtSignal,
     read_json_file,
     read_QIcon_from_bytes,
+    rich_text,
     show_modal,
     show_on_top,
     stop_thread,
@@ -169,9 +185,21 @@ if TYPE_CHECKING:
 # imported lazily where needed to avoid a dialogs<->lists import cycle.
 
 
+def person_renames(renames):
+    """``[(old, new)]`` of the persons renamed (#170): the rows of one person
+    in a will in deliveries ("Luca" -> "Marco", "Luca§2" -> "Marco§2") are one
+    rename, with the persons' names; the order is kept."""
+    out = []
+    for old, new in renames:
+        pair = (delivery.person_name(old), delivery.person_name(new))
+        if pair not in out:
+            out.append(pair)
+    return out
+
+
 class BalDialog(QDialog,MessageBoxMixin):
     _stopping = False
-    def __init__(self, parent, bal_plugin, title=None, icon="icons/ancora-icon-light-16.png"):
+    def __init__(self, parent, bal_plugin, title=None, icon="icons/ancora-icon-16.png"):
         from PyQt6.QtCore import QMetaObject, Qt
         def handler(signum, frame):
             QMetaObject.invokeMethod(self, "close", Qt.ConnectionType.QueuedConnection)
@@ -188,6 +216,16 @@ class BalDialog(QDialog,MessageBoxMixin):
             self.setWindowTitle(title)
         # WindowModalDialog.__init__(self,parent)
         self.setWindowIcon(read_QIcon_from_bytes(bal_plugin.read_file(icon)))
+
+    def question(self, msg, parent=None, title=None, **kwargs):
+        """Electrum's Yes / No question with translated buttons (#189).
+
+        Electrum's own ``question`` uses Qt's standard buttons, which stay
+        in English (Electrum loads no Qt translation): ``ask_yes_no`` gives
+        the same answer (True on Yes, No by default) with "Yes" / "No" from
+        the plugin's catalogs. The extra Electrum arguments are not used.
+        """
+        return ask_yes_no(parent or self, msg, title or "")
 
     def closeEvent(self, event):
         self._stopping = True
@@ -658,6 +696,57 @@ class BalWizardLocktimeAndFeeWidget(BalWizardWidget):
         return widget
 
 
+#: #172: how the Check's window draws each kind of check_wait_lines line:
+#: the count in bold, the explanation in grey, a busy will-executor in the
+#: orange of the warnings (BuildReportView._RESULT_STYLE "warn").
+_WAIT_LINE_STYLE = {
+    "count": "<b>{}</b>",
+    "note": '<span style="color:#666666;">{}</span>',
+    "busy": '<span style="color:#b26a00;">{}</span>',
+}
+
+#: #222: how the Check's sending ended (``BalBuildWillDialog._send_outcome``).
+#: ALL: every copy reached its will-executor; SOME: at least one did not;
+#: NONE: no will-executor received the will; ERROR: the sending itself
+#: failed (its row already shows the error).
+SEND_ALL = "all"
+SEND_SOME = "some"
+SEND_NONE = "none"
+SEND_ERROR = "error"
+
+
+def check_wait_lines(answered, total, elapsed, deadline, busy, now):
+    """The lines that show a Check while it waits (#172), plain text.
+
+    Owner: the wait must be clearly visible and explained, so nobody
+    worries or thinks the plugin is stuck. ``[(kind, text)]``:
+
+    * ``"count"``, always: how many copies have an answer out of *total*,
+      the seconds passed and the most it can last (*deadline*);
+    * ``"note"``, when the *deadline* is above the usual 20 s (many
+      transactions): why it takes longer;
+    * ``"busy"``, one per will-executor that answered 429 and waits:
+      *busy* is ``{url: time of the new try}``, shown while that time is
+      after *now*.
+
+    The Check's window colours them, the right click "check" shows them as
+    they are. A module function, not a method of BalBuildWillDialog: the
+    window uses it too (and some tests replace that class in the window).
+    """
+    lines = [("count", _("Copies checked: {} of {} · {} s (at most {} s)").format(
+        answered, total, min(int(elapsed), deadline), deadline))]
+    if deadline > Willexecutors.CHECK_GLOBAL_DEADLINE:
+        lines.append(("note", _(
+            "Many transactions: the will-executors are asked a few at a "
+            "time, so as not to overload them."
+        )))
+    for url, until in sorted(busy.items()):
+        left = int(until - now + 0.999)
+        if left > 0:
+            lines.append(("busy", _("{} is busy: new try in {} s.").format(
+                urlparse(url).hostname or url, left)))
+    return lines
+
 
 class BalWaitingDialog(BalDialog):
     updatemessage = pyqtSignal([str], arguments=["message"])
@@ -750,6 +839,9 @@ class BalBlockingWaitingDialog(BalDialog):
 
 
 class BalBuildWillDialog(BalDialog):
+    #: How phase 1 ended (set in ``_on_success_phase1_body``); ``None`` before.
+    have_to_sign = None
+
     updatemessage = pyqtSignal()
     COLOR_WARNING = "#cfa808"
     COLOR_ERROR = "#ff0000"
@@ -770,6 +862,12 @@ class BalBuildWillDialog(BalDialog):
     report_view = None
     # CHANGELOG #134 (same reason as above): see _revert_cancelled_postpone.
     _postpone_reverted = None
+    # #188: the invalidation of a will in several deliveries (back to one
+    # delivery): no date to put back when it is cancelled.
+    _staged_removed = False
+    # #227 (same reason as above): see _invalidate_elsewhere.
+    _invalidated_elsewhere = False
+    _elsewhere_message = None
     _later_by_question = False
 
     def __init__(self, bal_window, parent=None, renew=False, closing=False):
@@ -799,7 +897,8 @@ class BalBuildWillDialog(BalDialog):
         self.updatemessage.connect(self.msg_update)
         self.bal_window = bal_window
         self.bal_plugin = bal_window.bal_plugin
-        self.message_label = QLabel(_("Building Will:"))
+        # The log: lines with times in grey, results in colour (rich text).
+        self.message_label = rich_text(QLabel(_("Building Will:")))
         # Allow the long report text to wrap instead of forcing the dialog ever
         # wider, and let it grow downward inside the scroll area below.
         self.message_label.setWordWrap(True)
@@ -884,9 +983,13 @@ class BalBuildWillDialog(BalDialog):
         # earlier but never signed. Only used to word the "Checking your will"
         # row; see _rebuild_reason_message.
         self._postpone_invalidation = False
+        # #227: the invalidation was handed to Electrum's transaction window,
+        # to be signed on the other computers (watch-only or multisig).
+        self._invalidated_elsewhere = False
         # #134: (chosen, restored) when a postpone was cancelled before its
         # invalidation reached the network and the stored date went back.
         self._postpone_reverted = None
+        self._staged_removed = False
         self._unsigned_executors = None
         self.network = Network.get_instance()
         self._stopping = False
@@ -1024,7 +1127,13 @@ class BalBuildWillDialog(BalDialog):
             # rebuild the new (postponed) inheritance.
             _logger.debug(f"postponed {e}")
             self._postpone_invalidation = True
-            self.msg_set_checking(_("Postponed: invalidating old will"))
+            if isinstance(e, StagedWillRemovedException):
+                # #188: back to one delivery: the same road, its own words.
+                self._staged_removed = True
+                self.msg_set_checking(
+                    _("Back to one delivery: invalidating the will in several deliveries"))
+            else:
+                self.msg_set_checking(_("Postponed: invalidating old will"))
             # The shared build (#152), as the Will tab's "Invalidate will".
             return None, build_invalidation(self.bal_window)
         except NoHeirsException:
@@ -1080,6 +1189,7 @@ class BalBuildWillDialog(BalDialog):
             message = (
                 self._past_date_message()
                 or self._rebuild_reason_message(e)
+                or (self.msg_ok() if self._first_will(e) else None)
                 or self._check_failure_message(e)
             )
             _logger.debug(f"message: {message}")
@@ -1108,9 +1218,13 @@ class BalBuildWillDialog(BalDialog):
                     self._in_force_kept_report()
                 else:
                     self._build_success_report()
-            except WillExecutorNotPresent:
+            except WillExecutorNotPresent as e:
+                # CHANGELOG #176: the row names the will-executor and why,
+                # in orange: the flow goes on (signing, sending), so it is
+                # a warning, not an error. Before it read "Skipped" in red.
                 self.msg_set_status(
-                    _("Will-Executor excluded"), None, _("Skipped"), self.COLOR_ERROR
+                    _("Will-Executor excluded"), None,
+                    excluded_after_build_message(e), self.COLOR_WARNING,
                 )
 
             except NoWillExecutorNotPresent:
@@ -1187,6 +1301,12 @@ class BalBuildWillDialog(BalDialog):
                 )
                 return False, None
 
+            except DeliveriesNotFundedException as e:
+                # #211: the funds cannot pay every delivery: what to do, not
+                # the fee figures of one delivery.
+                self.msg_set_building(self.msg_error(deliveries_not_funded_message(e)))
+                return False, None
+
             except BalanceTooLowException as e:
                 # The core DOES detect this precisely and carries the numbers,
                 # but the exception was never caught here: it fell through to
@@ -1209,6 +1329,14 @@ class BalBuildWillDialog(BalDialog):
                 )
                 return False, None
 
+            except WillChainError as e:
+                # #189: the safety net refused the chain of deliveries; the
+                # will in force is untouched. A plain sentence, the raw
+                # reason in the log (before: the raw text in red, then the
+                # error went up to the thread).
+                self.msg_set_building(self.msg_error(chain_refused_message(e)))
+                return False, None
+
             except Exception as e:
                 self.msg_set_building(self.msg_error(e))
                 raise e
@@ -1229,16 +1357,19 @@ class BalBuildWillDialog(BalDialog):
         # without the will-executor reference. So N heirs => at most N rows,
         # regardless of how many will-executors exist.
         dust_heirs = {}
+        staged = False
         for wid in Will.only_valid(self.bal_window.willitems):
             heirs = self.bal_window.willitems[wid].heirs
             for hid, heir in heirs.items():
+                staged = staged or delivery.instalment_number(hid) > 1
                 if "DUST" in str(heir[HEIR_REAL_AMOUNT]):
                     # Keep the first dust amount seen for this heir; it is the
                     # same share in every will-executor copy of the will.
                     dust_heirs.setdefault(hid, heir[HEIR_DUST_AMOUNT])
         for hid, dust_amount in dust_heirs.items():
             self.msg_set_status(
-                _("Heir {}").format(hid),
+                # #170: the person and the delivery, never "Luca§2".
+                _("Heir {}").format(heir_label(hid, staged)),
                 None,
                 _("{} is DUST - excluded (amount below dust limit)").format(
                     dust_amount
@@ -1367,6 +1498,9 @@ class BalBuildWillDialog(BalDialog):
             for hname in self.bal_window.willitems[wid].heirs:
                 if str(hname)[:9] == 'w!ll3x3c"':
                     continue
+                # #170: one line per person, never the row name "Luca§2"
+                # of a later delivery (the person receives at each one).
+                hname = delivery.person_name(hname)
                 if hname in shown_heirs:
                     continue
                 shown_heirs.add(hname)
@@ -1511,8 +1645,12 @@ class BalBuildWillDialog(BalDialog):
         except BestEffortRequestFailed as e:
             self.msg_set_invalidating(self.msg_error(e))
 
-    def loop_push(self):
+    def loop_push(self, only=None):
         """The Check's "Sending" step: send the will to its will-executors.
+
+        #225: *only* (a set of URLs) limits the sending to those
+        will-executors: the resend of :meth:`_resend_lost`, so that one
+        that did not answer before is not waited for a second time.
 
         Broadcast is "one-shot" (Group B / B2 follow-up): each selected
         will-executor is contacted ONCE. Transactions that are broadcast
@@ -1542,6 +1680,9 @@ class BalBuildWillDialog(BalDialog):
                 max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                 dust=self.bal_window.window.wallet.dust_threshold(),
             )
+            if only is not None:
+                selected = {u: r for u, r in selected.items() if u in only}
+                excluded = {u: r for u, r in excluded.items() if u in only}
             for url, reason in excluded.items():
                 self.msg_set_status(
                     _("Will-Executor excluded"),
@@ -1632,8 +1773,47 @@ class BalBuildWillDialog(BalDialog):
                     )
                 )
 
+            # #172: the checks of the "already present" copies, shown like the
+            # Verification step: the copies, the seconds, why, who is busy.
+            # Before, the window stood still on "0 s / 20 s" for minutes.
+            checks = {"total": 0, "answered": 0, "deadline": 0, "start": 0.0}
+            busy = {}  # url -> time of its new try after a 429
+
+            def _checks_progress():
+                """The step note and the sentence while the copies are checked."""
+                if self._stopping or not checks["total"]:
+                    return
+                now = time.time()
+                elapsed = min(int(now - checks["start"]), checks["deadline"])
+                report = self._report()
+                report.set_step("send", "run", "{}/{} · {} s / {} s".format(
+                    checks["answered"], checks["total"], elapsed,
+                    checks["deadline"]))
+                sentence = html.escape(
+                    _("Checking the copies the will-executors already had…"))
+                for kind, line in check_wait_lines(
+                        checks["answered"], checks["total"],
+                        now - checks["start"], checks["deadline"], busy, now):
+                    sentence += "<br>" + _WAIT_LINE_STYLE[kind].format(
+                        html.escape(line))
+                report.set_result("run", sentence)
+                self.updatemessage.emit()
+
+            def on_checks_begin(count, check_deadline):
+                """The copies to check, and the most it can last."""
+                checks.update(total=count, deadline=check_deadline,
+                              start=time.time())
+                _checks_progress()
+
+            def on_busy(url, seconds):
+                """A will-executor answered 429: its new try, shown."""
+                busy[url] = time.time() + seconds
+                _checks_progress()
+
             def on_check_done(url, wid, res):
                 """Its answer: the report line and the row, in colour."""
+                checks["answered"] += 1
+                _checks_progress()
                 checked = self.bal_window.willitems[wid].get_status("CHECKED")
                 if res is Willexecutors.NO_ANSWER:
                     # #147: it has the will, it did not answer the check.
@@ -1690,7 +1870,7 @@ class BalBuildWillDialog(BalDialog):
 
             summary_done = {"done": False}
             self.bal_plugin = self.bal_window.bal_plugin
-            push_will(
+            result = push_will(
                 self.bal_window.willitems,
                 selected,
                 on_result=on_result,
@@ -1698,7 +1878,11 @@ class BalBuildWillDialog(BalDialog):
                 should_stop=lambda: self._stopping,
                 on_check_start=on_check_start_first,
                 on_check_done=on_check_done,
+                on_checks_begin=on_checks_begin,
+                on_check_tick=_checks_progress,
+                on_busy=on_busy,
             )
+            self._send_outcome = self._sending_outcome(result, selected, excluded)
             if not summary_done["done"]:
                 # Final summary line with the total elapsed time.
                 self.msg_set_pushing(
@@ -1714,13 +1898,73 @@ class BalBuildWillDialog(BalDialog):
         except Exception as e:
             # Only genuine, unexpected errors reach here now (not the old
             # "retry" signal). Report the error; do not loop.
+            # #222: remembered, so the row keeps the error (it was then
+            # overwritten by "Ok").
+            self._send_outcome = SEND_ERROR
             self.msg_set_pushing(self.msg_error(e))
             self.wait(10)
             if not self._stopping:
                 pass
 
-    def loop_verify(self):
+    def _sending_outcome(self, result, selected, excluded):
+        """How the sending ended: ``SEND_ALL``, ``SEND_SOME`` or ``SEND_NONE``.
+
+        *result* is the :class:`~bal.engine.push.PushResult`, *selected* and
+        *excluded* come from ``select_push``. WHY the rule of Tools > Send
+        (:func:`bal.engine.push.not_delivered`, #213): the Check and the menu
+        must call the same sending complete. An excluded will-executor did not
+        get its copy either, so it makes the sending incomplete.
+
+        #225: ``SEND_NONE`` only when no will-executor of the will holds it.
+        Before, a resend to the one will-executor that had lost the will,
+        failing, said "The will was not sent to the will-executors" while
+        the other two held it.
+        """
+        reached = [url for url, outcome in result.outcomes.items()
+                   if outcome in (RECEIVED, ALREADY_PRESENT)]
+        if not reached and not self._held_somewhere():
+            return SEND_NONE
+        if not reached or excluded or not_delivered(
+                self.bal_window.willitems, selected, self.bal_window.willexecutors):
+            return SEND_SOME
+        return SEND_ALL
+
+    def _held_somewhere(self):
+        """True when a will-executor holds a copy of the will in force (#225).
+
+        A VALID copy with a will-executor, sent (PUSHED): received, or
+        verified, at this Check or before.
+        """
+        return any(
+            w.get_status("VALID") and w.we and w.get_status("PUSHED")
+            for w in self.bal_window.willitems.values()
+        )
+
+    def _show_sending_outcome(self):
+        """The final value of the sending row (#222, audit item 20).
+
+        Before, the row said "Ok" after every sending, also when no
+        will-executor received the will, and it covered the error of a
+        failed sending.
+        """
+        outcome = getattr(self, "_send_outcome", None)
+        if outcome == SEND_ERROR:
+            return  # the row already shows the error
+        if outcome == SEND_NONE:
+            self.msg_set_pushing(self.msg_error(_("Not sent")))
+        elif outcome == SEND_SOME:
+            self.msg_set_pushing(
+                self.msg_warning(_("Not sent to every will-executor")))
+        else:
+            self.msg_set_pushing(self.msg_ok())
+
+    def loop_verify(self, only_ids=None):
         """The Verification step: do the will-executors hold the will? (#84b-2)
+
+        #225: *only_ids* limits it to those copies: after the resend of
+        :meth:`_resend_lost`, only the copies sent again are asked (the
+        others were just verified), and a copy that could not be sent again
+        is not asked, so the row keeps its "Ko".
 
         Every VALID item that was sent and is not verified yet
         (``Will.needs_server_check``, the items the Check button verified)
@@ -1741,9 +1985,15 @@ class BalBuildWillDialog(BalDialog):
         awaited, then "received and verified" or "not received". It only
         reads from the executors; nothing is sent to them.
         """
+        # #225: the copies this verification finds missing (for _resend_lost).
+        self._verify_lost = set()
         if self._stopping:
             return
-        targets, _skipped = verify_targets(self.bal_window.willitems)
+        # #178: the will-executors not selected (Exclude) are not asked.
+        targets, _skipped = verify_targets(
+            self.bal_window.willitems, selected=self._selected_willexecutors())
+        if only_ids is not None:
+            targets = [(wid, url) for wid, url in targets if wid in only_ids]
         items = {wid: self.bal_window.willitems[wid] for wid, _url in targets}
         if not items:
             # Nothing sent that is not verified yet: the step then shows what
@@ -1756,7 +2006,10 @@ class BalBuildWillDialog(BalDialog):
         # #147: urls that did not answer in time for an item (still sent).
         unanswered = set()
         total = len(left)
-        deadline = Willexecutors.CHECK_GLOBAL_DEADLINE
+        # #172: the deadline grows with the transactions (at most 2 minutes);
+        # the same value is shown and given to the engine.
+        deadline = Willexecutors.check_deadline(targets)
+        busy = {}       # url -> time of its new try after a 429 (#172)
         report = self._report()
         start = time.time()
 
@@ -1781,6 +2034,14 @@ class BalBuildWillDialog(BalDialog):
                 sentence += " " + html.escape(
                     _("waiting for: {}").format(", ".join(hosts[:3]))
                 )
+            # #172 (owner): the copies, the seconds, why it is longer and who
+            # is busy, each on its own line, so the wait reads clearly.
+            answered = len(items) - sum(len(wids) for wids in left.values())
+            now = time.time()
+            for kind, line in check_wait_lines(
+                    answered, len(items), now - start, deadline, busy, now):
+                sentence += "<br>" + _WAIT_LINE_STYLE[kind].format(
+                    html.escape(line))
             report.set_result("run", sentence)
             self.updatemessage.emit()
 
@@ -1788,7 +2049,8 @@ class BalBuildWillDialog(BalDialog):
             """Show one answer, already recorded by the engine, live.
 
             #147: no answer in time (``NO_ANSWER``, after the 15 s of the
-            request or the 20 s of the whole step) leaves the item sent, and
+            request, a will-executor still busy after its new tries, or the
+            deadline of the whole step, #172) leaves the item sent, and
             the executor reads "received, no answer to the check", not "not
             received".
             """
@@ -1825,14 +2087,27 @@ class BalBuildWillDialog(BalDialog):
             if not self._stopping:
                 _progress()
 
+        def on_busy(url, seconds):
+            """A will-executor answered 429: its new try, shown (#172)."""
+            busy[url] = time.time() + seconds
+            if not self._stopping:
+                _progress()
+
         self.msg_set_verifying()
         for url in left:
             report.set_executor(url, "verifying")
         _progress()
         verify_will(
             self.bal_window.willitems, targets,
-            on_answer=_answered, on_tick=on_tick,
+            on_answer=_answered, on_tick=on_tick, on_busy=on_busy,
+            deadline=deadline,
         )
+        # #225: a copy the will-executor does not hold (another one, or none)
+        # is no longer sent (set_check_willexecutor): _resend_lost sends it.
+        self._verify_lost = {
+            wid for wid, w in items.items()
+            if w.get_status("CHECK_FAIL") and not w.get_status("PUSHED")
+        }
         # The final word under the step is counted over every will-executor
         # of the will in _finish_report.
         if failed:
@@ -1842,12 +2117,90 @@ class BalBuildWillDialog(BalDialog):
         else:
             self.msg_set_verifying(self.msg_ok())
 
+    def _resend_lost(self):
+        """Send again, in the same Check, the copies the verification found missing (#225).
+
+        Owner (#225): a will-executor that had lost the will (its server
+        emptied, or it holds another transaction) was seen by the
+        verification ("Ko", "did not receive it"), but the copy was sent
+        again only at the NEXT Check, weeks or months later, and the last
+        row said "All done: Ok". Now it is sent at once, to those
+        will-executors only, and verified again. WHY once: a will-executor
+        that takes the will and does not keep it must not make the Check
+        loop; the last row then says the will is not held everywhere.
+        """
+        lost = getattr(self, "_verify_lost", set())
+        if self._stopping or not lost:
+            return
+        items = self.bal_window.willitems
+        urls = {items[wid].we["url"] for wid in lost if wid in items and items[wid].we}
+        if not urls:
+            return
+        hosts = sorted(urlparse(u).hostname or u for u in urls)
+        self._log_only(_("Not held by {}: sent again").format(", ".join(hosts)))
+        first = self._send_outcome
+        try:
+            self.loop_push(only=urls)
+        except Exception as e:
+            self._send_outcome = SEND_ERROR
+            self.msg_set_pushing(self.msg_error(e))
+        second = self._send_outcome
+        # WHY: the row tells the whole Check, both sendings.
+        if SEND_ERROR in (first, second):
+            self._send_outcome = SEND_ERROR
+        elif second == SEND_NONE:
+            self._send_outcome = SEND_NONE
+        elif SEND_SOME in (first, second) or first == SEND_NONE:
+            self._send_outcome = SEND_SOME
+        else:
+            self._send_outcome = SEND_ALL
+        self._show_sending_outcome()
+        self.loop_verify(only_ids=lost)
+
+    def _not_held_everywhere(self):
+        """True when a will-executor of the will does not hold its copy (#225).
+
+        A VALID copy of a will-executor selected now that the verification
+        found missing (CHECK_FAIL, not verified), also after the resend.
+        """
+        selected = self._selected_willexecutors()
+        return any(
+            w.get_status("VALID") and w.we and w.get_status("CHECK_FAIL")
+            and not w.get_status("CHECKED")
+            and (selected is None or w.we.get("url") in selected)
+            for w in self.bal_window.willitems.values()
+        )
+
+    def _signs_elsewhere(self):
+        """True when this wallet cannot complete a signature alone (#227):
+        watch-only (the keys are on the offline computer) or a multisig (the
+        other cosigners sign on their computers)."""
+        wallet = self.bal_window.wallet
+        return bool(wallet.is_watching_only() or getattr(wallet, "n", 1) > 1)
+
     def invalidate_task(self, password, bal_window, tx):
+        """Sign and broadcast the invalidation *tx* (worker thread).
+
+        #227: on a wallet that cannot complete the signature alone
+        (:meth:`_signs_elsewhere`) an incomplete invalidation is not an
+        error: it returns ``("sign_elsewhere", tx)`` and
+        :meth:`on_success_invalidate` opens it in Electrum's transaction
+        window, to be signed on the other computers.
+        """
         if self._stopping:
             return
         _logger.debug(f"invalidate tx: {tx}")
         # fee_per_byte = bal_window.will_settings.get("baltx_fees", 1)
+        unsigned = tx
         tx = self.bal_window.wallet.sign_transaction(tx, password)
+        if (not tx or not tx.is_complete()) and self._signs_elsewhere():
+            # WHY (#227): before, this stopped the Check with "Error: not tx"
+            # (watch-only) or "tx not complete" (multisig) and put the date
+            # back, so the owner's normal setup (keys on a second computer)
+            # could not postpone from the Check. The later date stays: the
+            # invalidation may be signed and broadcast elsewhere (as on the
+            # command line, #134).
+            return "sign_elsewhere", tx or unsigned
         if not tx or not tx.is_complete():
             # #134: not signed, so certainly not broadcast: a postpone is
             # cancelled as at the password's Cancel (the date goes back).
@@ -1934,9 +2287,11 @@ class BalBuildWillDialog(BalDialog):
                     engine_context.prepared_items(bw, in_force), selected)
             else:
                 settings = bw.will_settings or {}
+                # #185: with a table the shares are the table's.
                 new = will_changes.side_from_settings(
                     bw.heirs or {}, settings.get("locktime"), selected or [],
-                    settings.get("baltx_fees"))
+                    settings.get("baltx_fees"),
+                    table=will_changes.settings_table(settings))
             changes = will_changes.with_renames(
                 will_changes.will_changes(old, new), self._heir_renames())
             # #135: a rename is already saved; the sentence about Cancel
@@ -1986,11 +2341,14 @@ class BalBuildWillDialog(BalDialog):
         no line at all (the amounts check did not explain it on that pass).
         Read from the Heirs tab (``will_changes.real_shares_text``: the
         written percentages in proportion; nothing with fixed amounts).
+        #168: with a table of deliveries, from the rows of every delivery
+        (the table adds up to 100 %; the person rows' amounts are not used).
         """
         try:
             if report.snapshot().get("amounts_note"):
                 return
-            shares = will_changes.real_shares_text(self.bal_window.heirs or {})
+            shares = will_changes.real_shares_text(
+                engine_instalments.effective_heirs(self.bal_window) or {})
             if shares and shares[1]:
                 report.set_amounts_note(
                     _("Shares recalculated in proportion: {}").format(shares[0]), False)
@@ -2002,7 +2360,8 @@ class BalBuildWillDialog(BalDialog):
         from the will in force's, or no will is in force (#135).
 
         The names do not count (a rename is not a change of shares), nor
-        the will-executors or the date.
+        the will-executors or the date. #168: with a table of deliveries the
+        first item is compared with the rows of delivery 1.
         """
         in_force = engine_context.in_force_items(self.bal_window)
         # THE will in force: the copies with the earliest delivery (#128);
@@ -2021,7 +2380,8 @@ class BalBuildWillDialog(BalDialog):
                 out[str(heir[0])] = str(heir[1])
             return out
 
-        return written(first.heirs) != written(self.bal_window.heirs)
+        return written(first.heirs) != written(
+            engine_instalments.first_delivery_heirs(self.bal_window))
 
     @staticmethod
     def _shares_line(info):
@@ -2063,6 +2423,10 @@ class BalBuildWillDialog(BalDialog):
         try:
             renames = getattr(self.bal_window, "heir_renames", None)
             renames = list(renames) if isinstance(renames, list) else []
+            # #170: with a table of deliveries a rename comes once per
+            # delivery ("Luca" -> "Marco", "Luca§2" -> "Marco§2"): the owner
+            # reads it once, with the persons' names.
+            renames = person_renames(renames)
             if renames:
                 self._renames_seen = renames
             for old, new in renames:
@@ -2232,7 +2596,17 @@ class BalBuildWillDialog(BalDialog):
         # window has neither, and passing it crashed (owner's ZIP test).
         # The TxDialog is a top-level window of its own (no Qt parent), so
         # this window-modal Check window does not block it.
-        dialog = self.bal_window.show_transaction(tx=shown)
+        dialog = self._transaction_window(shown)
+        for name in ("sign_button", "broadcast_button"):
+            button = getattr(dialog, name, None)
+            if button is not None:
+                button.setVisible(False)
+        return dialog
+
+    def _transaction_window(self, tx):
+        """Open Electrum's transaction window on *tx*, in front of this Check
+        window; returns it (or None)."""
+        dialog = self.bal_window.show_transaction(tx=tx)
         if dialog is not None:
             # The TxDialog has no Qt parent, and this Check window is
             # window-modal: Qt then BLOCKS every other top-level window, so
@@ -2250,12 +2624,123 @@ class BalBuildWillDialog(BalDialog):
                 dialog.raise_()
                 dialog.activateWindow()
             except Exception as e:
-                _logger.error(f"invalidation preview re-parent failed: {e!r}")
-        for name in ("sign_button", "broadcast_button"):
-            button = getattr(dialog, name, None)
-            if button is not None:
-                button.setVisible(False)
+                _logger.error(f"transaction window re-parent failed: {e!r}")
         return dialog
+
+    def _elsewhere_texts(self):
+        """(row, message) of an invalidation to sign on other computers
+        (#227): the offline computer of a watch-only wallet, or the
+        cosigners' computers of a multisig."""
+        # Owner (ZIP test): numbered steps, easy to copy on paper, naming
+        # Electrum's own buttons and menus (no other guided window).
+        if getattr(self.bal_window.wallet, "n", 1) > 1:
+            return (
+                _("To sign on the cosigners' computers"),
+                _("To postpone the date, the old will must be invalidated "
+                  "first. This is a multisig: the invalidation must be signed "
+                  "on the cosigners' computers.\n"
+                  "What to do:\n"
+                  # The QR code is fine here (owner): the invalidation is
+                  # one small transaction, unlike a will in several deliveries.
+                  "1. In the transaction window press Share and save it to a "
+                  "file (or show the QR code).\n"
+                  "2. Take the file to the cosigners' computers.\n"
+                  "3. There, on each cosigner's computer in turn, in Electrum: "
+                  "Tools > Load transaction. Check that the bitcoin go back to "
+                  "an address of yours, press Sign and save the signed file, "
+                  "until every signature is there.\n"
+                  "4. Bring the signed file back to the online computer.\n"
+                  "5. Here, in Electrum: Tools > Load transaction, then press "
+                  "Broadcast.\n"
+                  "6. Wait for the confirmation, then press Check: the will "
+                  "with the new date is prepared. Sign it with Tools > Sign "
+                  "the will offline."),
+            )
+        return (
+            _("To sign on the offline computer"),
+            _("To postpone the date, the old will must be invalidated first. "
+              "This wallet is watch-only: the invalidation must be signed on "
+              "the offline computer.\n"
+              "What to do:\n"
+              "1. In the transaction window press Share and save it to a "
+              "file (or show the QR code).\n"
+              "2. Take the file to the offline computer.\n"
+              "3. There, in Electrum: Tools > Load transaction. Check that the "
+              "bitcoin go back to an address of yours, press Sign and save the "
+              "signed file.\n"
+              "4. Bring the signed file back to the online computer.\n"
+              "5. Here, in Electrum: Tools > Load transaction, then press "
+              "Broadcast.\n"
+              "6. Wait for the confirmation, then press Check: the will with "
+              "the new date is prepared. Sign it with Tools > Sign the will "
+              "offline."),
+        )
+
+    def _copy_instructions(self, button=None):
+        """Put the steps of an invalidation signed elsewhere in the
+        clipboard (#227: to paste in a document and print); the button then
+        says so."""
+        from PyQt6.QtWidgets import QApplication
+
+        QApplication.clipboard().setText(self._elsewhere_message or "")
+        if button is not None:
+            button.setText(_("Instructions copied"))
+
+    def _show_instructions(self, message):
+        """The steps of an invalidation signed elsewhere, in a message with
+        "Copy the instructions" and "OK" (#227, owner: in the message too).
+
+        Like Electrum's own message (selectable text, window-modal), with
+        one more button that copies without closing it. The first line (why
+        and where to sign) is in bold (owner); the copy is plain text.
+        """
+        from PyQt6.QtWidgets import QMessageBox
+
+        box = QMessageBox(QMessageBox.Icon.Information, _("Information"), "",
+                          QMessageBox.StandardButton.Ok, self)
+        box.setWindowModality(Qt.WindowModality.WindowModal)
+        box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.setTextFormat(Qt.TextFormat.RichText)
+        # WHY the whole first line and not one word: the same rule works in
+        # every language, and no markup goes into the translations.
+        head, _sep, rest = message.partition("\n")
+        box.setText("<b>{}</b><br>{}".format(
+            html.escape(head), html.escape(rest).replace("\n", "<br>")))
+        copy_button = box.addButton(_("Copy the instructions"),
+                                    QMessageBox.ButtonRole.ActionRole)
+        # WHY: every button of a QMessageBox closes it; take the copy
+        # button's own connection away, so it copies and the box stays.
+        copy_button.clicked.disconnect()
+        copy_button.clicked.connect(
+            lambda _c=False, b=copy_button: self._copy_instructions(b))
+        box.setDefaultButton(QMessageBox.StandardButton.Ok)
+        box.exec()
+
+    def _invalidate_elsewhere(self, tx):
+        """The invalidation goes to the other computers (#227, GUI thread).
+
+        Labelled in Electrum's history as every invalidation, opened in
+        Electrum's transaction window (with its Export, as Tools >
+        Invalidate does), the "Invalidating old will" row and the result say
+        where to sign it; the Check ends there. The later date stays.
+        """
+        self._invalidated_elsewhere = True
+        row, message = self._elsewhere_texts()
+        # What "Copy the instructions" of the message copies (#227).
+        self._elsewhere_message = message
+        self.msg_set_invalidating(self.msg_warning(row))
+        try:
+            txid = tx.txid()
+            if txid:
+                self.bal_window.wallet.set_label(txid, INVALIDATION_LABEL)
+        except Exception as e:
+            _logger.error(f"invalidation label not set: {e!r}")
+        self._show_instructions(message)
+        try:
+            self._transaction_window(tx)
+        except Exception as e:
+            _logger.error(f"invalidation window not opened: {e!r}")
+        self._add_close_button()
 
     def _format_fiat(self, satoshi):
         """``satoshi`` in fiat with Electrum's formatter ("12.34 EUR"), or
@@ -2289,13 +2774,21 @@ class BalBuildWillDialog(BalDialog):
         going back would sign that newer will at an earlier date).
         """
         if (not self._postpone_invalidation or self._postpone_reverted
-                or self._later_by_question):
+                or self._later_by_question or self._staged_removed):
+            # #188: back to one delivery cancelled: no date was moved, the
+            # copies in several deliveries stay in force; nothing to revert.
             return
         self._postpone_reverted = engine_context.revert_cancelled_postpone(
             self.bal_window
         )
 
     def on_success_invalidate(self, success):
+        """After the invalidation: phase 1 again (the will with the new date),
+        or, for an invalidation to sign on other computers (#227), the
+        transaction window and the end of this Check."""
+        if isinstance(success, tuple) and success and success[0] == "sign_elsewhere":
+            self._invalidate_elsewhere(success[1])
+            return
         self.thread.add(
             self.task_phase1,
             on_success=self.on_success_phase1,
@@ -2471,9 +2964,12 @@ class BalBuildWillDialog(BalDialog):
             self._add_close_button()
             return
 
-        if self.have_to_sign == "delivery_settings_unavailable":
+        if self.have_to_sign in ("delivery_settings_unavailable",
+                                 "delivery_rest_cancelled"):
             # #123, fail closed: the error is on its own red row; nothing was
-            # built, signed, sent or invalidated.
+            # built, signed, sent or invalidated. #201: the rest of a will in
+            # several deliveries was cancelled: the same stop, the note says
+            # how to go on.
             self._add_close_button()
             return
 
@@ -2573,9 +3069,14 @@ class BalBuildWillDialog(BalDialog):
                 # #84b: the Signature step is running while Electrum's
                 # password window is open (it stayed grey before).
                 self.msg_set_signing()
-                password = self.bal_window.get_wallet_password(
-                    _("Sign your will"), parent=self
-                )
+                # #209: the addresses compared with the paper, first; a
+                # "no" is the Cancel at the password below.
+                password = False
+                if self.bal_window.confirm_signing(
+                        txids=self._ids_to_sign(), parent=self):
+                    password = self.bal_window.get_wallet_password(
+                        _("Sign your will"), parent=self
+                    )
                 if password is False:
                     self.msg_set_signing(_("Aborted"))
         else:
@@ -2741,6 +3242,12 @@ class BalBuildWillDialog(BalDialog):
         Owner (#93): deselecting it in the Will-Executor tab and pressing
         Check again was the way out, but hard to find. Asks first, never
         for the last selected executor, then checks again without it.
+
+        #181: also offered for a will-executor that received the will and
+        did not answer the check ("no_check_answer"). Its own question: it
+        HAS the will (the #93 text "did not receive your will" would be
+        false), its copies stay with it (#178), and pressing Retry later is
+        the other way (owner: keep the two texts distinct).
         """
         host = urlparse(url).hostname or url
         if not self.bal_window.can_exclude_willexecutor(url):
@@ -2754,18 +3261,30 @@ class BalBuildWillDialog(BalDialog):
             if u != url and state in ("verified", "to_verify", "received",
                                       "no_check_answer")
         ]
-        text = _('"{}" did not receive your will.').format(host)
-        if others:
-            text += " " + (
-                _("1 other will-executor has it.")
-                if len(others) == 1
-                else _("The other {} will-executors have it.").format(len(others))
+        state = self._report().executors().get(url, (None, None))[0]
+        if state == "no_check_answer":
+            text = _(
+                '"{}" received your will, but did not answer the check.'
+            ).format(host)
+            text += "\n\n" + _(
+                "If you exclude it, it is no longer checked and your next wills "
+                "are no longer sent to it. The copies it already received stay "
+                "with it. You can select it again in the Will-Executor tab."
             )
-        text += "\n\n" + _(
-            "If you exclude it, your will is no longer sent to it and the check "
-            "runs again without it. You can select it again in the "
-            "Will-Executor tab."
-        )
+            text += "\n\n" + _("You can also press Retry later.")
+        else:
+            text = _('"{}" did not receive your will.').format(host)
+            if others:
+                text += " " + (
+                    _("1 other will-executor has it.")
+                    if len(others) == 1
+                    else _("The other {} will-executors have it.").format(len(others))
+                )
+            text += "\n\n" + _(
+                "If you exclude it, your will is no longer sent to it and the check "
+                "runs again without it. You can select it again in the "
+                "Will-Executor tab."
+            )
         text += "\n\n" + _("Exclude it?")
         if not self.question(text):
             return
@@ -3021,20 +3540,30 @@ class BalBuildWillDialog(BalDialog):
                 self.msg_set_signing(self.msg_error(e))
 
         self.msg_set_pushing()
+        # #222: set by loop_push; None when nothing was sent.
+        self._send_outcome = None
         have_to_push = False
+        # #178: only the copies of the will-executors selected now: the
+        # sending skips the others (``Willexecutors.get_willexecutor_
+        # transactions``), so a signed, unsent copy of an excluded one (kept
+        # since #178: its sending got no answer) made a "Broadcasting 0/0"
+        # run and "Sending 1/1" instead of "not needed". None: no rule.
+        selected = self._selected_willexecutors()
         for wid in Will.only_valid(self.bal_window.willitems):
             w = self.bal_window.willitems[wid]
-            if w.we and w.get_status("COMPLETE") and not w.get_status("PUSHED"):
+            if (w.we and w.get_status("COMPLETE") and not w.get_status("PUSHED")
+                    and (selected is None or w.we.get("url") in selected)):
                 have_to_push = True
         if not have_to_push:
             self.msg_set_pushing(_("Nothing to do"))
         else:
             try:
                 self.loop_push()
-                self.msg_set_pushing(self.msg_ok())
+                self._show_sending_outcome()
 
             except Exception as e:
                 # td = traceback.format_exc()
+                self._send_outcome = SEND_ERROR
                 self.msg_set_pushing(self.msg_error(e))
         # CHANGELOG #84b-2: verify here what the will-executors hold (it
         # used to run after this dialog, in a separate window, and not at
@@ -3043,6 +3572,8 @@ class BalBuildWillDialog(BalDialog):
             if not self._stopping:
                 self._merge_executors_and_send_note()
             self.loop_verify()
+            # #225: a will-executor that lost the will gets it again now.
+            self._resend_lost()
         except Exception as e:
             _logger.error(f"verification failed: {e!r}")
             self.msg_set_verifying(self.msg_error(e))
@@ -3056,18 +3587,35 @@ class BalBuildWillDialog(BalDialog):
         # result like the other rows have.
         # #159 (H1, H2): "Ok" only when the will is signed; a watch-only
         # wallet or a multisig waiting for another signer still has to sign.
+        # #196 (owner): then the label is "Not finished", not "All done":
+        # "All done: Will still to sign" read as a contradiction.
+        # #222: a signed will that did not reach every will-executor is not
+        # finished either (before: "All done: Ok" after a failed sending).
+        # Owner: when none received it, "not sent to every" read as if some
+        # had; then the row says so plainly.
         left = self._signing_left()
-        if left is None:
+        if left is None and self._send_outcome == SEND_NONE:
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
+                _("Will not sent to the will-executors"))))
+        elif left is None and self._send_outcome in (SEND_SOME, SEND_ERROR):
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
+                _("Will not sent to every will-executor"))))
+        elif left is None and self._not_held_everywhere():
+            # #225: sent, but a will-executor still does not hold it (before:
+            # "All done: Ok" under "Verifying: Ko").
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
+                _("Will not held by every will-executor"))))
+        elif left is None:
             self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_ok()))
         elif left.partial:
             # Owner: a multisig signed here ("1 of 2") is partly signed, not
             # "still to sign" (the signature made here counts).
-            self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_warning(
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
                 _("Will partly signed: complete it with the missing "
                   "signatures."))))
         else:
             self.msg_edit_row("{}:\t{}".format(
-                _("All done"), self.msg_warning(_("Will still to sign"))))
+                _("Not finished"), self.msg_warning(_("Will still to sign"))))
 
         # Safety net (CHANGELOG #69): warn when an executor still holds a
         # transaction of an OLDER will that could be executed before the
@@ -3212,8 +3760,21 @@ class BalBuildWillDialog(BalDialog):
         button=QPushButton(_("Close"))
         button.clicked.connect(self.close)
         self.vbox.addWidget(button)
+        if isinstance(b, delivery.InstalmentsMismatch) and \
+                not self.bal_window.bal_plugin.is_basic_mode():
+            # #170: the table of the deliveries no longer fits the heirs:
+            # its window, at once (ADVANCED, as the window is).
+            table_button = QPushButton(_("Open the table of the deliveries"))
+            table_button.clicked.connect(self._open_table_after_error)
+            self.vbox.addWidget(table_button)
         self.resize(self.vbox.sizeHint()+button.sizeHint()*2)
         self.repaint()
+
+    def _open_table_after_error(self):
+        """Close the Check and open the window of the deliveries (#170)."""
+        self.close()
+        self.bal_window.open_deliveries_editor()
+
     def on_error_phase2(self, error):
         """Show an error raised while signing/sending the will (phase 2).
 
@@ -3267,6 +3828,17 @@ class BalBuildWillDialog(BalDialog):
             self._postpone_invalidation,
             self._unsigned_executors,
         )
+
+    def _first_will(self, e):
+        """True when the core found no valid transaction because the wallet
+        has no will at all.
+
+        #203 (owner): on a first will nothing changed, so the Check must not
+        say "The will contains no valid transaction" in the "What changed"
+        box. With copies in the wallet, none of them valid, the sentence is
+        true and stays.
+        """
+        return no_valid_transaction(e) and not self.bal_window.willitems
 
     def _check_failure_message(self, e):
         """Return a precise explanation of why the will is no longer coherent.
@@ -3770,7 +4342,9 @@ class BalBuildWillDialog(BalDialog):
                     report.put("problems", key, text)
             elif kind == "warn":
                 report.set_step(step, "warn")
-                if text:
+                # #204: "Stopped" is the state of the step; the note on its
+                # own row says why, so the box does not repeat the bare word.
+                if text and text != _("Stopped"):
                     report.put("warnings", key, text)
             elif step in ("check", "prepare"):
                 # Plain text on these steps tells what changed (a new fee, a
@@ -3820,7 +4394,6 @@ class BalBuildWillDialog(BalDialog):
             bw = self.bal_window
             self._quiet_shares_line(report)
             executors = self._merge_executors_and_send_note()
-            total = len(executors)
             if report.step("send")[0] == "skip" and any(
                 st == "to_sign" for st, _sec in executors.values()
             ):
@@ -3832,6 +4405,9 @@ class BalBuildWillDialog(BalDialog):
             # Counted over every will-executor of the will, like the sending
             # (#84b-2): a verification that ran and got no confirmation is an
             # error; one that never ran (nothing sent yet) is still "to do".
+            # #178: an excluded will-executor is not asked: not counted here
+            # (it is in the sending's count: it received the will).
+            total = sum(1 for st, _sec in executors.values() if st != "excluded")
             verify_state = report.step("verify")[0]
             if total and verify_state != "skip":
                 if verified == total:
@@ -3845,8 +4421,20 @@ class BalBuildWillDialog(BalDialog):
                     report.set_step("verify", "todo", _("to do"))
                 else:
                     report.set_step("verify", "err", "{}/{}".format(verified, total))
+            elif any(st == "excluded" for st, _sec in executors.values()):
+                # #178: every will-executor of the will is excluded (all
+                # deselected after they received it): nobody to verify, so
+                # "not needed" like the other steps with nothing to do (the
+                # step stayed grey with no word, as if never reached).
+                report.set_step("verify", "skip")
             if report.step("prepare")[0] == "ok":
                 report.set_heirs(heir_shares(bw.willitems, bw.heirs))
+            selected = self._selected_willexecutors()
+            # #190: the excluded will-executors that still hold a copy.
+            held = engine_context.excluded_holders(bw, selected)
+            report.set_held(held)
+            # #192: a miner fee below 20 sat/vB (a warning, never a block).
+            report.set_low_fee(low_fee_warning((bw.will_settings or {}).get("baltx_fees")))
             summary = will_summary(
                 bw.willitems,
                 len(bw.heirs or {}),
@@ -3857,7 +4445,8 @@ class BalBuildWillDialog(BalDialog):
                 # #134: the one date style and the in-force comparison.
                 long_dates=True,
                 # #134: deselected will-executors are not "to send".
-                selected=self._selected_willexecutors(),
+                selected=selected,
+                held=held,
                 # #135: THE will in force, the one rule of the List, the
                 # Future view and the wizard (not only the REPLACED copies).
                 in_force=engine_context.in_force_delivery(bw),
@@ -3868,13 +4457,28 @@ class BalBuildWillDialog(BalDialog):
                 None,
             )
             interrupted = report.interrupted()
-            if not failed_step and not interrupted:
+            # #204: the plan the owner stopped (#201) is a state he chose, not
+            # a failure: amber, and the steps not reached stay as they are.
+            held = self.have_to_sign == "delivery_rest_cancelled"
+            if not held and not failed_step and not interrupted:
                 # A normal ending: the steps never reached were not needed
                 # (nothing to prepare, sign or send).
                 for step in ("prepare", "sign", "send"):
                     if report.step(step)[0] == "todo":
                         report.set_step(step, "skip")
-            if failed_step:
+            if held:
+                report.set_result("warn", "<b>{}</b>".format(html.escape(
+                    _("The check stopped: nothing was changed."))))
+                report.set_will_now(self._will_now_text(summary))
+            elif self._invalidated_elsewhere:
+                # #227: the invalidation waits for the other computers' signatures.
+                report.set_result("warn", "<b>{}</b>".format(html.escape(_(
+                    "Postponing: the old will stays in force until its "
+                    "invalidation is signed on the other computers and "
+                    "broadcast. Then press Check again: the will with the new "
+                    "date is prepared then."))))
+                report.set_will_now(self._will_now_text(summary))
+            elif failed_step:
                 report.set_result("err", "<b>{}</b>".format(html.escape({
                     "check": _("The check stopped: nothing was changed."),
                     "prepare": _("The new will was not prepared."),
@@ -3893,6 +4497,16 @@ class BalBuildWillDialog(BalDialog):
                     "bitcoin stay yours, you only pay the normal network fee). "
                     "When you are ready, choose it again."
                 ).format(chosen=datetext.utc_text(self._postpone_reverted[0])))))
+                report.set_will_now(self._will_now_text(summary))
+            elif "prepare" in interrupted and self._staged_removed:
+                # #188: the copies in several deliveries stay in force; the
+                # next Check asks again; the table window brings them back.
+                report.set_result("warn", "<b>{}</b>".format(html.escape(_(
+                    "Interrupted: the will in several deliveries was not "
+                    "invalidated and stays in force. The next Check will ask "
+                    "again; to keep the deliveries instead, open the window "
+                    "\"Inheritance in several deliveries\" and save."
+                ))))
                 report.set_will_now(self._will_now_text(summary))
             elif "prepare" in interrupted:
                 report.set_result("warn", "<b>{}</b>".format(html.escape(_(
@@ -3935,15 +4549,22 @@ class BalBuildWillDialog(BalDialog):
         selected = self._selected_willexecutors()
         report.merge_executors(executor_states(valid, selected))
         executors = report.executors()
+        # #182: when each verified will-executor was last verified (and the
+        # next check of a will in several deliveries), shown on its row.
+        report.set_verified({
+            u: verified_times(valid, url=u)
+            for u, (st, _sec) in executors.items() if st == "verified"
+        })
         # A will-executor selected again since gets its real state ("to
         # send") from the merge above. The deselected ones stay in the box
         # but are left out of the counts.
         executors = {u: v for u, v in executors.items() if v[0] != "deselected"}
         total = len(executors)
+        # #178: an excluded will-executor received the will too.
         received = sum(
             1 for st, _sec in executors.values()
             if st in ("received", "verifying", "verified", "to_verify",
-                      "no_check_answer")
+                      "no_check_answer", "excluded")
         )
         failed = sum(
             1 for st, _sec in executors.values() if st in ("failed", "timeout")
@@ -4136,8 +4757,11 @@ class WillDetailDialog(BalDialog):
         live wallet willitems directly, so any further Sign/Broadcast/Export/
         Invalidate action targets the saved will items, and the note about
         the Future view (#131) appears.
+
+        #210: a refused file was told by the merge: the window stays on it.
         """
-        self.bal_window.merge_will(self.will)
+        if not self.bal_window.merge_will(self.will):
+            return
         self._external_will = False
         self.will = self.bal_window.willitems
         self.threshold = _live_threshold(self.bal_window)
@@ -4471,8 +5095,19 @@ class BalQrExportWidget(QWidget):
 
     def _on_chunk_change(self, index):
         self._stop_auto()
+        previous = self.chunk_size
         self.chunk_size = CHUNK_PRESETS[index][1]
-        self._refresh_frames()
+        try:
+            self._refresh_frames()
+        except AnimatedQrError as e:
+            # #171: this will needs more QR frames than the format allows at
+            # this size: the size is not taken (the previous one stays).
+            _logger.info(f"QR size not taken: {e}")
+            self.chunk_size = previous
+            self.size_combo.blockSignals(True)
+            self.size_combo.setCurrentIndex(preset_index_for_chunk_size(previous))
+            self.size_combo.blockSignals(False)
+            self._refresh_frames()
         self._render()
         if self._on_size_change is not None:
             self._on_size_change(self.chunk_size)
@@ -4558,7 +5193,11 @@ class WillExportDialog(BalDialog):
         self.bal_plugin = bal_plugin
         self._source = will if will is not None else bal_window.willitems
         self._filters = export_filter_options()
-        self._filter_index = 0
+        # #171 (owner): the window starts on "Valid", the will in force (what
+        # a copy, the offline signing or another device need); "All" (the
+        # whole history) when nothing is valid.
+        self._filter_index = 1 if filter_willitems(
+            self._source, self._filters, 1) else 0
         try:
             chunk = int(bal_plugin.QR_CHUNK_SIZE.get())
         except Exception:
@@ -4574,6 +5213,7 @@ class WillExportDialog(BalDialog):
         filter_row.addWidget(QLabel(_("Export:")))
         self.filter_combo = QComboBox()
         self.filter_combo.addItems([label for label, _fn in self._filters])
+        self.filter_combo.setCurrentIndex(self._filter_index)
         self.filter_combo.currentIndexChanged.connect(self._on_filter_change)
         filter_row.addWidget(self.filter_combo)
         # Content scope: whole will items vs only the serialized transactions.
@@ -4609,6 +5249,17 @@ class WillExportDialog(BalDialog):
         self.stacked = QStackedWidget()
         self.file_page = self._build_file_page()
         self.stacked.addWidget(self.file_page)
+        # #171 (owner): a will in several deliveries can be too big for the
+        # QR codes (the BBQR format has at most 1295 frames): then only the
+        # file is offered, with this note.
+        self.too_big_label = QLabel(_(
+            "This will is too big for QR codes and audio: export it as a "
+            "file. (The filter \"Valid\" makes it smaller.)"))
+        self.too_big_label.setWordWrap(True)
+        self.too_big_label.setVisible(False)
+        vbox.addWidget(self.too_big_label)
+        self.too_big = False
+
         self.qr_page = BalQrExportWidget(
             chunk_size=chunk,
             on_size_change=self._remember_qr_size,
@@ -4638,9 +5289,44 @@ class WillExportDialog(BalDialog):
         (self.transport_file, self.transport_qr, self.transport_audio)[
             mode
         ].setChecked(True)
-        self.qr_page.set_tx_strings(self._payload_strings())
-        self._on_mode_clicked(mode)
+        self._refresh_transports()
+        self._on_mode_clicked(self.transport_group.checkedId())
         self._update_info()
+
+    def _basic(self):
+        """True in BASIC mode (#171: the file only); False when the plugin
+        cannot say."""
+        try:
+            return bool(self.bal_plugin.is_basic_mode())
+        except Exception:
+            return False
+
+    def _refresh_transports(self):
+        """Prepare the QR frames of the current selection (#171).
+
+        When the selection is too big for the QR codes (``AnimatedQrError``,
+        the owner's will in several deliveries: about 244 transactions),
+        the QR and audio choices disappear and only the file stays, with
+        the note; when it fits again (the filter "Valid", only the
+        transactions), they come back. Returns True when QR fits.
+        """
+        try:
+            self.qr_page.set_tx_strings(self._payload_strings())
+            fits = True
+        except AnimatedQrError as e:
+            _logger.info(f"export too big for QR codes: {e}")
+            fits = False
+        self.too_big = not fits
+        # #171 (owner): BASIC offers the file only (its guided offline route
+        # uses the file on a USB stick); QR and audio are ADVANCED tools.
+        basic = self._basic()
+        self.transport_qr.setVisible(fits and not basic)
+        self.transport_audio.setVisible(fits and not basic)
+        self.too_big_label.setVisible(not fits and not basic)
+        if (not fits or basic) and not self.transport_file.isChecked():
+            self.transport_file.setChecked(True)
+            self.stacked.setCurrentWidget(self.file_page)
+        return fits
 
     def _build_file_page(self):
         page = QWidget()
@@ -4744,18 +5430,18 @@ class WillExportDialog(BalDialog):
             self._filter_index = previous
             self.show_message(_("No will transaction matches the selected filter."))
             return
-        if self.transport_qr.isChecked():
-            self.qr_page.set_tx_strings(self._payload_strings())
+        self._refresh_transports()
         self._update_info()
 
     def _on_content_toggle(self, checked):
-        if self.transport_qr.isChecked():
-            self.qr_page.set_tx_strings(self._payload_strings())
+        self._refresh_transports()
         self._update_info()
 
     def _on_mode_clicked(self, mode):
+        if mode != self.MODE_FILE and (
+                not self._refresh_transports() or self._basic()):
+            mode = self.MODE_FILE
         if mode == self.MODE_QR:
-            self.qr_page.set_tx_strings(self._payload_strings())
             self.stacked.setCurrentWidget(self.qr_page)
         elif mode == self.MODE_AUDIO:
             self.stacked.setCurrentWidget(self.audio_page)
@@ -5628,6 +6314,11 @@ class WillTxReviewSignDialog(BalDialog):
         self.aborted = False
         self.i = 0
         if not self.txids:
+            self.aborted = True
+            self.close()
+            return
+        # #209: a will from a file: the same check as the guided window.
+        if not bal_window.confirm_signing(will=self.items):
             self.aborted = True
             self.close()
             return

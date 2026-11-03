@@ -3,8 +3,9 @@ A will-executor that did not get the will: "Exclude" and "Retry" (CHANGELOG #93)
 
 * ``BalWindow.can_exclude_willexecutor`` / ``exclude_willexecutor``: never
   the last selected executor; deselect and save like the Will-Executor tab;
-  drop the copies it never got (kept VALID they kept the summary orange and
-  the report locked), keep the ones it got;
+  drop the copies never sent (kept VALID they kept the summary orange and
+  the report locked), keep every copy sent at least once (#178: it may be
+  on the will-executor's server, even after a failed check);
 * ``BuildReportView``: "Exclude" next to each executor that did not get the
   will and "Retry" under the box, only once the dialog has finished;
 * ``BalBuildWillDialog``: the buttons are wired when the run ends; Exclude
@@ -66,17 +67,24 @@ def test_never_the_last_selected_executor():
     assert not BalWindow.can_exclude_willexecutor(bw, WE0)      # not selected
 
 
-def test_exclude_deselects_saves_and_drops_the_unsent_copies():
+def test_exclude_deselects_saves_and_drops_only_the_copies_never_sent():
+    """#178 (owner's ZIP test): only the copies never sent are dropped. A
+    copy sent at least once stays, even when its sending got no answer
+    (PUSH_FAIL) or its check failed (CHECK_FAIL: we.divinaly.support's
+    503 after "pushed: thx"): the will-executor may hold it."""
     sent_before = _item("COMPLETE", "PUSHED", "CHECKED", "REPLACED", url=WE1)
-    unsent = _item("COMPLETE", "PUSH_FAIL", url=WE1)
+    push_failed = _item("COMPLETE", "PUSH_FAIL", url=WE1)
+    check_failed = _item("COMPLETE", "CHECK_FAIL", url=WE1)
+    never_sent = _item("COMPLETE", url=WE1)
     other = _item("COMPLETE", "PUSHED", "CHECKED", url=WE0)
-    items = {"old": sent_before, "new": unsent, "we0": other}
+    items = {"old": sent_before, "push": push_failed, "check": check_failed,
+             "never": never_sent, "we0": other}
     bw = _window(willitems=items)
     with patch.object(Willexecutors, "save") as save:
         assert BalWindow.exclude_willexecutor(bw, WE1)
     assert bw.willexecutors[WE1]["selected"] is False
     save.assert_called_once_with(bw.bal_plugin, bw.willexecutors)
-    assert set(bw.willitems) == {"old", "we0"}         # the copy it never got
+    assert set(bw.willitems) == {"old", "push", "check", "we0"}
     bw.save_willitems.assert_called_once_with()
 
 

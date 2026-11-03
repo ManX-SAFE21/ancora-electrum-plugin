@@ -11,6 +11,12 @@
 > Gitea repository. A styled single‑page version is available as
 > [`manual.html`](./manual.html).
 
+> **Àncòra.** This manual was written for the original BAL plugin.
+> **Àncòra (Safe21)** is a fork of it: it uses the same BAL protocol and the
+> same will-executors, and this edition describes Àncòra wherever the two
+> differ. Many texts still say "the BAL plugin": in Àncòra the plugin is
+> listed as **Àncòra (Safe21)**.
+
 ---
 
 Welcome to using **BAL**, the open‑source plugin for Electrum Wallet, dedicated
@@ -32,13 +38,28 @@ the future the plugin will be placed directly on Electrum by default.
 
 The steps for installing the BAL plugin are very simple:
 
-1. Install the latest version of **Electrum** (Bitcoin wallet).
-2. Install the **BAL plugin** (find the files on the Bitcoin‑after.life site or
-   links on the Bitcointalk forum), copying it to the Electrum plugins folder.
-3. Activate the plugin from the Electrum menu (**Tools → Plugins → BAL**).
+1. Install **Electrum 4.8.3 or later** (Bitcoin wallet): an older Electrum
+   does not load Àncòra.
+2. Download the Àncòra ZIP from the
+   [releases page](https://github.com/ManX-SAFE21/ancora-electrum-plugin/releases)
+   and check its SHA‑256 against the one written there.
+3. In Electrum open **Tools → Plugins**, add the ZIP and enable
+   **Àncòra (Safe21)**.
 4. **Restart Electrum.**
 
+> **NB:** Àncòra and the original BAL plugin cannot be installed together:
+> both use the internal name `bal`.
+
+**Updating to a new version:** in **Tools → Plugins** add the new ZIP.
+Electrum sees it is the same plugin, replaces the old ZIP and asks you to
+restart. **Restart Electrum**: until then the old version keeps running.
+Your heirs, your will and your settings are kept.
+
 Now you are ready to leave your digital legacy to your heirs!
+
+**Which wallets:** the addresses of your wallet must start with `bc1q`. A wallet
+with Bitcoin addresses starting with `1` or `3` cannot build a will, and the plugin says
+so. Those addresses also cost more in miner fees, for every copy of the will.
 
 ---
 
@@ -307,11 +328,20 @@ placed on the blockchain even on congested days.)
 
 ## Staggered inheritance over time
 
-Currently **BAL version 1.0** does not support this. It is already in development
-for **version 2** of the protocol. In version 2 it will be possible, for
-example, to stagger the inheritance 10 % per year until the tenth year, or even
-1 % per month, month by month for 10 years — as if it were a kind of annuity,
-but without the need for third parties or intermediaries.
+Àncòra can deliver the inheritance in **several deliveries** (the
+*Multiverse*), in **ADVANCED** mode only. In the wizard choose the delivery
+form **Several deliveries (Multiverse)** and press **Edit the deliveries…**;
+the same window opens from **Tools** in the Will tab
+(*Inheritance in several deliveries (Multiverse)…*).
+
+- From **2 to 3 deliveries** today, each on its own date, at least 28 days
+  after the one before.
+- The dates are the same for every heir; at each delivery every heir can
+  receive a **different share** of the estate (also 0 %).
+- Every delivery pays at least one heir, every heir receives something at
+  one delivery at least, and the whole table adds up to **100 %**.
+
+For example: 20 % to each of two heirs in 2028, then 30 % to each in 2030.
 
 ---
 
@@ -445,10 +475,14 @@ previous month. *(The Check Alive only exists in **ADVANCED** mode; in
 I have 2 children, **Peter** (12) and **Arnold** (16). I own 10 BTC and want
 each to receive 5 BTC on their respective 18th birthdays.
 
-In the current BAL plugin (1.0) it is **not** possible to set different delivery
-dates — the inheritance date is unique. So in this case I prepare **two wallets**
-of 5 BTC each and set the respective inheritance with the BAL plugin. Electrum
-helps here, as it lets you easily create and manage multiple wallets.
+With Àncòra in ADVANCED mode I use **several deliveries** (see *Staggered
+inheritance over time*): delivery 1 on Arnold's 18th birthday gives 50 % to
+Arnold and 0 % to Peter, delivery 2 on Peter's 18th birthday gives 50 % to
+Peter and 0 % to Arnold.
+
+Without several deliveries, the other way is to prepare **two wallets** of
+5 BTC each and set the respective inheritance in each one. Electrum helps
+here, as it lets you easily create and manage multiple wallets.
 
 ---
 
@@ -743,7 +777,7 @@ who receives your bitcoin, how much and when: keep it in a safe place.
   then the wills sent before that the will‑executors still hold and that
   can still be executed (or a line saying there are none).
 - Every page ends with *PRIVATE — keep it in a safe place* and *Page x/y*.
-- With **several deliveries** (multiverse, an option not active today)
+- With **several deliveries** (the Multiverse, ADVANCED mode)
   page 1 also lists the deliveries (date, share of each heir, how many
   will‑executors verified it), a grid shows each will‑executor for each
   delivery, and the technical details list the ids of delivery 1 only
@@ -844,8 +878,10 @@ up-to-date without manual intervention.
 
 ## Using hardware keys
 
-**Ledger, BitBox2, etc.** — all hardware keys that are compatible with and
-recognised by Electrum are compatible with the BAL plugin.
+**Ledger, BitBox2, etc.** — Electrum signs with the hardware keys it
+recognises as usual, but Àncòra **has not been tested** with hardware keys
+yet (see [`COMPATIBILITY.md`](../../COMPATIBILITY.md)). Try it first on
+testnet or with a small amount.
 
 ---
 

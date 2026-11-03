@@ -1494,17 +1494,21 @@ def test_a_date_chosen_by_the_owner_replaces_the_later_wish(make, monkeypatch):
 
 
 def test_multiverse_wallet_gets_no_pending_postpone(make):
-    """Low finding (migration lens): with multiverse on, each heir carries
-    its own date and the shared value never drove them. The engine passes
-    the plugin's setting to the migration: a later shared date gives only
-    the informative note, no question and no later wish."""
-    s = make(locktime=fk.D0)
-    s.check()
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    d = update_from_old_plugin(s, LATER_GLOBAL)
-    assert (d["locktime"], d["note_kind"], d["note_old"]) == (
-        fk.D0, "date_differs", fk.LATER)
-    assert delivery.CHOICE_KEY not in d and delivery.LATER_WISH_KEY not in d
+    """#168 (D7): BAL's global multiverse option is no longer read, also by
+    the migration (a dict still to migrate holds no table of deliveries):
+    with the option on, a later shared date is migrated exactly as with it
+    off. Before #168 the option gave only the informative note."""
+    keys = ("locktime", "note_kind", "note_old", delivery.CHOICE_KEY,
+            delivery.LATER_WISH_KEY)
+    found = []
+    for option in (True, False):
+        s = make(locktime=fk.D0)
+        s.check()
+        s.plugin.ENABLE_MULTIVERSE.set(option)
+        d = update_from_old_plugin(s, LATER_GLOBAL)
+        found.append({k: d.get(k) for k in keys})
+    assert found[0] == found[1]
+    assert found[0]["locktime"] == fk.D0
 
 
 if __name__ == "__main__":

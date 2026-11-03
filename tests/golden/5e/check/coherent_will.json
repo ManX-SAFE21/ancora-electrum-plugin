@@ -19,7 +19,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Wait</b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
@@ -92,9 +92,7 @@
   "questions": [],
   "report": {
    "boxes": {
-    "changes": [
-     "The will contains no valid transaction: a new will must be prepared."
-    ],
+    "changes": [],
     "problems": [],
     "warnings": []
    },
@@ -126,6 +124,7 @@
      39.99997993504976
     ]
    ],
+   "low_fee": "Miner fee below 20 sat/vB: it is your choice. On the delivery date of your will the Bitcoin network may be very busy, and the nodes may not accept a transaction with a low fee. With 20 sat/vB or more this risk is much smaller and the inheritance is more likely to be executed on time, without delays.",
    "result": [
     "ok",
     "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
@@ -157,11 +156,21 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
    "Heir:\t<font color=#05ad05><b>bob</b></font>",
@@ -233,6 +242,13 @@
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b>Wait</b>",
+   "Verifying your will with the executors:\t<b>Verifying 0/2 (0s / 20s) — waiting for: we0.test, we1.test</b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 1/2 (0s / 20s) — waiting for: we1.test</b>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 2/2 (0s / 20s)</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -295,6 +311,7 @@
     ]
    ],
    "heirs": null,
+   "low_fee": "Miner fee below 20 sat/vB: it is your choice. On the delivery date of your will the Bitcoin network may be very busy, and the nodes may not accept a transaction with a low fee. With 20 sat/vB or more this risk is much smaller and the inheritance is more likely to be executed on time, without delays.",
    "result": [
     "ok",
     "<b>Your will is in force</b><br>Delivery to the heirs: <b>23 September 2032, 00:00 UTC</b> (in 5 years and 11 months)"
@@ -326,6 +343,16 @@
      "2/2"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -333,6 +360,9 @@
    "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -356,7 +386,16 @@
     "VALID"
    ]
   },
-  "verified": [],
+  "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ]
+  ],
   "window_events": [
    "history-refresh"
   ]

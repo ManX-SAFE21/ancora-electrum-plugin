@@ -15,7 +15,9 @@ with the mockup of #84a.
 Must never import Qt (``bal/core`` rule).
 """
 
+import html
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from ..i18n import _
 from . import datetext
@@ -29,14 +31,27 @@ _DAY = 86400
 # Where a will-executor stands with the will in force, worst first: the
 # summary reports an executor by its worst copy (a will usually has one tx
 # per executor, but several coins can give several txs).
-_EXECUTOR_ORDER = ("failed", "to_sign", "to_send", "to_verify", "verified",
-                   "deselected")
+_EXECUTOR_ORDER = ("failed", "to_sign", "to_send", "to_verify", "excluded",
+                   "verified", "deselected")
 
 #: The states a DESELECTED will-executor's copy turns into "deselected"
 #: (#134): it never received the will, and the sending skips it
 #: (``Willexecutors.get_willexecutor_transactions``), so it is not "to
-#: send". A copy it already received keeps its state.
+#: send". A copy it already received is "excluded" (#178, below).
 _NOT_RECEIVED = ("failed", "to_sign", "to_send")
+
+#: #178 (owner): a DESELECTED will-executor (Exclude) that received the
+#: will is "excluded": it holds the will, and the Check no longer asks it
+#: (``engine.verify.verify_targets``). Not "to verify" (before, a
+#: will-executor that never answered the check stayed "to verify" for
+#: ever), and not "verified" either: owner's ZIP test, divinaly excluded
+#: read "received and verified" from an old check, which is no longer
+#: true once nobody asks it.
+_EXCLUDED_FROM = ("to_verify", "verified")
+
+#: The states left out of the counts "x of N" (#134 deselected, #178
+#: excluded): neither is waited for.
+_NOT_COUNTED = ("deselected", "excluded")
 
 
 def selected_urls(willexecutors):
@@ -76,19 +91,29 @@ def _span(start, end):
     return _("{years} and {months}").format(years=years_text, months=months_text)
 
 
+def same_utc_day(first, second):
+    """True when two UNIX times fall on the same UTC day.
+
+    WHY: the dates are shown as UTC days, so "(today)" must follow the UTC
+    calendar; a date tomorrow, less than 24 hours away, is not today.
+    """
+    return first // _DAY == second // _DAY
+
+
 def relative_date(ts, now=None):
     """``"(in 1 year and 11 months)"``, ``"(passed 5 days ago)"`` or ``"(today)"``.
 
     The parentheses are part of the texts on purpose: a bare "in {}" or
     "today" could match a different Electrum translation, which wins over
-    BAL's catalog (see ``bal.i18n``).
+    BAL's catalog (see ``bal.i18n``). Another UTC day less than 24 hours
+    away counts as 1 day (never "0 days").
     """
     current = _now(now)
-    if abs(ts - current) < _DAY:
+    if same_utc_day(ts, current):
         return _("(today)")
     if ts > current:
-        return _("(in {})").format(_span(current, ts))
-    return _("(passed {} ago)").format(_span(ts, current))
+        return _("(in {})").format(_span(current, max(ts, current + _DAY)))
+    return _("(passed {} ago)").format(_span(min(ts, current - _DAY), current))
 
 
 def _thresholds(warn_months):
@@ -170,15 +195,29 @@ def _executor_state(w):
     return "to_sign"
 
 
+def is_excluded(w, selected):
+    """True for a copy ``w`` of a will-executor not selected that received
+    the will: the "excluded" of :func:`executor_states` (#178), copy by
+    copy (the List's rows). ``selected``: :func:`selected_urls`, or None
+    (no selection rule: False)."""
+    if selected is None:
+        return False
+    url = (w.we or {}).get("url")
+    return bool(url) and url not in selected and _executor_state(w) in _EXCLUDED_FROM
+
+
 def executor_states(valid, selected=None):
     """``{url: state}`` for the VALID items ``valid``, at each executor's worst copy.
 
     States: ``failed``, ``to_sign``, ``to_send``, ``to_verify``,
-    ``verified`` and (#134) ``deselected``: with ``selected`` (the URLs
+    ``verified``, (#134) ``deselected``: with ``selected`` (the URLs
     selected now, :func:`selected_urls`), a copy for a will-executor not
-    selected that never received the will. None: no selection rule (as
-    before #134). Items without a will-executor (backup transactions) are
-    left out. Also used by the Building Will dialog (#84b).
+    selected that never received the will, and (#178) ``excluded``: a copy
+    for a will-executor not selected that received it, verified before or
+    not (the Check no longer asks it). None: no selection rule (as before
+    #134).
+    Items without a will-executor (backup transactions) are left out. Also
+    used by the Building Will dialog (#84b).
     """
     worst = {}
     for w in valid.values():
@@ -186,8 +225,11 @@ def executor_states(valid, selected=None):
         if not url:
             continue
         state = _executor_state(w)
-        if selected is not None and url not in selected and state in _NOT_RECEIVED:
-            state = "deselected"
+        if selected is not None and url not in selected:
+            if state in _NOT_RECEIVED:
+                state = "deselected"
+            elif state in _EXCLUDED_FROM:
+                state = "excluded"
         old = worst.get(url)
         if old is None or _EXECUTOR_ORDER.index(state) < _EXECUTOR_ORDER.index(old):
             worst[url] = state
@@ -206,13 +248,52 @@ def executor_counts(valid, selected=None):
     return counts
 
 
-def _executors_row(counts):
+def verified_times(valid, selected=None, url=None):
+    """``(last, next)``: when the will was last verified, and from when the
+    Check asks again (#182). Seconds, or None.
+
+    ``last``: the oldest verification of the VALID verified copies
+    (``Will.last_verified``), only those of ``url`` when given, else of the
+    will-executors selected (``selected``, None: all). ``next``: ``last``
+    plus ``Will.reverify_period`` for a will in several deliveries; None for
+    a will with one delivery (asked again at every Check) or when ``last``
+    is unknown.
+    """
+    items = {
+        k: w for k, w in valid.items()
+        if url is not None or selected is None
+        or (w.we or {}).get("url") in selected
+    }
+    last = Will.last_verified(items, url)
+    if last is None:
+        return None, None
+    period = Will.reverify_period(valid)
+    return last, (last + period if period else None)
+
+
+def verified_text(last, next_check=None):
+    """``"last check 22 Oct 2026, 19:23"``, with ``" · next check from
+    …"`` when ``next_check`` is given (#182, owner: "write it"). Local
+    time of the computer, the short form (owner's ZIP test: the long one
+    did not fit). "" without ``last``."""
+    if last is None:
+        return ""
+    text = _("last check {when}").format(when=datetext.local_short(last))
+    if next_check is not None:
+        text += " · " + _("next check from {when}").format(
+            when=datetext.local_short(next_check))
+    return text
+
+
+def _executors_row(counts, verified=""):
     """The "Will-Executor" line: who received and verified the will.
 
     The deselected will-executors (#134) are not counted: they are told
-    apart by their own line (:func:`deselected_text`).
+    apart by their own line (:func:`deselected_text`). Nor the excluded
+    ones (#178): nobody waits for them. #182: ``verified``
+    (:func:`verified_text`) follows "received and verified it".
     """
-    counts = {k: v for k, v in counts.items() if k != "deselected"}
+    counts = {k: v for k, v in counts.items() if k not in _NOT_COUNTED}
     total = sum(counts.values())
     label = _("Will-Executor")
     if total == 0:
@@ -223,6 +304,8 @@ def _executors_row(counts):
             if total == 1
             else _("{} of {} received and verified it").format(total, total)
         )
+        if verified:
+            text += " · " + verified
         return _row(label, text=text)
     if counts["to_sign"] == total:
         text = (
@@ -282,6 +365,74 @@ def deselected_text(count):
     ).format(count)
 
 
+def excluded_holders(in_force, selected):
+    """The URLs of the will-executors not selected now that hold a copy of
+    the will in force (#190), sorted.
+
+    ``in_force``: the items of the will in force (``Will.in_force_items``,
+    the #128 notion: signed and/or sent, VALID or REPLACED, not invalidated
+    or executed, still executable). A copy is held when it was sent to the
+    will-executor (``PUSHED``, or ``CHECKED``, which implies it): a copy
+    signed and never sent is not with it. ``selected``:
+    :func:`selected_urls`; a will-executor excluded, or removed from the
+    list, is not in it. None (no selection rule): ``[]``.
+
+    WHY (owner, study of 2026-10-24, point 4): a copy sent cannot be
+    recalled; after an Exclude the summary no longer counted that
+    will-executor, so nothing said it still holds an executable will.
+    """
+    if selected is None:
+        return []
+    urls = set()
+    for w in (in_force or {}).values():
+        url = (w.we or {}).get("url")
+        if not url or url in selected:
+            continue
+        if w.get_status("PUSHED") or w.get_status("CHECKED"):
+            urls.add(url)
+    return sorted(urls)
+
+
+def excluded_holders_paragraphs(urls):
+    """The note of :func:`excluded_holders` (#190): three sentences, the
+    first one shown in bold. ``[]`` when ``urls`` is empty.
+
+    Text approved by the owner (2026-10-25): the copy cannot be deleted;
+    a new will dated one day earlier is executed first when the other
+    will-executors publish it; only an invalidation on the blockchain
+    cancels the old copy too.
+    """
+    hosts = [urlparse(u).hostname or u for u in urls or []]
+    if not hosts:
+        return []
+    if len(hosts) == 1:
+        lead = _(
+            "{} is excluded but still holds a copy of your will, and a "
+            "will-executor cannot be asked to delete it."
+        ).format(hosts[0])
+    else:
+        lead = _(
+            "{} excluded will-executors ({}) still hold a copy of your will, "
+            "and a will-executor cannot be asked to delete it."
+        ).format(len(hosts), ", ".join(hosts))
+    return [
+        lead,
+        _("If you change your will, the new one is dated one day earlier: "
+          "when the other will-executors publish it, the network executes it "
+          "first and the old copy is no longer valid."),
+        _("Only an invalidation on the blockchain cancels the old copy too."),
+    ]
+
+
+def excluded_holders_html(urls):
+    """:func:`excluded_holders_paragraphs` as rich text: the first sentence
+    in bold, one line per sentence (#190, owner). ``""`` when empty."""
+    parts = [html.escape(p) for p in excluded_holders_paragraphs(urls)]
+    if not parts:
+        return ""
+    return "<b>{}</b><br>{}".format(parts[0], "<br>".join(parts[1:]))
+
+
 def _heirs_row(heirs_count, prepared=True):
     """The "Heirs" line (their number; the names are in the Heirs tab)."""
     text = str(heirs_count)
@@ -292,7 +443,8 @@ def _heirs_row(heirs_count, prepared=True):
 
 def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
                  still_active=None, warn_months=None, long_dates=False,
-                 selected=None, in_force=None, has_funds=None, watch_only=None):
+                 selected=None, in_force=None, has_funds=None, watch_only=None,
+                 held=None):
     """Describe the will in force for the summary box of the Will tab.
 
     Args:
@@ -340,6 +492,10 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
             says that its keys are elsewhere, and its button
             (``"offline_sign"``) opens the "Sign the will offline" window:
             "Sign and send" cannot sign there. None or False: as before.
+        held: #190: the URLs of :func:`excluded_holders` (will-executors
+            not selected that hold a copy of the will in force); the
+            summary then has ``held`` (those URLs) and ``held_text`` (the
+            note, :func:`excluded_holders_paragraphs`). None: nothing.
 
     Returns:
         A dict: ``state`` (``"ok"``, ``"to_sign"``, ``"to_send"``,
@@ -354,12 +510,12 @@ def will_summary(willitems, heirs_count, will_settings, is_basic_mode, now=None,
         on an unexpected error it returns ``None`` and the GUI hides the box.
     """
     try:
-        return _with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
+        return _with_held(_with_deselected(_will_summary(willitems or {}, heirs_count, will_settings or {},
                              is_basic_mode, _now(now), still_active or [],
                              warn_months, datetext.utc_text if long_dates else _day,
                              long_dates, selected, in_force, has_funds,
                              watch_only),
-                             willitems or {}, selected)
+                             willitems or {}, selected), held)
     except Exception:
         return None
 
@@ -380,10 +536,22 @@ def _with_deselected(summary, willitems, selected):
     count = 0
     if selected is not None and summary.get("state") not in ("busy", "none"):
         counts = executor_counts(Will.only_valid_list(willitems), selected)
-        if any(v for k, v in counts.items() if k != "deselected"):
+        if any(v for k, v in counts.items() if k not in _NOT_COUNTED):
             count = counts["deselected"]
     summary["deselected"] = count
     summary["deselected_text"] = deselected_text(count) if count else ""
+    return summary
+
+
+def _with_held(summary, held):
+    """Add ``held`` / ``held_text`` to ``summary`` (#190): the excluded
+    will-executors that hold a copy of the will in force. Not while the
+    summary is busy (no data yet)."""
+    if summary is None:
+        return None
+    urls = list(held or []) if summary.get("state") != "busy" else []
+    summary["held"] = urls
+    summary["held_text"] = excluded_holders_paragraphs(urls)
     return summary
 
 
@@ -479,12 +647,13 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         rows.append(check_row)
 
     counts = executor_counts(valid, selected)
-    if counts["deselected"] and not any(
-            v for k, v in counts.items() if k != "deselected"):
-        # Every will-executor is deselected: nothing would be counted, so
-        # the will reads as before (the rule only tells apart SOME).
+    if any(counts[k] for k in _NOT_COUNTED) and not any(
+            v for k, v in counts.items() if k not in _NOT_COUNTED):
+        # Every will-executor is deselected (or excluded, #178): nothing
+        # would be counted, so the will reads as before (the rule only
+        # tells apart SOME).
         counts = executor_counts(valid)
-    rows.append(_executors_row(counts))
+    rows.append(_executors_row(counts, verified_text(*verified_times(valid, selected))))
     rows.append(_heirs_row(heirs_count))
     deselected = counts["deselected"]
     unsigned = [w for w in valid.values() if not w.get_status("COMPLETE")
@@ -554,7 +723,8 @@ def _will_summary(willitems, heirs_count, will_settings, is_basic_mode, now,
         )
     failed = counts["failed"]
     if failed:
-        received = counts["verified"] + counts["to_verify"]
+        # #178: an excluded will-executor holds the will too.
+        received = counts["verified"] + counts["to_verify"] + counts["excluded"]
         if not received:
             return _summary(
                 "none_received", "warn",
@@ -619,8 +789,9 @@ def _complete_send_note(counts):
     """"3 of 5 will-executors received and verified it. Send it to the
     other 2 too, for more safety." (#134). The others: those still to send
     and those whose sending failed."""
-    # The deselected will-executors (#134) are not part of "of m".
-    total = sum(v for k, v in counts.items() if k != "deselected")
+    # The deselected (#134) and excluded (#178) will-executors are not part
+    # of "of m".
+    total = sum(v for k, v in counts.items() if k not in _NOT_COUNTED)
     verified = counts["verified"]
     others = counts["to_send"] + counts["failed"]
     first = (

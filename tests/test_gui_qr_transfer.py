@@ -270,14 +270,18 @@ def test_export_filter_valid_and_valid_nc():
     d = dialogs.WillExportDialog(bw, bal_plugin=bw.bal_plugin, initial_mode="qr")
     page = d.qr_page
     assert d.filter_combo.count() == 3
-    # Whole-will default: a single JSON document carrying all selected items.
+    # Whole-will default: a single JSON document carrying the selected
+    # items; #171 (owner): the window starts on "Valid" (a, b).
     assert d.content_check.isChecked()
+    assert d.filter_combo.currentIndex() == 1
     assert len(page.tx_strings) == 1
     data = json.loads(page.tx_strings[0])
-    assert set(data) == {"a", "b", "c"}
+    assert set(data) == {"a", "b"}
 
     # Switch to tx-only content, then exercise the filters.
     d.content_check.setChecked(False)
+    assert len(page.tx_strings) == 2
+    d._on_filter_change(0)
     assert len(page.tx_strings) == 3
 
     # "Valid" filter -> only the valid items (a, b).
@@ -302,8 +306,8 @@ def test_export_filter_empty_reverts():
     d.show_message = lambda msg: messages.append(msg)  # type: ignore[assignment]
     d._on_filter_change(2)  # "Valid NC" -> empty subset
     assert messages
-    assert d._filter_index == 0  # reverted to "All"
-    assert d.filter_combo.currentIndex() == 0
+    assert d._filter_index == 1  # reverted to "Valid", the start (#171)
+    assert d.filter_combo.currentIndex() == 1
     assert len(d.qr_page.tx_strings) == 1
     d.close()
 

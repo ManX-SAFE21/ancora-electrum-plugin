@@ -36,8 +36,10 @@ No Qt, no ``bal.cli`` (``bal/engine`` rules, see ``bal/engine/__init__``).
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.will import Will
 from ..core.willexecutors import Willexecutors
+from ..i18n import _
 
 __all__ = [
     "FAILED",
@@ -61,12 +63,18 @@ NO_ANSWER = "no_answer"
 _EVER_SENT = ("PUSHED", "CHECKED", "CHECK_FAIL", "PUSH_FAIL")
 
 
-def _ever_sent(w):
-    """True when the copy *w* has a will-executor and was sent at least once."""
+def ever_sent(w):
+    """True when the copy *w* has a will-executor and was sent at least once.
+
+    Also #178's rule for "Exclude" (``BalWindow.exclude_willexecutor``): a
+    copy sent even once may be held by its will-executor (a failed check or
+    a sending without an answer does not say it is not), so it is kept.
+    """
     return bool(w.we) and any(w.get_status(s) for s in _EVER_SENT)
 
 
-def verify_targets(willitems, txids=None, *, recheck=False):
+def verify_targets(willitems, txids=None, *, recheck=False, selected=None,
+                   now=None):
     """The copies to ask, as ``[(txid, url)]``, and the ones skipped.
 
     Returns ``(targets, skipped)``. Without *recheck* (the Check, the
@@ -76,28 +84,56 @@ def verify_targets(willitems, txids=None, *, recheck=False):
     whatever its state now (E1). *txids* limits the choice to those ids
     (``None``: every copy). ``skipped`` lists the ids of *txids* never sent
     (or with no will-executor): the ones the message "not sent yet" names.
+
+    *selected* (#178, owner): the URLs of the will-executors selected now
+    (``summary.selected_urls``), or None (no rule). Without *recheck*, a
+    copy of a will-executor not selected is not asked: after "Exclude" a
+    will-executor that never answered the check (no answer in time keeps
+    the copy sent, #147) was asked again at every Check, for ever. Its
+    copies stay in the will (it holds them, #129); the summary calls it
+    "excluded". The right click still asks it: the user asks for it.
+
+    #182 (owner): without *recheck*, a copy already verified is asked again
+    too (``Will.needs_reverify``): at every Check for a will with one
+    delivery, once its verification is a day old for a will in several
+    deliveries (``Will.reverify_period``). Before, a copy verified once was
+    never asked again: "received and verified" stayed true for years, even
+    with no connection. *now*: seconds (default ``Will.now_seconds``).
     """
     targets, skipped = [], []
+    if not recheck:
+        if now is None:
+            now = Will.now_seconds()
+        # Only a will with a verified copy needs the period.
+        period = (Will.reverify_period(willitems)
+                  if any(w.get_status("CHECKED") for w in willitems.values()) else 0)
     for wid, w in willitems.items():
         if txids is not None and wid not in txids:
             continue
         if recheck:
-            ask = _ever_sent(w)
+            ask = ever_sent(w)
         else:
-            ask = Will.needs_server_check(w)
+            ask = (Will.needs_server_check(w) or Will.needs_reverify(w, now, period)) and (
+                selected is None or (w.we or {}).get("url") in selected)
         if ask:
             targets.append((wid, w.we["url"]))
-        elif txids is not None and not _ever_sent(w):
+        elif txids is not None and not ever_sent(w):
             skipped.append(wid)
     return targets, skipped
 
 
-def verify_will(willitems, targets, *, on_answer=None, on_tick=None):
+def verify_will(willitems, targets, *, on_answer=None, on_tick=None,
+                on_busy=None, deadline=None):
     """Ask the will-executors for the copies *targets* and record the answers.
 
-    *targets* comes from :func:`verify_targets`. Every will-executor is asked
-    at once (``Willexecutors.check_transactions_parallel``, global deadline
-    ``CHECK_GLOBAL_DEADLINE``). Each answer is recorded with
+    *targets* comes from :func:`verify_targets`. The will-executors are
+    asked in parallel, a few requests at a time each
+    (``Willexecutors.check_transactions_parallel``, #172). The global
+    *deadline* (seconds) is ``Willexecutors.check_deadline(targets)`` when
+    not given: 20 s for a small will, more for many transactions, at most
+    2 minutes; a window that shows the seconds passes the same value.
+    ``on_busy(url, seconds)``: a will-executor answered 429 Too Many
+    Requests and is asked again in *seconds*. Each answer is recorded with
     ``WillItem.set_check_willexecutor``:
 
     * it holds exactly the copy that was sent: VERIFIED (CHECKED);
@@ -114,6 +150,10 @@ def verify_will(willitems, targets, *, on_answer=None, on_tick=None):
     deadline, not the request's own limit). ``on_tick()`` is called about
     once a second while waiting. Nothing is saved here: each caller saves.
     Returns ``{txid: outcome}``.
+
+    #173: with copies to ask, the command trace gets
+    ``bal_will_check_executor`` with how many, then the count of each
+    outcome.
     """
     outcomes = {}
 
@@ -149,7 +189,32 @@ def verify_will(willitems, targets, *, on_answer=None, on_tick=None):
         _record(wid, url, Willexecutors.NO_ANSWER, True)
 
     if targets:
+        if deadline is None:
+            deadline = Willexecutors.check_deadline(targets)
+        trace.command("bal_will_check_executor", _(
+            "{count} copies, at most {seconds} s").format(
+                count=len(targets), seconds=deadline))
         Willexecutors.check_transactions_parallel(
-            targets, on_each=on_each, on_timeout=on_timeout, on_tick=on_tick
+            targets, on_each=on_each, on_timeout=on_timeout, on_tick=on_tick,
+            on_busy=on_busy, deadline=deadline,
         )
+        _trace_outcomes(outcomes)
     return outcomes
+
+
+def _trace_outcomes(outcomes):
+    """Write the count of each outcome of :func:`verify_will` (#173).
+
+    Never raises: a trace line must not stop the check.
+    """
+    try:
+        counts = {kind: 0 for kind in (VERIFIED, FAILED, NO_ANSWER)}
+        for outcome in outcomes.values():
+            counts[outcome] = counts.get(outcome, 0) + 1
+        text = _("verified {verified}, failed {failed}, no answer {no_answer}").format(
+            verified=counts[VERIFIED], failed=counts[FAILED],
+            no_answer=counts[NO_ANSWER])
+        kind = trace.OK if counts[VERIFIED] == len(outcomes) else trace.WARNING
+        trace.add(kind, text)
+    except Exception as e:
+        _logger.debug(f"trace of the check failed: {e!r}")

@@ -57,6 +57,8 @@ from .widgets import DELIVERY_LEVEL_COLOURS
 # Config values of the selector (``BalPlugin.WILL_VIEW``).
 VIEW_LIST = "list"
 VIEW_FUTURE = "future"
+# #184: the third view, the will as a graph (``graph_view.GraphPanel``).
+VIEW_GRAPH = "graph"
 
 # Colours: explicit on text and background (like the will summary), so the
 # view stays readable with Electrum's dark theme too.
@@ -197,7 +199,7 @@ def _executor_legend(executors):
         out.append((_EXECUTOR_COLOURS["verified"], executor_state_text("verified")))
     grey = [
         executor_state_text(state)
-        for state in ("to_verify", "to_send", "to_sign", "deselected")
+        for state in ("to_verify", "excluded", "to_send", "to_sign", "deselected")
         if state in present
     ]
     if grey:
@@ -281,10 +283,13 @@ def future_scene(model, format_date=utc_date_text, format_amount=_sats,
             model.level_tip, "",
         ))
         # The delivery form under the delivery (owner, #132): "Fixed date"
-        # or "Period (renewable) — 24 months (2 years)".
+        # or "Period (renewable) — 24 months (2 years)"; #191: "Multiverse —
+        # 3 deliveries: ..." for a will in several deliveries.
         scene["lines"].append((None, "{}: {}".format(
             _("Delivery form"),
-            core_future.delivery_form_text(model.form, model.period_months)), "", ""))
+            core_future.delivery_form_text(
+                model.form, model.period_months,
+                [inst.locktime for inst in model.deliveries])), "", ""))
         if model.check_alive is not None:
             check_colour = "#c62828" if model.check_alive_passed else CHECK_ALIVE_COLOUR
             scene["check_alive"] = {
@@ -461,25 +466,30 @@ def _grey_colours(scene):
 #: The opacity of a Future view whose will no will-executor received (#134).
 _FADED_OPACITY = 0.48
 
+#: The marks of a will-executor that holds the will (#214): it accepted the
+#: copy, whether or not a check has confirmed it since.
+_HOLDS_THE_WILL = ("verified", "to_verify", "excluded")
+
 
 def nothing_received(model):
-    """True when no will-executor has received and verified the will the
-    view shows (#134, owner): a draft only, or a will signed but not sent
-    (e.g. signed offline). View-only: the #128 notion of "in force" is not
-    touched.
+    """True when no will-executor has received the will the view shows
+    (#134, owner): a draft only, or a will signed but not sent (e.g. signed
+    offline). View-only: the #128 notion of "in force" is not touched.
 
     The executor marks of the version shown (``Future.executors``, from
-    ``bal.core.summary.executor_states``, the source of the summary's "x of
-    N received and verified"): not one is ``"verified"``. A will with no
-    will-executor at all (the backup transaction kept by the owner) is not
-    "not sent": it was never meant to be, so it keeps its colours.
+    ``bal.core.summary.executor_states``): not one holds the will. WHY not
+    only ``"verified"`` (#214): a will-executor that accepted the copy and
+    did not answer the check, or was excluded after receiving it, can still
+    execute it, and "nothing happens on the date" would be false. A will
+    with no will-executor at all (the backup transaction kept by the owner)
+    is not "not sent": it was never meant to be, so it keeps its colours.
     """
     if model.state == core_future.STATE_DRAFT_ONLY:
         return True
     marks = [m for m in model.executors if m.state != "deselected"]
     if model.state != core_future.STATE_IN_FORCE or not marks:
         return False
-    return not any(mark.state == "verified" for mark in marks)
+    return not any(mark.state in _HOLDS_THE_WILL for mark in marks)
 
 
 def _faded_scene(scene):
@@ -1488,20 +1498,29 @@ class WillViewSwitch(QWidget):
     called when the Future view appears.
     """
 
-    def __init__(self, config_var, list_widget, future_widget, future_view, parent=None):
-        """``config_var``: a ``BalConfig``; the widgets to switch."""
+    def __init__(self, config_var, list_widget, future_widget, future_view,
+                 parent=None, graph_widget=None):
+        """``config_var``: a ``BalConfig``; the widgets to switch.
+
+        #184: ``graph_widget`` (a ``graph_view.GraphPanel``), the third
+        button "Graph"; None: List and Future only.
+        """
         super().__init__(parent)
         self.config_var = config_var
         self.list_widget = list_widget
         self.future_widget = future_widget
         self.future_view = future_view
+        self.graph_widget = graph_widget
         box = QHBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(0)
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
         self.buttons = {}
-        for view, text in ((VIEW_LIST, _("List")), (VIEW_FUTURE, _("Future"))):
+        views = [(VIEW_LIST, _("List")), (VIEW_FUTURE, _("Future"))]
+        if graph_widget is not None:
+            views.append((VIEW_GRAPH, _("Graph")))
+        for view, text in views:
             button = QPushButton(text)
             button.setCheckable(True)
             button.setMinimumWidth(90)
@@ -1518,6 +1537,8 @@ class WillViewSwitch(QWidget):
             value = self.config_var.get()
         except Exception:
             value = None
+        if value == VIEW_GRAPH and self.graph_widget is not None:
+            return VIEW_GRAPH
         return VIEW_FUTURE if value == VIEW_FUTURE else VIEW_LIST
 
     def choose(self, view):
@@ -1529,13 +1550,19 @@ class WillViewSwitch(QWidget):
         self.apply(view)
 
     def apply(self, view):
-        """Show ``view`` (``"list"`` or ``"future"``) and press its button."""
-        future = view == VIEW_FUTURE
-        self.buttons[VIEW_FUTURE if future else VIEW_LIST].setChecked(True)
-        self.list_widget.setVisible(not future)
-        self.future_widget.setVisible(future)
-        if future:
+        """Show ``view`` (``"list"``, ``"future"`` or, #184, ``"graph"``)
+        and press its button."""
+        if view not in self.buttons:
+            view = VIEW_LIST
+        self.buttons[view].setChecked(True)
+        self.list_widget.setVisible(view == VIEW_LIST)
+        self.future_widget.setVisible(view == VIEW_FUTURE)
+        if self.graph_widget is not None:
+            self.graph_widget.setVisible(view == VIEW_GRAPH)
+        if view == VIEW_FUTURE:
             self.future_view.refresh()
+        elif view == VIEW_GRAPH:
+            self.graph_widget.refresh()
 
 
 def make_future_area(future_view):

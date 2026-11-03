@@ -20,15 +20,17 @@ Contents:
     * BuildReportView                                       - Building Will report (#84b)
 """
 
+import copy
 import html
 from datetime import timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from electrum.transaction import PartialTransaction
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QPlainTextEdit
 
-from ...core import delivery
+from ...core import datetext, delivery
 from ...core.checkalive import (
     CHECK_ALIVE_DEFAULT_DAYS,
     CHECK_ALIVE_MAX_DAYS,
@@ -49,9 +51,9 @@ from ...core.input_rules import (
     normalize_perc_amount_text,
     parse_perc_amount,
 )
-from ...core.messages import months_text
+from ...core.messages import heir_label, low_fee_warning, months_text
 from ...core.reminders import build_ics_reminders, write_temp_ics
-from ...core.summary import deselected_text
+from ...core.summary import deselected_text, excluded_holders_html
 from ...engine import context as engine_context
 from .calendar import BalCalendar, BalCalendarButton
 from .common import (
@@ -64,7 +66,7 @@ from .common import (
     BTCAmountEdit,
     ColorScheme,
     Decimal,
-    HelpButton,
+    NoWheelComboBox,
     Optional,
     QAbstractSpinBox,
     QButtonGroup,
@@ -99,11 +101,14 @@ from .common import (
     datetime,
     format_status_history,
     getSaveFileName,
+    help_button,
+    is_advanced_mode,
     log_error,
     os,
     partial,
     pyqtSignal,
     read_QIcon_from_bytes,
+    rich_text,
     signature_suffix,
     status_color,
     switch_user_type,
@@ -155,7 +160,7 @@ class BalTxFeesWidget(QWidget):
         #label = ClickableLabel("＄")
         #label.doubleClicked.connect(self.doubleclick)
         #layout.addWidget(label)
-        button = HelpButton(_("mining fees expressed in sats/vbyte to be used in the Bitcoin transaction.\nHigher value ensure your transaction will be confirmed"))
+        button = help_button(_("mining fees expressed in sats/vbyte to be used in the Bitcoin transaction.\nHigher value ensure your transaction will be confirmed"))
         button.setText("丰")
         # Hover tooltip for the small "丰" help icon (the long explanation still
         # appears on click via the HelpButton); makes the icon self-explanatory.
@@ -167,6 +172,14 @@ class BalTxFeesWidget(QWidget):
         button.setStyleSheet("QPushButton{font-size: 16px;}")
         layout.addWidget(button)
         layout.addWidget(self.txfee_widget)
+        # #192: an orange sign next to a fee below 20 sat/vB, the owner's
+        # explanation in its tooltip. A sign, not a message box: the arrows
+        # step one by one and a box at each step would be in the way.
+        self.warning = QLabel("⚠", self)
+        self.warning.setStyleSheet("color:#e65100; font-size: 16px;")
+        self.warning.setVisible(False)
+        layout.addWidget(self.warning)
+        self._show_warning()
         # Expose the leading icon (prefix) and the editable field so the parent
         # WillSettingsWidget can align them on a grid (see its vertical layout).
         self.prefix_widget = button
@@ -174,6 +187,16 @@ class BalTxFeesWidget(QWidget):
 
     def doubleclick(self, event=None):
         pass
+
+    def _show_warning(self):
+        """Show the #192 sign when the fee shown is below 20 sat/vB (also
+        a fee stored before #192), hide it otherwise."""
+        warning = getattr(self, "warning", None)
+        if warning is None:         # set_value during __init__, before it
+            return
+        text = low_fee_warning(self.txfee_widget.value())
+        warning.setToolTip(text)
+        warning.setVisible(bool(text))
 
     def set_read_only(self, read_only=True):
         # Show the fee but make it non-editable (no spin arrows, no keyboard),
@@ -206,6 +229,7 @@ class BalTxFeesWidget(QWidget):
             spin.blockSignals(True)
             spin.setValue(value)
             spin.blockSignals(False)
+            self._show_warning()
 
         finally:
             self._updating = False
@@ -326,16 +350,16 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         default_index = self._index_for(default_locktime)
         # help_text and tooltip_text are class attributes marked with N_():
         # translate them here, when shown.
-        help_button=HelpButton(_(self.help_text))
-        help_button.setText(self.label_text)
+        help_btn = help_button(_(self.help_text))
+        help_btn.setText(self.label_text)
         # Show a short label (e.g. "Delivery time") when the user hovers the
         # icon, so the emoji button is self-explanatory.
         if self.tooltip_text:
-            help_button.setToolTip(_(self.tooltip_text))
-        hbox.addWidget(help_button)
+            help_btn.setToolTip(_(self.tooltip_text))
+        hbox.addWidget(help_btn)
         # Expose the leading icon (prefix) so the parent WillSettingsWidget can
         # align all rows on a common left edge (see its vertical layout).
-        self.prefix_widget = help_button
+        self.prefix_widget = help_btn
         self.combo.currentIndexChanged.connect(self.on_current_index_changed)
         # `activated` fires ONLY on real user interaction with the selector.
         self.combo.activated.connect(self._on_user_picked_editor)
@@ -556,24 +580,28 @@ class BalTimeEditWidget(QWidget, _LockTimeEditor):
         if self._value_for_editor(self.current_index, x) != self.get_value():
             self._show(x)
 
-    def show_period(self, text):
+    def show_period(self, text, tooltip=None):
         """Show the period form instead of the date editor (#127).
 
         ``text``: "36 months (3 years) -> 12/10/2029" (see
         :func:`period_field_text`): the date editor is hidden and the text is
-        shown, read-only (N is edited in the wizard's form box). ``None`` or
-        an empty text: the date editor again (the fixed form). Display only:
-        nothing is saved.
+        shown, read-only (N is edited in the wizard's form box). Since #170
+        also a table of deliveries: "10/03/2030 (+2 deliveries)", with
+        ``tooltip`` saying where the dates are changed. ``None`` or an empty
+        text: the date editor again (the fixed form). Display only: nothing
+        is saved.
         """
         label = getattr(self, "period_label", None)
         if label is None:
             return
         if text:
             label.setText(text)
+            label.setToolTip(tooltip or "")
             label.setVisible(True)
             self.editor.setVisible(False)
         else:
             label.setText("")
+            label.setToolTip("")
             label.setVisible(False)
             self.editor.setVisible(True)
 
@@ -784,7 +812,7 @@ class ThresholdTimeWidget(QWidget):
     """
 
     valueEdited = pyqtSignal()
-    # rich_text=True is used by the HelpButton, so HTML tags (<b>, <br>) render.
+    # Shown by help_button (common.py) as rich text, so the tags (<b>, <br>) render.
     help_text = N_(
         "<b>CHECK ALIVE</b><br><br>"
         "How many days before the delivery date the plugin asks if you are "
@@ -813,11 +841,11 @@ class ThresholdTimeWidget(QWidget):
         self.setLayout(hbox)
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(4)
-        help_button = HelpButton(_(self.help_text))
-        help_button.setText(self.label_text)
-        help_button.setToolTip(_(self.tooltip_text))
-        hbox.addWidget(help_button)
-        self.prefix_widget = help_button
+        help_btn = help_button(_(self.help_text))
+        help_btn.setText(self.label_text)
+        help_btn.setToolTip(_(self.tooltip_text))
+        hbox.addWidget(help_btn)
+        self.prefix_widget = help_btn
         self.spin = QSpinBox()
         self.spin.setRange(1, CHECK_ALIVE_MAX_DAYS)
         self.spin.setSingleStep(30)
@@ -827,12 +855,18 @@ class ThresholdTimeWidget(QWidget):
         self.spin.setKeyboardTracking(False)
         self.spin.setToolTip(_(self.tooltip_text))
         hbox.addWidget(self.spin)
+        # #191: ONE label, "before the delivery → 2032-03-29". With the date
+        # in a label of its own, a window narrower than the toolbar's
+        # minimum (maximized on a 1366-point screen) drew the date over
+        # the sentence; one label can only be cut at its end.
         self.hint = QLabel("")
+        self.hint.setTextFormat(Qt.TextFormat.RichText)
         hbox.addWidget(self.hint)
         # Kept under the old name: on_locktime_change used ``editor.label``.
-        self.label = QLabel("")
+        # It holds the date and its colour; not shown (the hint shows them).
+        self.label = QLabel("", self)
+        self.label.hide()
         self.editor = self
-        hbox.addWidget(self.label)
         hbox.addStretch(1)
         if init_value is None:
             # #123: the wallet's own settings, not the shared global.
@@ -869,17 +903,32 @@ class ThresholdTimeWidget(QWidget):
             return CHECK_ALIVE_DEFAULT_DAYS
 
     def _update_hint(self):
-        """Show "before the delivery (≈ 6 months) →" next to the spin box,
-        always whole (its minimum width follows the text)."""
+        """Show "before the delivery → 2032-03-29" next to the spin box (the
+        date red when past), always whole when there is room (its minimum
+        width follows the text).
+
+        #191 (owner, choice A): the approximate months "(≈ 6 months)" moved
+        to the tooltip, so the sentence is shorter and the date sits in the
+        same label (see ``__init__``).
+        """
         days = self.spin.value()
         months = round(days / 30.44)
         if months >= 2:
-            extra = " " + _("(≈ {} months)").format(months)
+            extra = _("(≈ {} months)").format(months)
         elif months == 1:
-            extra = " " + _("(≈ 1 month)")
+            extra = _("(≈ 1 month)")
         else:
             extra = ""
-        self.hint.setText(_("before the delivery") + extra + " →")
+        text = html.escape(_("before the delivery") + " →")
+        date = self.label.text()
+        if date:
+            colour = "#ff0000" if self.label.styleSheet() else None
+            date = html.escape(date)
+            text += " " + ('<span style="color:{};">{}</span>'.format(colour, date)
+                           if colour else date)
+        self.hint.setText(text)
+        tips = [t for t in (extra, self.label.toolTip()) if t]
+        self.hint.setToolTip(chr(10).join(tips))
         # #146 (owner's ZIP test): never squeezed in a narrow toolbar, where
         # it was cut to "before the d"; the row gives way instead.
         self.hint.setMinimumWidth(self.hint.sizeHint().width())
@@ -923,6 +972,7 @@ class ThresholdTimeWidget(QWidget):
         self.label.setToolTip(
             _("This Check Alive date has already passed") if past else ""
         )
+        self._update_hint()     # #191: the date is shown inside the hint
 
     def set_read_only(self, read_only=True):
         """Show the value but make it non-editable (outside the wizard)."""
@@ -948,7 +998,7 @@ class ThresholdTimeWidget(QWidget):
 
 
 class LockTimeWidget(BalTimeEditWidget):
-    # rich_text=True is used by the HelpButton, so HTML tags (<b>, <br>) render.
+    # Shown by help_button (common.py) as rich text, so the tags (<b>, <br>) render.
     help_text = N_(
         "<b>DELIVERY TIME</b><br><br>"
         "Set Locktime for transactions.<br>"
@@ -1033,8 +1083,12 @@ class DeliveryFormWidget(QWidget):
       "at My Risk" gate (``common.switch_user_type``); a wrong phrase puts
       BASIC back. Choosing BASIC sets the form back to fixed, only when it
       is not locked;
-    * "Fixed date" / "Period (renewable)": the period is offered only in
-      ADVANCED and never with multiverse on. BASIC shows neither radio for
+    * "Fixed date" / "Period (renewable)" / "Several deliveries" (#170):
+      the period is offered only in ADVANCED and never with a table of
+      deliveries; "Several deliveries" (ADVANCED, a fixed date) opens the
+      window of the deliveries (``BalWindow.open_deliveries_editor``), and
+      with a table "Edit the deliveries…" opens it again; "Fixed date" with
+      a table asks to go back to one delivery. BASIC shows neither radio for
       a fixed date (nothing to choose; owner, 2026-10-12), both when the
       wallet already has the period form, so its state stays visible; both
       are enabled
@@ -1060,7 +1114,8 @@ class DeliveryFormWidget(QWidget):
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel(_("Plugin mode (applies to every wallet)")))
-        self.mode_combo = QComboBox()
+        # #174: the mouse wheel does not change the mode.
+        self.mode_combo = NoWheelComboBox()
         self.mode_combo.addItems([_("BASIC"), _("ADVANCED")])
         mode_row.addWidget(self.mode_combo)
         mode_row.addStretch(1)
@@ -1069,9 +1124,14 @@ class DeliveryFormWidget(QWidget):
         form_row = QHBoxLayout()
         self.fixed_radio = QRadioButton(_("Fixed date"))
         self.period_radio = QRadioButton(_("Period (renewable)"))
+        # #170 (owner, M4 plan answer 2): the third form, the table of the
+        # deliveries; its window holds the dates and the shares.
+        self.staged_radio = QRadioButton(_("Several deliveries (Multiverse)"))
+        self.staged_button = QPushButton(_("Edit the deliveries…"))
         self.radio_group = QButtonGroup(self)
         self.radio_group.addButton(self.fixed_radio)
         self.radio_group.addButton(self.period_radio)
+        self.radio_group.addButton(self.staged_radio)
         self.months_box = QSpinBox()
         self.months_box.setRange(delivery.PERIOD_MIN, delivery.PERIOD_MAX)
         # Stored once, when editing finishes: typing "36" must not store 3.
@@ -1081,6 +1141,8 @@ class DeliveryFormWidget(QWidget):
         form_row.addWidget(self.period_radio)
         form_row.addWidget(self.months_box)
         form_row.addWidget(self.months_label)
+        form_row.addWidget(self.staged_radio)
+        form_row.addWidget(self.staged_button)
         form_row.addStretch(1)
         vbox.addLayout(form_row)
 
@@ -1093,6 +1155,8 @@ class DeliveryFormWidget(QWidget):
         self.fixed_radio.clicked.connect(self._on_fixed)
         self.period_radio.clicked.connect(self._on_period)
         self.months_box.editingFinished.connect(self._on_months)
+        self.staged_radio.clicked.connect(self._on_staged)
+        self.staged_button.clicked.connect(self._edit_deliveries)
 
     # ------------------------------------------------------------- state
 
@@ -1105,9 +1169,12 @@ class DeliveryFormWidget(QWidget):
         return bool(self.bal_window.bal_plugin.is_basic_mode())
 
     def _multiverse(self):
-        """True when the hidden multiverse option is on (no period form)."""
+        """True when the wallet has a table of deliveries (#168, D7): no
+        period form then. BAL's global option is no longer read."""
         try:
-            return bool(self.bal_window.bal_plugin.ENABLE_MULTIVERSE.get())
+            return bool(delivery.instalments_of(self._settings()))
+        except ValueError:
+            return True
         except Exception:
             return False
 
@@ -1121,23 +1188,34 @@ class DeliveryFormWidget(QWidget):
         settings = self._settings()
         basic = self._basic()
         period = delivery.is_period(settings)
+        staged = self._multiverse()
         self.locked = engine_context.form_locked(self.bal_window)
-        for w in (self.mode_combo, self.fixed_radio, self.period_radio, self.months_box):
+        for w in (self.mode_combo, self.fixed_radio, self.period_radio,
+                  self.staged_radio, self.months_box):
             w.blockSignals(True)
         try:
             self.mode_combo.setCurrentIndex(0 if basic else 1)
-            self.fixed_radio.setChecked(not period)
+            self.fixed_radio.setChecked(not period and not staged)
             self.period_radio.setChecked(period)
+            self.staged_radio.setChecked(staged)
             # Owner (ZIP test, 2026-10-12): BASIC shows as little text as
             # possible. A fixed date there has nothing to choose, so neither
             # radio is shown (a lone, disabled "Fixed date" only confused);
             # a period-form will still shows its state.
             self.fixed_radio.setVisible(not basic or period)
             self.period_radio.setVisible(not basic or period)
-            self.fixed_radio.setEnabled(not self.locked)
+            # #170: with a table, "Fixed date" is the way back to one
+            # delivery, a change of the table (owner decision D6: allowed
+            # with a will in force, as on the command line).
+            self.fixed_radio.setEnabled(not self.locked or staged)
             self.period_radio.setEnabled(
-                not self.locked and not basic and not self._multiverse()
+                not self.locked and not basic and not staged
             )
+            # ADVANCED only (owner decision D5); BASIC shows a wallet's
+            # table as it is, like the period form, but cannot change it.
+            self.staged_radio.setVisible(not basic or staged)
+            self.staged_radio.setEnabled(not basic and not period)
+            self.staged_button.setVisible(staged and not basic)
             self.months_box.setValue(self._initial_months())
             self.months_box.setVisible(period)
             self.months_box.setEnabled(period and not basic)
@@ -1149,7 +1227,7 @@ class DeliveryFormWidget(QWidget):
             self.lock_label.setVisible(self.locked and not basic)
         finally:
             for w in (self.mode_combo, self.fixed_radio, self.period_radio,
-                      self.months_box):
+                      self.staged_radio, self.months_box):
                 w.blockSignals(False)
 
     # ------------------------------------------------------------- writes
@@ -1193,11 +1271,19 @@ class DeliveryFormWidget(QWidget):
         working in BASIC); ADVANCED (owner, #146) preselects the period of
         :meth:`_initial_months` months, so the date stays about the same.
         "Fixed date" can still be chosen.
+
+        #174: "No" to "Go back to BASIC mode?" leaves everything as it was
+        (ADVANCED, the form untouched): the selector goes back and nothing
+        else runs.
         """
-        if not switch_user_type(self.bal_window.bal_plugin, index == 1, parent=self):
+        plugin = self.bal_window.bal_plugin
+        if not switch_user_type(plugin, index == 1, parent=self):
+            advanced = is_advanced_mode(plugin)
             self.mode_combo.blockSignals(True)
-            self.mode_combo.setCurrentIndex(0)
+            self.mode_combo.setCurrentIndex(1 if advanced else 0)
             self.mode_combo.blockSignals(False)
+            if advanced:
+                return
         # The form follows the mode (``context.follow_mode``; the shared
         # switch already did it for the windows the Qt plugin knows).
         engine_context.follow_mode(self.bal_window, months=self._initial_months())
@@ -1210,9 +1296,38 @@ class DeliveryFormWidget(QWidget):
                 _logger.debug(f"wizard visibility not refreshed: {e!r}")
 
     def _on_fixed(self):
-        """"Fixed date" clicked: the fixed form, the stored date kept."""
+        """"Fixed date" clicked: the fixed form, the stored date kept.
+
+        #170: with a table of deliveries, the question "Go back to one
+        delivery?" (``deliveries.confirm_back_to_one``: the rest of the
+        estate would arrive earlier, owner decision (a)).
+        """
+        if self._multiverse():
+            from .deliveries import confirm_back_to_one
+
+            confirm_back_to_one(self.bal_window, self)
+            self._after_write()
+            return
         if delivery.is_period(self._settings()):
             self._write(form=delivery.FORM_FIXED)
+
+    def _on_staged(self):
+        """"Several deliveries" clicked (#170): the window of the
+        deliveries, on the example table; Cancel keeps one delivery."""
+        if not self._multiverse():
+            self._edit_deliveries()
+        else:
+            self._after_write()
+
+    def _edit_deliveries(self):
+        """Open the window of the deliveries, then show what it stored."""
+        opener = getattr(self.bal_window, "open_deliveries_editor", None)
+        if callable(opener):
+            try:
+                opener(parent=self)
+            except Exception as e:
+                _logger.error(f"window of the deliveries failed: {e!r}")
+        self._after_write()
 
     def _on_period(self):
         """"Period (renewable)" clicked: the period form with the box's N
@@ -1490,7 +1605,9 @@ class WillSettingsWidget(QWidget):
 
         Fixed date: the date editor, as before. Period: the read-only text
         "36 months (3 years) -> 12/10/2029" (:func:`period_field_text`)
-        instead of the editor; N is edited only in the wizard. Called each
+        instead of the editor; N is edited only in the wizard. A table of
+        deliveries (#170): "10/03/2030 (+2 deliveries)", read-only too; the
+        dates are changed in the window of the deliveries. Called each
         time the toolbar's list is redrawn (:meth:`on_locktime_change`),
         after every settings write (``BalWindow.refresh_setting_fields``)
         and by ``update_all``, so both tabs follow a change of the form, of
@@ -1498,7 +1615,17 @@ class WillSettingsWidget(QWidget):
         """
         try:
             settings = getattr(self.bal_window, "will_settings", None) or {}
-            self.widgets["locktime"].show_period(period_field_text(settings))
+            text = period_field_text(settings)
+            tooltip = None
+            if not text:
+                # #170 (owner answer 3): with a table the date is delivery 1
+                # and the dates are changed only in the window of the
+                # deliveries (the 28 days and the "earlier" question).
+                from .deliveries import staged_field_text, staged_field_tip
+
+                text = staged_field_text(settings)
+                tooltip = staged_field_tip() if text else None
+            self.widgets["locktime"].show_period(text, tooltip)
         except Exception as e:
             _logger.debug(f"delivery form not shown: {e!r}")
 
@@ -2020,7 +2147,8 @@ class PercAmountEdit(BTCAmountEdit):
 
 def message_help_text():
     """The "?" of the will message (#140, owner): what it is, when and
-    where it can be read, the byte count and two examples."""
+    where it can be read, the byte count, the delivery that carries it in a
+    will in several deliveries (#193) and two examples."""
     # Owner's ZIP test: one sentence per line, easier to read.
     return _(
         "A short text written in the will transaction (OP_RETURN), at most "
@@ -2031,11 +2159,18 @@ def message_help_text():
         "mempool.space).\n"
         "A letter with an accent takes 2 bytes, an emoji 4.\n"
         "Only one message per will.\n"
+        "In a will in several deliveries the message travels in delivery 1.\n"
         "Examples:\n"
         "\u201cHappy birthday, my love. No ring: eternal words and bitcoin. "
         "Yours, M.\u201d\n"
         "\u201cTo Marco and Giulia: everything I have is yours. With love, "
         "dad\u201d")
+
+
+def message_delivery_text():
+    """#193: the delivery that carries the message of a will in several
+    deliveries (M4 decision 5: one message only, in delivery 1)."""
+    return _("In a will in several deliveries the message travels in delivery 1.")
 
 
 def message_warning_text():
@@ -2186,6 +2321,89 @@ class BalSpinBox(QSpinBox):
         self.valueChanged.connect(on_value_changed)
 
 
+def _spent_tx(txin, will, wallet):
+    """The transaction whose output *txin* spends, or None (#223).
+
+    A later delivery spends an output of the copy before it, which is in the
+    will and not in the wallet's history; the first delivery spends wallet
+    coins.
+    """
+    txid = txin.prevout.txid.hex()
+    if txid in will:
+        return will[txid].tx
+    if wallet is not None:
+        return wallet.adb.get_transaction(txid)
+    return None
+
+
+def copy_fee(tx, will, wallet):
+    """What the copy *tx* leaves to the miner, in sat; None when unknown (#223).
+
+    WHY not ``tx.input_value()``: a signed copy, and a later copy read back
+    from the wallet file, keep no amount on their inputs, so it raised and
+    the Details window showed "-1". The amounts are read from the spent
+    outputs instead.
+    """
+    spent = 0
+    for txin in tx.inputs():
+        source = _spent_tx(txin, will, wallet)
+        if source is None:
+            return None
+        spent += source.outputs()[txin.prevout.out_idx].value
+    return spent - tx.output_value()
+
+
+def copy_size(tx, will, wallet):
+    """The size of the copy *tx* in vbytes, with the wallet's real scripts (#223).
+
+    Like ``Util.real_tx_size`` (#212), which is not changed here (owner: this
+    step touches only the Details window, not what builds the will), plus:
+    an input of a later copy has no address when read back, so the address
+    is taken from the output it spends. Without it a 2-of-3 read 184 vB
+    instead of 220 and the window showed 15.5 sat/vB for 13. The inputs are
+    copies: *tx* does not change.
+    """
+    if not isinstance(tx, PartialTransaction):
+        return tx.estimated_size()
+    inputs = []
+    for txin in tx.inputs():
+        txin = copy.copy(txin)
+        if txin.script_descriptor is None and wallet is not None:
+            address = txin.address
+            if address is None:
+                source = _spent_tx(txin, will, wallet)
+                if source is not None:
+                    address = source.outputs()[txin.prevout.out_idx].address
+            if address:
+                descriptor = wallet.get_script_descriptor_for_address(address)
+                if descriptor:
+                    txin.script_descriptor = descriptor
+        inputs.append(txin)
+    return PartialTransaction.from_io(
+        inputs, tx.outputs(), locktime=tx.locktime, version=tx.version
+    ).estimated_size()
+
+
+def fee_text(tx, will, wallet):
+    """The "Transaction fees" value of the Details window (#223).
+
+    "2860 (13.0 sats/vbyte)"; "?" for what cannot be read (before: "-1" and
+    a negative rate).
+    """
+    try:
+        fee = copy_fee(tx, will, wallet)
+    except Exception as e:
+        _logger.debug(f"fee of {tx.txid()}: {e!r}")
+        fee = None
+    if fee is None:
+        return "? (? sats/vbyte)"
+    try:
+        rate = round(fee / copy_size(tx, will, wallet), 3)
+    except Exception as e:
+        _logger.debug(f"size of {tx.txid()}: {e!r}")
+        rate = "?"
+    return "{} ({} sats/vbyte)".format(fee, rate)
+
 
 class WillWidget(QWidget):
     def __init__(self, father=None, parent=None, will=None):
@@ -2199,6 +2417,15 @@ class WillWidget(QWidget):
         self.setLayout(vlayout)
         self.will = will if will is not None else parent.bal_window.willitems
         self._bal_parent = parent
+        # #223: the children are built with parent=parent too, so each widget
+        # finds the wallet the same way.
+        self._wallet = lambda: getattr(
+            getattr(parent, "bal_window", None), "wallet", None)
+        # #170: a will in deliveries names each heir with its delivery
+        # ("Luca (delivery 2)"), never the row name "Luca§2".
+        staged = any(
+            delivery.instalment_number(name) > 1
+            for item in self.will.values() for name in (item.heirs or {}))
         # CHANGELOG #129: every transaction is shown (the "Hide Replaced" /
         # "Hide Invalidated" options are gone; this view is replaced later).
         for w in self.will:
@@ -2226,21 +2453,17 @@ class WillWidget(QWidget):
                 creation = str(BalTimestamp(self.will[w].time))
 
                 def qlabel(title, value):
-                    # ``title`` is shown as it is: callers pass a translated
-                    # label, or data (an heir name, a will-executor URL).
-                    return QLabel("<b>{}:</b>\t{}".format(title, value))
+                    # ``title`` is a translated label or data (an heir name,
+                    # a will-executor URL), ``value`` data too: both escaped,
+                    # the label being rich text (#198, Electrum 4.8.3).
+                    return rich_text(QLabel("<b>{}:</b>\t{}".format(
+                        html.escape(str(title)), html.escape(str(value)))))
 
                 detaillayout.addWidget(qlabel(_("Locktime"), locktime))
                 detaillayout.addWidget(qlabel(_("Creation Time"), creation))
-                try:
-                    total_fees = (
-                        self.will[w].tx.input_value() - self.will[w].tx.output_value()
-                    )
-                except Exception:
-                    total_fees = -1
-                decoded_fees = total_fees
-                fee_per_byte = round(total_fees / self.will[w].tx.estimated_size(), 3)
-                fees_str = str(decoded_fees) + " (" + str(fee_per_byte) + " sats/vbyte)"
+                # #223: amounts from the spent outputs, size with the real
+                # scripts (later copies showed "-1", a multisig 15.5 for 13).
+                fees_str = fee_text(self.will[w].tx, self.will, self._wallet())
                 detaillayout.addWidget(qlabel(_("Transaction fees"), fees_str))
                 # The saved status history is English: translate it for display.
                 detaillayout.addWidget(
@@ -2251,7 +2474,7 @@ class WillWidget(QWidget):
                     )
                 )
                 detaillayout.addWidget(QLabel(""))
-                detaillayout.addWidget(QLabel("<b>{}</b>".format(_("Heirs:"))))
+                detaillayout.addWidget(rich_text(QLabel("<b>{}</b>".format(_("Heirs:")))))
                 for heir_name in self.will[w].heirs:
                     if 'w!ll3x3c"' in heir_name:
                         continue
@@ -2271,7 +2494,7 @@ class WillWidget(QWidget):
                     else:
                         detaillayout.addWidget(
                             qlabel(
-                                heir_name,
+                                heir_label(heir_name, staged),
                                 f"{decoded_amount} {self._bal_parent.base_unit_name} "
                                 f"[{h[0]}]",
                             )
@@ -2279,7 +2502,7 @@ class WillWidget(QWidget):
                 if self.will[w].we:
                     detaillayout.addWidget(QLabel(""))
                     detaillayout.addWidget(
-                        QLabel("<b>{}</b>".format(_("Willexecutor:")))
+                        rich_text(QLabel("<b>{}</b>".format(_("Willexecutor:"))))
                     )
                     decoded_amount = Util.decode_amount(
                         self.will[w].we["base_fee"], self._bal_parent.decimal_point
@@ -2359,8 +2582,8 @@ def what_changes_box(rows, title=None, footer=None):
     column = QVBoxLayout(box)
     column.setContentsMargins(12, 8, 12, 10)
     column.setSpacing(4)
-    title = QLabel("<b>{}</b>".format(
-        html.escape(title or _("What changes compared with the will in force"))))
+    title = rich_text(QLabel("<b>{}</b>".format(
+        html.escape(title or _("What changes compared with the will in force")))))
     title.setStyleSheet("color:#174A8C;")
     column.addWidget(title)
     grid = QGridLayout()
@@ -2368,7 +2591,7 @@ def what_changes_box(rows, title=None, footer=None):
     grid.setVerticalSpacing(5)
     for r, (label, value, note) in enumerate(rows):
         # An empty label continues the row above (one line per will).
-        key = QLabel("• " + html.escape(label) if label else "")
+        key = rich_text(QLabel("• " + html.escape(label) if label else ""))
         key.setStyleSheet("color:#4A5560;")
         text = value + ("<br><span style='color:#6A737D'>{}</span>".format(
             html.escape(note)) if note else "")
@@ -2452,6 +2675,14 @@ class WillSummaryWidget(QFrame):
         drow.addWidget(self.deselected_button, 0, Qt.AlignmentFlag.AlignTop)
         self.deselected_row.setVisible(False)
         column.addWidget(self.deselected_row)
+        # #190: the excluded will-executors that still hold a copy of the
+        # will in force: a grey note, its first sentence in bold (owner).
+        self.held_label = QLabel()
+        self.held_label.setWordWrap(True)
+        self.held_label.setTextFormat(Qt.TextFormat.RichText)
+        self.held_label.setStyleSheet("color:#555555;")
+        self.held_label.setVisible(False)
+        column.addWidget(self.held_label)
         box.addLayout(column, 1)
         self.button = QPushButton()
         self.button.setMinimumHeight(32)
@@ -2554,6 +2785,9 @@ class WillSummaryWidget(QFrame):
         deselected = summary.get("deselected_text") or ""
         self.deselected_label.setText(deselected)
         self.deselected_row.setVisible(bool(deselected))
+        held = excluded_holders_html(summary.get("held") or [])
+        self.held_label.setText(held)
+        self.held_label.setVisible(bool(held))
         self.action = summary.get("action")
         if self.action:
             self.button.setText(summary.get("action_text") or "")
@@ -2608,10 +2842,21 @@ class BuildReportView(QWidget):
         "to_sign": ("–", "#8a8a8a"),
         "to_send": ("–", "#8a8a8a"),
         "deselected": ("–", "#8a8a8a"),
+        # #178: excluded after it received the will; no longer asked.
+        "excluded": ("–", "#8a8a8a"),
     }
+
+    #: #182: a right-hand text of a box up to this width (pixels) stays on
+    #: one line; a longer one wraps (see :meth:`_group`).
+    VALUE_ONE_LINE = 360
 
     #: States of a will-executor that did not get the will (#93).
     FAILED_STATES = ("failed", "timeout")
+    #: #181: the states that offer "Exclude" and "Retry": the will did not
+    #: reach it (#93), or it received the will and did not answer the check
+    #: (#147). Owner: before, only the Will-Executor tab could drop a
+    #: will-executor that never answers the check (we.divinaly.support).
+    EXCLUDE_STATES = FAILED_STATES + ("no_check_answer",)
 
     def __init__(self, format_amount=None, parent=None):
         super().__init__(parent)
@@ -2656,6 +2901,7 @@ class BuildReportView(QWidget):
             "to_sign": _("to sign"),
             "to_send": _("to send"),
             "deselected": _("deselected: not sent"),
+            "excluded": _("excluded: has the will, no longer verified"),
         }.get(state, "")
 
     def _clear(self):
@@ -2667,6 +2913,13 @@ class BuildReportView(QWidget):
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
+
+    #: #183 (owner, preview approved): the word or counter under a step
+    #: ("ok", "4/5", "0/5 · 27 s / 45 s") was 11 px and grey, hard to read
+    #: on the coloured cells: now 13 px in the step's own colour, a darker
+    #: grey for the steps not reached or not needed.
+    STEP_WORD_SIZE = 13
+    STEP_WORD_GREY = "#444444"
 
     def _steps_bar(self, steps):
         """The five steps with their state and word, joined by arrows."""
@@ -2693,7 +2946,9 @@ class BuildReportView(QWidget):
             column.addWidget(top)
             sub = QLabel(note or " ")
             sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            sub.setStyleSheet("color:#555555;font-size:11px;")
+            sub.setStyleSheet("color:{};font-size:{}px;".format(
+                self.STEP_WORD_GREY if state in ("todo", "skip") else fg,
+                self.STEP_WORD_SIZE))
             column.addWidget(sub)
             row.addWidget(cell, 1)
             if i < len(steps) - 1:
@@ -2724,12 +2979,20 @@ class BuildReportView(QWidget):
         row.addWidget(label, 1)
         return frame
 
-    def _group(self, title, rows, accent="#777777", actions=None, footer=None):
+    def _group(self, title, rows, accent="#777777", actions=None, footer=None,
+               note=None):
         """A titled white box; ``rows``: ``[(left, right or None, colour)]``.
 
         The texts are plain and escaped here. ``actions``: ``{row: widget}``
         put at the end of that row; ``footer``: a widget under the rows
-        (#93: the "Exclude" and "Retry" buttons).
+        (#93: the "Exclude" and "Retry" buttons); ``note``: a grey line
+        under the rows (#182: the next check).
+
+        #182 (owner's ZIP tests): the right-hand texts wrap, so a long one no
+        longer pushes the row's button out of a narrow window; up to
+        :data:`VALUE_ONE_LINE` pixels they stay on one line (wrapped
+        labels otherwise broke "verified on 23 Oct 2026, 13:52" with room
+        to spare).
         """
         frame = QFrame()
         frame.setObjectName("balGroup")
@@ -2753,13 +3016,24 @@ class BuildReportView(QWidget):
             text.setWordWrap(True)
             grid.addWidget(text, r, 0)
             if right is not None:
-                value = QLabel(html.escape(right))
+                value = rich_text(QLabel(html.escape(right)))
+                value.setWordWrap(True)
+                value.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                value.setMinimumWidth(min(
+                    value.fontMetrics().horizontalAdvance(right) + 4,
+                    self.VALUE_ONE_LINE))
                 if colour:
                     value.setStyleSheet("color:{};".format(colour))
-                grid.addWidget(value, r, 1, Qt.AlignmentFlag.AlignRight)
+                grid.addWidget(value, r, 1)
             if actions and r in actions:
                 grid.addWidget(actions[r], r, 2, Qt.AlignmentFlag.AlignRight)
         column.addLayout(grid)
+        if note:
+            line = rich_text(QLabel(html.escape(note)))
+            line.setWordWrap(True)
+            line.setStyleSheet("color:#555555;")
+            column.addWidget(line)
         if footer is not None:
             if isinstance(footer, QPushButton):
                 column.addWidget(footer, 0, Qt.AlignmentFlag.AlignRight)
@@ -2950,7 +3224,7 @@ class BuildReportView(QWidget):
             self.box.addWidget(self._group(_("Heirs"), rows))
         if note and not note[1]:
             # #135: nothing changed in the shares: one quiet grey line.
-            quiet = QLabel(html.escape(note[0]))
+            quiet = rich_text(QLabel(html.escape(note[0])))
             quiet.setWordWrap(True)
             quiet.setStyleSheet("color:#6A737D;")
             self.box.addWidget(quiet)
@@ -2959,14 +3233,23 @@ class BuildReportView(QWidget):
             rows = []
             actions = {}
             failed = False
+            verified = snapshot.get("verified") or {}
+            next_checks = []
             for url, (state, seconds) in executors:
                 symbol, colour = self._EXECUTOR_STYLE.get(state, ("", None))
                 host = urlparse(url).hostname or url
-                rows.append(
-                    (host, "{} {}".format(symbol, self.executor_text(state, seconds)),
-                     colour)
-                )
-                if state in self.FAILED_STATES:
+                text = self.executor_text(state, seconds)
+                if state == "verified" and url in verified:
+                    # #182 (owner): when it was last verified, short, so the
+                    # "Exclude" button keeps its place; the next check of a
+                    # will in several deliveries once, under the box.
+                    last, next_check = verified[url]
+                    text = _("received and verified on {when}").format(
+                        when=datetext.local_short(last))
+                    if next_check is not None:
+                        next_checks.append(next_check)
+                rows.append((host, "{} {}".format(symbol, text), colour))
+                if state in self.EXCLUDE_STATES:
                     failed = True
                     if self.on_exclude:
                         actions[len(rows) - 1] = self._small_button(
@@ -2978,9 +3261,32 @@ class BuildReportView(QWidget):
             deselected = sum(1 for _url, (st, _s) in executors if st == "deselected")
             if deselected:
                 footer = self._deselected_footer(deselected, footer)
+            note = None
+            if next_checks:
+                note = _("Next check from {when}").format(
+                    when=datetext.local_short(min(next_checks)))
             self.box.addWidget(
-                self._group(_("Will-Executor"), rows, actions=actions, footer=footer)
+                self._group(_("Will-Executor"), rows, actions=actions,
+                            footer=footer, note=note)
             )
+        held = excluded_holders_html(snapshot.get("held") or [])
+        if held:
+            # #190: the note of the Will tab's summary, under the
+            # will-executors (an excluded one is no longer in their box
+            # once the new will replaced its copy).
+            line = QLabel(held)
+            line.setWordWrap(True)
+            line.setTextFormat(Qt.TextFormat.RichText)
+            line.setStyleSheet("color:#555555;")
+            line.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            self.box.addWidget(line)
+        if snapshot.get("low_fee"):
+            # #192: the low-fee warning, read at least once by who signs.
+            line = QLabel("⚠ " + snapshot["low_fee"])
+            line.setWordWrap(True)
+            line.setStyleSheet("color:#e65100;")
+            line.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            self.box.addWidget(line)
         if snapshot.get("will_now"):
             self.box.addWidget(
                 self._group(_("Your will now"), [(snapshot["will_now"], None, None)])

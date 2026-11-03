@@ -211,6 +211,9 @@ def test_show_migrates_and_reports_the_owner_wallet(make):
         "period": None,
         "period_start": None,
         "locked": True,
+        # #169: no table of the deliveries (one delivery).
+        "staged": False,
+        "deliveries": [],
     }
     assert wallet_dict(s)["note_kind"] == "converted"
     # The same through Electrum's own command wrappers (``-w wallet``).

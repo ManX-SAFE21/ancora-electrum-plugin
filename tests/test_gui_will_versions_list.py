@@ -514,7 +514,45 @@ def test_menu_of_a_version_row_acts_on_all_its_transactions(make):
     assert force is True and sorted(txids) == sorted(s.bw.willitems)
 
 
-def test_draft_on_top_unnumbered_and_deletable(make):
+def test_a_new_will_on_a_coin_back_from_an_executed_will_has_its_row(make):
+    """#200, the owner's wallet: the will was executed (we1's copy mined,
+    30 % back to the wallet) and a new will was made on that coin. The
+    List showed no row for it (its copies sat under the executed will as
+    one more delivery): now #2 in force on top, #1 executed below, and the
+    menu of row #2 sends exactly the copies of the new will."""
+    old, new = fk.ts(2026, 10, 16, 19), fk.ts(2030, 10, 15, 19)
+    s = make(locktime=old)
+    me = s.wallet.get_receiving_addresses()[5]
+    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "70%", old]
+    s.bw.heirs["me"] = [me, "30%", old]
+    del s.bw.heirs["bob"]
+    s.bw.heirs.save()
+    s.check()
+    s.clock.travel(10)
+    (executed,) = [w for w, i in s.bw.willitems.items() if i.we["url"] == URLS[1]]
+    tx = s.bw.willitems[executed].tx
+    s.wallet.adb.add_transaction(tx)
+    s.wallet.adb.add_unverified_or_unconfirmed_tx(tx.txid(), 101)
+    s.clock.travel(11)
+    s.set_date(new)
+    s.set_heirs(alice="40%", bob="30%", carol="30%")
+    s.check()
+    copies = sorted(w for w, i in s.bw.willitems.items() if int(i.tx.locktime) == new)
+    lst = _list(s)
+    texts = [t for _k, _key, t in _top(lst)]
+    assert [t.split(" ·")[0] for t in texts] == ["#2", "#1"]
+    assert "alice 40%, bob 30%, carol 30%" in texts[0]
+    assert texts[0].endswith("· in force") and texts[1].endswith("· executed")
+    menu = lst.build_menu(_version_index(lst, 2))
+    actions = {a.text(): a for a in menu.actions()}
+    sent = []
+    with patch.object(s.bw, "broadcast_transactions",
+                      lambda force=False, txids=None, **kw: sent.append(txids)):
+        actions["broadcast"].trigger()
+    assert [sorted(t) for t in sent] == [copies]
+
+
+def test_draft_on_top_unnumbered_and_not_deletable(make):
     s = make()
     s.check()
     s.set_fee(22)
@@ -545,7 +583,9 @@ def test_draft_on_top_unnumbered_and_deletable(make):
     draft_row = m.index(1, 0, m.index(0, 0))
     menu = lst.build_menu(draft_row)   # kept: its actions die with it
     actions = {a.text(): a for a in menu.actions() if a.text()}
-    assert actions["delete"].isEnabled() and actions["sign"].isEnabled()
+    # #179 (owner, choice B): a draft is part of the will being prepared:
+    # signed by the Check or dropped by it, never deleted by hand.
+    assert not actions["delete"].isEnabled() and actions["sign"].isEnabled()
     sent_row = m.index(1, 0, m.index(1, 0))
     menu = lst.build_menu(sent_row)
     actions = {a.text(): a for a in menu.actions() if a.text()}
@@ -579,10 +619,12 @@ def test_search_looks_in_versions_and_transactions(make):
 
 
 def test_multiverse_does_not_break_the_list(make):
+    """A will in two deliveries (a table, #168; BAL's multiverse option
+    before): one version, each first-delivery row holds its three
+    instalments."""
     s = make()
-    s.plugin.ENABLE_MULTIVERSE.set(True)
-    s.bw.heirs["bob"] = [fk.HEIR_ADDR["bob"], "40%", D + 365 * fk.DAY]
-    s.bw.heirs["alice"] = [fk.HEIR_ADDR["alice"], "60%", D]
+    s.set_instalments((D, {"alice": "60%", "bob": "0%"}),
+                      (D + 365 * fk.DAY, {"alice": "0%", "bob": "40%"}))
     s.check()
     lst = _list(s)
     m = lst.model()
@@ -597,6 +639,37 @@ def test_multiverse_does_not_break_the_list(make):
         assert lst._row_info(child)[0] == "variant"
     lst.update()
     assert m.rowCount() == 1
+
+
+def test_each_delivery_steps_right_in_every_column(make):
+    """#170 (owner's ZIP test): in a will in deliveries the rows of delivery
+    2 and 3 step right by two figure spaces per level in every column but
+    the first (the tree indents that one); "Copy" keeps the plain values; a
+    will with one date is unchanged."""
+    step = "  "
+    s = make()
+    s.check(cancel_on=SIGN)
+    lst = _list(s)
+    m = lst.model()
+    root = m.index(1, 0, m.index(0, 0))
+    assert not any(str(t).startswith(" ") for t in _shown(lst, root))
+    s = make()
+    s.set_instalments((D, {"alice": "30%", "bob": "30%"}),
+                      (D + 365 * fk.DAY, {"alice": "20%", "bob": "0%"}),
+                      (D + 730 * fk.DAY, {"alice": "0%", "bob": "20%"}))
+    s.check()
+    lst = _list(s)
+    m = lst.model()
+    root = m.index(1, 0, m.index(0, 0))
+    child = m.index(0, 0, root)
+    grandchild = m.index(0, 0, child)
+    for level, idx in enumerate((root, child, grandchild)):
+        shown = _shown(lst, idx)
+        assert not str(shown[0]).startswith(" ")
+        for text in shown[1:]:
+            assert text.startswith(step * level), (level, text)
+            assert not text.startswith(step * (level + 1)), (level, text)
+        assert not any(str(v).startswith(" ") for v in _cells(lst, idx))
 
 
 # --------------------------------------------------------------- settings
@@ -616,6 +689,7 @@ def _settings_dialog(user_type):
     return plugin, captured[0]
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 @pytest.mark.parametrize("user_type", ["basic", "advanced"])
 def test_settings_without_the_hide_options(user_type):
     """The list's "Show all history" replaces them; the config keys stay

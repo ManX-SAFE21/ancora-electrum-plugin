@@ -20,21 +20,42 @@ from urllib.parse import urlparse
 from electrum.logging import get_logger
 
 from ..i18n import _, number_separators
+from .delivery import DEFAULT_FEE, instalment_number, person_name
 from .plugin_base import BalTimestamp
 from .will import (
+    FuturesOffPlanException,
     HeirChangeException,
     HeirNotFoundException,
     NotCompleteWillException,
     NoWillExecutorNotPresent,
     SameDateCopiesException,
+    StagedWillRemovedException,
     TxFeesChangedException,
     Will,
+    WillChainError,
     WillexecutorChangeException,
     WillExecutorNotPresent,
     WillExecutorTermsChanged,
 )
 
 _logger = get_logger(__name__)
+
+
+def heir_label(key, staged=False):
+    """The heir behind heir-row name ``key``, as the owner reads it (#169).
+
+    A will in deliveries (#168) names the rows of deliveries 2 and 3
+    "Luca§2", "Luca§3" (``bal.core.delivery.instalment_key``): the person
+    is shown with the delivery, "Luca (delivery 2)" (owner decision 2 of
+    M3: never the row name). In such a will (``staged``) the row of
+    delivery 1, "Luca", is "Luca (delivery 1)": "Heir Luca was removed"
+    would be wrong when Luca still receives at a later delivery. Any other
+    name as it is.
+    """
+    n = instalment_number(key)
+    if n == 1 and not staged:
+        return str(key)
+    return _("{name} (delivery {n})").format(name=person_name(key), n=n)
 
 
 def executor_terms_message(url, change):
@@ -57,6 +78,21 @@ def executor_terms_message(url, change):
     ).format(host)
 
 
+def excluded_after_build_message(e):
+    """The "Will-Executor excluded" row right after a build (#176).
+
+    ``e``: the ``WillExecutorNotPresent`` the Check raised on the will just
+    prepared (``str(e)`` is the URL). A new fee address or fee
+    (``WillExecutorTermsChanged``) gives :func:`executor_terms_message`;
+    any other case names the will-executor. Texts approved by the owner
+    (2026-10-21); before, the row read only "Skipped".
+    """
+    if isinstance(e, WillExecutorTermsChanged):
+        return executor_terms_message(str(e), e.change)
+    host = urlparse(str(e)).hostname or str(e)
+    return _("{}: not in the will just prepared").format(host)
+
+
 def no_valid_transaction(e):
     """True for the core's argument-less NotCompleteWillException.
 
@@ -69,6 +105,89 @@ def no_valid_transaction(e):
     return type(e) is NotCompleteWillException and str(e) == "WillException"
 
 
+def staged_removed_message(deliveries):
+    """Why the Check invalidates first when the owner goes back to one
+    delivery (#188): the sentence of the Check row and of the command line."""
+    return _(
+        "Back to one delivery: your will in {} deliveries is held by the "
+        "will-executors and must be invalidated on the blockchain first (a "
+        "network fee); then the new will is prepared."
+    ).format(deliveries)
+
+
+def chain_refused_message(e=None):
+    """The sentence shown when the safety net refuses a chain of deliveries
+    (:class:`WillChainError`): the Check row, the main window and the
+    command line.
+
+    #189 (owner): the raw reason ("chain: a loop between the
+    transactions") is technical; it goes to Electrum's log, the owner reads
+    that nothing was changed. ``e`` is only logged.
+    """
+    if isinstance(e, WillChainError):
+        _logger.info(f"chain refused: {e}")
+    return _(
+        "The new will was not prepared: a safety check found a problem in "
+        "the chain of deliveries. Nothing was changed: if you have a will in "
+        "force, it stays as it is. The details are in Electrum's log."
+    )
+
+
+def deliveries_not_funded_message(e):
+    """The sentence shown when the funds cannot pay every delivery (#211).
+
+    ``e``: a ``DeliveriesNotFundedException``. Owner's rule (2026-11-02): the
+    will is refused and the owner reads what to do: fewer deliveries, or a
+    simple inheritance. With two deliveries the only way is one delivery, so
+    no "from 3 to 2" there.
+    """
+    if e.deliveries > 2:
+        advice = _(
+            "Reduce the number of deliveries (for example from {} to {}), or "
+            "make a simple inheritance with one delivery."
+        ).format(e.deliveries, e.deliveries - 1)
+    else:
+        advice = _("Make a simple inheritance with one delivery.")
+    return "{} {} {}".format(
+        _(
+            "The new will was not prepared: the {} satoshi of this wallet are "
+            "not enough to pay all {} deliveries with their fees."
+        ).format(int(e.balance), e.deliveries),
+        advice,
+        _("If you have a will in force, it stays as it is."),
+    )
+
+
+#: #192: under this miner fee rate (sat/vB) the plugin warns; the default
+#: fee of a new will (owner, multiverse plan section 4: a warning, never a
+#: block, for every will).
+LOW_FEE_LIMIT = DEFAULT_FEE
+
+
+def low_fee_warning(fee):
+    """The warning for a miner fee rate below :data:`LOW_FEE_LIMIT`, or "".
+
+    #192 (owner's text, 2026-10-26): lowering the fee is the user's choice;
+    years later, on the delivery date, a busy network may not accept a
+    transaction with a low fee. A warning only: nothing is refused. ``fee``:
+    the rate in sat/vB (``baltx_fees``, an int, a float or a string); a
+    value that is not a number gives "" (the validated writes refuse it).
+    """
+    try:
+        rate = float(fee)
+    except (TypeError, ValueError):
+        return ""
+    if rate >= LOW_FEE_LIMIT:
+        return ""
+    return _(
+        "Miner fee below {limit} sat/vB: it is your choice. On the delivery "
+        "date of your will the Bitcoin network may be very busy, and the "
+        "nodes may not accept a transaction with a low fee. With {limit} "
+        "sat/vB or more this risk is much smaller and the inheritance is "
+        "more likely to be executed on time, without delays."
+    ).format(limit=LOW_FEE_LIMIT)
+
+
 def will_change_message(e):
     """Return one sentence saying why the will must be prepared again.
 
@@ -79,6 +198,8 @@ def will_change_message(e):
     determined" sentence instead of a guess.
     """
     # Subclasses first - they are all NotCompleteWillException.
+    if isinstance(e, StagedWillRemovedException):
+        return staged_removed_message(e.deliveries)
     if isinstance(e, TxFeesChangedException):
         # The core raises TxFeesChangedException(f"{tx_fees}:  {w.tx_fees}"),
         # i.e. "current:  stored".  Show both rates when they can be read,
@@ -98,6 +219,14 @@ def will_change_message(e):
             'Will-executor "{}" is not covered by the current will: '
             "a new will must be prepared."
         ).format(str(e))
+    if isinstance(e, FuturesOffPlanException):
+        # #187: a copy nobody can recall (a will-executor excluded or
+        # removed after it received the will) still leads to old shares.
+        return _(
+            "A copy of the will held by a will-executor no longer selected "
+            "could still deliver the old shares ({} of {} possible ways): "
+            "preparing a new will, dated one day earlier."
+        ).format(e.count, e.total)
     if isinstance(e, SameDateCopiesException):
         # CHANGELOG #91: the state left by wills built before the fix.
         return _(
@@ -113,37 +242,50 @@ def will_change_message(e):
     if isinstance(e, HeirNotFoundException):
         # Owner decision (CHANGELOG #77): one sentence per kind of change,
         # as reported by the core (Will._heir_change). The generic
-        # sentence stays for an exception without that detail.
+        # sentence stays for an exception without that detail. #169: the
+        # heir is named as the owner knows it (heir_label: "Luca (delivery
+        # 2)", never the row name "Luca§2").
         change = getattr(e, "change", None)
+        staged = bool(getattr(e, "staged", False))
+        heir = heir_label(str(e), staged)
         if change == HeirNotFoundException.HEIR_RENAMED:
-            # #135 follow-up (owner): the same heir under a new name.
+            # #135 follow-up (owner): the same heir under a new name. A
+            # rename concerns the person: the plain names (#169).
             return _("Heir renamed: {old} → {new}: preparing a new will.").format(
-                old=str(e), new=getattr(e, "new_name", ""))
+                old=person_name(str(e)),
+                new=person_name(getattr(e, "new_name", "") or ""))
         if change == HeirNotFoundException.HEIR_REMOVED:
-            return _('Heir "{}" was removed: preparing a new will.').format(str(e))
+            return _('Heir "{}" was removed: preparing a new will.').format(heir)
         if change == HeirNotFoundException.HEIR_ADDED:
-            return _('Heir "{}" was added: preparing a new will.').format(str(e))
+            return _('Heir "{}" was added: preparing a new will.').format(heir)
         if change == HeirNotFoundException.HEIR_DATE and getattr(e, "all_heirs", False):
+            number = instalment_number(str(e))
+            if number > 1 or staged:
+                # #169: every heir of that delivery has its date (a table
+                # of the deliveries): the date of the delivery changed.
+                return _(
+                    "The date of delivery {} changed: preparing a new will."
+                ).format(number)
             # CHANGELOG #125 (owner): every heir has the will's date, so the
             # will's date changed; naming only the first heir confused.
             return _("The delivery date changed: preparing a new will.")
         if change == HeirNotFoundException.HEIR_DATE:
             return _(
                 'The delivery date of heir "{}" changed: preparing a new will.'
-            ).format(str(e))
+            ).format(heir)
         if change == HeirNotFoundException.HEIR_AMOUNT:
             return _(
                 'The amount of heir "{}" changed: preparing a new will.'
-            ).format(str(e))
+            ).format(heir)
         if change == HeirNotFoundException.HEIR_ADDRESS:
             return _(
                 'The address of heir "{}" changed: preparing a new will.'
-            ).format(str(e))
+            ).format(heir)
         return _(
             'Heir "{}" is not covered by the current will (it was added '
             "or removed, or its delivery date changed): a new will must "
             "be prepared."
-        ).format(str(e))
+        ).format(heir)
     # Kept for completeness: nothing in the plugin raises these two today,
     # but they ARE NotCompleteWillException subclasses, so should future
     # code raise them they get a sensible message rather than the fallback.
@@ -496,6 +638,12 @@ def build_failure_message(reason, date_passed):
         "FIXED_EXCEEDS_BALANCE": _(
             "The heirs' fixed amounts exceed the wallet balance left after "
             "the miner and will-executor fees: reduce the fixed amounts."
+        ),
+        "WALLET_TYPE_NOT_SUPPORTED": _(
+            "This type of wallet is not supported: the will needs a wallet "
+            "whose addresses start with bc1q. Bitcoin addresses starting with 1 "
+            "or 3 "
+            "cannot be used."
         ),
         "WILLEXECUTOR_TX_ERROR": _(
             "An unexpected error stopped the transactions being prepared "

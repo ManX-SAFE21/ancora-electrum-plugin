@@ -39,41 +39,57 @@ from ...core.checkalive import (
 )
 from ...core.heirs import (
     AmountNotValid,
+    OwnAddressImportDeclined,
     SecondMessageNotAllowed,
+    address_key,
     automatic_message_name,
     check_one_message,
     heir_with_address,
+    is_own_address,
     message_address,
     message_names,
     message_text,
 )
 from ...core.messages import (
+    chain_refused_message,
     check_alive_message,
+    deliveries_not_funded_message,
     heir_error_message,
+    staged_removed_message,
     will_change_message,
 )
 from ...core.summary import busy_summary, selected_urls, will_summary
-from ...engine import build, context
+from ...engine import build, context, instalments
 from ...engine.invalidate import (
     INVALIDATION_LABEL,
     broadcast_invalidation,
     build_invalidation,
 )
-from ...engine.merge import merge_summary
+from ...engine.merge import MergeRefusedError, merge_summary
 from ...engine.merge import merge_will as engine_merge_will
+from ...engine.offline_sign import file_summary as engine_file_summary
 from ...engine.offline_sign import prepare_problem as engine_prepare_problem
+from ...engine.offline_sign import problem_lines as engine_problem_lines
+from ...engine.offline_sign import send_problems as engine_send_problems
 from ...engine.offline_sign import sign_file as engine_sign_file
 from ...engine.push import (
     ALREADY_PRESENT,
     EXCLUDED_FEE,
     FAILED,
+    NOTHING_ALL_SENT,
+    NOTHING_NO_COPIES,
+    NOTHING_NO_EXECUTOR,
+    NOTHING_UNSIGNED,
     RECEIVED,
     TIMEOUT,
+    not_delivered,
+    nothing_sent_reason,
     push_will,
     select_push,
 )
 from ...engine.sign import sign_will, sign_will_item
-from ...engine.verify import verify_targets, verify_will
+from ...engine.sign import to_sign as engine_to_sign
+from ...engine.verify import ever_sent, verify_targets, verify_will
 from .common import (
     IMPORT_FILE_FILTER,
     N_,
@@ -82,12 +98,12 @@ from .common import (
     BalPlugin,
     Buttons,
     CancelButton,
+    DeliveriesNotFundedException,
     ElectrumWindow,
     FileImportFailed,
     HeirChangeException,
     HeirNotFoundException,
     Heirs,
-    HelpButton,
     Mapping,
     Network,
     NoHeirsException,
@@ -102,11 +118,13 @@ from .common import (
     QTimer,
     QVBoxLayout,
     SerializationError,
+    StagedWillRemovedException,
     Transaction,
     TxDialog,
     TxFeesChangedException,
     Util,
     Will,
+    WillChainError,
     WillexecutorChangeException,
     WillExecutorFeeTooHighException,
     WillExecutorNotPresent,
@@ -116,9 +134,11 @@ from .common import (
     WillPostponedException,
     _,
     _logger,
+    ask_yes_no,
     char_width_in_lineedit,
     export_meta_gui,
     getOpenFileName,
+    help_button,
     import_meta_gui,
     is_onion_url,
     is_op_return_address,
@@ -143,19 +163,23 @@ from .dialogs import (
     WillExportDialog,
     WillImportDialog,
     _complete_import,
+    check_wait_lines,
     decode_will_payload,
 )
 from .explainer import show_explainer
-from .flow_adapter import CHOOSE_DATE_FIRST, SETTINGS_UNAVAILABLE
+from .flow_adapter import CHOOSE_DATE_FIRST, REST_CANCELLED, SETTINGS_UNAVAILABLE
 from .future_view import FutureView, WillViewSwitch, make_future_area
+from .graph_view import GraphPanel
 from .lists import HeirListWidget, PreviewList
-from .offline_sign import open_sign_offline
+from .offline_sign import check_html, open_sign_offline
+from .trace_window import show_trace
 from .widgets import (
     MESSAGE_WARNING_STYLE,
     LockTimeWidget,
     MessageEdit,
     PercAmountEdit,
     WillSummaryWidget,
+    message_delivery_text,
     message_help_text,
     message_warning_text,
 )
@@ -174,8 +198,8 @@ def _on_gui_thread():
     return threading.current_thread() is threading.main_thread()
 
 
-def _hold_code(host):
-    """The code of the delivery settings hold that applies, or None.
+def _hold(host):
+    """The delivery settings hold that applies (the exception), or None.
 
     See :func:`bal.engine.context.check_holds` (CHANGELOG #123, rule I6).
     A plain function, not a method: the window's methods that call it also
@@ -184,23 +208,61 @@ def _hold_code(host):
     try:
         context.check_holds(host)
     except delivery.DeliveryHold as e:
-        return e.code
+        return e
     return None
+
+
+def _hold_code(host):
+    """The code of the delivery settings hold that applies, or None
+    (:func:`_hold`)."""
+    hold = _hold(host)
+    return hold.code if hold is not None else None
+
+
+def rest_cancelled_text(hold):
+    """The owner's text of a ``DeliveryRestCancelled`` hold (#201): which
+    delivery was executed, that nothing is done, and how to go on."""
+    return _(REST_CANCELLED).format(hold.executed)
+
+
+#: The waiting window was closed during the sending (#213).
+PUSH_STOPPED = "stopped"
+
+
+def _push_outcome_text(outcome):
+    """The warning for a sending that cannot be called a success (#213).
+
+    ``outcome``: ``PUSH_STOPPED`` or a ``NOTHING_*`` code of
+    :func:`~bal.engine.push.nothing_sent_reason`.
+    """
+    return {
+        PUSH_STOPPED: _("Sending stopped: some copies may not have been sent. "
+                        "Press Check to verify."),
+        NOTHING_UNSIGNED: _("Nothing sent: the will is not signed yet."),
+        NOTHING_ALL_SENT: _("Nothing to send: the will-executors have already "
+                            "received every copy."),
+        NOTHING_NO_EXECUTOR: _("Nothing sent: no selected will-executor can "
+                               "receive the will."),
+        NOTHING_NO_COPIES: _("Nothing sent: the will has no valid copy to send."),
+    }[outcome]
 
 
 def _stopped_by_hold(window):
     """True (and the owner is told) when a hold of the delivery settings
     stops a Sign / Broadcast / Invalidate command (rule I6).
 
-    The settings could not be prepared: the error. The "which date?"
-    question waits: press the Check button first.
+    The settings could not be prepared: the error. The rest of a will in
+    several deliveries was cancelled (#201): what happened and how to go
+    on. The "which date?" question waits: press the Check button first.
     """
-    code = _hold_code(window)
-    if code is None:
+    hold = _hold(window)
+    if hold is None:
         return False
-    _logger.info(f"command refused: delivery hold ({code})")
-    if code == delivery.DeliverySettingsUnavailable.code:
+    _logger.info(f"command refused: delivery hold ({hold.code})")
+    if isinstance(hold, delivery.DeliverySettingsUnavailable):
         window.show_error(_(SETTINGS_UNAVAILABLE))
+    elif isinstance(hold, delivery.DeliveryRestCancelled):
+        window.show_message(rest_cancelled_text(hold))
     else:
         window.show_message(_(CHOOSE_DATE_FIRST))
     return True
@@ -792,6 +854,70 @@ class BalWindow:
         wizard_dialog = BalWizardDialog(self)
         wizard_dialog.exec()
 
+    def table_mismatch(self, text):
+        """The table of the deliveries no longer fits the heirs (#170).
+
+        ``text``: the message of ``InstalmentsMismatch`` (nothing was built
+        or signed). In ADVANCED the question "Open the table of the
+        deliveries now?", which opens its window; in BASIC the message only.
+        Returns the window's result, or None.
+        """
+        if self.bal_plugin.is_basic_mode():
+            self.show_error(text)
+            return None
+        if self.ask_deliveries(
+                text + "\n\n" + _("Open the table of the deliveries now?")):
+            return self.open_deliveries_editor()
+        return None
+
+    def ask_deliveries(self, text):
+        """A Yes / No question about the table of the deliveries (#170):
+        ``deliveries.ask`` on Electrum's window. A window method, as
+        ``ask_renew_will``: the flows' test window answers it (a real box
+        would wait for a click that never comes)."""
+        from .deliveries import ask
+
+        return ask(self.window, text)
+
+    def deliveries_refusal(self):
+        """Why the window of the deliveries cannot open now, or None (#170).
+
+        ADVANCED only (owner decision D5); not with the period form (one
+        renewable date, #127 decision 10: the command line refuses it too);
+        not without heirs; not while the delivery settings could not be
+        prepared (#123, fail closed).
+        """
+        if getattr(self, "settings_unavailable", False):
+            return _(SETTINGS_UNAVAILABLE)
+        if self.bal_plugin.is_basic_mode():
+            return _("The inheritance in several deliveries is available in "
+                     "ADVANCED mode only.")
+        if delivery.is_period(self.will_settings):
+            return _("This wallet uses a renewable period, which has one "
+                     "delivery date. Choose \"Fixed date\" first (Build / Edit "
+                     "Your Will).")
+        if not delivery.payee_names(self.heirs or {}):
+            return _("There are no heirs: add them first.")
+        return None
+
+    def open_deliveries_editor(self, parent=None):
+        """The window "Inheritance in several deliveries" (#170, M4a).
+
+        From the wizard's "Several deliveries" choice and from Tools in the
+        Will tab (owner answer 2 of the M4 plan). A refusal
+        (:meth:`deliveries_refusal`) is said in a message. Returns what the
+        window did: "saved", "removed" or None (closed, or refused).
+        """
+        refusal = self.deliveries_refusal()
+        if refusal is not None:
+            self.show_message(refusal)
+            return None
+        from .deliveries import DeliveriesEditor
+
+        editor = DeliveriesEditor(self, parent)
+        editor.exec()
+        return editor.result_kind
+
     def show_offline_sign_dialog(self, just_checked=False):
         """Tools > "Sign the will offline..." (#160, #161): the guided route.
 
@@ -886,6 +1012,12 @@ class BalWindow:
         menu and the "i" buttons next to "will-executor". Returns it."""
         return show_explainer(self, parent)
 
+    def show_trace(self, parent=None):
+        """The window "CLI command trace…" (#173): the plugin's steps
+        written as ``bal_*`` commands, read-only, opened by the Will tab's
+        Tools menu in BASIC and ADVANCED. Returns it."""
+        return show_trace(self, parent)
+
     def _after_executors_window(self):
         """The will-executor window closed (#134): the summary box and the
         List's version rows follow the selection made there."""
@@ -932,9 +1064,12 @@ class BalWindow:
         self.future_area = make_future_area(self.future_view)
         index = layout.indexOf(self.will_list_widget)
         layout.insertWidget(index + 1, self.future_area, 1)
+        # CHANGELOG #184: the third view, the will as a graph.
+        self.graph_panel = GraphPanel(self)
+        layout.insertWidget(index + 2, self.graph_panel, 1)
         self.will_view_switch = WillViewSwitch(
             self.bal_plugin.WILL_VIEW, self.will_list_widget,
-            self.future_area, self.future_view,
+            self.future_area, self.future_view, graph_widget=self.graph_panel,
         )
         layout.insertWidget(index, self.will_view_switch)
         self.update_will_summary()
@@ -956,6 +1091,13 @@ class BalWindow:
                 future.refresh()
             except Exception as e:
                 _logger.warning(f"future view refresh failed: {e!r}")
+        # #184: and the Graph view (it recomputes only while it is shown).
+        graph = getattr(self, "graph_panel", None)
+        if graph is not None:
+            try:
+                graph.refresh()
+            except Exception as e:
+                _logger.warning(f"graph view refresh failed: {e!r}")
         widget = getattr(self, "will_summary_widget", None)
         if widget is None:
             return
@@ -972,6 +1114,7 @@ class BalWindow:
             _logger.debug(f"watch-only not read: {e!r}")
             watch_only = None
         try:
+            selected = self.selected_willexecutors()
             summary = will_summary(
                 self.willitems,
                 len(self.heirs or {}),
@@ -982,7 +1125,9 @@ class BalWindow:
                 # #134: the one date style and the in-force comparison.
                 long_dates=True,
                 # #134: deselected will-executors are not "to send".
-                selected=self.selected_willexecutors(),
+                selected=selected,
+                # #190: the excluded ones that still hold a copy.
+                held=context.excluded_holders(self, selected),
                 # #135: THE will in force, the one rule of the List, the
                 # Future view and the wizard (not only the REPLACED copies).
                 in_force=context.in_force_delivery(self),
@@ -1065,25 +1210,39 @@ class BalWindow:
         executor stays in the list and can be selected again. Returns False
         (nothing done) when it is not allowed (:meth:`can_exclude_willexecutor`).
 
-        The copies of the will meant for it that it never got (VALID, not
-        sent) are dropped: they exist only here, and a deselected executor's
-        copy stays VALID (BAL only ignores it), so the summary kept saying
-        "1 will-executor did not receive it" and the report stayed locked
-        (found with the scenario harness). Copies it did get are kept.
+        The copies of the will meant for it that were NEVER sent (VALID,
+        not one sending, ``engine.verify.ever_sent``) are dropped: they
+        exist only here (#93: the summary kept saying "1 will-executor did
+        not receive it" and the report stayed locked, found with the
+        scenario harness). Every copy sent at least once is kept: it may be
+        on its server (#129); the Check no longer asks it and the summary
+        calls it "excluded" (#178).
+
+        #178, owner's ZIP test (2026-10-22): the rule was "not PUSHED".
+        we.divinaly.support accepted its copies ("pushed: thx"), then
+        answered "503 Service Temporarily Unavailable" to the check of 25 of
+        them, which cleared PUSHED (CHECK_FAIL): Exclude dropped those 25
+        copies it holds. A failed check or a sending without an answer does
+        not say that the will-executor does not have the copy.
+
+        #178 (owner): Exclude is the USER's choice, like a deselection in
+        the Will-Executor tab: it lasts until the user selects it again. With
+        #137 it was the plugin's deselection, undone as soon as the
+        will-executor answered the ping: we.divinaly.support answers the
+        ping but not the check, so it came back at every download.
         """
         if not self.can_exclude_willexecutor(url):
             return False
-        # #137: Exclude is the plugin's deselection of a will-executor that
-        # did not answer (selected again when it answers): never a user
-        # deselection. The user's list is seeded first, as it was.
-        Willexecutors.user_deselected(self.bal_plugin)
+        # Recorded as the user's deselection (seeds the user's list first,
+        # as #137 asks): the automatic selection leaves it deselected.
+        Willexecutors.set_user_choice(self.bal_plugin, [url], False)
         self.willexecutors[url]["selected"] = False
         Willexecutors.save(self.bal_plugin, self.willexecutors)
         unsent = [
             wid for wid, w in self.willitems.items()
             if w.get_status("VALID")
             and (w.we or {}).get("url") == url
-            and not w.get_status("PUSHED")
+            and not ever_sent(w)
         ]
         for wid in unsent:
             del self.willitems[wid]
@@ -1136,7 +1295,97 @@ class BalWindow:
             self.broadcast_transactions()
         self.update_will_summary()
 
+    def _heirs_snapshot(self):
+        """The heirs as plain values, to see whether a window changed them."""
+        try:
+            return {name: tuple(value) for name, value in (self.heirs or {}).items()}
+        except Exception:
+            return None
+
+    def basic_table_blocks(self, keys=None):
+        """True (and the reason shown) when BASIC must not change the heirs.
+
+        #193 (owner decision (1), 2026-10-23): in BASIC a will in several
+        deliveries keeps its table read-only, and the table's window exists
+        only in ADVANCED. An heir added, removed or imported there would
+        leave the table out of step with the heirs, and the next Check would
+        stop with no way to fix it in BASIC. So "New heir", "Import" and
+        "Delete" do not go on and say to switch to ADVANCED. ``keys``: the
+        heirs to delete; the message (OP_RETURN) has no share in the table,
+        so a selection of messages only is never blocked. An edit (rename)
+        is not blocked: the shares follow the new name.
+        """
+        try:
+            if not self.bal_plugin.is_basic_mode() or not instalments.has_table(self):
+                return False
+        except Exception as e:
+            _logger.debug(f"BASIC table guard not checked: {e!r}")
+            return False
+        if keys is not None:
+            heirs = self.heirs or {}
+            if not any(k in heirs and not is_op_return_address(str(heirs[k][0]))
+                       for k in keys):
+                return False
+        self.show_message(_(
+            "This will is in several deliveries: to add or remove an heir, "
+            "switch to ADVANCED, where you give them their shares in the "
+            "table."))
+        return True
+
+    def offer_table_update(self, before=None):
+        """After the heirs changed, the table of the deliveries (#170).
+
+        When the wallet has a table that no longer fits the heirs (an heir
+        added or removed: owner decision 3 of M3, the Check stops until the
+        table is updated), ask whether to open its window now. ``before``:
+        the heirs before the change (:meth:`_heirs_snapshot`); nothing is
+        asked when they did not change. ADVANCED only (the window is).
+        Returns the window's result, or None.
+        """
+        if before is not None and before == self._heirs_snapshot():
+            return None
+        try:
+            if not instalments.has_table(self) or self.bal_plugin.is_basic_mode():
+                return None
+            instalments.check_table(self)
+            return None
+        except delivery.InstalmentsMismatch:
+            pass
+        except Exception as e:
+            _logger.debug(f"table of the deliveries not checked: {e!r}")
+            return None
+        if not self.ask_deliveries(_(
+                "The heirs changed: the table of the deliveries must be "
+                "updated before the will can be prepared. Open it now?")):
+            return None
+        return self.open_deliveries_editor()
+
     def new_heir_dialog(self, heir_key=None):
+        """The heir window (:meth:`_heir_dialog`); then, when the heirs
+        changed and the table of the deliveries no longer fits them, the
+        question to open it (#170, :meth:`offer_table_update`), once, after
+        the last "Add another heir". #193: a new heir (no ``heir_key``) is
+        not added in BASIC with a table (:meth:`basic_table_blocks`)."""
+        if not isinstance(heir_key, str):
+            # #193 (owner's ZIP test): the "👤 New Heir" button is connected
+            # straight to this method, and Qt's ``clicked`` passes its
+            # ``checked`` flag (False). Taken as a heir name, it opened an
+            # "edit of False": no BASIC block, a phantom delete of "False"
+            # in the log, no automatic name for a new message.
+            heir_key = None
+        if heir_key is None and self.basic_table_blocks():
+            return None
+        depth = getattr(self, "_heir_dialog_depth", 0)
+        before = self._heirs_snapshot() if depth == 0 else None
+        self._heir_dialog_depth = depth + 1
+        try:
+            return self._heir_dialog(heir_key)
+        finally:
+            self._heir_dialog_depth = depth
+            if depth == 0 and before is not None:
+                self.offer_table_update(before)
+
+    def _heir_dialog(self, heir_key=None):
         """The "New heir" window, or "Edit: <name>" for ``heir_key``.
 
         Also used by the BASIC wizard and the Heirs list. #139 (owner): the
@@ -1192,7 +1441,7 @@ class BalWindow:
         amount_help = QLabel("")
         amount_help.setWordWrap(True)
         amount_help.setStyleSheet("color:#6A737D;")
-        amount_help_button = HelpButton(_(
+        amount_help_button = help_button(_(
             "Percentage: a share of the wallet balance (e.g. 30). The heirs' "
             "percentages are weights: together they share, in proportion, what is "
             "left after the fees and the fixed amounts (e.g. two heirs at 30 and no "
@@ -1248,7 +1497,7 @@ class BalWindow:
         op_return_message.setVisible(False)
         op_return_amount_label = QLabel(_("Amount"))
         op_return_message_label = QLabel(_("OP_RETURN Message"))
-        message_help_button = HelpButton(message_help_text())
+        message_help_button = help_button(message_help_text())
         message_info = QWidget()
         message_info_layout = QVBoxLayout(message_info)
         message_info_layout.setContentsMargins(0, 0, 0, 0)
@@ -1357,44 +1606,148 @@ class BalWindow:
 
         grid.addWidget(QLabel(_("Name")), 1, 0)
         grid.addWidget(heir_name, 1, 1)
-        grid.addWidget(HelpButton(_("Unique name or description about heir")), 1, 2)
+        grid.addWidget(help_button(_("Unique name or description about heir")), 1, 2)
 
         # #140 (owner): "Bitcoin address", never mistaken for a home address.
         grid.addWidget(QLabel(_("Bitcoin address")), 2, 0)
         grid.addWidget(heir_address, 2, 1)
-        grid.addWidget(HelpButton(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
+        grid.addWidget(help_button(_("Bitcoin address or OP_RETURN: prefix + hex data")), 2, 2)
         grid.addWidget(address_help, 3, 1)
 
-        grid.addWidget(op_return_amount_label, 4, 0)
-        grid.addWidget(amount_row, 4, 1)
-        grid.addWidget(amount_help_button, 4, 2)
-        grid.addWidget(amount_help, 5, 1)
+        # #185: row 4 is the shares of a table (below), the amount follows.
+        grid.addWidget(op_return_amount_label, 5, 0)
+        grid.addWidget(amount_row, 5, 1)
+        grid.addWidget(amount_help_button, 5, 2)
+        grid.addWidget(amount_help, 6, 1)
 
-        grid.addWidget(op_return_message_label, 4, 0, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(op_return_message, 4, 1)
+        grid.addWidget(op_return_message_label, 5, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(op_return_message, 5, 1)
         # #140: in the cells of the amount's "?" and grey line, hidden in
         # the OP_RETURN mode (and these hidden in the payee mode).
-        grid.addWidget(message_help_button, 4, 2, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(message_info, 5, 1)
+        grid.addWidget(message_help_button, 5, 2, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(message_info, 6, 1)
         _show_message_rows(is_op_return_address(heir_address.text()))
 
-        locktime_label = QLabel(_("Locktime"))
-        enable_multiverse = self.bal_plugin.ENABLE_MULTIVERSE.get()
-        if enable_multiverse:
-            grid.addWidget(locktime_label, 6, 0)
-            grid.addWidget(self.heir_locktime, 6, 1)
-            grid.addWidget(HelpButton(_("locktime")), 6, 2)
+        # #170: with a table of deliveries the amount of an heir is not used
+        # (the shares are in the table; it counts again without the table,
+        # as on the command line): said under the amount.
+        # #185 (owner, "B grey"): the shares of the table on a row of their
+        # own ABOVE the amount, with the dates; an heir already saved shows
+        # its amount grey and locked (it counts only without the table, then
+        # it can be changed): the shares are changed only in the window of
+        # the deliveries. A new heir writes its amount (it must be above 0,
+        # ``Heirs.validate_amount``; the table has no share for it yet).
+        staged = instalments.has_table(self)
+        locked = staged and heir is not None
+        edit_deliveries = None
+        if not self.bal_plugin.is_basic_mode():
+            # The window of the deliveries is ADVANCED only (#170).
+            edit_deliveries = QPushButton(_("Edit the deliveries…"))
+        # The sentence under the amount, in the grid (a wrapped label inside
+        # the nested shares box was cut: Qt gave it the height of one line).
+        table_note = QLabel("")
+        if not locked:
+            text = _("With the inheritance in several deliveries this amount "
+                     "counts only if you go back to one delivery.")
+            if edit_deliveries is not None:
+                text += " " + _("After OK you will be asked to open the table "
+                                "of the deliveries to give the heir a share.")
+            table_note.setText(text)
+        table_note.setWordWrap(True)
+        table_note.setStyleSheet("color:#6A737D;")
+        grid.addWidget(table_note, 7, 1)
+        shares_label = QLabel(_("Shares"))
+        shares_box = QWidget()
+        shares_layout = QVBoxLayout(shares_box)
+        shares_layout.setContentsMargins(0, 0, 0, 0)
+        shares_text = QLabel("")
+        shares_text.setStyleSheet("font-weight:600;")
+        # One line per delivery, never wrapped (a wrap broke "Delivery 2 /
+        # (10/03/2031)" in two).
+        shares_dates = QLabel("")
+        shares_dates.setStyleSheet("color:#6A737D;")
+        shares_layout.addWidget(shares_text)
+        shares_layout.addWidget(shares_dates)
+        if edit_deliveries is not None:
+            shares_layout.addWidget(edit_deliveries, 0, Qt.AlignmentFlag.AlignLeft)
+        shares_help = help_button(_(
+            "With the inheritance in several deliveries each heir receives a "
+            "share of the whole estate at each delivery. The shares are changed "
+            "in the window \"Inheritance in several deliveries\" (Tools in the "
+            "Will tab)."))
+        # Row 4, above the amount (rows 5-6 since #185).
+        grid.addWidget(shares_label, 4, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(shares_box, 4, 1)
+        grid.addWidget(shares_help, 4, 2, Qt.AlignmentFlag.AlignTop)
+
+        def _fill_shares():
+            """The shares of this heir in the table (``person_shares``); a
+            new heir has none yet ("0% + 0% + 0%")."""
+            from .deliveries import person_shares
+
+            found = person_shares(self.will_settings, heir_key)
+            if not found:
+                return
+            shares_text.setText(found[0])
+            shares_dates.setText(found[1])
+
+        if edit_deliveries is not None:
+            def _open_deliveries():
+                """The window of the deliveries over this one; then the
+                shares shown again."""
+                self.open_deliveries_editor(d)
+                _fill_shares()
+
+            edit_deliveries.clicked.connect(_open_deliveries)
+        if locked:
+            # Shown, never changed here: OK saves the stored amount as it is.
+            # The grey line under it says why (instead of what a percentage
+            # means: the mode cannot be changed here).
+            heir_amount.setReadOnly(True)
+            heir_amount.setStyleSheet("QLineEdit{background-color:#f0f0f0;color:#999999;}")
+            for button in (percentage_button, fixed_button):
+                button.setEnabled(False)
+            op_return_amount_label.setStyleSheet("color:#999999;")
+            amount_help.setText(_(
+                "With the inheritance in several deliveries this amount is not "
+                "used: it counts only if you go back to one delivery, and then "
+                "you can change it."))
+
+        def _show_table_note():
+            """The note and the shares of the table, for a payee only (a
+            message has no amount)."""
+            shown = staged and not is_op_return_address(heir_address.text())
+            widgets = [shares_label, shares_box, shares_help]
+            if not locked:
+                widgets.append(table_note)
+            else:
+                table_note.setVisible(False)
+            for widget in widgets:
+                # As ``_show_payee_rows``: a widget not yet in the dialog is
+                # only hidden, never shown (it would open as a window).
+                if shown and widget.parentWidget() is None:
+                    continue
+                widget.setVisible(shown)
+
+        if staged:
+            _fill_shares()
+        _show_table_note()
+        heir_address.textChanged.connect(_show_table_note)
+
+        # #168 (D7): no per-heir date any more (BAL's hidden global
+        # multiverse option is no longer read): every heir gets the will's
+        # date; staged deliveries keep their dates in the table.
 
         # #138 (owner): the owner's private notes on this heir.
         notes = QPlainTextEdit()
         notes.setFixedWidth(32 * char_width_in_lineedit())
         notes.setFixedHeight(4 * QFontMetrics(notes.font()).height() + 12)
         notes.setPlainText(heir_notes.get(self.wallet, heir_key) if heir_key else "")
-        grid.addWidget(QLabel(_("Notes")), 7, 0, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(notes, 7, 1)
-        grid.addWidget(HelpButton(_(
+        grid.addWidget(QLabel(_("Notes")), 8, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(notes, 8, 1)
+        grid.addWidget(help_button(_(
             "Private notes for you, kept only in this wallet; never sent to the "
-            "will-executors or written on the blockchain.")), 7, 2,
+            "will-executors or written on the blockchain.")), 8, 2,
             Qt.AlignmentFlag.AlignTop)
 
         vbox.addLayout(grid)
@@ -1479,6 +1832,12 @@ class BalWindow:
                 # rename to a name already in the list).
                 self.show_error(_("An heir named {} already exists.").format(new_name))
                 continue
+            if new_name != heir_key and delivery.has_separator(new_name):
+                # #168 (owner decision 2): the rows of deliveries 2 and 3
+                # are named "Luca§2"..., a person named so would collide.
+                self.show_error(_("An heir name cannot contain the sign {}.").format(
+                    delivery.INSTALMENT_SEP))
+                continue
             try:
                 # #140 (owner): one message per will; a message being edited
                 # may change its text.
@@ -1494,6 +1853,8 @@ class BalWindow:
                 self.show_error(
                     _("This address is already used by the heir {}.").format(other))
                 continue
+            if self._own_address_declined(d, heir_key, raw_address):
+                continue
             try:
                 self.set_heir(heir)
             except Exception as e:
@@ -1502,6 +1863,9 @@ class BalWindow:
                 self.show_error(heir_error_message(e))
                 continue
             if heir_key is not None and new_name != heir_key:
+                # #170 (owner answer 4 of the M4 plan): the shares of the
+                # table follow the new name, so it still fits the heirs.
+                instalments.rename_heir(self, heir_key, new_name)
                 # #135: a rename. The old name goes AFTER the new one is
                 # saved, so a refused entry never loses the heir; before,
                 # it was never removed and a second heir took a share.
@@ -1524,6 +1888,9 @@ class BalWindow:
         Advanced "New heir" window does. An existing message keeps its name.
         ``key``: the message to open (a double click in the Heirs list);
         default: the first one. Returns True when the message was saved.
+        #193: in a will in several deliveries a grey line says that the
+        message travels in delivery 1. The message is never blocked in
+        BASIC: it has no share in the table of the deliveries.
         """
         if key is None or key not in self.heirs:
             names = message_names(self.heirs)
@@ -1540,7 +1907,7 @@ class BalWindow:
             field.setText(message_text(heir[0]))
         grid.addWidget(QLabel(_("Message")), 0, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(field, 0, 1)
-        grid.addWidget(HelpButton(message_help_text()), 0, 2, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(help_button(message_help_text()), 0, 2, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(field.counter, 1, 1)
         vbox.addLayout(grid)
         warning = QLabel(message_warning_text())
@@ -1556,6 +1923,13 @@ class BalWindow:
         name_line.setWordWrap(True)
         name_line.setStyleSheet("color:#6A737D;")
         vbox.addWidget(name_line)
+        if instalments.has_table(self):
+            # #193: in a will in several deliveries only delivery 1 carries
+            # the message; said in the window too, not only in the "?".
+            delivery_line = QLabel(message_delivery_text())
+            delivery_line.setWordWrap(True)
+            delivery_line.setStyleSheet("color:#6A737D;")
+            vbox.addWidget(delivery_line)
         hint = QLabel("")
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#6A737D;")
@@ -1588,12 +1962,38 @@ class BalWindow:
             return True
         return False
 
+    def _own_address_declined(self, parent, heir_key, address):
+        """True when ``address`` belongs to this wallet and the owner
+        answers No to "Use it anyway?" (#197).
+
+        Owner's test of #194/#195: an heir address copied from the wallet's
+        own Receive list; on the delivery date that heir's bitcoin would
+        stay in this wallet. A question, never a block (owner: he tests
+        with his own addresses); No is the default, and the window stays
+        open with what was typed. An edit that keeps the stored address
+        asks nothing: already confirmed, or saved before #197 (owner: warn
+        only when an address is entered or changed).
+        """
+        stored = self.heirs.get(heir_key) if heir_key is not None else None
+        try:
+            if stored is not None and address_key(stored[0]) == address_key(address):
+                return False
+        except (IndexError, TypeError):
+            pass
+        if not is_own_address(self.wallet, address):
+            return False
+        return not ask_yes_no(parent, _(
+            "This address belongs to this same wallet: on the delivery date "
+            "this heir's bitcoin would stay in this wallet instead of going "
+            "to the heir. It is usually a mistake (an address copied from "
+            "Receive). Use it anyway?"), _("Heir address"))
+
     def set_heir(self, heir):
         heir = list(heir)
         if is_op_return_address(heir[1]):
             heir[2] = "0"
-        if not self.bal_plugin.ENABLE_MULTIVERSE.get():
-            heir[3] = self.will_settings["locktime"]
+        # #168 (D7): every heir gets the will's date (delivery 1).
+        heir[3] = self.will_settings["locktime"]
 
         h = Heirs.validate_heir(heir[0], heir[1:])
         self.heirs[heir[0]] = h
@@ -1616,28 +2016,55 @@ class BalWindow:
     def import_heirs(self):
         """Import heirs from a file (the notes of the heirs still there are
         kept; the notes of heirs no longer there are dropped, #138). #140:
-        a second message of the file is not imported, and said so."""
+        a second message of the file is not imported, and said so. #193:
+        not in BASIC with a table of the deliveries
+        (:meth:`basic_table_blocks`). #197 (owner): heirs of the file paid
+        at an address of this wallet get ONE question with their names;
+        Yes imports the whole file, No imports nothing (and says so)."""
+        if self.basic_table_blocks():
+            return
         skipped = []
+
+        def confirm_own(names):
+            """The #197 question; True on Yes."""
+            return ask_yes_no(self.window, _(
+                "These heirs of the file are paid at an address of this same "
+                "wallet: {}. On the delivery date their bitcoin would stay in "
+                "this wallet instead of going to them. It is usually a "
+                "mistake. Import the file anyway?").format(", ".join(names)),
+                _("Heir address"))
 
         def importer(path):
             """``Heirs.import_file``, keeping the skipped messages."""
-            skipped[:] = self.heirs.import_file(path) or []
+            skipped[:] = self.heirs.import_file(path, confirm_own=confirm_own) or []
+
+        before = self._heirs_snapshot()
 
         def after_import():
-            """Clean the notes, then show the list (and the skipped ones)."""
+            """Clean the notes, then show the list (and the skipped ones);
+            #170: the table of the deliveries, when the heirs changed."""
             heir_notes.clean(self.wallet, list(self.heirs.keys()))
             self.heir_list_widget.update()
             if skipped:
                 self.show_message(_(
                     "Not imported: {}. There is already a message in the will: "
                     "only one is allowed.").format(", ".join(skipped)))
+            if before is not None:
+                self.offer_table_update(before)
 
-        import_meta_gui(
-            self.window,
-            _("heirs"),
-            importer,
-            after_import,
-        )
+        try:
+            import_meta_gui(
+                self.window,
+                _("heirs"),
+                importer,
+                after_import,
+            )
+        except OwnAddressImportDeclined:
+            # #197: Electrum's import_meta_gui catches only FileImportFailed
+            # ("Failed to import from file.", an error box): a No of the
+            # owner is not a failure, it gets a plain message here, and
+            # neither "successfully imported" nor the list refresh.
+            self.show_message(_("Nothing was imported."))
 
     def export_heirs(self):
         export_meta_gui(self.window, "heirs.json", self.heirs.export_file)
@@ -2025,7 +2452,8 @@ class BalWindow:
             try:
                 self.init_class_variables()
                 Will.check_amounts(
-                    self.heirs,
+                    # #168: the rows of every delivery with a table.
+                    instalments.effective_heirs(self),
                     self.willexecutors,
                     Util.get_available_utxos(
                         self.window.wallet,
@@ -2041,6 +2469,17 @@ class BalWindow:
             except delivery.DeliverySettingsUnavailable:
                 # #123, fail closed: nothing is prepared on display-only values.
                 self.show_error(_(SETTINGS_UNAVAILABLE))
+                return
+            except delivery.DeliveryRestCancelled as e:
+                # #201 (owner's rule): the plan the owner stopped is not
+                # prepared again; the message says how to go on.
+                self.show_message(rest_cancelled_text(e))
+                return
+            except delivery.InstalmentsMismatch as e:
+                # #168: the table of the deliveries no longer fits the
+                # heirs: nothing is prepared (the message says what to do;
+                # #170: in ADVANCED its window can be opened at once).
+                self.table_mismatch(str(e))
                 return
             except delivery.DeliveryChoicePending:
                 # #123: the "which date?" question first, as in the Check;
@@ -2126,6 +2565,14 @@ class BalWindow:
                     "signed/sent tx -> must invalidate on-chain first (real fee)"
                 )
                 _logger.info(f"will postponed: {e}")
+                if isinstance(e, StagedWillRemovedException):
+                    # #188: back to one delivery: the same road, its words.
+                    self.show_message(
+                        staged_removed_message(e.deliveries) + "\n\n" + _(
+                            "Please sign and broadcast the invalidation "
+                            "transaction now, then press 'Prepare' again."))
+                    self.invalidate_will()
+                    return
                 self.show_message(
                     _(
                         "This inheritance was already signed/sent to "
@@ -2170,10 +2617,23 @@ class BalWindow:
                 # dropped unsigned drafts and gave back the will in force
                 # (the popup below then says "Your will is in force").
                 replaced_before = Will.replaced_ids(self.willitems)
+                refused = False
                 try:
                     self.build_will(ignore_duplicate, keep_original)
+                except WillChainError as chain_error:
+                    # #189: the safety net refused the chain of deliveries,
+                    # nothing was changed: one plain sentence (the raw reason
+                    # is logged), and no "preparing a new will" before it.
+                    refused = True
+                    self.show_error(chain_refused_message(chain_error))
+                    return None
+                except DeliveriesNotFundedException as not_funded:
+                    # #211: the same sentence as the Check window.
+                    refused = True
+                    self.show_error(deliveries_not_funded_message(not_funded))
+                    return None
                 finally:
-                    if change_text and not Will.only_brought_back(
+                    if not refused and change_text and not Will.only_brought_back(
                         replaced_before, self.willitems
                     ):
                         self.show_message(change_text)
@@ -2264,7 +2724,7 @@ class BalWindow:
                 # payment_identifier=payment_identifier,
             )
             d.setWindowIcon(
-                read_QIcon_from_bytes(self.bal_plugin.read_file("icons/ancora-icon-light-16.png"))
+                read_QIcon_from_bytes(self.bal_plugin.read_file("icons/ancora-icon-16.png"))
             )
         except SerializationError as e:
             _logger.error("unable to deserialize the transaction")
@@ -2361,6 +2821,40 @@ class BalWindow:
 
         return sign_will(self.wallet, willitems, password, txids,
                          selected=selected, on_progress=on_progress)
+
+    def confirm_signing(self, will=None, txids=None, parent=None):
+        """The check before a signature (#209): True when signing may go on.
+
+        The owner: the reference is the address on paper, and the plugin must
+        warn "when signing offline, and probably always". So every signing
+        started by the user stops here first, wallet password or not; the
+        automatic rebuild does not, because nobody is there to answer.
+
+        *will*: a will loaded from a file instead of the live one (the Will
+        Details window, the review of an imported will): a payment problem
+        refuses it, as in the guided window. The live will is only shown: it
+        was built here, and a hacked computer could change this code too.
+        *txids*: the copies to sign; ``None``: the rule of
+        :meth:`sign_transactions`. A wallet with no keys signs nothing.
+        """
+        if self.wallet.is_watching_only():
+            return True
+        items = will if will is not None else self.willitems
+        selected = None
+        if will is None and txids is None:
+            selected = self.selected_willexecutors()
+        targets = engine_to_sign(items, txids, selected)
+        if not targets:
+            return True
+        # A window with the tick follows: bare transactions can be listed.
+        summary = engine_file_summary(self.wallet, items, targets,
+                                      unnamed=will is not None)
+        if will is not None and summary.problems:
+            self.show_error("\n".join(engine_problem_lines(summary.problems)))
+            return False
+        return self.bal_plugin.signing_warning_dialog(
+            check_html(summary, self.window.format_amount_and_units),
+            parent=parent or self.window)
 
     def _prepare_and_sign_tx(self, willitems, txid, password):
         """Prepare one will transaction and sign it.
@@ -2519,8 +3013,9 @@ class BalWindow:
                 self.init_class_variables()
             except delivery.DeliveryHold as e:
                 # CHANGELOG #123 (rule I6): the "which date?" question waits
-                # for the Check, or the settings are not available. Never a
-                # question here: skipped.
+                # for the Check, or the settings are not available (#201: or
+                # the rest of a will in several deliveries was cancelled).
+                # Never a question here: skipped.
                 _logger.info(f"auto rebuild: delivery hold ({e.code}), nothing to do")
                 return False
             except CheckAliveAfterDeliveryError:
@@ -2559,6 +3054,13 @@ class BalWindow:
                 # Expired ("too late to anticipate") or a postpone on a
                 # signed/sent will: the old coins must be invalidated on-chain
                 # first.
+                if isinstance(e, StagedWillRemovedException):
+                    # #188 (Opus' review): back to one delivery is the
+                    # owner's choice, asked in the Check; a Cancel there puts
+                    # nothing back, so this road would invalidate (a fee)
+                    # after he said no. Never on its own.
+                    _logger.info("auto rebuild: back to one delivery -> the Check asks")
+                    return False
                 _logger.info(
                     "auto rebuild: {} -> invalidate".format(type(e).__name__)
                 )
@@ -2600,6 +3102,9 @@ class BalWindow:
             try:
                 self.check_will()
             except (WillExpiredException, WillPostponedException) as e:
+                if isinstance(e, StagedWillRemovedException):
+                    # #188: see above: never on its own.
+                    return False
                 _logger.info(
                     "auto rebuild: anticipated locktime crossed threshold "
                     "({}) -> invalidate old will".format(type(e).__name__)
@@ -2860,6 +3365,8 @@ class BalWindow:
             """Log the error (the window shows it)."""
             log_error(exec_info, self)
 
+        if not self.confirm_signing(will=will, txids=txids):
+            return
         password = self.get_wallet_password()
         if password is False:
             # The password window was cancelled: nothing to sign (#157:
@@ -2878,17 +3385,30 @@ class BalWindow:
         Also the Will Details window, the will summary and the settings'
         re-send. CHANGELOG #123: refused while a hold of the delivery
         settings applies (rule I6).
+
+        #210: a will from a file (the Will Details window) leaves only when
+        its copies are proven (:func:`~bal.engine.offline_sign.send_problems`).
         """
         if _stopped_by_hold(self):
             return
         external = will is not None
+        if external:
+            problems = engine_send_problems(self.wallet, self.willitems, will)
+            if problems:
+                self.show_error("\n".join(engine_problem_lines(problems)))
+                return
 
-        def on_success(sulcess):
+        def on_success(outcome):
+            """Say what really happened (#213: the task's return value)."""
             if not external:
                 self.will_list_widget.update()
-            if sulcess:
+            if outcome is True:
                 _logger.info("error, some transaction was not sent")
                 self.show_warning(_("Some transaction was not broadcasted"))
+                return
+            if outcome is not None:
+                _logger.info("nothing confirmed as sent: {}".format(outcome))
+                self.show_warning(_push_outcome_text(outcome))
                 return
             _logger.debug("OK, sulcess transaction was sent")
             self.show_message(
@@ -2925,6 +3445,13 @@ class BalWindow:
         excluded), so the caller shows "Some transaction was not
         broadcasted" instead of "All transactions are broadcasted".
 
+        #213: None only when the will really left. True also when a copy
+        fails its "already present" check or is still unsigned;
+        ``PUSH_STOPPED`` when the window was closed during the sending; a
+        ``NOTHING_*`` code (:func:`~bal.engine.push.nothing_sent_reason`)
+        when there was nothing to send. Before, all of these said "All
+        transactions are broadcasted".
+
         The sending is the Check's and the command line's too since #155
         (:mod:`bal.engine.push`, owner decisions D1-D3): before, a
         will-executor that did not answer in time was not noticed here, and
@@ -2937,11 +3464,12 @@ class BalWindow:
             }
         # Read the CURRENT executor list from the config, so an executor the
         # user deselected after building the will is not contacted anymore.
+        current = Willexecutors.get_willexecutors(
+            self.bal_plugin, update=False, task=False
+        )
         selected, excluded = select_push(
             willitems,
-            Willexecutors.get_willexecutors(
-                self.bal_plugin, update=False, task=False
-            ),
+            current,
             force=force,
             max_fee=self.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
             dust=self.wallet.dust_threshold(),
@@ -3005,7 +3533,7 @@ class BalWindow:
         # Unchanged: without a waiting window (the automatic rebuild) this
         # raises, so that copy never sends (D25 in tests/test_5e_divergences).
         if self.waiting_dialog._stopping:
-            return
+            return PUSH_STOPPED
         result = push_will(
             willitems,
             selected,
@@ -3015,9 +3543,14 @@ class BalWindow:
             on_check_done=on_check_done,
         )
         if result.stopped:
-            return
+            return PUSH_STOPPED
         if result.any_failed or excluded:
             return True
+        if not selected:
+            return nothing_sent_reason(willitems, force=force)
+        if not_delivered(willitems, selected, current):
+            return True
+        return None
 
     def export_json_file(self, path, will=None):
         """Write the will as a JSON file (``will``: an imported will instead).
@@ -3136,8 +3669,15 @@ class BalWindow:
         signatures of a multisig add up. Then the will is refreshed and,
         with *show*, a message says what came in
         (:meth:`_merge_message`). Returns the merged ids.
+
+        #210: a file the engine refuses is told here, whatever *show* says,
+        and nothing changes: the result is then empty.
         """
-        ids, error = engine_merge_will(self, imported)
+        try:
+            ids, error = engine_merge_will(self, imported)
+        except MergeRefusedError as e:
+            self.show_error(str(e))
+            return []
         if error is not None:
             log_error(error, self)
         self.update_all()
@@ -3164,11 +3704,12 @@ class BalWindow:
         return "\n".join(lines)
 
     def merge_will_from_file(self, path):
+        # #210: normalize_will reads the file too, and raises on a false coin.
         try:
             willitems = self._load_will_file(path)
+            Will.normalize_will(willitems, self.wallet)
         except Exception as e:
             raise FileImportFailed(_("Invalid will file: {}").format(e)) from None
-        Will.normalize_will(willitems, self.wallet)
         self.merge_will(willitems)
 
     def merge_single_transaction(self, tx):
@@ -3292,23 +3833,34 @@ class BalWindow:
         (:func:`bal.engine.verify.verify_targets` with ``recheck``: the
         selected copies sent at least once, never the ones not sent, owner
         E1) and asks
-        (:func:`~bal.engine.verify.verify_will`: all at once, fast-fail
-        timeout, global deadline, #147 for no answer); this window shows the
-        count and the elapsed seconds. *targets* is the choice already made
+        (:func:`~bal.engine.verify.verify_will`: a few requests at a time
+        per will-executor, a new try after a 429, a deadline that grows
+        with the transactions, #172; #147 for no answer); this window shows
+        the count, the elapsed seconds and, for a long check, why it lasts. *targets* is the choice already made
         by :meth:`check_transactions`.
         """
         start = time.time()
         if targets is None:
             targets, _skipped = verify_targets(will, list(will), recheck=True)
         total = len(targets)
-        deadline = Willexecutors.CHECK_GLOBAL_DEADLINE
+        # #172: the deadline grows with the transactions (at most 2 minutes);
+        # the same value is shown and given to the engine.
+        deadline = Willexecutors.check_deadline(targets)
         done = {"count": 0}
+        busy = {}  # url -> time of its new try after a 429 (#172)
 
         def _status_line():
-            return "{} {}/{} ({}s / {}s)".format(
-                _("Checking transactions"), done["count"], total,
-                min(int(time.time() - start), deadline), deadline,
-            )
+            """The waiting text: what runs, the copies and seconds, why (#172)."""
+            now = time.time()
+            lines = check_wait_lines(
+                done["count"], total, now - start, deadline, busy, now)
+            return "\n".join(
+                [_("Checking transactions")] + [text for _kind, text in lines])
+
+        def on_busy(url, seconds):
+            """A will-executor answered 429: its new try, shown (#172)."""
+            busy[url] = time.time() + seconds
+            self.waiting_dialog.update(_status_line())
 
         def on_answer(wid, url, res, outcome, timed_out):
             """One answer, recorded by the engine: the counter."""
@@ -3324,7 +3876,8 @@ class BalWindow:
 
         if total:
             self.waiting_dialog.update(_status_line())
-            verify_will(will, targets, on_answer=on_answer, on_tick=on_tick)
+            verify_will(will, targets, on_answer=on_answer, on_tick=on_tick,
+                        on_busy=on_busy, deadline=deadline)
 
         if time.time() - start < 3:
             time.sleep(3 - (time.time() - start))
@@ -3367,6 +3920,10 @@ class BalWindow:
         self.waiting_dialog = BalWaitingDialog(
             self, msg, task, on_success, on_failure, exe=False
         )
+        # #172: the waiting text has several lines, some long; they wrap at
+        # a normal width instead of stretching the window past the screen.
+        self.waiting_dialog.message_label.setWordWrap(True)
+        self.waiting_dialog.message_label.setMinimumWidth(480)
         self.waiting_dialog.exe()
 
     def update_willexecutor_list_widget(self, parent, willexecutors):
@@ -3637,10 +4194,11 @@ class BalWindow:
             """After the ping (answer or failure): select and save.
 
             #137: who answers is selected, except the will-executors the
-            user deselected on purpose (they stay deselected); one the
-            plugin deselected before (no answer, Exclude) is selected
-            again when it answers; the new ones that answer are selected
-            and remembered for the summary ("new in the network").
+            user deselected on purpose (they stay deselected; since #178
+            "Exclude" is one of them); one the plugin deselected before (no
+            answer) is selected again when it answers; the new ones that
+            answer are selected and remembered for the summary ("new in the
+            network").
             """
             if select_responding:
                 self.new_willexecutors = Willexecutors.select_after_ping(
@@ -3781,6 +4339,14 @@ class BalWindow:
 
             self.will_list_widget.update_will(self.willitems)
             self.heirs_tab.update()
+            # #185 (owner's ZIP test): ``heirs_tab`` is Electrum's plain tab
+            # widget, its update() only repaints. The list itself is rebuilt
+            # here, so a table of the deliveries saved or removed shows in
+            # its Amount column without reopening the wallet.
+            try:
+                self.heir_list_widget.update()
+            except Exception as e:
+                _logger.debug(f"heirs list not refreshed: {e!r}")
             self.will_tab.update()
             self.will_list_widget.update()
 

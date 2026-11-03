@@ -19,7 +19,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Wait</b>",
    "Will-Executor:\t<font color=#ff0000><b>Not present - select one or enable backup mode</b></font>"
   ],
@@ -30,9 +30,7 @@
   "questions": [],
   "report": {
    "boxes": {
-    "changes": [
-     "The will contains no valid transaction: a new will must be prepared."
-    ],
+    "changes": [],
     "problems": [
      "Will-Executor: Not present - select one or enable backup mode"
     ],
@@ -40,6 +38,7 @@
    },
    "executors": [],
    "heirs": null,
+   "low_fee": "Miner fee below 20 sat/vB: it is your choice. On the delivery date of your will the Bitcoin network may be very busy, and the nodes may not accept a transaction with a low fee. With 20 sat/vB or more this risk is much smaller and the inheritance is more likely to be executed on time, without delays.",
    "result": [
     "err",
     "<b>No will in force</b>"
@@ -75,7 +74,7 @@
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Wait</b>",
    "Will-Executor:\t<font color=#ff0000><b>Not present - select one or enable backup mode</b></font>"
   ],

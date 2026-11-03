@@ -198,14 +198,108 @@ def test_filter_willitems_by_index():
 # WillExportDialog file page
 # ------------------------------------------------------------------ #
 
+def test_a_will_too_big_for_qr_offers_only_the_file():
+    """#171 (owner's will in several deliveries: about 244 transactions,
+    "BBQR transfer demands too many parts" and no window): the window
+    opens, only "File" is offered with the note; when the selection fits
+    again (another filter) QR and audio come back."""
+    from bal.core.animated_qr import AnimatedQrError
+
+    bw = FakeBalWindow()
+    items = _make_willitems(3)
+    items["item0"].statuses = {"VALID": True}
+    real = dialogs.bbqr_frames
+    small = {"fits": False}
+
+    def frames(payload, budget, encoding="Z", type_code="B"):
+        """Too many parts unless the test says it fits."""
+        if not small["fits"]:
+            raise AnimatedQrError("BBQR transfer demands too many parts")
+        return real(payload, budget, encoding=encoding, type_code=type_code)
+
+    with patch.object(dialogs, "bbqr_frames", side_effect=frames):
+        d = dialogs.WillExportDialog(bw, will=items, bal_plugin=bw.bal_plugin,
+                                     initial_mode="qr")
+        assert d.too_big and d.transport_file.isChecked()
+        assert d.transport_qr.isHidden() and d.transport_audio.isHidden()
+        assert not d.too_big_label.isHidden()
+        assert d.stacked.currentWidget() is d.file_page
+        d._on_mode_clicked(d.MODE_QR)
+        assert d.stacked.currentWidget() is d.file_page
+        small["fits"] = True
+        d._on_filter_change(1)
+        assert not d.too_big and not d.transport_qr.isHidden()
+        assert not d.transport_audio.isHidden() and d.too_big_label.isHidden()
+        d.close()
+
+
+def test_the_window_starts_on_valid_else_all():
+    """#171 (owner): "Valid" when the will has valid items, else "All"."""
+    bw = FakeBalWindow()
+    items = _make_willitems(2)
+    d = dialogs.WillExportDialog(bw, will=items, bal_plugin=bw.bal_plugin)
+    assert d.filter_combo.currentIndex() == 0
+    assert set(d._selected_items()) == set(items)
+    d.close()
+
+
+def test_basic_offers_the_file_only():
+    """#171 (owner): in BASIC only "File" (QR and audio are ADVANCED
+    tools), without the note of a will too big; ADVANCED keeps them."""
+    bw = FakeBalWindow()
+    items = _make_willitems(3)
+    items["item0"].statuses = {"VALID": True}
+    bw.bal_plugin.is_basic_mode = lambda: True
+    d = dialogs.WillExportDialog(bw, will=items, bal_plugin=bw.bal_plugin,
+                                 initial_mode="qr")
+    assert d.transport_file.isChecked()
+    assert d.transport_qr.isHidden() and d.transport_audio.isHidden()
+    assert d.too_big_label.isHidden()
+    assert d.stacked.currentWidget() is d.file_page
+    d._on_mode_clicked(d.MODE_QR)
+    assert d.stacked.currentWidget() is d.file_page
+    d.close()
+    bw.bal_plugin.is_basic_mode = lambda: False
+    d = dialogs.WillExportDialog(bw, will=items, bal_plugin=bw.bal_plugin,
+                                 initial_mode="qr")
+    assert not d.transport_qr.isHidden() and d.transport_qr.isChecked()
+    d.close()
+
+
+def test_a_qr_size_too_small_is_not_taken():
+    """#171: a QR size at which the will needs too many frames: the size
+    before stays."""
+    from bal.core.animated_qr import AnimatedQrError
+
+    real = dialogs.bbqr_frames
+    page = dialogs.BalQrExportWidget(chunk_size=CHUNK_PRESETS[-1][1])
+    page.set_tx_strings(["x" * 400])
+    before = page.chunk_size
+
+    def frames(payload, budget, encoding="Z", type_code="B"):
+        """Only the size in use fits."""
+        if budget != before:
+            raise AnimatedQrError("BBQR transfer demands too many parts")
+        return real(payload, budget, encoding=encoding, type_code=type_code)
+
+    with patch.object(dialogs, "bbqr_frames", side_effect=frames):
+        page.size_combo.setCurrentIndex(0)
+    assert page.chunk_size == before
+    assert page.size_combo.currentIndex() == dialogs.preset_index_for_chunk_size(before)
+
+
 def test_file_export_selects_by_filter():
     bw = FakeBalWindow()
     items = _make_willitems(3)
     items["item0"].statuses = {"VALID": True, "COMPLETE": True}
     items["item1"].statuses = {"VALID": True}
     d = dialogs.WillExportDialog(bw, will=items, bal_plugin=bw.bal_plugin)
-    assert set(d._selected_items()) == set(items)
+    # #171 (owner): the window starts on "Valid".
+    assert d.filter_combo.currentIndex() == 1
+    assert set(d._selected_items()) == {"item0", "item1"}
 
+    d._on_filter_change(0)
+    assert set(d._selected_items()) == set(items)
     d._on_filter_change(1)
     assert set(d._selected_items()) == {"item0", "item1"}
     d._on_filter_change(2)

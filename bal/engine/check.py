@@ -7,8 +7,9 @@ check the heirs' amounts. The dialog now calls :func:`check_variables`;
 its rows are written by ``bal.gui.qt.flow_adapter.DialogFlowUI`` with the
 same texts, colours and order as before. The next parts of phase 1 (the
 will in force, the rebuild) move in the next steps. Since #123 phase 1 also
-stops on the two holds of the wallet's delivery settings (the "which
-date?" question, settings that could not be prepared).
+stops on the holds of the wallet's delivery settings (the "which date?"
+question, settings that could not be prepared; #201: the rest of a will in
+several deliveries cancelled after a delivery).
 
 The functions work on a host (:class:`bal.engine.host.WalletHost`) that
 also has ``init_class_variables()`` and ``check_alive_info()`` (both
@@ -25,14 +26,18 @@ from typing import Any
 from electrum.logging import get_logger
 
 from ..core.checkalive import CheckAliveAfterDeliveryError, CheckAliveError
-from ..core.delivery import DeliveryChoicePending, DeliverySettingsUnavailable
+from ..core.delivery import (
+    DeliveryChoicePending,
+    DeliveryRestCancelled,
+    DeliverySettingsUnavailable,
+)
 from ..core.heirs import WillExecutorFeeTooHighException
 from ..core.messages import amounts_message, past_date_message
 
 # NoHeirsException from bal.core.will, the class init_class_variables
 # raises; bal.core.heirs has another class with the same name.
 from ..core.will import AmountException, NoHeirsException, Will
-from . import context
+from . import context, instalments
 from .invalidate import build_invalidation
 from .ui import Step
 
@@ -47,6 +52,7 @@ VARIABLES_STATES = (
     "expired",
     "check_alive_passed",
     "stopped",
+    "held",
     "no_heirs",
     "check_alive_before_delivery",
     "delivery_choice",
@@ -59,6 +65,7 @@ VARIABLES_NOTES = (
     "amounts_adjust",
     "executor_fee_too_high",
     "delivery_settings_unavailable",
+    "delivery_rest_cancelled",
 )
 
 
@@ -72,6 +79,8 @@ class Phase1Result:
     question must be asked; its dates are
     ``bal.core.delivery.choice_dates(host.will_settings)``) and
     "delivery_settings_unavailable" (the settings could not be prepared:
+    nothing is done). Since #201 also "delivery_rest_cancelled" (the rest
+    of a will in several deliveries was cancelled after a delivery:
     nothing is done). ``tx`` is the unsigned renewal invalidation for
     "check_alive_renew", else ``None``. The other ends of phase 1 (the
     invalidations, a failed build, the normal end with ``have_to_sign``
@@ -138,8 +147,10 @@ def check_variables(host, run, ui):
        date?" question is pending: step "delivery_choice", stop
        "delivery_choice" (the dialog asks it). The settings could not be
        prepared: step "stopped", note "delivery_settings_unavailable", stop
-       "delivery_settings_unavailable". Nothing is built, signed, pushed or
-       invalidated;
+       "delivery_settings_unavailable". #201: the rest of a will in several
+       deliveries was cancelled: step "held", note
+       "delivery_rest_cancelled", stop "delivery_rest_cancelled". Nothing is
+       built, signed, pushed or invalidated;
     3. the Check Alive gate. After the delivery date: stop
        "check_alive_before_delivery". Passed: if ``run.invalidation_broadcast``
        stop "invalidation_pending" (never invalidate twice; no outcome
@@ -169,7 +180,9 @@ def check_variables(host, run, ui):
     * ``"amounts_adjust"``: an amount problem with no explanation;
     * ``"executor_fee_too_high"``, ``error``: the exception as text;
     * ``"delivery_settings_unavailable"``: the delivery settings of the
-      wallet could not be prepared (no data; the front-end has the text).
+      wallet could not be prepared (no data; the front-end has the text);
+    * ``"delivery_rest_cancelled"``, ``executed``: the delivery executed
+      before the rest of the will was cancelled (#201).
 
     Returns a :class:`Phase1Result` when phase 1 stops here, ``None`` when
     it goes on. Any other exception (from ``init_class_variables``, the
@@ -190,6 +203,12 @@ def check_variables(host, run, ui):
         ui.step(Step.VARIABLES, "stopped")
         ui.note("delivery_settings_unavailable")
         return Phase1Result("delivery_settings_unavailable")
+    except DeliveryRestCancelled as e:
+        # #201 (owner's rule): the plan the owner stopped is never prepared
+        # again on its own; the note says how to go on.
+        ui.step(Step.VARIABLES, "held")
+        ui.note("delivery_rest_cancelled", executed=e.executed)
+        return Phase1Result("delivery_rest_cancelled")
     except CheckAliveAfterDeliveryError:
         ui.step(Step.VARIABLES, "check_alive_before_delivery")
         return Phase1Result("check_alive_before_delivery")
@@ -235,8 +254,11 @@ def check_variables(host, run, ui):
         # The coins the will can use: Util.get_available_utxos on the
         # wallet, the History label and the will's earliest date, as before.
         available_utxos = context.available_utxos(host)
+        # #168: with a table, the rows of every delivery (their shares add
+        # up to 100 % over the whole table).
+        heirs = instalments.effective_heirs(host)
         Will.check_amounts(
-            host.heirs,
+            heirs,
             host.willexecutors,
             available_utxos,
             host.date_to_check,
@@ -252,7 +274,7 @@ def check_variables(host, run, ui):
         # visible (e.g. after a Cancel) check_amounts fails on its first,
         # balance-based test, which used to hide the explanation too.
         info = Will.describe_amounts(
-            host.heirs,
+            instalments.effective_heirs(host),
             host.willexecutors,
             available_utxos,
             host.date_to_check,

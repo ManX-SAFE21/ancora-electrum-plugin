@@ -4,8 +4,9 @@ Owner's ZIP-2 test (2026-10-12): after he changed the delivery date, the
 Check said 'The delivery date of heir "1" changed', and he asked why only
 one of his two heirs. Every heir has the will's date (multiverse off), so
 the will's date changed: the Check now says "The delivery date changed:
-preparing a new will." With multiverse on and heirs with different dates
-(a hidden option), the sentence still names the heir whose date changed.
+preparing a new will." Heirs with their own dates (BAL's hidden multiverse
+option) are gone since #168 (D7): a date written on one heir is replaced by
+the will's date, and nothing changes.
 
 Wallets, coins and will-executors come from ``tests/flowkit.py`` (three
 fake will-executors with their own fee addresses, throw-away test wallet
@@ -87,17 +88,22 @@ def test_an_earlier_date_names_the_will_not_one_heir(make, mode):
 
 
 def test_heirs_with_their_own_dates_still_name_the_heir(make):
-    """Multiverse on (hidden option), heirs with different dates: only
-    bob's date changes, and the Check names bob."""
+    """#168 (D7): BAL's global multiverse option, even on, is not read: a
+    date written on bob alone is replaced by the will's date at the Check.
+    Nothing changed, nothing to sign or send, no heir named."""
     s = _two_heirs_sent_will(make, "basic")
     s.plugin.ENABLE_MULTIVERSE.set(True)
     bob = list(s.bw.heirs["bob"])
     bob[2] = fk.ts(2029, 8, 20)
     s.bw.heirs["bob"] = bob
+    pushed = len(s.world.pushed)
     s.check(cancel_on=("sign your will",))
     rows = " ".join(_rows(s))
-    assert 'The delivery date of heir "bob" changed: preparing a new will.' in rows, rows
-    assert GENERIC not in rows
+    assert 'of heir "' not in rows, rows
+    assert GENERIC not in rows, rows
+    assert s.bw.heirs["bob"][2] == s.bw.will_settings["locktime"]
+    assert len(s.world.pushed) == pushed
+    assert not s.user.asked
 
 
 if __name__ == "__main__":

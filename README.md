@@ -70,18 +70,23 @@ tests/                   smoke + external-zip regression tests
 
 ## Requirements
 
-- **Electrum 4.7.2 or 4.8.0** — the plugin detects which wallet-DB
-  registration API is available (`json_db.register_dict` on 4.7.2,
-  `stored_dict.register_name` on 4.8.0) and adapts automatically.
+- **Electrum 4.8.3 or later** (the manifest says so: an older Electrum does
+  not load the plugin). From 4.8.3 Electrum updates a plugin ZIP in place;
+  before, adding a newer ZIP with another file name left two copies of the
+  plugin and loading failed.
 - **PyQt6** (bundled with the Electrum desktop GUI).
 
 ## Wallet compatibility
 
-Àncòra currently supports **standard (single-signature) wallets** and
-**hardware wallets** supported by Electrum. **Multisig wallets** and
-**Electrum TrustedCoin (2FA) wallets** are **not yet supported** — see
+Àncòra supports **standard (single-signature) wallets** and **multisig
+wallets**. **Hardware wallets** have not been tested with Àncòra yet, and
+**Electrum TrustedCoin (2FA) wallets** are not known to work — see
 [`COMPATIBILITY.md`](COMPATIBILITY.md) for the full compatibility matrix and
 current status.
+
+The wallet's addresses must start with **`bc1q`** (native segwit). Wallets with Bitcoin
+addresses starting with `1` or `3` cannot build a will: an unsigned transaction on those
+coins has no transaction id, and every copy would pay a higher miner fee.
 
 ## Installation
 
@@ -94,14 +99,30 @@ python3 build_zip.py
 
 The builder writes a `zipimport`-friendly archive (files only, standard
 DEFLATE, deterministic order) to avoid loader errors seen on some Electrum
-portable builds.
+portable builds. The archive is reproducible: the same sources give the same
+SHA-256 on any computer.
+
+Releases are prepared with `make-release.sh` (tests, the ZIP built twice, its
+SHA-256, the signature with the SAFE21dev key in
+[`SAFE21dev.asc`](SAFE21dev.asc), the `ancora-vX.Y.Z` tag): see the header of
+the script.
 
 ### Install as an external plugin (zip)
 
 1. Electrum → **Tools → Plugins** → install from file → pick the built zip.
 2. Enable **Àncòra (Safe21)** and restart Electrum.
-3. (Recommended) verify the downloaded zip's SHA-256 matches the value printed
-   by `build_zip.py`.
+3. (Recommended) verify the downloaded zip's SHA-256 (and, for a release, its
+   signature) against the values published with it.
+
+### Update to a new version
+
+1. Electrum → **Tools → Plugins** → install from file → pick the new zip.
+   Electrum sees it is the same plugin, replaces the old zip and asks to
+   restart.
+2. **Restart Electrum.** Until then the old version keeps running.
+
+The heirs, the will and the settings stay in the wallet and in Electrum's
+configuration: an update does not touch them.
 
 ### Install as an internal plugin
 
@@ -145,6 +166,7 @@ exposes `bal_*` commands that replicate the full inheritance cycle.
 |----------|----------|
 | Settings | `bal_settings_list`, `bal_settings_get`, `bal_settings_set`, `bal_settings_reset` |
 | Delivery (per wallet) | `bal_delivery_show`, `bal_delivery_set`, `bal_delivery_form` |
+| Inheritance in several deliveries (per wallet) | `bal_instalments_show`, `bal_instalments_set`, `bal_instalments_clear` |
 | Heirs | `bal_heirs_list`, `bal_heirs_show`, `bal_heirs_add`, `bal_heirs_update`, `bal_heirs_delete`, `bal_heirs_import`, `bal_heirs_export` |
 | Will-Executors | `bal_willexecutors_list`, `bal_willexecutors_show`, `bal_willexecutors_add`, `bal_willexecutors_update`, `bal_willexecutors_select`, `bal_willexecutors_delete`, `bal_willexecutors_ping`, `bal_willexecutors_download`, `bal_willexecutors_import`, `bal_willexecutors_export` |
 | Will | `bal_will_status`, `bal_will_check`, `bal_will_prepare`, `bal_will_autorebuild`, `bal_will_sign`, `bal_will_broadcast`, `bal_will_export`, `bal_will_import_merge`, `bal_will_invalidate`, `bal_will_check_executor` |
@@ -193,6 +215,13 @@ electrum bal_delivery_form period --months 36   # renewable period, N months
 electrum bal_delivery_set --months 24           # a new N (period form only)
 electrum bal_delivery_form fixed --date 2029-08-29
 
+# Inheritance in several deliveries (ADVANCED): 2 or 3 delivery dates, shares of the whole estate
+electrum bal_instalments_set --example true     # an example table, to change
+electrum bal_instalments_set --table '[{"date": "2030-03-01", "shares": {"alice": "20%", "bob": "20%"}}, {"date": "2031-03-01", "shares": {"alice": "30%", "bob": "30%"}}]'
+electrum bal_instalments_set --path table.json  # the same JSON in a file
+electrum bal_instalments_show
+electrum bal_instalments_clear --confirm_earlier true   # one delivery date again
+
 # Plugin settings: key, then value (JSON for object-typed keys)
 electrum bal_settings_get bal_user_type
 electrum bal_settings_set bal_hide_replaced false
@@ -203,8 +232,9 @@ period such as `1y` or `730d` is refused. A date earlier than the will in
 force needs `--confirm_earlier true`. A later date is stored; if the will
 was already sent, the next `bal_will_prepare` answers `postponed`: the old
 will must be invalidated first (on-chain, miner fee). Every heir gets the
-delivery date of the will, so `--locktime` for a single heir is refused
-unless `bal_enable_multiverse` is on.
+delivery date of the will: `--locktime` for a single heir is always
+refused (the dates of an inheritance in several deliveries are in its
+table, below).
 
 The delivery form: a **fixed date** (the default) or a **period** of N
 calendar months (1 to 240) that the Check Alive renews.
@@ -219,8 +249,40 @@ with a will in force the new N is used at the next renewal (no fee now);
 `--date` is refused for the period form and `--months` for a fixed date.
 `bal_delivery_show` adds `form`, `period_months`, `period` (N in words),
 `period_start` (the day the period started) and `locked` (a will in force:
-the form cannot change). The period form is not available with
-`bal_enable_multiverse`.
+the form cannot change). The period form is not available with a table
+of the deliveries.
+
+Inheritance in several deliveries (ADVANCED mode, fixed delivery date):
+the heirs receive in 2 or 3 deliveries, on the same dates for every heir, at least
+28 days apart. At each date each heir receives a share of the WHOLE
+estate; the shares of the whole table add up to exactly 100% (an heir may
+have 0% at a date). `bal_instalments_set` writes the table (`--table`
+JSON, `--path` a JSON file, or `--example true`: 33%, 33% and 34% split
+among the heirs, one year apart); every rule is checked before anything
+is written. Delivery 1 is the wallet's delivery date: `bal_delivery_set
+--date` moves it, at least 28 days before delivery 2. A change by which
+the heirs would receive part of the estate earlier than now needs
+`--confirm_earlier true`: a date moved earlier, shares moved to an earlier
+delivery, delivery 3 removed, or the table removed
+(`bal_instalments_clear --confirm_earlier true`). A later date of a will
+already sent needs the paid invalidation at the next `bal_will_prepare`,
+as for one date. `bal_instalments_show` shows the
+table, the totals and the transactions of the will per delivery (with
+three will-executors: 3, 9 and 27); its `deliveries` can be given back
+to `bal_instalments_set`. While the table is there the heirs' shares
+come from it, not from their amounts. An heir added, removed or renamed
+without updating the table stops `bal_will_prepare` until the table is
+updated (the heir commands say so in `instalments_note`).
+`bal_instalments_clear` goes back to one date, with the heirs' amounts.
+
+In Electrum's window the same table is changed in the window
+"Inheritance in several deliveries" (ADVANCED mode): open it with
+"Several deliveries" in Build / Edit Your Will, or from Tools in the Will
+tab. The deliveries go from left to right, the heirs are the rows; the
+window checks the same rules, one problem at a time, and asks before
+anything would arrive earlier. While the table is there, the delivery
+date in the toolbars reads "10/03/2030 (+2 deliveries)" and is changed
+only in that window; an heir renamed in the heir window keeps its shares.
 
 Where the delivery settings are kept: in the wallet file, under the wallet
 key `will_settings`. Electrum's global `bal_will_settings` (the key of the
@@ -289,22 +351,15 @@ The plugin handles the cases as follows (triggered when you press
   (postponed) inheritance. Postponing a will that was *never* signed/sent just
   rebuilds it (no on-chain fee).
 
-## Transaction list: the "Server" column
+## Transaction list: the "Status" column
 
-The will transaction list shows a dedicated **Server** column so you always
-know whether each inheritance transaction is actually stored on the
-will-executor servers, independently of the row colour:
-
-| Label | Meaning |
-| --- | --- |
-| `Confirmed on server` | the will-executor confirmed it stored the transaction |
-| `Sent (not checked)` | pushed to the will-executor, not yet re-checked |
-| `Send failed` / `Not on server` | push failed or the server no longer has it |
-| `Signed (not sent)` | signed locally, not sent to any will-executor |
-| `Not sent` | not signed/sent yet |
-
-Hovering the cell shows a tooltip with the will-executor URL and the current
-state.
+The Will tab lists the will by versions, with one row per will-executor's
+copy under each version. There is no separate "Server" column any more
+(CHANGELOG #83): the **Status** column of each copy says where that
+will-executor stands, for example whether it confirmed it holds the
+transaction. Hovering the cell shows a tooltip with the details. The
+statuses and their colours are explained in the
+[user manual](docs/manual/README.md#will-tab-the-will-by-versions).
 
 ## Testing
 

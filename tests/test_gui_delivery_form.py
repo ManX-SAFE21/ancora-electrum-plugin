@@ -131,6 +131,7 @@ def test_period_is_offered_only_in_advanced_mode(make, monkeypatch):
     assert box.months_box.isHidden()                # the fixed form
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_mode_selector_is_the_shared_setting_with_its_gate(make, monkeypatch, phrase):
     """The wizard's selector writes ``USER_TYPE`` (every wallet) through the
     same gate as the Settings dialog: the right phrase gives ADVANCED, a
@@ -209,6 +210,7 @@ def test_choosing_the_period_in_the_wizard(make, monkeypatch):
     assert period_shown(page) is None
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_locked_form_shows_the_sentence_and_disables_the_choice(make, monkeypatch):
     """A will signed and sent: both radios disabled, the lock sentence
     shown; switching to BASIC keeps a locked period form."""
@@ -229,6 +231,7 @@ def test_locked_form_shows_the_sentence_and_disables_the_choice(make, monkeypatc
     assert box.lock_label.isHidden()              # BASIC: no lock sentence
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_basic_in_the_wizard_sets_an_unlocked_period_back_to_fixed(make, monkeypatch):
     """No will in force: choosing BASIC in the wizard puts the fixed form
     back (the date stays)."""
@@ -328,9 +331,12 @@ def test_wizard_grows_when_advanced_is_chosen(make, monkeypatch, phrase):
 
 
 def test_no_period_with_multiverse(make, monkeypatch):
-    """Owner decision 10: multiverse on, the period cannot be chosen."""
+    """Owner decision 10: a will in deliveries (a table, #168; BAL's hidden
+    multiverse option before), the period cannot be chosen."""
     s = make(mode="advanced")
-    s.plugin.ENABLE_MULTIVERSE.set(True)
+    date = int(s.bw.will_settings["locktime"])
+    s.set_instalments((date, {"alice": "60%", "bob": "0%"}),
+                      (date + 365 * 86400, {"alice": "0%", "bob": "40%"}))
     bw = real_window(s, monkeypatch)
     assert not wizard_page(bw).form_box.period_radio.isEnabled()
 

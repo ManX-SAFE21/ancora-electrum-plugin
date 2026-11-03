@@ -7,8 +7,10 @@ Electrum loads external plugins from a ``.zip`` using Python's ``zipimport``.
   * writes **only files** (no explicit directory entries) — some Electrum
     portable builds choke on directory records inside the archive;
   * uses standard DEFLATE compression (well supported by ``zipimport``);
-  * emits entries in a deterministic, sorted order so the archive is
-    reproducible (stable SHA-256);
+  * emits entries in a deterministic, sorted order, each with the same
+    fixed date, permissions and "made on" system, so the archive is
+    reproducible: the same sources give the same SHA-256 on any computer,
+    whatever the files' modification times (CHANGELOG #219);
   * skips ``__pycache__`` directories and compiled ``*.pyc``/``*.pyo`` files;
   * compiles each translation catalog ``bal/locale/<lang>/LC_MESSAGES/bal.po``
     into ``bal.mo`` inside the archive (the ``.mo`` files are not kept in
@@ -31,11 +33,33 @@ import hashlib
 import io
 import os
 import sys
-import time
 import zipfile
 
 SRC_ROOT = "bal"
 DEFAULT_OUT = "bal-electrum-plugin.zip"
+
+# CHANGELOG #219: the fixed metadata of every entry. A file's modification
+# time changes with a fresh checkout or a save without changes, and the
+# "made on" system and permissions differ between Windows and Linux: any of
+# them would change the SHA-256 although the plugin is the same.
+# 1980-01-01 is the earliest date the ZIP format can store.
+FIXED_DATE_TIME = (1980, 1, 1, 0, 0, 0)
+FIXED_CREATE_SYSTEM = 3  # Unix, so the permissions below are read as such
+FIXED_EXTERNAL_ATTR = 0o100644 << 16  # a regular file, rw-r--r--
+COMPRESS_LEVEL = 6
+
+
+def fixed_entry(arc: str) -> zipfile.ZipInfo:
+    """Return the ``ZipInfo`` of archive path ``arc`` with the fixed metadata.
+
+    Only the name differs from one entry to another, so the archive depends
+    on the paths and contents of the files alone.
+    """
+    info = zipfile.ZipInfo(arc, FIXED_DATE_TIME)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = FIXED_CREATE_SYSTEM
+    info.external_attr = FIXED_EXTERNAL_ATTR
+    return info
 
 
 def compile_catalog(po_path: str) -> bytes:
@@ -81,7 +105,7 @@ def build(out_path: str) -> None:
     files.sort()
 
     with zipfile.ZipFile(
-        out_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
+        out_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=COMPRESS_LEVEL
     ) as z:
         entries = [(f, None) for f in files] + [
             (mo, po) for mo, po in catalogs.items()
@@ -89,12 +113,12 @@ def build(out_path: str) -> None:
         for f, po in sorted(entries):
             arc = f.replace(os.sep, "/")  # forward slashes inside the archive
             if po is None:
-                z.write(f, arc)
+                # Not z.write(): it would store the file's own mtime and mode.
+                with open(f, "rb") as src:
+                    data = src.read()
             else:
-                # Same timestamp rule as z.write(): the source file's mtime.
-                info = zipfile.ZipInfo(arc, time.localtime(os.path.getmtime(po))[:6])
-                info.compress_type = zipfile.ZIP_DEFLATED
-                z.writestr(info, compile_catalog(po))
+                data = compile_catalog(po)
+            z.writestr(fixed_entry(arc), data, compresslevel=COMPRESS_LEVEL)
 
     # Integrity + summary
     with zipfile.ZipFile(out_path) as z:

@@ -30,7 +30,17 @@ result. The rules here:
   :func:`period_values`), the v2 upgrade (:func:`upgrade_values`), and the
   two predicates on the will items: the form is locked while a will is in
   force (:func:`form_locked`), the period date is re-anchored only when no
-  will is in force (:func:`will_in_force`).
+  will is in force (:func:`will_in_force`);
+* the staged deliveries of #167 (multiverse): the instalments table, its
+  reader (:func:`instalments_of`), its rules (:func:`validate_instalments`,
+  :func:`as_share`, :func:`share_text`) and the example table the editor
+  starts from (:func:`default_instalments`); since #170 also the rules
+  the command line and the window share: what arrives earlier
+  (:func:`first_earlier`, :func:`first_earlier_date`), the 28 days of
+  delivery 1 (:func:`too_close_to_second`), the dates later than the will
+  in force (:func:`later_than_in_force`), the number of transactions
+  (:func:`transactions_count`) and the translatable rule texts
+  (:class:`TableRuleError`).
 
 Pure: standard library only, no Qt, no Electrum objects, no I/O, and the
 clock is NEVER read here. Every "now" comes from the caller, so the test
@@ -58,6 +68,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 
 # --------------------------------------------------------------------------- #
 # Constants
@@ -168,10 +179,10 @@ _PERIOD = re.compile(r"[+-]?[0-9]+\s*[A-Za-z]")
 
 
 # --------------------------------------------------------------------------- #
-# Holds: the two states that stop every flow (rule I6)
+# Holds: the states that stop every flow (rule I6)
 # --------------------------------------------------------------------------- #
 class DeliveryHold(Exception):  # noqa: N818 - named after the state, not an error
-    """Base of the two holds: no flow builds, signs, pushes or invalidates.
+    """Base of the holds: no flow builds, signs, pushes or invalidates.
 
     ``code`` is the machine-readable code the command line returns.
     """
@@ -208,6 +219,35 @@ class DeliverySettingsUnavailable(DeliveryHold):  # noqa: N818 - name from the #
 
     code = "delivery_settings_unavailable"
     default_message = "The delivery settings of this wallet could not be prepared."
+
+
+class DeliveryRestCancelled(DeliveryHold):  # noqa: N818 - named after the state, not an error
+    """The rest of a will in several deliveries was cancelled (#201).
+
+    A copy of delivery :attr:`executed` was executed, and the change that
+    paid the later deliveries was spent by a transaction that is not a
+    copy of the will (the owner's Invalidate, or any other spend): no copy
+    can deliver any more and no will is in force
+    (:func:`bal.core.delivery_progress.cancelled_rest`).
+
+    Owner's rule (2026-10-29): a plan the owner stopped is never prepared
+    again on its own. The table still asks for the later deliveries, so
+    without this hold every Check, wallet close, automatic rebuild and
+    ``bal_will_autorebuild`` prepared them again on the coins that came
+    back (a passwordless wallet signed and sent them with no question).
+    The owner goes on by removing the table ("Back to one delivery").
+    """
+
+    code = "delivery_rest_cancelled"
+    default_message = (
+        "Delivery {} was executed and the remaining deliveries were "
+        "cancelled: no will is in force."
+    )
+
+    def __init__(self, executed=1, message=None):
+        """``executed``: the delivery executed before the rest was cancelled."""
+        self.executed = executed
+        super().__init__(message or self.default_message.format(executed))
 
 
 def check_holds(settings, unavailable=False):
@@ -1468,6 +1508,586 @@ def will_in_force(items, synced, executable):
         if not synced or executable(i.wid):
             return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+# Staged deliveries: the instalments table (multiverse, #167)
+# --------------------------------------------------------------------------- #
+# The table, stored in the wallet settings under INSTALMENTS_KEY (M3 writes
+# it and moves the schema to 3): a list of rows, one per delivery date,
+#     [{"locktime": <ts>, "shares": {"<heir name>": "<n>%", ...}}, ...]
+# Each share is a part of the WHOLE estate (owner decision D4): the cells of
+# the whole table add up to 100 %. The UI calls a row "Delivery 1, 2, 3";
+# "instalment" is a code word only.
+#: The settings key of the table. A wallet without it has one delivery.
+INSTALMENTS_KEY = "instalments"
+#: Fewest and most dates in a table (owner, 2026-10-19: one date is a normal
+#: will, so a table needs two; at most 3, decision D3: 3 + 9 + 27
+#: transactions with three will-executors).
+INSTALMENTS_MIN = 2
+INSTALMENTS_MAX = 3
+#: Smallest gap between two delivery dates, in days (owner, 2026-10-19).
+#: The will-executors never retry a failed broadcast, and a delivery whose
+#: parent is not mined yet fails for good: 28 days is twice Bitcoin Core's
+#: default mempool expiry (14 days), and monthly deliveries still work
+#: across February.
+MIN_GAP_DAYS = 28
+#: The share of the estate paid at each date of the default table, and the
+#: months between its dates (owner, 2026-10-19: 33 / 33 / 34 %, one year
+#: apart). Texts, so the arithmetic stays exact (:class:`decimal.Decimal`).
+DEFAULT_INSTALMENT_TOTALS = ("33", "33", "34")
+DEFAULT_INSTALMENT_STEP_MONTHS = 12
+#: The schema of a settings dict that holds a table (#168, owner choice B:
+#: written only together with the table; a wallet without one stays at
+#: :data:`SCHEMA_VERSION`).
+INSTALMENTS_SCHEMA_VERSION = 3
+#: The separator of the in-memory heir rows of deliveries 2 and 3 (#168,
+#: owner decision 2): "Luca" is delivery 1, "Luca§2" and "Luca§3" the
+#: next ones. The delivery NUMBER, never the date: anticipations and
+#: postpones move the dates. These names reach the will items (the check
+#: compares them by name) and are shown without the suffix
+#: (:func:`person_name`). An heir name holding it is refused.
+INSTALMENT_SEP = "§"
+# The address prefix of an OP_RETURN message row (the same marker as
+# ``bal.core.heirs.OP_RETURN_PREFIX``; not imported, so this module needs no
+# Electrum). A message is not a payee: it has no cell in the table.
+_MESSAGE_PREFIX = "OP_RETURN:"
+
+_HUNDRED = Decimal(100)
+_CENT = Decimal("0.01")
+_ROW_KEYS = frozenset(("locktime", "shares"))
+
+
+def N_(msg):  # noqa: N802 - the gettext marker name the catalog extraction reads
+    """Mark ``msg`` as translatable and return it unchanged (#170).
+
+    The rules of the table raise English texts (the log, the command line);
+    the window shows them translated (:class:`TableRuleError`). This module
+    uses the standard library only, so the marker of :mod:`bal.i18n` (which
+    imports Electrum) is not imported here.
+    """
+    return msg
+
+
+class TableRuleError(ValueError):
+    """A rule of the table of the deliveries is broken (#170).
+
+    ``str(e)`` is the English text, the same as before #170 (the log, the
+    command line and its tests read it). ``template`` (marked with
+    :func:`N_`, so it is in the catalogs) and ``values`` let the window show
+    it in the owner's language: ``_(e.template).format(*e.values)``
+    (:func:`rule_text`).
+    """
+
+    def __init__(self, template, *values):
+        """Keep the English ``template`` and its ``values``."""
+        super().__init__(template.format(*values))
+        self.template = template
+        self.values = values
+
+
+def rule_text(error, translate):
+    """The text of a broken rule in the owner's language (#170).
+
+    ``translate``: the caller's ``_`` (this module has no translations). A
+    :class:`TableRuleError` is translated with its values; any other error
+    gives its English text.
+    """
+    if isinstance(error, TableRuleError):
+        try:
+            return translate(error.template).format(*error.values)
+        except (IndexError, KeyError, ValueError):
+            # A broken translation must not hide the reason.
+            return str(error)
+    return str(error)
+
+
+def instalments_of(settings):
+    """The instalments table stored in ``settings``, as plain lists and dicts.
+
+    ``[]`` when there is none (the key is missing, None or an empty list):
+    the wallet has one delivery, as before #167. A copy, so the caller can
+    change it without touching the wallet dict. Not validated here: the
+    caller checks it with :func:`validate_instalments` before using it. A
+    value that is not a list raises ``ValueError``: reading it as "no table"
+    would build a will that pays everything at the first date.
+    """
+    if not isinstance(settings, Mapping):
+        return []
+    raw = settings.get(INSTALMENTS_KEY)
+    if raw is None:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError("instalments: not a list: {!r}".format(raw))
+    rows = []
+    for row in raw:
+        if isinstance(row, Mapping):
+            row = dict(row)
+            if isinstance(row.get("shares"), Mapping):
+                row["shares"] = dict(row["shares"])
+        rows.append(row)
+    return rows
+
+
+def as_share(x):
+    """A share of the estate as a :class:`decimal.Decimal`, or None.
+
+    A text ``"11.33%"`` (the ``%`` may be left out) or a number, from 0 to
+    100 with at most two decimals (owner, 2026-10-19). A bool, a negative
+    value, more decimals, NaN or garbage give None.
+    """
+    if isinstance(x, bool):
+        return None
+    if isinstance(x, str):
+        text = x.strip()
+        if text.endswith("%"):
+            text = text[:-1].strip()
+    elif _is_number(x):
+        # str() first: Decimal(0.1) would keep the binary error of the float.
+        text = str(x)
+    else:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not value.is_finite() or value < 0 or value > _HUNDRED:
+        return None
+    if value != value.quantize(_CENT):
+        return None
+    # abs(): "-0" is a valid zero, but its text would be "-0%".
+    return abs(value)
+
+
+def share_text(value):
+    """The stored text of a share: ``"11.33%"``, ``"11.5%"``, ``"0%"``.
+
+    The form of the heirs' amounts (``"<n>%"``), without trailing zeros, so
+    one share always has one text.
+    """
+    text = "{:f}".format(value.quantize(_CENT))
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text + "%"
+
+
+def validate_instalments(rows, heirs, now, gap=True):
+    """Check an instalments table before it is written; return it normalized.
+
+    ``rows``: the table (see :data:`INSTALMENTS_KEY`); ``heirs``: the names
+    of the heirs (the keys of the wallet's ``heirs`` dict, in their order,
+    each once); ``now``: the caller's clock. The rules (owner, 2026-10-19):
+
+    * from :data:`INSTALMENTS_MIN` to :data:`INSTALMENTS_MAX` rows, each with
+      exactly the keys ``locktime`` and ``shares``;
+    * the dates (:func:`as_delivery`, a period is refused) are after
+      ``now``, strictly increasing and at least :data:`MIN_GAP_DAYS` days
+      apart. ``now`` None skips "after now" and ``gap`` False the 28 days
+      (#168): the check of a table already stored, whose first date may be
+      past and whose gaps the automatic one-day anticipations may have
+      shortened (owner decision 5); the owner's own changes are checked
+      in full;
+    * every share is a part of the estate (:func:`as_share`); a name that is
+      not an heir is refused, a missing heir counts 0 %;
+    * every date pays at least one heir, every heir gets something at one
+      date at least (an heir with 0 % everywhere must be removed), and the
+      whole table adds up to exactly 100 %.
+
+    Returns a new list: the dates as ints, and every row naming every heir
+    in the order of ``heirs`` with its share text (:func:`share_text`).
+    Raises :class:`TableRuleError` (a ``ValueError``; English, for the log
+    and the command line, translatable for the window, #170) on the first
+    broken rule.
+    """
+    names = list(heirs)
+    if not names:
+        raise TableRuleError(N_("there are no heirs"))
+    for name in names:
+        if not isinstance(name, str):
+            raise TableRuleError(N_("not an heir name: {!r}"), name)
+    if len(set(names)) != len(names):
+        raise TableRuleError(N_("an heir is named twice"))
+    if not isinstance(rows, (list, tuple)):
+        raise TableRuleError(N_("the table is not a list: {!r}"), rows)
+    if not INSTALMENTS_MIN <= len(rows) <= INSTALMENTS_MAX:
+        raise TableRuleError(
+            N_("{} delivery dates (from {} to {})"),
+            len(rows), INSTALMENTS_MIN, INSTALMENTS_MAX,
+        )
+    out = []
+    totals = dict.fromkeys(names, Decimal(0))
+    previous = None
+    for n, row in enumerate(rows, 1):
+        if not isinstance(row, Mapping) or set(row) != _ROW_KEYS:
+            raise TableRuleError(
+                N_("delivery {}: not a row with 'locktime' and 'shares': {!r}"), n, row
+            )
+        raw = row["locktime"]
+        if isinstance(raw, str) and _PERIOD.fullmatch(raw.strip()):
+            raise TableRuleError(
+                N_("delivery {}: a period is not a delivery date: {!r}"), n, raw
+            )
+        locktime = as_delivery(raw)
+        if locktime is None:
+            raise TableRuleError(N_("delivery {}: not a delivery date: {!r}"), n, raw)
+        if now is not None and locktime <= now:
+            raise TableRuleError(N_("delivery {}: the date is not in the future"), n)
+        if previous is not None:
+            if locktime <= previous:
+                raise TableRuleError(
+                    N_("delivery {}: the date is not after delivery {}"), n, n - 1
+                )
+            if gap and locktime - previous < MIN_GAP_DAYS * DAY:
+                raise TableRuleError(
+                    N_("delivery {}: less than {} days after delivery {}"),
+                    n, MIN_GAP_DAYS, n - 1,
+                )
+        previous = locktime
+        shares = row["shares"]
+        if not isinstance(shares, Mapping):
+            raise TableRuleError(N_("delivery {}: shares not a table: {!r}"), n, shares)
+        for name in shares:
+            if name not in totals:
+                raise TableRuleError(N_("delivery {}: not an heir: {!r}"), n, name)
+        values = {}
+        for name in names:
+            value = as_share(shares.get(name, 0))
+            if value is None:
+                raise TableRuleError(
+                    N_("delivery {}: {}: not a share (0 to 100, two decimals at "
+                       "most): {!r}"),
+                    n, name, shares.get(name),
+                )
+            values[name] = value
+            totals[name] += value
+        if not any(values.values()):
+            raise TableRuleError(N_("delivery {}: pays no heir"), n)
+        out.append(
+            {
+                "locktime": locktime,
+                "shares": {name: share_text(values[name]) for name in names},
+            }
+        )
+    for name in names:
+        if not totals[name]:
+            raise TableRuleError(
+                N_("{}: gets nothing at any delivery (remove the heir)"), name
+            )
+    total = sum(totals.values(), Decimal(0))
+    if total != _HUNDRED:
+        raise TableRuleError(
+            N_("the shares add up to {}, not 100%"), share_text(total)
+        )
+    return out
+
+
+def default_instalments(heirs, first):
+    """The example table the editor starts from (owner, 2026-10-19).
+
+    Three dates: ``first`` (the wallet's delivery date), then
+    :data:`DEFAULT_INSTALMENT_STEP_MONTHS` and twice that many months later
+    (:func:`add_months`). Each date pays the share of the estate of
+    :data:`DEFAULT_INSTALMENT_TOTALS` (33, 33, 34 %), split equally among
+    the heirs in cents; the cents left over go to the last heir, so the
+    table adds up to exactly 100 %. With three heirs: 11 / 11 / 11 %, again
+    11 / 11 / 11 %, then 11.33 / 11.33 / 11.34 %. The owner changes it
+    before it is saved; it still goes through :func:`validate_instalments`.
+    """
+    names = list(heirs)
+    if not names:
+        raise TableRuleError(N_("there are no heirs"))
+    rows = []
+    for k, total in enumerate(DEFAULT_INSTALMENT_TOTALS):
+        cents = int(Decimal(total) * 100)
+        each = cents // len(names)
+        shares = {name: Decimal(each) / 100 for name in names}
+        shares[names[-1]] = Decimal(cents - each * (len(names) - 1)) / 100
+        # The first date is the wallet's own, kept as it is; add_months
+        # would move it to 00:00 UTC.
+        locktime = first if k == 0 else add_months(
+            first, k * DEFAULT_INSTALMENT_STEP_MONTHS
+        )
+        rows.append(
+            {
+                "locktime": locktime,
+                "shares": {name: share_text(shares[name]) for name in names},
+            }
+        )
+    return rows
+
+
+class InstalmentsMismatch(ValueError):  # noqa: N818 - named after the state, not an error
+    """The stored table no longer fits the heirs (#168, owner decision 3).
+
+    An heir added, removed or renamed without the table being updated: the
+    flows stop with this error and nothing is built, never a guess. The
+    message is the caller's (translated); ``reason`` the English rule that
+    failed (:func:`validate_instalments`), for the log.
+    """
+
+    def __init__(self, message, reason=None):
+        """Keep the user's ``message`` and the English ``reason``."""
+        super().__init__(message)
+        self.reason = reason
+
+
+def instalment_key(name, n):
+    """The heir-row name of person ``name`` at delivery ``n`` (1, 2, 3).
+
+    Delivery 1 keeps the plain name (owner decision 2): a will with one
+    date, and the first delivery of a table, name their rows as before
+    #168, so the items of a will built before the table still match.
+    """
+    return name if n == 1 else "{}{}{}".format(name, INSTALMENT_SEP, n)
+
+
+def instalment_number(key):
+    """The delivery number of heir-row name ``key``: 2 for ``"Luca§2"``,
+    1 for a plain name (or a suffix that is not a number)."""
+    text = str(key)
+    head, sep, tail = text.rpartition(INSTALMENT_SEP)
+    if sep and head and tail.isdigit() and int(tail) >= 2:
+        return int(tail)
+    return 1
+
+
+def person_name(key):
+    """The person behind heir-row name ``key``: ``"Luca"`` for
+    ``"Luca§2"``; the name itself otherwise. What the owner always sees."""
+    if instalment_number(key) == 1:
+        return str(key)
+    return str(key).rpartition(INSTALMENT_SEP)[0]
+
+
+def has_separator(name):
+    """True when an heir name holds :data:`INSTALMENT_SEP` (refused, #168)."""
+    return INSTALMENT_SEP in str(name)
+
+
+def is_message_row(value):
+    """True for an OP_RETURN message row (``[address, ...]`` whose address
+    starts with ``OP_RETURN:``): a message, not a payee."""
+    try:
+        return str(value[0]).startswith(_MESSAGE_PREFIX)
+    except (IndexError, TypeError, KeyError):
+        return False
+
+
+def payee_names(heirs):
+    """The names of the heirs that are paid (the message rows left out), in
+    their order: the people of the table's columns."""
+    return [name for name, value in heirs.items() if not is_message_row(value)]
+
+
+def table_rows(settings):
+    """The table of ``settings`` with delivery 1 on the wallet's own date.
+
+    ``settings["locktime"]`` is the ONE date of delivery 1 (#168): the
+    rules that move it (anticipation, anchor, later wish, a cancelled
+    postpone, the owner's date field) keep working unchanged, and the
+    first row follows it here. ``[]`` without a table (one delivery).
+    Raises ``ValueError`` like :func:`instalments_of`.
+    """
+    rows = instalments_of(settings)
+    if not rows:
+        return []
+    first = as_delivery(settings.get("locktime"))
+    if first is not None and isinstance(rows[0], Mapping):
+        rows[0]["locktime"] = first
+    return rows
+
+
+def effective_rows(heirs, rows):
+    """The heir rows the build and the check use with a table (#168).
+
+    ``heirs``: the stored heirs (one row ``[address, amount, date]`` per
+    person); ``rows``: the table, validated (:func:`validate_instalments`).
+    One row per person and delivery with a share above 0 % (a 0 % row would
+    be built as a dust row and missed by the check):
+    ``{instalment_key(name, n): [address, "<share>%", date of n]}``. The
+    percentages are shares of the whole estate: the build treats them as
+    weights over every later row (``Heirs.normalize_perc``), so each
+    delivery pays its share. A message row keeps its name and amount and
+    goes with delivery 1 (owner decision 4). Pure: nothing is stored.
+
+    Raises ``ValueError`` when an heir name holds :data:`INSTALMENT_SEP`
+    (it could collide with a row name).
+    """
+    out = {}
+    for name, value in heirs.items():
+        if has_separator(name):
+            raise ValueError("an heir name holds {!r}: {!r}".format(INSTALMENT_SEP, name))
+        if is_message_row(value):
+            out[name] = [value[0], value[1], rows[0]["locktime"]]
+    for n, row in enumerate(rows, 1):
+        for name, value in heirs.items():
+            if is_message_row(value):
+                continue
+            share = as_share(row["shares"].get(name, 0))
+            if not share:
+                continue
+            out[instalment_key(name, n)] = [value[0], share_text(share), row["locktime"]]
+    return out
+
+
+def anticipated_rows(rows, dates):
+    """The table with deliveries 2 and 3 moved to the will's dates, or None.
+
+    F1 of #166, fixed in #168: a rebuild against the will in force dates
+    every delivery that changed ONE day earlier, so its transactions are
+    valid first. Delivery 1 follows through ``locktime``
+    (``Will.anticipated_delivery_to_store``); the later ones must follow
+    too, or the next Check reads "stored date later than the transaction"
+    as a postpone and asks for the paid invalidation. ``dates``:
+    ``{n: earliest locktime of the VALID items of delivery n}``. A date
+    only moves EARLIER (a postpone is never undone here). Returns a new
+    list, or None when nothing moves.
+    """
+    out = [dict(row) for row in rows]
+    moved = False
+    for n, row in enumerate(out, 1):
+        if n == 1:
+            continue
+        date = dates.get(n)
+        current = as_delivery(row.get("locktime"))
+        if date is None or current is None:
+            continue
+        if int(date) < current:
+            row["locktime"] = int(date)
+            moved = True
+    return out if moved else None
+
+
+# Owner decision (a) of 2026-10-20 (#169), shared by the command line and the
+# window since #170: every change by which the heirs would receive part of
+# the estate EARLIER is confirmed first. Earlier is a free rebuild, which
+# only the paid invalidation can undo once the will is sent.
+def schedule_of(rows):
+    """``[(date, share)]`` of a table: each delivery's date and the share of
+    the estate it pays (the sum of its cells; a cell that cannot be read
+    counts 0 %). For a table already validated (:func:`validate_instalments`).
+    """
+    out = []
+    for row in rows:
+        shares = row.get("shares") if isinstance(row, Mapping) else None
+        ts = as_delivery(row.get("locktime")) if isinstance(row, Mapping) else None
+        if ts is None or not isinstance(shares, Mapping):
+            continue
+        out.append((ts, sum(
+            (as_share(v) or Decimal(0) for v in shares.values()), Decimal(0))))
+    return out
+
+
+def schedule_now(reference, old):
+    """``[(date, share)]``: what the heirs receive now, date by date (#169).
+
+    ``reference``: ``{n: (date, from_will)}``, the date each delivery is
+    compared with (``bal.engine.instalments.dates_in_force``); ``old``: the
+    stored table (:func:`table_rows`, ``[]`` without one). With a table:
+    each delivery's share of the estate on its reference date; without one:
+    100 % on the date of delivery 1.
+    """
+    if not old:
+        ts = reference.get(1, (None, False))[0]
+        return [(ts, _HUNDRED)] if ts is not None else []
+    out = []
+    for n, row in enumerate(old, 1):
+        ts = reference.get(n, (None, False))[0]
+        shares = row.get("shares") if isinstance(row, Mapping) else None
+        if ts is None or not isinstance(shares, Mapping):
+            continue
+        total = sum(
+            (as_share(v) or Decimal(0) for v in shares.values()), Decimal(0))
+        out.append((ts, total))
+    return out
+
+
+def first_earlier(new, now):
+    """The first date of ``new`` by which the heirs would receive MORE of
+    the estate than ``now``, as ``(n, date, share new, share now)``; None
+    when nothing arrives earlier (#169, owner decision (a)).
+
+    Not only a date moved earlier: also shares moved to an earlier
+    delivery, the last delivery removed or the table removed. Compared date
+    by date, the share paid by that date. ``new`` and ``now``:
+    ``[(date, share)]`` (:func:`schedule_of`, :func:`schedule_now`).
+    """
+    def paid_by(schedule, when):
+        """The share of the estate ``schedule`` pays on or before ``when``."""
+        return sum((share for ts, share in schedule if ts <= when), Decimal(0))
+
+    for n, (ts, _share) in enumerate(new, 1):
+        more, before = paid_by(new, ts), paid_by(now, ts)
+        if more > before:
+            return n, ts, more, before
+    return None
+
+
+def first_earlier_date(rows, reference):
+    """The first delivery of ``rows`` dated before its reference date, as
+    ``(n, new date, reference date, from_will)``; None when none is (#169).
+
+    ``reference``: see :func:`schedule_now`; ``from_will`` says whether the
+    reference is the will (its VALID items) or the stored date (the words
+    of the message).
+    """
+    for n, row in enumerate(rows, 1):
+        ref, from_will = reference.get(n, (None, False))
+        ts = as_delivery(row.get("locktime")) if isinstance(row, Mapping) else None
+        if ref is None or ts is None or ts >= ref:
+            continue
+        return n, ts, ref, from_will
+    return None
+
+
+def later_than_in_force(rows, in_force):
+    """``[(n, date in force)]``: the deliveries of ``rows`` dated after the
+    will in force (#169: the next Check asks for the paid invalidation of a
+    will already sent, D6). ``in_force``: ``{n: date or None}``
+    (``bal.engine.instalments.dates_in_force``)."""
+    out = []
+    for n, row in enumerate(rows, 1):
+        ts = as_delivery(row.get("locktime")) if isinstance(row, Mapping) else None
+        current = in_force.get(n)
+        if ts is not None and current is not None and ts > current:
+            out.append((n, current))
+    return out
+
+
+def too_close_to_second(settings, first):
+    """Delivery 2's date when ``first``, typed as the date of delivery 1, is
+    less than :data:`MIN_GAP_DAYS` days before it; else None (#169).
+
+    Owner decision 5 of M3: the owner's own dates keep the 28 days (only
+    the automatic one-day anticipations may shorten them). None without a
+    table, or with one that cannot be read (the flows stop on it).
+    """
+    try:
+        rows = table_rows(settings)
+    except ValueError:
+        return None
+    if len(rows) < 2 or not isinstance(rows[1], Mapping):
+        return None
+    second = as_delivery(rows[1].get("locktime"))
+    if second is None:
+        return None
+    if first > second - MIN_GAP_DAYS * DAY:
+        return second
+    return None
+
+
+def transactions_count(branches, deliveries):
+    """The transactions of a will in ``deliveries`` dates, level by level:
+    ``[N, N**2, ..., N**K]`` for ``N`` = ``branches`` (#170).
+
+    Every copy of a delivery has its own children, one per branch (a
+    will-executor, or the copy without one): the chain of #168
+    (``context/MULTIVERSE-PLAN.md`` 1.3). 3 will-executors and 3 dates:
+    3 + 9 + 27 = 39. For the window's line, and for the future limit of
+    5000 transactions (owner, 2026-10-20), which depends on N.
+    """
+    n, k = max(int(branches), 0), max(int(deliveries), 0)
+    return [n ** level for level in range(1, k + 1)]
 
 
 # --------------------------------------------------------------------------- #

@@ -1345,6 +1345,7 @@ def test_the_module_imports_only_the_standard_library():
         "collections.abc",
         "dataclasses",
         "datetime",
+        "decimal",  # #167: the exact sum of the instalment shares
     }
     found = set()
     for node in ast.walk(ast.parse(_source())):

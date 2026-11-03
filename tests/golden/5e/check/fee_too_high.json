@@ -19,7 +19,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Wait</b>",
    "Building your will:\t<b><font color='#cfa808'>&#9888;</font> <b>Wallet balance is too low: 1000000 satoshi available, but the miner and will-executor fees need 1720000 satoshi (the minimum usable amount is 546 satoshi). Add funds, or select fewer will-executors.\n\nSkipped</b></b>",
    "Signing your will:\t<b>Nothing to do</b>",
@@ -36,9 +36,7 @@
   "questions": [],
   "report": {
    "boxes": {
-    "changes": [
-     "The will contains no valid transaction: a new will must be prepared."
-    ],
+    "changes": [],
     "problems": [],
     "warnings": [
      "Wallet balance is too low: 1000000 satoshi available, but the miner and will-executor fees need 1720000 satoshi (the minimum usable amount is 546 satoshi). Add funds, or select fewer will-executors.\n\nSkipped"
@@ -81,7 +79,7 @@
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b><font color='#cfa808'>&#9888;</font> <b>Wallet balance is too low: 1000000 satoshi available, but the miner and will-executor fees need 1720000 satoshi (the minimum usable amount is 546 satoshi). Add funds, or select fewer will-executors.\n\nSkipped</b></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",

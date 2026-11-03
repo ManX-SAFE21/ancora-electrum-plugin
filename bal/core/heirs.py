@@ -7,7 +7,9 @@ Heir management and inheritance-transaction building.
 This is the heart of the plugin's Bitcoin logic and the most delicate part of
 the whole codebase, so the implementation below is kept byte-for-byte identical
 to the original ``heirs.py``; only the dead commented-out imports were removed
-and documentation was added.
+and documentation was added. Exception (CHANGELOG #166, owner decision): with
+more than one delivery date, ``prepare_transactions`` makes the first delivery
+spend every coin.
 
 An *heir* is stored as a small list addressed by the ``HEIR_*`` column
 constants defined below.  ``Heirs`` is a ``dict`` subclass persisted inside the
@@ -90,6 +92,18 @@ HEIR_LOCKTIME = 2      # locktime after which the heir may claim the funds
 HEIR_REAL_AMOUNT = 3   # resolved amount once percentages are computed
 HEIR_DUST_AMOUNT = 4   # amount when below dust threshold (marked "DUST: ...")
 TRANSACTION_LABEL = "inheritance transaction"
+
+
+def only_native_segwit(utxos):
+    """True when every coin of ``utxos`` is on a ``bc1`` (native segwit) address.
+
+    #216: an unsigned transaction spending any other coin (addresses starting
+    with ``1`` or ``3``) has no txid before it is signed, and the build needs
+    it to link the copies. Owner's decision: these wallets stay out, they also
+    pay more for each copy.
+    """
+    return all(bitcoin.is_segwit_address(utxo.address or "") for utxo in utxos)
+
 
 OP_RETURN_PREFIX = "OP_RETURN:"
 
@@ -233,12 +247,21 @@ def prepare_transactions(locktimes, available_utxos, fees, wallet):
 
         in_amount = 0.0
         used_utxos = []
+        # CHANGELOG #166 (owner, solution C): with more than one delivery
+        # date (multiverse) the first delivery spends EVERY coin and the
+        # next ones only its change. WHY: a new first delivery must always
+        # spend the coins of the one in force; taking only the coins it
+        # needs, new funds that cover it alone left the old coins to a
+        # later delivery, and the old and the new first delivery could then
+        # both be executed. One date: unchanged (that transaction already
+        # spends every coin).
+        take_all = len(locktimes) > 1
         try:
             while utxo := available_utxos.pop():
                 value = utxo.value_sats()
                 in_amount += value
                 used_utxos.append(utxo)
-                if in_amount >= out_amount:
+                if in_amount >= out_amount and not (take_all and available_utxos):
                     break
 
         except IndexError as e:
@@ -252,7 +275,7 @@ def prepare_transactions(locktimes, available_utxos, fees, wallet):
             )
             continue
         heirsvalue = out_amount
-        change = get_change_output(wallet, in_amount, out_amount, fee)
+        change = get_change_output(wallet, in_amount, out_amount)
         if change:
             outputs.append(change)
         for _ in range(0, 100):
@@ -346,8 +369,14 @@ def invalidate_inheritance_transactions(wallet):
                 remaining[key] = value
 
 
-def get_change_output(wallet, in_amount, out_amount, fee):
-    change_amount = int(in_amount - out_amount - fee)
+def get_change_output(wallet, in_amount, out_amount):
+    """The change of a transaction, or ``None`` when it would be dust.
+
+    #211: ``out_amount`` already holds the miner fee (``prepare_transactions``
+    starts it from the fee). Taking the fee off here too made every delivery
+    with change pay it twice, out of what the later deliveries receive.
+    """
+    change_amount = int(in_amount - out_amount)
     if change_amount > wallet.dust_threshold():
         change_addresses = wallet.get_change_addresses_for_new_transaction()
         out = PartialTxOutput.from_address_and_value(change_addresses[0], change_amount)
@@ -444,6 +473,51 @@ def shared_addresses(heirs):
         names = sorted(names)
         pairs.extend((names[0], other) for other in names[1:])
     return sorted(pairs)
+
+
+def is_own_address(wallet, address):
+    """True when ``address`` belongs to ``wallet`` itself (#197).
+
+    Owner's test of #194/#195: an heir paid at an address copied from the
+    wallet's own Receive list; on the delivery date that heir's bitcoin
+    would stay in this wallet. Compared with :func:`address_key` (a bech32
+    address typed in capitals, as in a QR code, is still found); an
+    OP_RETURN message is never one. Never raises: a wallet that cannot
+    tell gives False, and the heir is saved as before.
+    """
+    key = address_key(address)
+    if key is None:
+        return False
+    try:
+        return bool(wallet.is_mine(key))
+    except Exception as e:
+        _logger.info(f"own address not checked: {e}")
+        return False
+
+
+def own_address_heirs(wallet, heirs, stored=None):
+    """The names of the heirs of ``heirs`` (``{name: [address, ...]}``)
+    paid at an address of ``wallet`` itself (#197), in their order.
+
+    ``stored``: the heirs already saved; a name saved there with the same
+    address is left out (already confirmed, or saved before #197: the
+    owner chose to warn only when an address is entered or changed).
+    """
+    names = []
+    for name, value in (heirs or {}).items():
+        try:
+            address = value[HEIR_ADDRESS]
+        except (IndexError, KeyError, TypeError):
+            continue
+        try:
+            before = (stored or {}).get(name)
+            if before is not None and address_key(before[HEIR_ADDRESS]) == address_key(address):
+                continue
+        except (IndexError, KeyError, TypeError):
+            pass
+        if is_own_address(wallet, address):
+            names.append(name)
+    return names
 
 
 #: The most a will message carries: 80 bytes of UTF-8 text (#140), the
@@ -608,16 +682,26 @@ class Heirs(dict, Logger):
         # Build-will task when a runtime object slipped into an heir value.
         self.db.put("heirs", _json_safe(dict(self)))
 
-    def import_file(self, path):
+    def import_file(self, path, confirm_own=None):
         """Import the heirs of the JSON file ``path`` (merged by name).
 
         #140 (owner): one message per will; a message of the file when the
         heirs already have one is not imported. Returns the names of those
         skipped messages (the GUI says so).
+
+        #197 (owner): ``confirm_own(names)`` is asked once when heirs of the
+        file are paid at an address of this wallet (not those already
+        saved with that address, :func:`own_address_heirs`); on False
+        nothing is imported and :class:`OwnAddressImportDeclined` is
+        raised. None (the default) asks nothing, as before.
         """
         data = read_json_file(path)
         data = Heirs._validate(data)
         data, skipped = keep_one_message(self, data)
+        if confirm_own is not None:
+            own = own_address_heirs(self.wallet, data, stored=self)
+            if own and not confirm_own(own):
+                raise OwnAddressImportDeclined(", ".join(own))
         self.update(data)
         self.save()
         return skipped
@@ -889,7 +973,8 @@ class Heirs(dict, Logger):
         #
         # Codes: NO_HEIRS, NO_UTXO, NO_WILLEXECUTOR_USABLE, NO_FUTURE_DATE,
         # WILLEXECUTOR_FEE, WILLEXECUTOR_FEE_TOO_HIGH, TX_BUILD_FAILED,
-        # WILLEXECUTOR_TX_ERROR, FIXED_EXCEEDS_BALANCE (#76).
+        # WILLEXECUTOR_TX_ERROR, FIXED_EXCEEDS_BALANCE (#76),
+        # WALLET_TYPE_NOT_SUPPORTED (#216).
         self.last_build_error = None
         _before = list(self.keys())
         Heirs._validate(self, persist=False)
@@ -924,6 +1009,10 @@ class Heirs(dict, Logger):
         if len_utxo_set == 0:
             self.last_build_error = "NO_UTXO"
             _logger.info("no usable utxos")
+            return
+        if not only_native_segwit(available_utxos):
+            self.last_build_error = "WALLET_TYPE_NOT_SUPPORTED"
+            _logger.info("coins on addresses that are not native segwit")
             return
         j = -2
         willexecutorsitems = list(willexecutors.items())
@@ -1023,7 +1112,7 @@ class Heirs(dict, Logger):
                     total_in = 0
                     for txid, tx in txs.items():
                         tx.willexecutor = willexecutor
-                        fee = tx.estimated_size() * tx_fees
+                        fee = Util.real_tx_size(tx, wallet) * tx_fees
                         txs[txid].tx_fees = tx_fees
                         total_fees += fee
                         total_fees_real += tx.get_fee()
@@ -1280,6 +1369,14 @@ class SecondMessageNotAllowed(ValueError):
     """
 
 
+class OwnAddressImportDeclined(Exception):
+    """The owner answered No to importing heirs paid at an address of the
+    wallet itself (#197): nothing was imported.
+
+    ``args[0]``: the names of those heirs, comma separated.
+    """
+
+
 class LocktimeNotValid(ValueError):
     pass
 
@@ -1344,3 +1441,21 @@ class BalanceTooLowException(Exception):
         self.fees = fees
     def __str__(self):
         return f"Balance too low, balance: {self.balance}, dust threshold: {self.dust_threshold}, fees: {self.fees}"
+
+
+class DeliveriesNotFundedException(BalanceTooLowException):
+    """The funds cannot pay every delivery of a table, with its fees (#211).
+
+    ``balance``: the sats the will can spend; ``deliveries``: how many
+    deliveries the table asks for. A ``BalanceTooLowException``, so a caller
+    that knows only that one still stops. The sentence for the owner is
+    ``bal.core.messages.deliveries_not_funded_message``.
+    """
+
+    def __init__(self, balance, deliveries):
+        """No dust limit or fee figure: they do not say what the owner can do."""
+        super().__init__(balance, 0, 0)
+        self.deliveries = deliveries
+
+    def __str__(self):
+        return f"{self.balance} sat cannot pay {self.deliveries} deliveries"

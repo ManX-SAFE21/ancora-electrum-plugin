@@ -7,9 +7,10 @@ and was only shown as "added" on page 4. The rule now, three cases:
 1. a will-executor NEW on the network (not in the list before this
    download) that answers: selected; page 4 says "(new in the network)";
 2. a will-executor deselected by the USER (the Will-Executors window, the
-   Select / Deselect all menu, the command line): stays deselected;
-3. one deselected by the PLUGIN (it did not answer, or Exclude): selected
-   again as soon as it answers.
+   Select / Deselect all menu, the command line, and since #178 "Exclude"):
+   stays deselected;
+3. one deselected by the PLUGIN (it did not answer): selected again as
+   soon as it answers.
 
 The user's deselections are a user choice, stored in
 ``bal_willexecutors_user_deselected`` (``{chain: [url]}``); seeded ONCE
@@ -252,16 +253,26 @@ def test_case_three_down_then_back_is_selected_again(make):
     checks_then_clean(s)
 
 
-def test_exclude_then_back_is_selected_again(make):
-    """Exclude (the plugin's offer for a will-executor that did not
-    answer) is not a user deselection: it comes back when it answers."""
+def test_exclude_lasts_until_the_user_selects_it_again(make):
+    """#178 (owner): Exclude is the user's choice. Before (#137) it was
+    the plugin's deselection and came back when the will-executor answered
+    the ping: we.divinaly.support answers the ping but not the check. Now
+    it stays deselected, download after download, until the user selects
+    it again in the Will-Executors window."""
     s, bw = make()
     assert bw.exclude_willexecutor(WE[0])
     assert selected(s) == WE[1:]
+    assert Willexecutors.user_deselected(bw.bal_plugin) == {WE[0]}
+    bw.download_and_select_willexecutors(select_responding=True, ping_without_list=True)
+    assert selected(s) == WE[1:]
+    bw.download_and_select_willexecutors(select_responding=True, ping_without_list=True)
+    assert selected(s) == WE[1:]
+    checks_then_clean(s)
+    # Selected again by the user: the next download keeps it selected.
+    executor_window(bw).will_executor_list_widget.select([WE[0]])
     assert Willexecutors.user_deselected(bw.bal_plugin) == set()
     bw.download_and_select_willexecutors(select_responding=True, ping_without_list=True)
     assert selected(s) == WE
-    checks_then_clean(s)
 
 
 def test_select_all_menu_is_the_users_choice(make):

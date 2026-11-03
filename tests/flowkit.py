@@ -53,6 +53,7 @@ from types import SimpleNamespace
 from electrum import constants
 from electrum import util as electrum_util
 from electrum.bip32 import BIP32Node
+from electrum.interface import TxBroadcastServerReturnedError
 from electrum.segwit_addr import encode_segwit_address
 from electrum.simple_config import SimpleConfig
 from electrum.transaction import Transaction, tx_from_any
@@ -204,6 +205,7 @@ class World:
         self.broadcast_log = []   # (kind, txid)
         self.down = set()         # executors that do not answer (#93)
         self.already = set()      # executors that answer "already present"
+        self.refused = set()      # executors that answer with an error (#222)
         # True: a broadcast reaches the network but the wallet does not see
         # it yet (Electrum has not registered it).
         self.wallet_lags = False
@@ -227,7 +229,21 @@ class World:
             "address": WE_ADDR[2], "status": "200", "info": "fake"}
 
     def record_broadcast(self, wallet, tx, kind):
-        """A transaction reaches the network: mempool, seen by the wallet."""
+        """A transaction reaches the network: mempool, seen by the wallet.
+
+        #194: like a real node, a transaction that spends an output of a
+        transaction the network has never seen is refused with
+        ``bad-txns-inputs-missingorspent``. WHY: the owner's invalidation
+        spent the outputs of will transactions stored only in the wallet's
+        local history; this fake network accepted any transaction, so the
+        tests could not see it.
+        """
+        missing = [i.prevout.txid.hex() for i in tx.inputs()
+                   if i.prevout.txid.hex() not in self.broadcast]
+        if missing:
+            raise TxBroadcastServerReturnedError(
+                "bad-txns-inputs-missingorspent (flowkit: {} not on the "
+                "network)".format(", ".join(t[:8] for t in missing)))
         raw = str(tx)
         self.broadcast[tx.txid()] = raw
         self.broadcast_log.append((kind, tx.txid()))
@@ -252,6 +268,11 @@ class World:
             if url in self.down:
                 if on_timeout:
                     on_timeout(url, we)
+                continue
+            if url in self.refused:
+                # It answers, but does not take the will: nothing is pushed.
+                if on_each:
+                    on_each(url, we, False, ConnectionError("refused (flowkit)"))
                 continue
             # Not strict: the plugin ends "txs" with a newline, so the split
             # gives one empty line more than there are transaction ids.
@@ -470,6 +491,10 @@ class User:
         """``password``: what the owner types in the password window."""
         self.cancel_on = set()
         self.asked = []
+        # #209: the rich text of each check before a signature. Apart from
+        # ``asked``: a step the owner always passes, not one more question
+        # in every golden file.
+        self.warned = []
         self.password = password
         # The answer to the "which date?" question (#123): "keep" (the
         # default button) or "later". Cancel through ``cancel_on``.
@@ -489,6 +514,25 @@ class User:
         if self.answer("password", msg or ""):
             return self.password
         return None
+
+    def signing_warning_dialog(self, details, parent=None):
+        """The check before a signature (``Plugin.signing_warning_dialog``):
+        the owner ticks and goes on, unless ``cancel_on`` holds "paper"."""
+        self.warned.append(details)
+        return "paper" not in self.cancel_on
+
+
+class _FakeLabel:
+    """The waiting window's ``message_label``: its layout calls do nothing.
+
+    #172: the right click "check" makes the text wrap at a normal width.
+    """
+
+    def setWordWrap(self, on):
+        """Wrapping is Qt's business; nothing to record."""
+
+    def setMinimumWidth(self, width):
+        """The width is Qt's business; nothing to record."""
 
 
 class FakeWaitingDialog:
@@ -510,6 +554,7 @@ class FakeWaitingDialog:
         self.on_error = on_error
         self.on_cancel = on_cancel
         self._stopping = False
+        self.message_label = _FakeLabel()
         bal_window.events.append("waiting window: " + strip(message))
         if exe:
             self.exe()
@@ -629,6 +674,13 @@ class FlowWindow(BalWindow):
         """The Check Alive "Renew / Not now" question (#79)."""
         return self.user.answer("renew", text)
 
+    def ask_deliveries(self, text):
+        """The question "Open the table of the deliveries now?" (#170):
+        recorded as a popup; the scripted owner answers No, so the window
+        of the table (a real dialog) is not opened by the flows."""
+        self.popups.append(["question", strip(text)])
+        return False
+
     def ask_delivery_choice(self, parent=None):
         """The "which date?" question (#123): the scripted owner answers.
 
@@ -745,6 +797,12 @@ class FlowDialog(BalBuildWillDialog):
     # The three button rows: the logic before the widgets (guard, report
     # actions, final report) is the real one, copied line by line; only the
     # widgets are replaced by an event.
+
+    def _show_instructions(self, message):
+        """The message with "Copy the instructions" (#227): recorded as a
+        popup, like Electrum's message."""
+        self.bal_window.popups.append(["message", strip(message)])
+        self.events.append("instructions-message")
 
     def _add_close_button(self):
         """The Close / Calendar / Will report row (dialogs.py)."""
@@ -945,6 +1003,7 @@ class Session:
         self.user = User(password)
         # Electrum's password window lives on the Qt Plugin object.
         self.plugin.password_dialog = self.user.password_dialog
+        self.plugin.signing_warning_dialog = self.user.signing_warning_dialog
         legacy = legacy_global is not None or legacy_wallet is not None
         self._open_window(locktime, fee, threshold, seed=not legacy,
                           legacy_wallet=legacy_wallet, plugin_data=True,
@@ -1063,6 +1122,7 @@ class Session:
     def activate(self):
         """Point the shared plugin's password window at this wallet's owner."""
         self.plugin.password_dialog = self.user.password_dialog
+        self.plugin.signing_warning_dialog = self.user.signing_warning_dialog
 
     # The owner's actions ------------------------------------------------
 
@@ -1115,6 +1175,14 @@ class Session:
             self.bw.heirs[name] = [HEIR_ADDR[name], amount,
                                    self.bw.will_settings["locktime"]]
 
+    def set_instalments(self, *rows):
+        """Store a table of deliveries (#168): ``(date, {name: share})``
+        rows, through the engine's one validated write
+        (``context.set_instalments``: 2-3 dates, 28 days apart, shares of the
+        whole estate adding up to 100 %). Returns the table as stored."""
+        return engine_context.set_instalments(
+            self.bw, [{"locktime": d, "shares": dict(sh)} for d, sh in rows])
+
     def check(self, cancel_on=(), renew=False, closing=False, until_idle=True):
         """Press "Check your will" and let the dialog run to its end."""
         pushed_before = self._begin(cancel_on)
@@ -1145,6 +1213,7 @@ class Session:
         """Clear the per-Check records; return the number of pushes so far."""
         self.user.cancel_on = set(cancel_on)
         self.user.asked = []
+        self.user.warned = []
         self.bw.popups = []
         self.bw.events = []
         self.bw.opened_dialogs = []

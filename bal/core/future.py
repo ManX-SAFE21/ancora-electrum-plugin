@@ -42,12 +42,18 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from ..i18n import _
+from . import datetext, will_versions
 from . import delivery as _delivery
-from . import will_versions
 from .checkalive import check_alive_basic, check_alive_renewal, resolve_date_to_check
 from .heirs import HEIR_ADDRESS, HEIR_REAL_AMOUNT, is_op_return_address
 from .messages import _day, months_text
-from .summary import _executors_row, delivery_warning, executor_counts, executor_states
+from .summary import (
+    _executors_row,
+    delivery_warning,
+    executor_counts,
+    executor_states,
+    same_utc_day,
+)
 
 _DAY = 86400
 
@@ -138,12 +144,23 @@ class Future:
         return self.deliveries[0].locktime if self.deliveries else None
 
 
-def delivery_form_text(form, months=None):
+def delivery_form_text(form, months=None, locktimes=()):
     """``"Fixed date"`` or ``"Period (renewable) — 24 months (2 years)"`` (#132).
 
     The #127 msgids of the delivery form and ``messages.months_text``; a
     period form whose N cannot be read says only "Period (renewable)".
+
+    #191: ``locktimes``, the dates of the deliveries of the will in force.
+    With more than one it is the will in several deliveries, nicknamed
+    "Multiverse" by the owner: ``"Multiverse — 3 deliveries: 29 Mar 2032,
+    29 Mar 2033, 29 Mar 2034"``. WHY: the settings' form of such a will is
+    "fixed", so the PDF and the Will tab said "Fixed date" for a will in
+    three deliveries. The short UTC day, the will's own day, as elsewhere.
     """
+    if len(locktimes) > 1:
+        return "{} — {}: {}".format(
+            _("Multiverse"), _("{} deliveries").format(len(locktimes)),
+            ", ".join(datetext.utc_day(ts, short=True) for ts in locktimes))
     if form != _delivery.FORM_PERIOD:
         return _("Fixed date")
     text = _("Period (renewable)")
@@ -205,13 +222,14 @@ def time_left_text(ts, now):
     """``"(in 4 months and 14 days)"``, ``"(passed 3 days ago)"`` or ``"(today)"``.
 
     The bracketed msgids of the will summary (``summary.relative_date``),
-    with :func:`span_text` inside.
+    with :func:`span_text` inside. Another UTC day less than 24 hours away
+    counts as 1 day (never "0 days").
     """
-    if abs(ts - now) < _DAY:
+    if same_utc_day(ts, now):
         return _("(today)")
     if ts > now:
-        return _("(in {})").format(span_text(now, ts))
-    return _("(passed {} ago)").format(span_text(ts, now))
+        return _("(in {})").format(span_text(now, max(ts, now + _DAY)))
+    return _("(passed {} ago)").format(span_text(min(ts, now - _DAY), now))
 
 
 def _flag(item, name):
@@ -242,7 +260,8 @@ def _instalment(item):
     address, the resolved amount stored with the heir
     (``HEIR_REAL_AMOUNT``, the value ``prepare_transactions`` put in that
     output). Below the dust limit (stored as ``"DUST: n"``): no amount.
-    OP_RETURN messages and the will-executor's fee are left out.
+    OP_RETURN messages and the will-executor's fee are left out. The name is
+    the person's (#168: "Luca" for the row "Luca§2" of a later delivery).
     """
     paid = _paid_by_address(item)
     rows = []
@@ -261,7 +280,8 @@ def _instalment(item):
             stored = int(row[HEIR_REAL_AMOUNT])
         except (TypeError, ValueError):
             stored = None
-        rows.append([str(name), address, stored])
+        # #168: the person, never the row of a later delivery ("Luca§2").
+        rows.append([_delivery.person_name(name), address, stored])
     addresses = [address for _n, address, _s in rows]
     heirs = []
     for name, address, stored in sorted(rows):

@@ -35,6 +35,7 @@ from bal.engine.ui import CheckRun, Step
 from bal.gui.qt.dialogs import BalBuildWillDialog
 from bal.gui.qt.flow_adapter import (
     CHOOSE_DATE,
+    REST_CANCELLED,
     SETTINGS_UNAVAILABLE,
     DialogFlowUI,
     DialogRun,
@@ -109,6 +110,9 @@ STATES = {
         "warn", {"warnings": ["Check Alive passed"]}),
     "stopped": ("Checking variables:\t<font color=#ff0000><b>Stopped</b></font>",
                 "err", {}),
+    # #204: a stop the owner chose: amber, and the box does not repeat the word.
+    "held": ("Checking variables:	<font color=#cfa808><b>Stopped</b></font>",
+             "warn", {}),
     "no_heirs": ("Checking variables:\t<b><font color='#cfa808'>&#9888;</font> "
                  "<b>No Heirs</b></b>", "warn", {"warnings": ["No Heirs"]}),
     "check_alive_before_delivery": (
@@ -161,6 +165,10 @@ def _notes():
         # CHANGELOG #123, fail closed: no data, the text is the adapter's.
         "delivery_settings_unavailable": ({}, ("error", SETTINGS_UNAVAILABLE),
                                           "problems"),
+        # #201: a state the owner chose, not an error: the amber sign.
+        "delivery_rest_cancelled": ({"executed": 2},
+                                    ("alert", REST_CANCELLED.format(2)),
+                                    "warnings"),
     }
 
 

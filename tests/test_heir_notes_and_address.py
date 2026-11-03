@@ -176,13 +176,14 @@ def test_note_help_and_length_cap(make, monkeypatch):
             "heir's wallet. Not an xpub/zpub.") in seen["texts"]
     from bal.gui.qt import window as window_mod
     helps = []
-    real = window_mod.HelpButton
+    # #198: every "?" is made by common.help_button (Electrum 4.8.3).
+    real = window_mod.help_button
 
     def spy(text, *a, **k):
         helps.append(text)
         return real(text, *a, **k)
 
-    monkeypatch.setattr(window_mod, "HelpButton", spy)
+    monkeypatch.setattr(window_mod, "help_button", spy)
     dialog(monkeypatch, note="ok")
     rbw.new_heir_dialog("bob")
     # #139: the amount's "?" is made before the others (the OP_RETURN

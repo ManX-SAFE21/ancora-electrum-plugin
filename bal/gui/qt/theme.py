@@ -32,20 +32,31 @@ _STATUS_COLOR_PRIORITY = (
 # Default colour used when no status in the priority list matches.
 _DEFAULT_COLOR = "#ffffff"
 
+# #178 (owner): a copy of the will in force held by an EXCLUDED
+# will-executor (deselected after it received the will): grey, as
+# "excluded" in the Check window; the teal of "to be verified" would be
+# wrong, nobody asks it any more. Lighter than the executed grey and darker
+# than the column header row.
+EXCLUDED_COLOR = "#d6d6d6"
 
-def status_color(will_item, in_force=False) -> str:
+
+def status_color(will_item, in_force=False, excluded=False) -> str:
     """Return the display colour (``"#rrggbb"``) for a :class:`WillItem`.
 
     ``in_force`` (CHANGELOG #129): the item belongs to the will in force
     (``will_state.IN_FORCE``). A later unsigned draft marks the sent will
     REPLACED (#128 keeps it in force): its row then takes the colour of
     where its will-executor stands, not the pink of a replaced item.
+    ``excluded`` (#178): a copy of the will in force held by an excluded
+    will-executor (``summary.is_excluded``): :data:`EXCLUDED_COLOR`.
 
     This is a faithful, behaviour-preserving port of the old
     ``WillItem.get_color()`` method.  The slightly irregular handling of the
     push/check states (which is not a simple priority list) is reproduced
     exactly as in the original code.
     """
+    if in_force and excluded:
+        return EXCLUDED_COLOR
     # First, the simple priority-ordered statuses.
     for status, color in _STATUS_COLOR_PRIORITY:
         if in_force and status in ("REPLACED", "UPDATED"):
@@ -88,12 +99,15 @@ def signature_suffix(will_item) -> str:
     return " ({}/{})".format(added, required)
 
 
-def will_status_text(will_item, in_force=False) -> str:
+def will_status_text(will_item, in_force=False, excluded=False) -> str:
     """What this row is for the will TODAY, in plain words (CHANGELOG #83).
 
     ``in_force`` (CHANGELOG #129): see :func:`status_color`; the REPLACED /
     UPDATED flags (and the VALID flag they clear) are not read, so a copy
-    of the will in force says "In force, verified" and so on.
+    of the will in force says "In force, verified" and so on. ``excluded``
+    (#178): a copy of the will in force held by an excluded will-executor
+    says "In force, excluded" (it is no longer verified; before, "In
+    force, to be verified" for ever).
 
     Each row of the transaction list is the copy of the will held by ONE
     will-executor, and its colour (:func:`status_color`) tells where that
@@ -108,6 +122,8 @@ def will_status_text(will_item, in_force=False) -> str:
     from ...core.will_state import is_draft
     from ...i18n import _
 
+    if in_force and excluded:
+        return _("In force, excluded")
     if will_item.get_status("INVALIDATED"):
         return _("Invalidated on-chain")
     if not in_force and (

@@ -254,6 +254,9 @@ class BalPlugin(BasePlugin):
         self.LOCKTIMEDELTA_BLOCKS = BalConfig(
             config, "bal_locktimedelta_blocks", 144 * 7
         )
+        # BAL's hidden global option (each heir its own date). Kept defined
+        # (BAL's key) but no longer read: #168 (D7) replaced it with the
+        # per-wallet table of deliveries.
         self.ENABLE_MULTIVERSE = BalConfig(config, "bal_enable_multiverse", False)
         self.TX_FEES = BalConfig(config, "bal_tx_fees", 100)
         self.INVALIDATE = BalConfig(config, "bal_invalidate", True)

@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from electrum.transaction import Transaction
@@ -46,9 +48,29 @@ from bal.gui.qt.window import BalWindow
 _app = QApplication.instance() or QApplication(sys.argv)
 
 DAY = 86400
-TODAY = int(datetime.now(tz=timezone.utc).replace(
-    hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+
+def _midnight_today():
+    """Today at midnight UTC, as a timestamp."""
+    return int(datetime.now(tz=timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+
+TODAY = _midnight_today()
 D = TODAY + 400 * DAY            # a fixed delivery date (midnight UTC)
+
+
+@pytest.fixture(autouse=True)
+def _today_per_test():
+    """Compute TODAY (and D) again when each test starts.
+
+    #189: computed once when the file was loaded, they went stale when the
+    whole suite crossed midnight UTC before this file ran (the reverse
+    order), and the field, which reads the real clock, was one day ahead.
+    """
+    global TODAY, D
+    TODAY = _midnight_today()
+    D = TODAY + 400 * DAY
 
 # WillItem parses a raw tx and calls add_info_from_wallet; no live wallet here.
 _patcher = patch.object(Transaction, "add_info_from_wallet")

@@ -91,7 +91,7 @@ def _row():
 
 def test_wizard_on_the_left_check_before_the_calendar():
     """#161 (owner): the Wizard on the left, then the settings; on the
-    right the Check ("Verifica/Aggiorna" in Italian) just before the
+    right the Check ("Controlla" in Italian) just before the
     calendar. No "Sign the will offline" button any more (it is in the
     Tools menus)."""
     host, settings, widgets = _row()
@@ -253,25 +253,31 @@ def test_tools_menu_order_and_offline_entry():
     """#161 (owner): the Will tab's Tools menu in the owner's order: the
     commands of the will as they are used, then the others; under the line
     the offline route, the calendar reminders and the report; #162: "How
-    BAL PROTOCOL works" last. The offline entry opens the window (on the
-    step to make now, by itself); the last one opens the explainer."""
+    BAL PROTOCOL works"; #173: under one more line, "CLI command trace…"
+    last. The offline entry opens the window (on the step to make now, by
+    itself); the explainer and the trace open their windows."""
     host, _settings, _widgets = _row()
     texts = [a.text() if not a.isSeparator() else "--"
              for a in host.menu.actions()]
-    assert texts[:-2] == [
+    assert texts[:-4] == [
         _("Prepare"), _("Sign"), _("Broadcast will"), _("Check"),
         _("Invalidate will"), _("Display"), _("Export"), _("Import"),
-        _("Merge"), "--", _("Sign the will offline…"),
+        _("Merge"), _("Inheritance in several deliveries (Multiverse)…"), "--",
+        _("Sign the will offline…"),
         _("Calendar reminders")]
-    # Then the report's submenu (``report_menu``) and the explainer.
-    assert host.menu.actions()[-2].menu() is not None
-    assert texts[-1] == _("How BAL PROTOCOL works")
+    # Then the report's submenu (``report_menu``), the explainer, a line
+    # and the trace (#173).
+    assert host.menu.actions()[-4].menu() is not None
+    assert texts[-3:] == [_("How BAL PROTOCOL works"), "--",
+                          _("CLI command trace…")]
     entry = next(a for a in host.menu.actions()
                  if a.text() == _("Sign the will offline…"))
     entry.trigger()
     host.bal_window.show_offline_sign_dialog.assert_called_once_with()
-    host.menu.actions()[-1].trigger()
+    host.menu.actions()[-3].trigger()
     host.bal_window.show_explainer.assert_called_once_with()
+    host.menu.actions()[-1].trigger()
+    host.bal_window.show_trace.assert_called_once_with()
 
 
 def test_advanced_uses_two_rows_packed_to_the_left():

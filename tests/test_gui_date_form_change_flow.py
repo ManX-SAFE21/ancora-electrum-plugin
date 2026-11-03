@@ -14,11 +14,12 @@ signed, sent and verified. The messages after a rebuild follow what is
 really left to do (Prepare, command line).
 
 Since CHANGELOG #123 the delivery setting is always a date: a period is
-refused (the validated write, the hidden Raw/Date selector), and without
-multiverse every heir gets the wallet's date at each Check. So the #122
-flows below reach the same will state through the heirs: with multiverse
-on, each heir keeps its own delivery, which may still be the period giving
-the will's day (written straight into the heirs). The rebuild, the rule
+refused (the validated write, the hidden Raw/Date selector), and every
+heir gets the wallet's date at each Check. So the #122 flows below reach
+the same will state through the heirs: each heir keeps its own delivery,
+the period giving the will's day, written straight into the heirs (BAL's
+hidden multiverse option did that until #168; now the test leaves the
+heirs' dates alone itself). The rebuild, the rule
 and what the owner sees are the same as in the owner's case. Two tests
 cover #123 itself: the period refused as delivery setting, and the owner's
 state from before #123 (the will kept by #122 carries the period) found in
@@ -117,7 +118,8 @@ def _with_recipe(heir, recipe):
 
 
 def _heirs_get(s, recipe):
-    """Write ``recipe`` as every heir's own delivery (multiverse on)."""
+    """Write ``recipe`` as every heir's own delivery (see
+    :func:`_to_equal_period`)."""
     for name in list(s.bw.heirs):
         s.bw.heirs[name] = _with_recipe(s.bw.heirs[name], recipe)
 
@@ -127,9 +129,9 @@ def _to_equal_period(s):
 
     The owner did it with the delivery setting before #123; since #123 the
     setting refuses a period (see
-    :func:`test_the_equal_period_cannot_be_stored_any_more`). With
-    multiverse on, each heir keeps its own delivery (``init_class_variables``
-    leaves it), so the period is written into the heirs: the will state and
+    :func:`test_the_equal_period_cannot_be_stored_any_more`). Each heir
+    keeps its own delivery (``init_class_variables`` leaves it: see the
+    code), so the period is written into the heirs: the will state and
     the rebuild are the owner's.
 
     Returns the period, the VALID txids and their signed transactions.
@@ -137,7 +139,11 @@ def _to_equal_period(s):
     valid = _valid(s)
     assert valid and all(w.get_status(flag) for w in valid.values() for flag in SENT)
     period = _period_giving(s, Will.get_min_locktime(s.bw.willitems))
-    s.plugin.ENABLE_MULTIVERSE.set(True)
+    # #168 (D7): BAL's global option, which let each heir keep its own
+    # delivery, is no longer read; the per-heir period is kept the same way
+    # it did, by leaving the heirs' dates alone at every flow.
+    s.monkeypatch.setattr(context, "init_heirs_to_locktime",
+                          lambda host, multiverse=False: None)
     _heirs_get(s, period)
     return period, set(valid), {wid: str(w.tx) for wid, w in valid.items()}
 
@@ -389,7 +395,7 @@ def test_a_later_period_still_invalidates(flow_session):
     """A real postpone after the period was written: the Check still asks
     to invalidate the old will (paid, on-chain) and sends a later will.
     Since #123 the later period is refused as delivery setting; it is an
-    heir's own delivery (multiverse)."""
+    heir's own delivery (see :func:`_to_equal_period`)."""
     s = _sent_will(flow_session, "basic", 2)
     period, txids, _raw = _to_equal_period(s)
     s.check()

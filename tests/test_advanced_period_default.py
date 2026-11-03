@@ -159,6 +159,7 @@ def test_the_engine_passes_the_mode_to_the_migration():
 
 # ------------------------------------------------------------ the wizard
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_switching_to_advanced_preselects_the_period(make, monkeypatch, phrase):
     """BASIC, no will: ADVANCED in the wizard gives the period form with N =
     the whole months to the stored date; "Fixed date" can still be chosen;
@@ -204,9 +205,12 @@ def test_a_will_in_force_keeps_its_fixed_date(make, monkeypatch, phrase):
 
 
 def test_multiverse_keeps_the_fixed_date_in_the_wizard(make, monkeypatch, phrase):
-    """Multiverse on: ADVANCED in the wizard keeps the fixed date."""
+    """A table of deliveries (#168; BAL's global multiverse option before):
+    ADVANCED in the wizard keeps the fixed date."""
     s = make(mode="basic")
-    s.plugin.ENABLE_MULTIVERSE.set(True)
+    date = dv.as_delivery(settings_of(s)["locktime"])
+    s.set_instalments((date, {"alice": "60%", "bob": "0%"}),
+                      (date + 365 * 86400, {"alice": "0%", "bob": "40%"}))
     bw = real_window(s, monkeypatch)
     box = wizard_page(bw).form_box
     box.mode_combo.setCurrentIndex(1)
@@ -224,6 +228,7 @@ def qt_plugin(s, monkeypatch, bw):
                         raising=False)
 
 
+@pytest.mark.usefixtures("yes_to_basic")
 def test_settings_switch_on_a_wallet_never_checked(make, monkeypatch, phrase, caplog):
     """The owner's ZIP test (2026-10-15): a new wallet in BASIC, never
     checked, then ADVANCED from the plugin Settings: the period form, and
@@ -275,7 +280,8 @@ def test_will_tab_rows_fee_on_top_and_the_whole_check_alive_sentence(make, monke
     )
     assert first == [w["locktime"], w["baltx_fees"]] and second == [w["threshold"]]
     hint = w["threshold"].hint
-    assert hint.text().endswith(" →") and "(≈ " in hint.text()
+    # #191: one label "before the delivery → <date>", months in the tooltip.
+    assert "before the delivery →" in hint.text() and "(≈ " in hint.toolTip()
     assert hint.minimumWidth() == hint.sizeHint().width() > 0
 
 

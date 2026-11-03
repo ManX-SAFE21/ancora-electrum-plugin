@@ -47,11 +47,13 @@ def test_the_names():
 
 
 def test_manifest_name_icon_and_description():
-    """Electrum's plugin list shows the full name, the anchor icon and the
-    English description, which starts with the Italian slogan."""
+    """Electrum's plugin list and plugin dialog show the full name, the icon
+    and the English description, which starts with the Italian slogan (#199:
+    the "à" icon on its white rounded square, the same as the plugin's
+    windows; Electrum uses one icon for both places)."""
     m = _manifest()
     assert m["fullname"] == brand.FULLNAME
-    assert m["icon"] == "icons/ancora-icon-light-128.png"
+    assert m["icon"] == "icons/ancora-icon-128.png"
     assert os.path.isfile(os.path.join(BAL, m["icon"]))
     assert m["description"].startswith(brand.SLOGAN + " " + brand.NAME + " builds")
     assert "Heartbeat" not in m["fullname"] + m["description"].split(".")[0]
@@ -75,7 +77,7 @@ def test_every_icon_the_code_reads_is_shipped():
             if name.endswith((".py", ".json")):
                 with open(os.path.join(folder, name), encoding="utf-8") as f:
                     names.update(re.findall(r"icons/([\w.-]+\.png)", f.read()))
-    assert {"ancora-icon-light-16.png", "ancora-icon-light-64.png", "ancora-icon-light-128.png",
+    assert {"ancora-icon-16.png", "ancora-icon-64.png", "ancora-icon-128.png",
             "ancora-lockup.png"} <= names
     for name in names:
         assert os.path.isfile(os.path.join(BAL, "icons", name)), name
@@ -92,3 +94,32 @@ def test_the_name_is_never_translated():
         for m in _catalog(path):
             if m.id in CALENDAR_MSGIDS and m.string:
                 assert m.string.startswith(brand.NAME), (path, m.string)
+
+
+def test_the_icon_is_the_a_on_a_white_rounded_square():
+    """#199 (owner): the plugin's icon is the "à" with its two teal accents on
+    a white square with rounded corners, so that it stands out on a dark
+    theme too: square, transparent corners, white edge, ink and teal inside."""
+    from PyQt6.QtGui import QImage
+
+    for size in (16, 64, 128):
+        image = QImage(os.path.join(BAL, "icons", "ancora-icon-%d.png" % size))
+        assert (image.width(), image.height()) == (size, size), size
+        assert image.pixelColor(0, 0).alpha() == 0                 # rounded corner
+        assert image.pixelColor(size - 1, size - 1).alpha() == 0
+        assert near(image.pixelColor(size // 2, 0), "#FFFFFF")     # white edge, top
+        assert near(image.pixelColor(1, size // 2), "#FFFFFF")     # white edge, left
+        pixels = [image.pixelColor(x, y) for y in range(size) for x in range(size)]
+        assert sum(near(p, "#0F1113") for p in pixels) > size * size * 0.08, size  # the "a"
+        if size >= 64:                                             # the accents
+            assert sum(near(p, "#29AE9F") for p in pixels) > size * size * 0.02, size
+
+
+def near(colour, hex_colour):
+    """True when ``colour`` is close to ``hex_colour`` and opaque."""
+    from PyQt6.QtGui import QColor
+
+    want = QColor(hex_colour)
+    return colour.alpha() > 200 and all(abs(a - b) < 40 for a, b in (
+        (colour.red(), want.red()), (colour.green(), want.green()),
+        (colour.blue(), want.blue())))

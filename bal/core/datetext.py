@@ -86,6 +86,13 @@ def local_text(ts, tz=None):
     return moment_text(wizard_date.local_moment(ts, tz))
 
 
+def local_short(ts, tz=None):
+    """``"13 Oct 2028, 02:00"``: ``ts`` in zone ``tz`` (None: the
+    computer's), the short form (#182: the verification times, which must
+    fit next to the "Exclude" button)."""
+    return moment_text(wizard_date.local_moment(ts, tz), short=True)
+
+
 def local_line(ts, tz=None):
     """``"In your time zone: 13 October 2028, 02:00"``: the optional second
     line under a long date."""

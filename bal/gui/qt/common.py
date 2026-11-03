@@ -10,12 +10,15 @@ hosts a few GUI helpers that do not deserve a module of their own:
 
     * :class:`shown_cv`       - trivial mutable "is this tab shown?" holder.
     * :func:`add_widget`      - add a labelled widget (plus optional help) to a grid.
+    * :func:`rich_text`       - mark a label that shows the plugin's own HTML.
+    * :func:`help_button`     - Electrum's "?" button, HTML help on 4.8.2 and 4.8.3.
     * :func:`log_error`       - format an exception traceback for a dialog.
     * :func:`export_meta_gui` - export plugin metadata to a JSON file.
       (:class:`CheckAliveError` now lives in ``bal.core.checkalive``.)
 """
 
 import enum
+import inspect
 import os
 import subprocess
 import tempfile
@@ -93,6 +96,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -112,6 +116,7 @@ from ...core.heirs import (
     HEIR_REAL_AMOUNT,
     OP_RETURN_PREFIX,
     BalanceTooLowException,
+    DeliveriesNotFundedException,
     HeirAmountIsDustException,
     Heirs,
     WillExecutorFeeTooHighException,
@@ -130,8 +135,10 @@ from ...core.will import (
     NoHeirsException,
     NotCompleteWillException,
     NoWillExecutorNotPresent,
+    StagedWillRemovedException,
     TxFeesChangedException,
     Will,
+    WillChainError,
     WillexecutorChangeException,
     WillExecutorNotPresent,
     WillExpiredException,
@@ -200,7 +207,43 @@ def add_widget(grid, label, widget, row, help_):
     """
     grid.addWidget(QLabel(label), row, 0)
     grid.addWidget(widget, row, 1)
-    grid.addWidget(HelpButton(help_), row, 2)
+    grid.addWidget(help_button(help_), row, 2)
+
+
+def rich_text(label):
+    """Mark ``label`` as rich text (HTML) and return it.
+
+    For a label that shows HTML the plugin builds itself (``<b>``, ``<br>``,
+    colours, escaped entities such as ``&amp;``), with the untrusted parts
+    (names, addresses, server texts) escaped by the caller.
+
+    WHY: Electrum 4.8.3 (its #10972, security) shows every QLabel left on
+    the default AutoText as plain text, so without this the tags appear as
+    they are. Saying RichText explicitly works the same on 4.8.2. It also
+    renders the escaped entities, which AutoText showed raw when the text
+    had no tag (an "&amp;" in a name).
+    """
+    label.setTextFormat(Qt.TextFormat.RichText)
+    return label
+
+
+# Electrum 4.8.3 added ``rich_text`` to HelpButton (default False: plain
+# help); 4.8.2 has no such argument and always showed the help as AutoText.
+_HELP_BUTTON_RICH = "rich_text" in inspect.signature(HelpButton.__init__).parameters
+
+
+def help_button(text):
+    """Electrum's "?" button with ``text`` as its help (already translated).
+
+    WHY: on 4.8.3 the help is plain text unless ``rich_text=True`` is passed,
+    so the plugin's HTML help showed its tags; 4.8.2 refuses the argument.
+    It is passed only on 4.8.3 and only for a text that looks like HTML
+    (the test 4.8.2 used): a plain help keeps its "\\n" line breaks, which
+    rich text would join.
+    """
+    if _HELP_BUTTON_RICH and Qt.mightBeRichText(text):
+        return HelpButton(text, rich_text=True)
+    return HelpButton(text)
 
 
 
@@ -221,19 +264,82 @@ def confirm_advanced_mode(parent=None):
     return bool(ok) and text.strip().lower() == "at my risk"
 
 
+def confirm_basic_mode(parent=None):
+    """Ask "Go back to BASIC mode?" (Yes / No, No by default); True on Yes.
+
+    #174 (owner, 2026-10-21): in the Settings dialog, a turn of the mouse
+    wheel or a wrong click put ADVANCED back to BASIC without a word, and
+    the advanced tools disappeared. Leaving ADVANCED now asks first. Shared
+    by the Settings dialog, its reset buttons and the wizard's mode
+    selector (through :func:`switch_user_type`).
+    """
+    return ask_yes_no(
+        parent,
+        _("Go back to BASIC mode? The advanced tools will be hidden. "
+          "The will does not change."),
+        _("BASIC mode"),
+    )
+
+
+def ask_yes_no(parent, text, title=""):
+    """A Yes / No question with translated buttons; True on Yes.
+
+    No is the default button and the Esc key, so nothing changes by mistake.
+
+    #189 (owner): Qt's standard Yes / No buttons (Electrum's ``question``)
+    stayed in English, because Electrum loads no Qt translation; buttons
+    added with their own ``_()`` text are translated by the plugin's
+    catalogs. Used by every Yes / No question of the plugin.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(title or "")
+    box.setText(text)
+    yes = box.addButton(_("Yes"), QMessageBox.ButtonRole.YesRole)
+    no = box.addButton(_("No"), QMessageBox.ButtonRole.NoRole)
+    box.setDefaultButton(no)
+    box.setEscapeButton(no)
+    box.exec()
+    return box.clickedButton() is yes
+
+
+def is_advanced_mode(plugin):
+    """True when the stored mode (``USER_TYPE``) is ADVANCED."""
+    return str(plugin.USER_TYPE.get()).lower() == "advanced"
+
+
+class NoWheelComboBox(QComboBox):
+    """A combo box that the mouse wheel does not change (#174).
+
+    Scrolling the Settings dialog with the pointer over the "User type" box
+    changed the mode by mistake. The wheel event is ignored, so it goes to
+    the parent (the dialog scrolls instead); a click or the keyboard still
+    change the value.
+    """
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt name
+        """Leave the wheel to the parent widget."""
+        event.ignore()
+
+
 def switch_user_type(plugin, advanced, parent=None):
     """Set the plugin mode (``USER_TYPE``, every wallet); True when set as asked.
 
     ``advanced``: True for ADVANCED, which needs :func:`confirm_advanced_mode`
     first; when it is not confirmed the mode is set to BASIC and False is
-    returned (the caller puts its selector back). Switching to BASIC needs no
-    confirmation. Then the open windows follow at once: the per-mode editor
+    returned (the caller puts its selector back, on the mode in force:
+    :func:`is_advanced_mode`). #174: leaving ADVANCED for BASIC asks
+    :func:`confirm_basic_mode` first; on No nothing changes (ADVANCED stays,
+    the windows are not touched) and False is returned. From BASIC to BASIC
+    nothing is asked. Then the open windows follow at once: the per-mode editor
     default of the toolbars (``_apply_editor_default_on_toolbars``, only on
     a real change) and ``update_all``, when the plugin has them (the Qt
     ``Plugin``; a test plugin may not). Before them, the delivery form of
     every open wallet follows the mode (``context.follow_mode``, #146). One function for the Settings dialog
     and the wizard (#127), so both behave the same.
     """
+    if not advanced and is_advanced_mode(plugin) and not confirm_basic_mode(parent):
+        return False
     confirmed = (not advanced) or confirm_advanced_mode(parent)
     plugin.USER_TYPE.set("advanced" if (advanced and confirmed) else "basic")
     # #146 (owner): the delivery form of every open wallet follows the mode

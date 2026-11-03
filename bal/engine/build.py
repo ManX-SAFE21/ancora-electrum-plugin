@@ -27,11 +27,18 @@ import time
 
 from electrum.logging import get_logger
 
+from ..core import trace
 from ..core.checkalive import resolve_date_to_check
-from ..core.util import Util, copy_structure
+from ..core.heirs import (
+    BalanceTooLowException,
+    DeliveriesNotFundedException,
+    HeirAmountIsDustException,
+)
+from ..core.util import LOCKTIME_THRESHOLD, Util, copy_structure
 from ..core.will import NoWillExecutorNotPresent, Will, WillItem
 from ..core.willexecutors import Willexecutors
-from . import context
+from ..i18n import _
+from . import context, instalments
 
 _logger = get_logger(__name__)
 
@@ -58,7 +65,10 @@ def build_will(host, *, with_creation_date):
     3. refresh the will-executors and raise ``NoWillExecutorNotPresent`` when
        none is selected and valid (unless the user is their own executor);
     4. build the transactions with ``Heirs.get_transactions`` against
-       ``date_to_check`` and the coins the will can use;
+       ``date_to_check`` and the coins the will can use. With a table of
+       deliveries (#168) on the rows of every delivery
+       (:func:`bal.engine.instalments.effective_heirs`): the chain of up to
+       three deliveries, each spending the change of the one before;
     5. wrap each one in a ``WillItem`` (same creation time for all) and merge
        them into ``host.willitems`` (``Will.update_will`` drops the unsigned
        drafts, anticipates against the will in force and reuses or brings
@@ -67,13 +77,54 @@ def build_will(host, *, with_creation_date):
 
     Returns ``host.willitems`` (the whole live will), or ``{}`` when nothing
     was built. Exceptions are logged and raised again.
+
+    #173: the command trace gets ``bal_will_prepare`` and what was built
+    (:func:`_trace_built`), or the error.
     """
+    trace.command("bal_will_prepare")
+    try:
+        built = _build_will(host, with_creation_date=with_creation_date)
+    except Exception as e:
+        trace.add(trace.ERROR, _("not prepared: {}").format(trace.reason(e)))
+        raise
+    _trace_built(built)
+    return built
+
+
+def _trace_built(built):
+    """Write what :func:`build_will` built in the command trace (#173).
+
+    The valid transactions of the will and its first delivery date (UTC),
+    or that nothing was built. Never raises: a trace line must not stop
+    the build.
+    """
+    try:
+        valid = [w for w in built.values() if w.get_status("VALID")]
+        if not valid:
+            trace.add(trace.WARNING, _("no transaction built"))
+            return
+        locktime = Will.get_min_locktime(built)
+        if locktime and locktime >= LOCKTIME_THRESHOLD:
+            when = context.utc_day_text(locktime)
+        else:
+            when = _("block {}").format(locktime)
+        trace.add(trace.OK, _("{count} transactions in the will, delivery {date}").format(
+            count=len(valid), date=when))
+    except Exception as e:
+        _logger.debug(f"trace of the build failed: {e!r}")
+
+
+def _build_will(host, *, with_creation_date):
+    """The steps of :func:`build_will` (see its docstring)."""
     _logger.debug("building will...")
     Will.remove_stale_wallet_history(
         host.wallet, host.bal_plugin.HISTORY_LABEL.get()
     )
+    # #168: with a table of deliveries the build gets the rows of every
+    # delivery (in memory only); without one, host.heirs itself.
+    heirs = instalments.effective_heirs(host)
     new_locktime = min(
-        (Util.parse_locktime_string(h[2]) for h in host.heirs.values()),
+        (Util.parse_locktime_string(h[2]) for h in heirs.values()),
         default=None,
     )
     if new_locktime:
@@ -110,14 +161,18 @@ def build_will(host, *, with_creation_date):
         # current mode (the Check Alive in ADVANCED, "now" in BASIC). The
         # available-UTXO view restores coins that a newer, wallet-local will
         # tx (stored in the history with a later locktime) nominally spent.
-        txs = _transactions(host)
+        txs = _every_delivery_funded(host, heirs)
+        if heirs is not host.heirs:
+            # The reason of a build with no transaction is read from
+            # host.heirs by the front-ends.
+            host.heirs.last_build_error = heirs.last_build_error
         _logger.info(f"txs built: {txs}")
         creation_time = time.time()
         if not txs:
             _logger.info("No transactions was built")
             _logger.info(f"will-settings: {host.will_settings}")
             _logger.info(f"date_to_check:{host.date_to_check}")
-            _logger.info(f"heirs: {host.heirs}")
+            _logger.info(f"heirs: {heirs}")
             return {}
         for txid in txs:
             tx = {}
@@ -151,8 +206,58 @@ def build_will(host, *, with_creation_date):
     return host.willitems
 
 
-def _transactions(host):
+def _every_delivery_funded(host, heirs):
+    """:func:`_transactions`, refused when a delivery of the table is not paid.
+
+    #211 (owner, 2026-11-02): when the funds cannot pay every delivery with
+    its fees the will is refused, with what to do. Before, a delivery that
+    could not be built just was not there: the owner signed fewer deliveries
+    than the table says, and the rest stayed in the wallet. A delivery goes
+    missing in two ways: the build of a later delivery stops
+    (``BalanceTooLowException``, or all its shares are dust), or one delivery
+    leaves no change for the next one and nothing is raised, so the chain is
+    read too. Nothing is changed in the will: this runs before
+    ``Will.update_will``.
+
+    Raises :class:`bal.core.heirs.DeliveriesNotFundedException`. A will
+    without a table, or with one delivery left, behaves as before.
+    """
+    dates = heirs.get_locktimes(host.date_to_check)
+    if heirs is host.heirs or len(dates) < 2:
+        return _transactions(host, heirs)
+    balance = sum(u.value_sats() for u in context.available_utxos(host))
+    try:
+        txs = _transactions(host, heirs)
+    except (BalanceTooLowException, HeirAmountIsDustException) as e:
+        _logger.info(f"a delivery cannot be paid: {e}")
+        raise DeliveriesNotFundedException(balance, len(dates)) from e
+    if txs and not _chain_complete(txs, dates):
+        _logger.info(f"a delivery is missing, build error: {heirs.last_build_error}")
+        raise DeliveriesNotFundedException(balance, len(dates))
+    return txs
+
+
+def _chain_complete(txs, dates):
+    """True when every copy leads to every delivery in ``dates``.
+
+    ``txs``: ``{txid: tx}``. All the dates are there, and every copy but
+    those of the last date has a copy spending its change. One will-executor's
+    higher fee can end its chain alone, so the dates alone are not enough.
+    """
+    last = max(dates)
+    if not set(dates) <= {tx.my_locktime for tx in txs.values()}:
+        return False
+    parents = {txin.prevout.txid.hex() for tx in txs.values() for txin in tx.inputs()}
+    return all(
+        tx.my_locktime == last or txid in parents for txid, tx in txs.items()
+    )
+
+
+def _transactions(host, heirs):
     """Build the will's transactions for ``build_will`` (step 4).
+
+    ``heirs``: the rows to build (``host.heirs``, or the rows of every
+    delivery with a table, #168).
 
     CHANGELOG #141: a will-executor gives a new fee address when the
     user's IP changes (bal-server keeps one per IP), but it accepts every
@@ -167,7 +272,7 @@ def _transactions(host):
 
     def build(pinned):
         """The transactions with the payment data ``pinned``."""
-        return host.heirs.get_transactions(
+        return heirs.get_transactions(
             host.bal_plugin,
             host.wallet,
             host.will_settings["baltx_fees"],
@@ -238,6 +343,10 @@ def sync_delivery_date(host, store, *, on_error=None):
     change ``host.will_settings`` in place). With ``on_error`` an error of
     the rule is passed to it and nothing is stored (the automatic rebuild);
     without, it is raised. Returns the new date, or ``None``.
+
+    With a table of deliveries (#168) the dates of deliveries 2 and 3 move
+    earlier the same way (:func:`bal.engine.instalments.sync_later_deliveries`),
+    or the next Check would read a postpone (F1 of #166).
     """
     try:
         new_locktime = Will.anticipated_delivery_to_store(
@@ -250,4 +359,11 @@ def sync_delivery_date(host, store, *, on_error=None):
         return None
     if new_locktime is not None:
         store("locktime", new_locktime)
+    # #168 (F1 of #166): deliveries 2 and 3 of a table follow too.
+    try:
+        instalments.sync_later_deliveries(host)
+    except Exception as e:
+        if on_error is None:
+            raise
+        on_error(e)
     return new_locktime

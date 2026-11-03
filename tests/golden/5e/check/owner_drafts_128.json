@@ -19,7 +19,7 @@
    "Checking variables:\t<b>Wait</b>",
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
    "Checking your will:\t<b>Waiting</b>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b>Wait</b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
@@ -119,9 +119,7 @@
   ],
   "report": {
    "boxes": {
-    "changes": [
-     "The will contains no valid transaction: a new will must be prepared."
-    ],
+    "changes": [],
     "problems": [],
     "warnings": []
    },
@@ -191,11 +189,25 @@
      "3/3"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ],
+    "https://we2.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
    "Checking variables:\t<font color=#05ad05><b>Ok</b></font>",
-   "Checking your will:\t<b>The will contains no valid transaction: a new will must be prepared.</b>",
+   "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Building your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
    "Heir:\t<font color=#05ad05><b>bob</b></font>",
@@ -289,7 +301,7 @@
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "Finished"
   ],
   "items": [
@@ -387,7 +399,7 @@
     ],
     "problems": [],
     "warnings": [
-     "All done:\tWill still to sign"
+     "Not finished:\tWill still to sign"
     ]
    },
    "changes": [
@@ -480,7 +492,7 @@
    "Signing your will:\t<b>Aborted</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
    "",
-   "All done:\t<font color='#cfa808'><b>Will still to sign</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will still to sign</b></font>",
    "Finished"
   ],
   "settings": {
@@ -552,6 +564,15 @@
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b>Wait</b>",
+   "Verifying your will with the executors:\t<b>Verifying 0/3 (0s / 20s) — waiting for: we0.test, we1.test, we2.test</b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 1/3 (0s / 20s) — waiting for: we1.test, we2.test</b>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 2/3 (0s / 20s) — waiting for: we2.test</b>",
+   "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 3/3 (0s / 20s)</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -666,6 +687,20 @@
      "3/3"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ],
+    "https://we2.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -674,6 +709,10 @@
    "Building your will:\t<b>Nothing to do</b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -703,7 +742,20 @@
     "VALID"
    ]
   },
-  "verified": [],
+  "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ],
+   [
+    "https://we2.test",
+    "T3"
+   ]
+  ],
   "window_events": [
    "history-refresh"
   ]
@@ -735,6 +787,15 @@
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b>Wait</b>",
+   "Verifying your will with the executors:\t<b>Verifying 0/3 (0s / 20s) — waiting for: we0.test, we1.test, we2.test</b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 1/3 (0s / 20s) — waiting for: we1.test, we2.test</b>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 2/3 (0s / 20s) — waiting for: we2.test</b>",
+   "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 3/3 (0s / 20s)</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -849,6 +910,20 @@
      "3/3"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ],
+    "https://we2.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -856,6 +931,10 @@
    "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -885,7 +964,20 @@
     "VALID"
    ]
   },
-  "verified": [],
+  "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ],
+   [
+    "https://we2.test",
+    "T3"
+   ]
+  ],
   "window_events": [
    "history-refresh"
   ]
@@ -917,6 +1009,15 @@
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Wait</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b>Wait</b>",
+   "Verifying your will with the executors:\t<b>Verifying 0/3 (0s / 20s) — waiting for: we0.test, we1.test, we2.test</b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 1/3 (0s / 20s) — waiting for: we1.test, we2.test</b>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 2/3 (0s / 20s) — waiting for: we2.test</b>",
+   "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
+   "Verifying your will with the executors:\t<b>Verifying 3/3 (0s / 20s)</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -1031,6 +1132,20 @@
      "3/3"
     ]
    ],
+   "verified": {
+    "https://we0.test": [
+     1791633600,
+     null
+    ],
+    "https://we1.test": [
+     1791633600,
+     null
+    ],
+    "https://we2.test": [
+     1791633600,
+     null
+    ]
+   },
    "will_now": null
   },
   "rows": [
@@ -1038,6 +1153,10 @@
    "Checking your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "Signing your will:\t<b>Nothing to do</b>",
    "Broadcasting your will to executors:\t<b>Nothing to do</b>",
+   "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "checked https://we0.test - T1 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we1.test - T2 : <font color='#05ad05'><b>Ok</b></font>",
+   "checked https://we2.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
    "",
    "All done:\t<font color='#05ad05'><b>Ok</b></font>",
    "Finished"
@@ -1067,7 +1186,20 @@
     "VALID"
    ]
   },
-  "verified": [],
+  "verified": [
+   [
+    "https://we0.test",
+    "T1"
+   ],
+   [
+    "https://we1.test",
+    "T2"
+   ],
+   [
+    "https://we2.test",
+    "T3"
+   ]
+  ],
   "window_events": [
    "history-refresh"
   ]

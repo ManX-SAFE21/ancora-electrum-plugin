@@ -315,6 +315,11 @@ def test_executed_and_being_executed():
 
 def test_relative_dates():
     assert relative_date(NOW + 3600, now=NOW) == "(today)"
+    # #202: by UTC day, not by 24 hours; never "0 days".
+    late = NOW + 23 * 3600
+    assert relative_date(NOW, now=late) == "(today)"
+    assert relative_date(NOW + DAY + 3600, now=late) == "(in 1 day)"
+    assert relative_date(late - DAY, now=NOW + 3600) == "(passed 1 day ago)"
     assert relative_date(NOW + DAY, now=NOW) == "(in 1 day)"
     assert relative_date(NOW + 45 * DAY, now=NOW) == "(in 45 days)"
     assert relative_date(_ts(2026, 12, 20), now=NOW) == "(in 2 months)"

@@ -83,6 +83,10 @@ EXPECTED_COMMANDS = {
     "bal_delivery_set": {"requires_network": True, "requires_wallet": True, "requires_password": False},
     # The delivery form, fixed date or period (CHANGELOG #127)
     "bal_delivery_form": {"requires_network": True, "requires_wallet": True, "requires_password": False},
+    # Staged inheritance, the table of the deliveries (CHANGELOG #169)
+    "bal_instalments_show": {"requires_network": True, "requires_wallet": True, "requires_password": False},
+    "bal_instalments_set": {"requires_network": True, "requires_wallet": True, "requires_password": False},
+    "bal_instalments_clear": {"requires_network": True, "requires_wallet": True, "requires_password": False},
 }
 
 
@@ -145,6 +149,23 @@ def test_command_docstrings_document_all_args():
             assert varname in cmd.arg_descriptions, (
                 f"{name}: undocumented argument {varname}"
             )
+
+
+def test_every_command_help_can_be_printed():
+    """CHANGELOG #169: Electrum gives each ``arg:`` line to argparse as a
+    help text, and argparse %-formats it when the help is printed: a lone
+    "%" (a share such as "20%") made ``electrum help bal_...`` fail. The
+    help of every command is printed here."""
+    import argparse
+
+    cfg = _isolated_config()
+    Plugins(cfg, cmd_only=True)
+    parser = electrum_commands.get_parser()
+    sub = next(a for a in parser._actions
+               if isinstance(a, argparse._SubParsersAction))
+    for name in EXPECTED_COMMANDS:
+        assert name in sub.choices[name].format_help()
+    assert "bal_instalments_set" in parser.format_help()
 
 
 if __name__ == "__main__":
