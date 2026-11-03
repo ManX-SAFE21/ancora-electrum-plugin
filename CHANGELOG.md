@@ -14368,3 +14368,34 @@ Limits, on purpose:
 no tests changed.
 
 **Outcome:** DONE
+
+## 218. Stale documents brought up to date for 0.8.0
+
+**Why (release list for 0.8.0, audit 2026-10-31 point 29):** the documents still
+described BAL or older versions: Electrum 4.7.2/4.8.0, multisig "not supported",
+hardware wallets "supported" without any test, a "Server" column that no longer exists
+(#83), and a manual saying the staggered inheritance is not possible and pointing to
+BAL's site for the download.
+
+**What changed:**
+
+- `README.md` and `COMPATIBILITY.md`: Electrum 4.8.2 or later (tests on 4.8.3).
+- Multisig: supported (2-of-3 testnet4 test delivered on 2026-11-03, from the command
+  line; signing on a second computer through the windows not tested yet).
+- Hardware wallets: "not tested yet". TrustedCoin (2FA): unknown. Both to be looked
+  at after 0.8.0 (owner).
+- `README.md` and `bal/README.md`: the "Server" column part now describes the Status
+  column.
+- Manual (`docs/manual/README.md` and `manual.html`): a note at the top says it is
+  BAL's manual adapted to Àncòra; the installation points to the Àncòra releases page;
+  "Staggered inheritance over time" and "Practical example — multiple dates" describe
+  the several deliveries (Multiverse, ADVANCED, 2 to 3 deliveries); the report section
+  no longer calls the several deliveries "not active today"; "Using hardware keys"
+  says Àncòra has not been tested with them.
+
+**Verified:** text only. The facts were checked in the code (`bal/core/delivery.py`:
+2 to 3 deliveries, 28 days apart, 0 % allowed, 100 % in all; `bal/gui/qt/widgets.py`
+and `lists.py`: the button and menu names) and in the multisig test report. No code,
+no tests changed.
+
+**Outcome:** DONE
