@@ -81,7 +81,11 @@ from ...core.summary import executor_states, verified_times, will_summary
 from ...engine import build, check
 from ...engine import context as engine_context
 from ...engine import instalments as engine_instalments
-from ...engine.invalidate import broadcast_invalidation, build_invalidation
+from ...engine.invalidate import (
+    INVALIDATION_LABEL,
+    broadcast_invalidation,
+    build_invalidation,
+)
 from ...engine.merge import local_validity_pass
 from ...engine.push import (
     ALREADY_PRESENT,
@@ -861,6 +865,9 @@ class BalBuildWillDialog(BalDialog):
     # #188: the invalidation of a will in several deliveries (back to one
     # delivery): no date to put back when it is cancelled.
     _staged_removed = False
+    # #227 (same reason as above): see _invalidate_elsewhere.
+    _invalidated_elsewhere = False
+    _elsewhere_message = None
     _later_by_question = False
 
     def __init__(self, bal_window, parent=None, renew=False, closing=False):
@@ -976,6 +983,9 @@ class BalBuildWillDialog(BalDialog):
         # earlier but never signed. Only used to word the "Checking your will"
         # row; see _rebuild_reason_message.
         self._postpone_invalidation = False
+        # #227: the invalidation was handed to Electrum's transaction window,
+        # to be signed on the other computers (watch-only or multisig).
+        self._invalidated_elsewhere = False
         # #134: (chosen, restored) when a postpone was cancelled before its
         # invalidation reached the network and the stored date went back.
         self._postpone_reverted = None
@@ -2161,12 +2171,36 @@ class BalBuildWillDialog(BalDialog):
             for w in self.bal_window.willitems.values()
         )
 
+    def _signs_elsewhere(self):
+        """True when this wallet cannot complete a signature alone (#227):
+        watch-only (the keys are on the offline computer) or a multisig (the
+        other cosigners sign on their computers)."""
+        wallet = self.bal_window.wallet
+        return bool(wallet.is_watching_only() or getattr(wallet, "n", 1) > 1)
+
     def invalidate_task(self, password, bal_window, tx):
+        """Sign and broadcast the invalidation *tx* (worker thread).
+
+        #227: on a wallet that cannot complete the signature alone
+        (:meth:`_signs_elsewhere`) an incomplete invalidation is not an
+        error: it returns ``("sign_elsewhere", tx)`` and
+        :meth:`on_success_invalidate` opens it in Electrum's transaction
+        window, to be signed on the other computers.
+        """
         if self._stopping:
             return
         _logger.debug(f"invalidate tx: {tx}")
         # fee_per_byte = bal_window.will_settings.get("baltx_fees", 1)
+        unsigned = tx
         tx = self.bal_window.wallet.sign_transaction(tx, password)
+        if (not tx or not tx.is_complete()) and self._signs_elsewhere():
+            # WHY (#227): before, this stopped the Check with "Error: not tx"
+            # (watch-only) or "tx not complete" (multisig) and put the date
+            # back, so the owner's normal setup (keys on a second computer)
+            # could not postpone from the Check. The later date stays: the
+            # invalidation may be signed and broadcast elsewhere (as on the
+            # command line, #134).
+            return "sign_elsewhere", tx or unsigned
         if not tx or not tx.is_complete():
             # #134: not signed, so certainly not broadcast: a postpone is
             # cancelled as at the password's Cancel (the date goes back).
@@ -2562,7 +2596,17 @@ class BalBuildWillDialog(BalDialog):
         # window has neither, and passing it crashed (owner's ZIP test).
         # The TxDialog is a top-level window of its own (no Qt parent), so
         # this window-modal Check window does not block it.
-        dialog = self.bal_window.show_transaction(tx=shown)
+        dialog = self._transaction_window(shown)
+        for name in ("sign_button", "broadcast_button"):
+            button = getattr(dialog, name, None)
+            if button is not None:
+                button.setVisible(False)
+        return dialog
+
+    def _transaction_window(self, tx):
+        """Open Electrum's transaction window on *tx*, in front of this Check
+        window; returns it (or None)."""
+        dialog = self.bal_window.show_transaction(tx=tx)
         if dialog is not None:
             # The TxDialog has no Qt parent, and this Check window is
             # window-modal: Qt then BLOCKS every other top-level window, so
@@ -2580,12 +2624,123 @@ class BalBuildWillDialog(BalDialog):
                 dialog.raise_()
                 dialog.activateWindow()
             except Exception as e:
-                _logger.error(f"invalidation preview re-parent failed: {e!r}")
-        for name in ("sign_button", "broadcast_button"):
-            button = getattr(dialog, name, None)
-            if button is not None:
-                button.setVisible(False)
+                _logger.error(f"transaction window re-parent failed: {e!r}")
         return dialog
+
+    def _elsewhere_texts(self):
+        """(row, message) of an invalidation to sign on other computers
+        (#227): the offline computer of a watch-only wallet, or the
+        cosigners' computers of a multisig."""
+        # Owner (ZIP test): numbered steps, easy to copy on paper, naming
+        # Electrum's own buttons and menus (no other guided window).
+        if getattr(self.bal_window.wallet, "n", 1) > 1:
+            return (
+                _("To sign on the cosigners' computers"),
+                _("To postpone the date, the old will must be invalidated "
+                  "first. This is a multisig: the invalidation must be signed "
+                  "on the cosigners' computers.\n"
+                  "What to do:\n"
+                  # The QR code is fine here (owner): the invalidation is
+                  # one small transaction, unlike a will in several deliveries.
+                  "1. In the transaction window press Share and save it to a "
+                  "file (or show the QR code).\n"
+                  "2. Take the file to the cosigners' computers.\n"
+                  "3. There, on each cosigner's computer in turn, in Electrum: "
+                  "Tools > Load transaction. Check that the bitcoin go back to "
+                  "an address of yours, press Sign and save the signed file, "
+                  "until every signature is there.\n"
+                  "4. Bring the signed file back to the online computer.\n"
+                  "5. Here, in Electrum: Tools > Load transaction, then press "
+                  "Broadcast.\n"
+                  "6. Wait for the confirmation, then press Check: the will "
+                  "with the new date is prepared. Sign it with Tools > Sign "
+                  "the will offline."),
+            )
+        return (
+            _("To sign on the offline computer"),
+            _("To postpone the date, the old will must be invalidated first. "
+              "This wallet is watch-only: the invalidation must be signed on "
+              "the offline computer.\n"
+              "What to do:\n"
+              "1. In the transaction window press Share and save it to a "
+              "file (or show the QR code).\n"
+              "2. Take the file to the offline computer.\n"
+              "3. There, in Electrum: Tools > Load transaction. Check that the "
+              "bitcoin go back to an address of yours, press Sign and save the "
+              "signed file.\n"
+              "4. Bring the signed file back to the online computer.\n"
+              "5. Here, in Electrum: Tools > Load transaction, then press "
+              "Broadcast.\n"
+              "6. Wait for the confirmation, then press Check: the will with "
+              "the new date is prepared. Sign it with Tools > Sign the will "
+              "offline."),
+        )
+
+    def _copy_instructions(self, button=None):
+        """Put the steps of an invalidation signed elsewhere in the
+        clipboard (#227: to paste in a document and print); the button then
+        says so."""
+        from PyQt6.QtWidgets import QApplication
+
+        QApplication.clipboard().setText(self._elsewhere_message or "")
+        if button is not None:
+            button.setText(_("Instructions copied"))
+
+    def _show_instructions(self, message):
+        """The steps of an invalidation signed elsewhere, in a message with
+        "Copy the instructions" and "OK" (#227, owner: in the message too).
+
+        Like Electrum's own message (selectable text, window-modal), with
+        one more button that copies without closing it. The first line (why
+        and where to sign) is in bold (owner); the copy is plain text.
+        """
+        from PyQt6.QtWidgets import QMessageBox
+
+        box = QMessageBox(QMessageBox.Icon.Information, _("Information"), "",
+                          QMessageBox.StandardButton.Ok, self)
+        box.setWindowModality(Qt.WindowModality.WindowModal)
+        box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.setTextFormat(Qt.TextFormat.RichText)
+        # WHY the whole first line and not one word: the same rule works in
+        # every language, and no markup goes into the translations.
+        head, _sep, rest = message.partition("\n")
+        box.setText("<b>{}</b><br>{}".format(
+            html.escape(head), html.escape(rest).replace("\n", "<br>")))
+        copy_button = box.addButton(_("Copy the instructions"),
+                                    QMessageBox.ButtonRole.ActionRole)
+        # WHY: every button of a QMessageBox closes it; take the copy
+        # button's own connection away, so it copies and the box stays.
+        copy_button.clicked.disconnect()
+        copy_button.clicked.connect(
+            lambda _c=False, b=copy_button: self._copy_instructions(b))
+        box.setDefaultButton(QMessageBox.StandardButton.Ok)
+        box.exec()
+
+    def _invalidate_elsewhere(self, tx):
+        """The invalidation goes to the other computers (#227, GUI thread).
+
+        Labelled in Electrum's history as every invalidation, opened in
+        Electrum's transaction window (with its Export, as Tools >
+        Invalidate does), the "Invalidating old will" row and the result say
+        where to sign it; the Check ends there. The later date stays.
+        """
+        self._invalidated_elsewhere = True
+        row, message = self._elsewhere_texts()
+        # What "Copy the instructions" of the message copies (#227).
+        self._elsewhere_message = message
+        self.msg_set_invalidating(self.msg_warning(row))
+        try:
+            txid = tx.txid()
+            if txid:
+                self.bal_window.wallet.set_label(txid, INVALIDATION_LABEL)
+        except Exception as e:
+            _logger.error(f"invalidation label not set: {e!r}")
+        self._show_instructions(message)
+        try:
+            self._transaction_window(tx)
+        except Exception as e:
+            _logger.error(f"invalidation window not opened: {e!r}")
+        self._add_close_button()
 
     def _format_fiat(self, satoshi):
         """``satoshi`` in fiat with Electrum's formatter ("12.34 EUR"), or
@@ -2628,6 +2783,12 @@ class BalBuildWillDialog(BalDialog):
         )
 
     def on_success_invalidate(self, success):
+        """After the invalidation: phase 1 again (the will with the new date),
+        or, for an invalidation to sign on other computers (#227), the
+        transaction window and the end of this Check."""
+        if isinstance(success, tuple) and success and success[0] == "sign_elsewhere":
+            self._invalidate_elsewhere(success[1])
+            return
         self.thread.add(
             self.task_phase1,
             on_success=self.on_success_phase1,
@@ -4308,6 +4469,14 @@ class BalBuildWillDialog(BalDialog):
             if held:
                 report.set_result("warn", "<b>{}</b>".format(html.escape(
                     _("The check stopped: nothing was changed."))))
+                report.set_will_now(self._will_now_text(summary))
+            elif self._invalidated_elsewhere:
+                # #227: the invalidation waits for the other computers' signatures.
+                report.set_result("warn", "<b>{}</b>".format(html.escape(_(
+                    "Postponing: the old will stays in force until its "
+                    "invalidation is signed on the other computers and "
+                    "broadcast. Then press Check again: the will with the new "
+                    "date is prepared then."))))
                 report.set_will_now(self._will_now_text(summary))
             elif failed_step:
                 report.set_result("err", "<b>{}</b>".format(html.escape({

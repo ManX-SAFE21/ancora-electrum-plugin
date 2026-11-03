@@ -14735,3 +14735,55 @@ music in the plugin (owner: with the voice they can go to the BAL or SAFE21 web 
   by the owner.
 
 **Outcome:** DONE
+
+## 227. Postponing on a watch-only or multisig wallet: the invalidation is signed elsewhere
+
+**Why (found 2026-11-03 while preparing the test of audit item 33):** the owner's setup is
+a watch-only wallet (or one cosigner of a multisig) on the online computer and the keys on a
+second computer. With a will signed there and sent, a later delivery date is a postpone:
+the old will must be invalidated on the blockchain first. The Check asked "Invalidate now"
+and then stopped with "Invalidating old will: Error: not tx" (watch-only) or "Error: tx not
+complete" (multisig), said nothing about the other computer, and put the date back. Only
+Tools > Invalidate opened the transaction to export.
+
+**What changed (`bal/gui/qt/dialogs.py`):**
+
+- `invalidate_task`: on a wallet that cannot complete a signature alone (`_signs_elsewhere`:
+  watch-only, or a multisig) an incomplete invalidation is not an error: it returns
+  `("sign_elsewhere", tx)`; the later date stays (it may be signed and broadcast elsewhere,
+  as on the command line, #134).
+- `_invalidate_elsewhere`: the invalidation is labelled as every invalidation and opened in
+  Electrum's transaction window (with its Share, as Tools > Invalidate); the row "Invalidating
+  old will" says "To sign on the offline computer" or "To sign on the cosigners' computers";
+  the result says the old will stays in force until the invalidation is signed and broadcast,
+  then press Check again.
+- `_show_instructions`: the message lists 6 numbered steps (save with Share to a file, sign it
+  on the other computer with Tools > Load transaction after checking that the bitcoin go back
+  to an address of yours, bring it back, broadcast it, Check, sign the new will with Tools >
+  Sign the will offline), easy to copy on paper (owner), with "Copy the instructions" next to
+  OK: it copies the steps (plain text) and the message stays open. The first line, why and
+  where to sign, is in bold (owner; the whole line, so no markup in the translations). The
+  file or the QR code: the
+  invalidation is one small transaction (owner; a will in several deliveries goes by file).
+- Not changed: a wallet that signs alone signs and broadcasts by itself; a signing that fails
+  there still puts the date back (#134). Owner decision: a draft never signed and moved so
+  far later that its Check Alive passes keeps asking for the paid invalidation (not changed).
+- `bal/locale/`: the new texts in Italian and Spanish. `tests/flowkit.py`: the message is
+  recorded as a popup.
+- `tests/test_postpone_sign_elsewhere.py` (new, 7 tests): watch-only, 2-of-3 watch-only and
+  2-of-3 with one cosigner's keys (one signature of two in the transaction shown); what the
+  window shows (the coin of the will in force back to the wallet), the label, the message,
+  nothing broadcast, the later date kept; the numbered steps and the copy; the real message
+  box (copy keeps it open, OK closes it); the whole road: signed offline, on the chain, the
+  next Check prepares the will with the new date and asks no invalidation again.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. Postpone, multisig, offline signing, merge and resend
+  tests: 95 passed. Whole suite, one order, Electrum 4.8.3: 3349 passed in 1 h 58 min.
+- Owner, ZIP `ancora_0.8.0-TEST-227` on Windows, Electrum 4.8.3, a watch-only wallet with a
+  will in force: "Invalidate now", the message, the transaction window (the will's coin back
+  to an address of the wallet, "Safe21 Heartbeat invalidation", not signed); the texts and
+  the copy button asked after that test are in 227g.
+
+**Outcome:** DONE

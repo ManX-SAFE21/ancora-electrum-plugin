@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: BAL Electrum plugin VERSION\n"
 "Report-Msgid-Bugs-To: info@bitcoin-after.life\n"
-"POT-Creation-Date: 2026-11-03 21:19+0100\n"
+"POT-Creation-Date: 2026-11-03 22:30+0100\n"
 "PO-Revision-Date: 2026-10-03 11:40-0400\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es_ES\n"
@@ -368,8 +368,8 @@ msgstr "tu dirección"
 
 #: bal/core/explainer.py:85 bal/core/summary.py:441
 #: bal/core/will_changes.py:869 bal/gui/qt/basic_wizard.py:109
-#: bal/gui/qt/basic_wizard.py:1201 bal/gui/qt/dialogs.py:538
-#: bal/gui/qt/dialogs.py:3218 bal/gui/qt/dialogs.py:4681
+#: bal/gui/qt/basic_wizard.py:1201 bal/gui/qt/dialogs.py:542
+#: bal/gui/qt/dialogs.py:3374 bal/gui/qt/dialogs.py:4845
 #: bal/gui/qt/offline_sign.py:334 bal/gui/qt/report_pages.py:552
 #: bal/gui/qt/widgets.py:3224
 msgid "Heirs"
@@ -756,7 +756,7 @@ msgid "The delivery date ({}) has already passed. Choose a future date, then pre
 msgstr "La fecha de entrega ({}) ya ha pasado. Elige una fecha futura y vuelve a pulsar Comprobar."
 
 #: bal/core/messages.py:604 bal/core/messages.py:656 bal/core/messages.py:667
-#: bal/gui/qt/dialogs.py:1317 bal/gui/qt/dialogs.py:4136
+#: bal/gui/qt/dialogs.py:1327 bal/gui/qt/dialogs.py:4292
 msgid "Skipped"
 msgstr "Omitido"
 
@@ -936,8 +936,8 @@ msgstr "última comprobación {when}"
 msgid "next check from {when}"
 msgstr "próxima comprobación desde el {when}"
 
-#: bal/core/summary.py:298 bal/core/summary.py:848 bal/gui/qt/dialogs.py:1223
-#: bal/gui/qt/dialogs.py:3147 bal/gui/qt/future_view.py:317
+#: bal/core/summary.py:298 bal/core/summary.py:848 bal/gui/qt/dialogs.py:1233
+#: bal/gui/qt/dialogs.py:3303 bal/gui/qt/future_view.py:317
 #: bal/gui/qt/lists.py:761 bal/gui/qt/report_pages.py:397
 #: bal/gui/qt/report_pages.py:552 bal/gui/qt/theme.py:173
 #: bal/gui/qt/widgets.py:3269
@@ -1104,7 +1104,7 @@ msgstr "Firmar y enviar"
 msgid "Will in force: complete the sending"
 msgstr "Testamento en vigor: completa el envío"
 
-#: bal/core/summary.py:713 bal/core/summary.py:722 bal/gui/qt/dialogs.py:5209
+#: bal/core/summary.py:713 bal/core/summary.py:722 bal/gui/qt/dialogs.py:5373
 #: bal/gui/qt/offline_sign.py:571 bal/gui/qt/offline_sign.py:602
 msgid "Send"
 msgstr "Enviar"
@@ -1217,7 +1217,7 @@ msgstr "Confirmado"
 msgid "Error"
 msgstr "Error"
 
-#: bal/core/will.py:3439 bal/gui/qt/dialogs.py:1108
+#: bal/core/will.py:3439 bal/gui/qt/dialogs.py:1118
 #: bal/gui/qt/flow_adapter.py:119
 msgid "Expired"
 msgstr "Caducado"
@@ -1262,7 +1262,7 @@ msgstr "Restaurado"
 msgid "Updated"
 msgstr "Actualizado"
 
-#: bal/core/will.py:3450 bal/gui/qt/dialogs.py:4733
+#: bal/core/will.py:3450 bal/gui/qt/dialogs.py:4897
 msgid "Valid"
 msgstr "Válido"
 
@@ -1829,14 +1829,14 @@ msgstr "+ Añadir heredero"
 msgid "✉ A message in the will"
 msgstr "✉ Un mensaje en el testamento"
 
-#: bal/gui/qt/basic_wizard.py:1006 bal/gui/qt/dialogs.py:550
-#: bal/gui/qt/dialogs.py:4694 bal/gui/qt/lists.py:394 bal/gui/qt/lists.py:1731
+#: bal/gui/qt/basic_wizard.py:1006 bal/gui/qt/dialogs.py:554
+#: bal/gui/qt/dialogs.py:4858 bal/gui/qt/lists.py:394 bal/gui/qt/lists.py:1731
 #: bal/gui/qt/lists.py:2426
 msgid "Import"
 msgstr "Importar"
 
-#: bal/gui/qt/basic_wizard.py:1007 bal/gui/qt/dialogs.py:552
-#: bal/gui/qt/dialogs.py:4524 bal/gui/qt/dialogs.py:4698
+#: bal/gui/qt/basic_wizard.py:1007 bal/gui/qt/dialogs.py:556
+#: bal/gui/qt/dialogs.py:4688 bal/gui/qt/dialogs.py:4862
 #: bal/gui/qt/lists.py:395 bal/gui/qt/lists.py:1730 bal/gui/qt/lists.py:2438
 msgid "Export"
 msgstr "Exportar"
@@ -1864,7 +1864,7 @@ msgstr "Total de las cuotas: {}%. Cuentan en proporción a este total: se gasta 
 msgid "Who keeps the will?"
 msgstr "¿Quién custodia el testamento?"
 
-#: bal/gui/qt/basic_wizard.py:1097 bal/gui/qt/dialogs.py:4638
+#: bal/gui/qt/basic_wizard.py:1097 bal/gui/qt/dialogs.py:4802
 msgid "Will-executors are services that keep your signed will and send it to the network on the delivery date."
 msgstr "Los will-executors son servicios que guardan tu testamento firmado y lo envían a la red en la fecha de entrega."
 
@@ -2042,8 +2042,8 @@ msgstr "Ejemplo"
 msgid "Back to one delivery"
 msgstr "Volver a una sola entrega"
 
-#: bal/gui/qt/deliveries.py:334 bal/gui/qt/dialogs.py:512
-#: bal/gui/qt/dialogs.py:2417 bal/gui/qt/dialogs.py:6207
+#: bal/gui/qt/deliveries.py:334 bal/gui/qt/dialogs.py:516
+#: bal/gui/qt/dialogs.py:2451 bal/gui/qt/dialogs.py:6371
 #: bal/gui/qt/offline_sign.py:433 bal/gui/qt/window.py:816
 msgid "Cancel"
 msgstr "Cancelar"
@@ -2175,20 +2175,20 @@ msgstr "Entrega {n} ({date}): {share}"
 msgid "The dates of the deliveries are changed in the window \"Inheritance in several deliveries\": Tools in the Will tab, or Build / Edit Your Will."
 msgstr "Las fechas de las entregas se cambian en la ventana \"Herencia en varias entregas\": Tools en la pestaña Testamento, o Crear / Modificar tu testamento."
 
-#: bal/gui/qt/dialogs.py:293
+#: bal/gui/qt/dialogs.py:297
 #, python-brace-format
 msgid "{} Wizard Setup"
 msgstr "{} - Configuración del asistente"
 
-#: bal/gui/qt/dialogs.py:504 bal/gui/qt/dialogs.py:4862
+#: bal/gui/qt/dialogs.py:508 bal/gui/qt/dialogs.py:5026
 msgid "Previous"
 msgstr "Anterior"
 
-#: bal/gui/qt/dialogs.py:508 bal/gui/qt/dialogs.py:4865
+#: bal/gui/qt/dialogs.py:512 bal/gui/qt/dialogs.py:5029
 msgid "Next"
 msgstr "Siguiente"
 
-#: bal/gui/qt/dialogs.py:540
+#: bal/gui/qt/dialogs.py:544
 #, python-format
 msgid ""
 "Please add your heirs\n"
@@ -2197,293 +2197,353 @@ msgstr ""
 "Añade tus herederos\n"
 " recuerda que se gastará el 100% del saldo de la cartera"
 
-#: bal/gui/qt/dialogs.py:548 bal/gui/qt/lists.py:2418
+#: bal/gui/qt/dialogs.py:552 bal/gui/qt/lists.py:2418
 msgid "Add"
 msgstr "Añadir"
 
-#: bal/gui/qt/dialogs.py:577 bal/gui/qt/dialogs.py:656
+#: bal/gui/qt/dialogs.py:581 bal/gui/qt/dialogs.py:660
 msgid "Will-Executors"
 msgstr "Will-Executor"
 
-#: bal/gui/qt/dialogs.py:578
+#: bal/gui/qt/dialogs.py:582
 msgid "Choose willexecutors download method"
 msgstr "Elige el método de descarga de los Will-Executor"
 
-#: bal/gui/qt/dialogs.py:585
+#: bal/gui/qt/dialogs.py:589
 msgid "Automatically download and select willexecutors"
 msgstr "Descargar y seleccionar automáticamente los Will-Executor"
 
-#: bal/gui/qt/dialogs.py:586
+#: bal/gui/qt/dialogs.py:590
 msgid "Only download willexecutors list"
 msgstr "Solo descargar la lista de Will-Executor"
 
-#: bal/gui/qt/dialogs.py:587
+#: bal/gui/qt/dialogs.py:591
 msgid "Import willexecutor list from file"
 msgstr "Importar la lista de Will-Executor desde un archivo"
 
-#: bal/gui/qt/dialogs.py:588
+#: bal/gui/qt/dialogs.py:592
 msgid "Manual"
 msgstr "Manual"
 
-#: bal/gui/qt/dialogs.py:622 bal/gui/qt/lists.py:2770
+#: bal/gui/qt/dialogs.py:626 bal/gui/qt/lists.py:2770
 msgid "willexecutors"
 msgstr "Will-Executor"
 
-#: bal/gui/qt/dialogs.py:657
+#: bal/gui/qt/dialogs.py:661
 msgid "Configure and select your willexecutors"
 msgstr "Configura y selecciona tus Will-Executor"
 
-#: bal/gui/qt/dialogs.py:676
+#: bal/gui/qt/dialogs.py:680
 msgid "Will Settings"
 msgstr "Configuración del testamento"
 
-#: bal/gui/qt/dialogs.py:732
+#: bal/gui/qt/dialogs.py:736
 #, python-brace-format
 msgid "Copies checked: {} of {} · {} s (at most {} s)"
 msgstr "Copias verificadas: {} de {} · {} s (como máximo {} s)"
 
-#: bal/gui/qt/dialogs.py:736
+#: bal/gui/qt/dialogs.py:740
 msgid "Many transactions: the will-executors are asked a few at a time, so as not to overload them."
 msgstr "Muchas transacciones: los ejecutores reciben las consultas pocas a la vez, para no sobrecargarlos."
 
-#: bal/gui/qt/dialogs.py:742
+#: bal/gui/qt/dialogs.py:746
 #, python-brace-format
 msgid "{} is busy: new try in {} s."
 msgstr "{} está ocupado: nuevo intento en {} s."
 
-#: bal/gui/qt/dialogs.py:762 bal/gui/qt/dialogs.py:816
+#: bal/gui/qt/dialogs.py:766 bal/gui/qt/dialogs.py:820
 msgid "Please wait"
 msgstr "Espere por favor"
 
-#: bal/gui/qt/dialogs.py:880
+#: bal/gui/qt/dialogs.py:887
 msgid "Closing the wallet: checking your will"
 msgstr "Cerrando la cartera: comprobación del testamento"
 
-#: bal/gui/qt/dialogs.py:882
+#: bal/gui/qt/dialogs.py:889
 msgid "Building Will"
 msgstr "Creación del testamento"
 
-#: bal/gui/qt/dialogs.py:894
+#: bal/gui/qt/dialogs.py:901
 msgid "Building Will:"
 msgstr "Creación del testamento:"
 
-#: bal/gui/qt/dialogs.py:1000
+#: bal/gui/qt/dialogs.py:1010
 msgid "You are closing the wallet. Before it closes, the plugin checks that your will covers all your bitcoin, including those received after the last check. If something changed, it prepares a new will and asks for your password to sign it. Then it sends it to the will-executors and verifies that they received it."
 msgstr "Estás cerrando la cartera. Antes de que se cierre, el plugin comprueba que el testamento cubra todos tus bitcoin, también los recibidos después de la última comprobación. Si algo cambió, prepara un testamento nuevo y te pide la contraseña para firmarlo. Después lo envía a los will-executors y verifica que lo hayan recibido."
 
-#: bal/gui/qt/dialogs.py:1022
+#: bal/gui/qt/dialogs.py:1032
 msgid "When you press Close, the wallet finishes closing."
 msgstr "Cuando pulses Cerrar, la cartera termina de cerrarse."
 
-#: bal/gui/qt/dialogs.py:1105 bal/gui/qt/dialogs.py:1126
+#: bal/gui/qt/dialogs.py:1115 bal/gui/qt/dialogs.py:1136
 msgid "Postponed: invalidating old will"
 msgstr "Aplazado: invalidando el antiguo testamento"
 
-#: bal/gui/qt/dialogs.py:1124
+#: bal/gui/qt/dialogs.py:1134
 msgid "Back to one delivery: invalidating the will in several deliveries"
 msgstr "Vuelta a una sola entrega: invalido el testamento en varias entregas"
 
-#: bal/gui/qt/dialogs.py:1131 bal/gui/qt/flow_adapter.py:113
+#: bal/gui/qt/dialogs.py:1141 bal/gui/qt/flow_adapter.py:113
 msgid "No Heirs"
 msgstr "Sin herederos"
 
-#: bal/gui/qt/dialogs.py:1154 bal/gui/qt/dialogs.py:1163
-#: bal/gui/qt/dialogs.py:3753 bal/gui/qt/dialogs.py:4082
-#: bal/gui/qt/dialogs.py:4094
+#: bal/gui/qt/dialogs.py:1164 bal/gui/qt/dialogs.py:1173
+#: bal/gui/qt/dialogs.py:3909 bal/gui/qt/dialogs.py:4238
+#: bal/gui/qt/dialogs.py:4250
 msgid "Checking your will"
 msgstr "Comprobando tu testamento"
 
-#: bal/gui/qt/dialogs.py:1156
+#: bal/gui/qt/dialogs.py:1166
 msgid "An inheritance of this wallet is already executed (on blockchain)"
 msgstr "Una herencia de esta cartera ya se ha ejecutado (en la blockchain)"
 
-#: bal/gui/qt/dialogs.py:1165
+#: bal/gui/qt/dialogs.py:1175
 msgid "Inheritance in mempool (waiting confirmation)"
 msgstr "Herencia en la mempool (esperando confirmación)"
 
-#: bal/gui/qt/dialogs.py:1216 bal/gui/qt/dialogs.py:1678
-#: bal/gui/qt/dialogs.py:4158
+#: bal/gui/qt/dialogs.py:1226 bal/gui/qt/dialogs.py:1688
+#: bal/gui/qt/dialogs.py:4314
 msgid "Will-Executor excluded"
 msgstr "Will-Executor excluido"
 
-#: bal/gui/qt/dialogs.py:1224
+#: bal/gui/qt/dialogs.py:1234
 msgid "Not present - select one or enable backup mode"
 msgstr "No presente - selecciona uno o activa el modo de copia de seguridad"
 
-#: bal/gui/qt/dialogs.py:1286
+#: bal/gui/qt/dialogs.py:1296
 msgid "All heirs' shares are below the dust limit: the inheritance cannot be created. Increase the amounts or reduce the number of heirs."
 msgstr "Todas las partes de los herederos están por debajo del límite de polvo (dust): no se puede crear la herencia. Aumenta los importes o reduce el número de herederos."
 
-#: bal/gui/qt/dialogs.py:1308
+#: bal/gui/qt/dialogs.py:1318
 #, python-brace-format
 msgid "Wallet balance is too low: {} satoshi available, but the miner and will-executor fees need {} satoshi (the minimum usable amount is {} satoshi). Add funds, or select fewer will-executors."
 msgstr "El saldo de la cartera es demasiado bajo: {} satoshis disponibles, pero las comisiones de minería y del Will-Executor necesitan {} satoshis (el importe mínimo utilizable es {} satoshis). Añade fondos o selecciona menos Will-Executor."
 
-#: bal/gui/qt/dialogs.py:1362
+#: bal/gui/qt/dialogs.py:1372
 #, python-brace-format
 msgid "Heir {}"
 msgstr "Heredero {}"
 
-#: bal/gui/qt/dialogs.py:1364
+#: bal/gui/qt/dialogs.py:1374
 #, python-brace-format
 msgid "{} is DUST - excluded (amount below dust limit)"
 msgstr "{} es POLVO (dust) - excluido (importe por debajo del límite de polvo)"
 
-#: bal/gui/qt/dialogs.py:1432
+#: bal/gui/qt/dialogs.py:1442
 msgid "Not signed: this wallet has no keys (watch-only). Sign it on the cosigners' computers (Tools > Sign the will offline)."
 msgstr "No firmado: esta cartera no tiene las claves (solo lectura). Fírmalo en los ordenadores de los firmantes (Herramientas > Firmar el testamento sin conexión)."
 
-#: bal/gui/qt/dialogs.py:1436
+#: bal/gui/qt/dialogs.py:1446
 msgid "Not signed: this wallet has no keys (watch-only). Sign it on the offline computer (Tools > Sign the will offline)."
 msgstr "No firmado: esta cartera no tiene las claves (solo lectura). Fírmalo en el ordenador sin conexión (Herramientas > Firmar el testamento sin conexión)."
 
-#: bal/gui/qt/dialogs.py:1441 bal/gui/qt/offline_sign.py:1197
+#: bal/gui/qt/dialogs.py:1451 bal/gui/qt/offline_sign.py:1197
 #, python-brace-format
 msgid "{} of {} signatures: another signer must sign."
 msgstr "Firmas: {} de {}: debe firmar otro firmante."
 
-#: bal/gui/qt/dialogs.py:1444
+#: bal/gui/qt/dialogs.py:1454
 msgid "Not signed yet."
 msgstr "Aún no firmado."
 
-#: bal/gui/qt/dialogs.py:1446
+#: bal/gui/qt/dialogs.py:1456
 msgid "The way to sign depends on the wallet type, which Electrum shows in the window title."
 msgstr "La forma de firmar depende del tipo de cartera, que Electrum muestra en el título de la ventana."
 
-#: bal/gui/qt/dialogs.py:1497
+#: bal/gui/qt/dialogs.py:1507
 msgid "Heir"
 msgstr "Heredero"
 
-#: bal/gui/qt/dialogs.py:1519 bal/gui/qt/dialogs.py:2922
-#: bal/gui/qt/dialogs.py:3397 bal/gui/qt/dialogs.py:4136
+#: bal/gui/qt/dialogs.py:1529 bal/gui/qt/dialogs.py:3078
+#: bal/gui/qt/dialogs.py:3553 bal/gui/qt/dialogs.py:4292
 msgid "Nothing to do"
 msgstr "Nada que hacer"
 
-#: bal/gui/qt/dialogs.py:1608 bal/gui/qt/dialogs.py:3789
+#: bal/gui/qt/dialogs.py:1618 bal/gui/qt/dialogs.py:3945
 #, python-brace-format
 msgid "Please wait {}secs"
 msgstr "Espera {} segundos"
 
-#: bal/gui/qt/dialogs.py:1624 bal/gui/qt/dialogs.py:1663
-#: bal/gui/qt/dialogs.py:2209 bal/gui/qt/dialogs.py:4128
+#: bal/gui/qt/dialogs.py:1634 bal/gui/qt/dialogs.py:1673
+#: bal/gui/qt/dialogs.py:2243 bal/gui/qt/dialogs.py:4284
 msgid "Broadcasting"
 msgstr "Transmitiendo"
 
-#: bal/gui/qt/dialogs.py:1682
+#: bal/gui/qt/dialogs.py:1692
 msgid "fee above the maximum"
 msgstr "comisión por encima del máximo"
 
-#: bal/gui/qt/dialogs.py:1684
+#: bal/gui/qt/dialogs.py:1694
 msgid "not a valid will-executor"
 msgstr "will-executor no válido"
 
-#: bal/gui/qt/dialogs.py:1715 bal/gui/qt/dialogs.py:4101
+#: bal/gui/qt/dialogs.py:1725 bal/gui/qt/dialogs.py:4257
 msgid "Sending your will to the will-executors…"
 msgstr "Enviando tu testamento a los will-executors…"
 
-#: bal/gui/qt/dialogs.py:1719 bal/gui/qt/dialogs.py:2025
-#: bal/gui/qt/dialogs.py:2231
+#: bal/gui/qt/dialogs.py:1729 bal/gui/qt/dialogs.py:2035
+#: bal/gui/qt/dialogs.py:2265
 #, python-brace-format
 msgid "waiting for: {}"
 msgstr "esperando a: {}"
 
-#: bal/gui/qt/dialogs.py:1736 bal/gui/qt/dialogs.py:2068
-#: bal/gui/qt/dialogs.py:2106
+#: bal/gui/qt/dialogs.py:1746 bal/gui/qt/dialogs.py:2078
+#: bal/gui/qt/dialogs.py:2116
 msgid "Timeout - no answer"
 msgstr "Tiempo agotado - sin respuesta"
 
-#: bal/gui/qt/dialogs.py:1748 bal/gui/qt/dialogs.py:2066
-#: bal/gui/qt/dialogs.py:3800 bal/gui/qt/dialogs.py:4176
+#: bal/gui/qt/dialogs.py:1758 bal/gui/qt/dialogs.py:2076
+#: bal/gui/qt/dialogs.py:3956 bal/gui/qt/dialogs.py:4332
 #: bal/gui/qt/flow_adapter.py:116 bal/gui/qt/window.py:4252
 msgid "Ok"
 msgstr "Aceptar"
 
-#: bal/gui/qt/dialogs.py:1748 bal/gui/qt/dialogs.py:2070
-#: bal/gui/qt/dialogs.py:2104 bal/gui/qt/dialogs.py:4180
+#: bal/gui/qt/dialogs.py:1758 bal/gui/qt/dialogs.py:2080
+#: bal/gui/qt/dialogs.py:2114 bal/gui/qt/dialogs.py:4336
 #: bal/gui/qt/window.py:4254
 msgid "Ko"
 msgstr "Error"
 
-#: bal/gui/qt/dialogs.py:1759
+#: bal/gui/qt/dialogs.py:1769
 #, python-brace-format
 msgid "checking {} - {}"
 msgstr "comprobando {} - {}"
 
-#: bal/gui/qt/dialogs.py:1762 bal/gui/qt/dialogs.py:3751
-#: bal/gui/qt/dialogs.py:4128 bal/gui/qt/window.py:3519
+#: bal/gui/qt/dialogs.py:1772 bal/gui/qt/dialogs.py:3907
+#: bal/gui/qt/dialogs.py:4284 bal/gui/qt/window.py:3519
 msgid "Waiting"
 msgstr "Esperando"
 
-#: bal/gui/qt/dialogs.py:1783
+#: bal/gui/qt/dialogs.py:1793
 msgid "Checking the copies the will-executors already had…"
 msgstr "Comprobando las copias que los will-executors ya tenían…"
 
-#: bal/gui/qt/dialogs.py:1820 bal/gui/qt/dialogs.py:2072
+#: bal/gui/qt/dialogs.py:1830 bal/gui/qt/dialogs.py:2082
 #, python-brace-format
 msgid "checked {} - {}"
 msgstr "comprobado {} - {}"
 
-#: bal/gui/qt/dialogs.py:1944
+#: bal/gui/qt/dialogs.py:1954
 msgid "Not sent"
 msgstr "No enviado"
 
-#: bal/gui/qt/dialogs.py:1947
+#: bal/gui/qt/dialogs.py:1957
 msgid "Not sent to every will-executor"
 msgstr "No enviado a todos los will-executors"
 
-#: bal/gui/qt/dialogs.py:2020 bal/gui/qt/dialogs.py:4104
+#: bal/gui/qt/dialogs.py:2030 bal/gui/qt/dialogs.py:4260
 msgid "Verifying your will with the will-executors…"
 msgstr "Verificando tu testamento con los will-executors…"
 
-#: bal/gui/qt/dialogs.py:2130
+#: bal/gui/qt/dialogs.py:2140
 #, python-brace-format
 msgid "Not held by {}: sent again"
 msgstr "No presente en {}: enviado de nuevo"
 
-#: bal/gui/qt/dialogs.py:2197 bal/gui/qt/dialogs.py:3595
-#: bal/gui/qt/dialogs.py:3626
+#: bal/gui/qt/dialogs.py:2231 bal/gui/qt/dialogs.py:3751
+#: bal/gui/qt/dialogs.py:3782
 #, python-brace-format
 msgid "Error: {}"
 msgstr "Error: {}"
 
-#: bal/gui/qt/dialogs.py:2219
+#: bal/gui/qt/dialogs.py:2253
 msgid "Verifying"
 msgstr "Verificando"
 
-#: bal/gui/qt/dialogs.py:2230 bal/gui/qt/report_pages.py:683
+#: bal/gui/qt/dialogs.py:2264 bal/gui/qt/report_pages.py:683
 #, python-brace-format
 msgid "(+{} more)"
 msgstr "(+ otros {})"
 
-#: bal/gui/qt/dialogs.py:2288
+#: bal/gui/qt/dialogs.py:2322
 #, python-brace-format
 msgid "The percentages you wrote add up to {total}. The will always spends the whole balance, so each heir receives a share in proportion: {shares}."
 msgstr "Los porcentajes que has escrito suman el {total}. El testamento gasta siempre todo el saldo, así que cada heredero recibe una cuota en proporción: {shares}."
 
-#: bal/gui/qt/dialogs.py:2296 bal/gui/qt/dialogs.py:2320
+#: bal/gui/qt/dialogs.py:2330 bal/gui/qt/dialogs.py:2354
 #, python-brace-format
 msgid "Shares recalculated in proportion: {}"
 msgstr "Cuotas recalculadas en proporción: {}"
 
-#: bal/gui/qt/dialogs.py:2400
+#: bal/gui/qt/dialogs.py:2434
 #, python-brace-format
 msgid "Heir renamed: {old} → {new}: only the name changes, the will stays the same."
 msgstr "Heredero renombrado: {old} → {new}: solo cambia el nombre, el testamento sigue siendo el mismo."
 
-#: bal/gui/qt/dialogs.py:2423
+#: bal/gui/qt/dialogs.py:2457
 msgid "Invalidate now"
 msgstr "Invalidar ahora"
 
-#: bal/gui/qt/dialogs.py:2463
+#: bal/gui/qt/dialogs.py:2497
 msgid "Invalidate your old will"
 msgstr "Invalida tu antiguo testamento"
 
-#: bal/gui/qt/dialogs.py:2493 bal/gui/qt/dialogs.py:2920
-#: bal/gui/qt/dialogs.py:4138
+#: bal/gui/qt/dialogs.py:2527 bal/gui/qt/dialogs.py:3076
+#: bal/gui/qt/dialogs.py:4294
 msgid "Aborted"
 msgstr "Abortado"
 
-#: bal/gui/qt/dialogs.py:2649
+#: bal/gui/qt/dialogs.py:2638
+msgid "To sign on the cosigners' computers"
+msgstr "Para firmar en los ordenadores de los firmantes"
+
+#: bal/gui/qt/dialogs.py:2639
+msgid ""
+"To postpone the date, the old will must be invalidated first. This is a multisig: the invalidation must be signed on the cosigners' computers.\n"
+"What to do:\n"
+"1. In the transaction window press Share and save it to a file (or show the QR code).\n"
+"2. Take the file to the cosigners' computers.\n"
+"3. There, on each cosigner's computer in turn, in Electrum: Tools > Load transaction. Check that the bitcoin go back to an address of yours, press Sign and save the signed file, until every signature is there.\n"
+"4. Bring the signed file back to the online computer.\n"
+"5. Here, in Electrum: Tools > Load transaction, then press Broadcast.\n"
+"6. Wait for the confirmation, then press Check: the will with the new date is prepared. Sign it with Tools > Sign the will offline."
+msgstr ""
+"Para aplazar la fecha, primero hay que invalidar el testamento antiguo. Esto es un multisig: la invalidación se firma en los ordenadores de los firmantes.\n"
+"Qué hacer:\n"
+"1. En la ventana de la transacción pulsa Compartir y guárdala en un archivo (o muestra el código QR).\n"
+"2. Lleva el archivo a los ordenadores de los firmantes.\n"
+"3. Allí, en el ordenador de cada firmante por turno, en Electrum: Herramientas > Cargar transacción. Comprueba que los bitcoin vuelven a una dirección tuya, pulsa Firmar y guarda el archivo firmado, hasta tener todas las firmas.\n"
+"4. Vuelve a llevar el archivo firmado al ordenador conectado.\n"
+"5. Aquí, en Electrum: Herramientas > Cargar transacción, luego pulsa Transmitir.\n"
+"6. Espera la confirmación, luego pulsa Comprobar: se prepara el testamento con la nueva fecha. Fírmalo con Herramientas > Firmar el testamento sin conexión."
+
+#: bal/gui/qt/dialogs.py:2660
+msgid "To sign on the offline computer"
+msgstr "Para firmar en el ordenador sin conexión"
+
+#: bal/gui/qt/dialogs.py:2661
+msgid ""
+"To postpone the date, the old will must be invalidated first. This wallet is watch-only: the invalidation must be signed on the offline computer.\n"
+"What to do:\n"
+"1. In the transaction window press Share and save it to a file (or show the QR code).\n"
+"2. Take the file to the offline computer.\n"
+"3. There, in Electrum: Tools > Load transaction. Check that the bitcoin go back to an address of yours, press Sign and save the signed file.\n"
+"4. Bring the signed file back to the online computer.\n"
+"5. Here, in Electrum: Tools > Load transaction, then press Broadcast.\n"
+"6. Wait for the confirmation, then press Check: the will with the new date is prepared. Sign it with Tools > Sign the will offline."
+msgstr ""
+"Para aplazar la fecha, primero hay que invalidar el testamento antiguo. Esta cartera es de solo lectura: la invalidación se firma en el ordenador sin conexión.\n"
+"Qué hacer:\n"
+"1. En la ventana de la transacción pulsa Compartir y guárdala en un archivo (o muestra el código QR).\n"
+"2. Lleva el archivo al ordenador sin conexión.\n"
+"3. Allí, en Electrum: Herramientas > Cargar transacción. Comprueba que los bitcoin vuelven a una dirección tuya, pulsa Firmar y guarda el archivo firmado.\n"
+"4. Vuelve a llevar el archivo firmado al ordenador conectado.\n"
+"5. Aquí, en Electrum: Herramientas > Cargar transacción, luego pulsa Transmitir.\n"
+"6. Espera la confirmación, luego pulsa Comprobar: se prepara el testamento con la nueva fecha. Fírmalo con Herramientas > Firmar el testamento sin conexión."
+
+#: bal/gui/qt/dialogs.py:2687
+msgid "Instructions copied"
+msgstr "Instrucciones copiadas"
+
+#: bal/gui/qt/dialogs.py:2698
+msgid "Information"
+msgstr "Información"
+
+#: bal/gui/qt/dialogs.py:2704
+msgid "Copy the instructions"
+msgstr "Copiar las instrucciones"
+
+#: bal/gui/qt/dialogs.py:2805
 msgid ""
 "Your old will has been invalidated and the transaction was broadcast.\n"
 "Electrum may need a little time to register it.\n"
@@ -2493,12 +2553,12 @@ msgstr ""
 "Electrum puede tardar un poco en registrarla.\n"
 "Espera a que se confirme la transacción de invalidación y vuelve a pulsar el botón Comprobar para terminar de actualizar tu testamento."
 
-#: bal/gui/qt/dialogs.py:2678 bal/gui/qt/dialogs.py:4310
-#: bal/gui/qt/dialogs.py:4314
+#: bal/gui/qt/dialogs.py:2834 bal/gui/qt/dialogs.py:4466
+#: bal/gui/qt/dialogs.py:4478
 msgid "The check stopped: nothing was changed."
 msgstr "La comprobación se detuvo: no ha cambiado nada."
 
-#: bal/gui/qt/dialogs.py:2758
+#: bal/gui/qt/dialogs.py:2914
 msgid ""
 "Your will has expired and must be invalidated before it can be rebuilt.\n"
 "A transaction window will now open:\n"
@@ -2510,19 +2570,19 @@ msgstr ""
 "firma la transacción y luego TRANSMÍTELA para invalidar tu antiguo testamento.\n"
 "Cuando se confirme la invalidación, pulsa el botón Comprobar para terminar el testamento."
 
-#: bal/gui/qt/dialogs.py:2794 bal/gui/qt/window.py:2506
+#: bal/gui/qt/dialogs.py:2950 bal/gui/qt/window.py:2506
 msgid "Check Alive must be after today and before the delivery date, please update it"
 msgstr "La fecha de verificación de vida debe ser posterior a hoy y anterior a la fecha de entrega: actualízala"
 
-#: bal/gui/qt/dialogs.py:2836
+#: bal/gui/qt/dialogs.py:2992
 msgid "Not now: nothing was changed, your current will stays valid."
 msgstr "Ahora no: no se ha cambiado nada, tu testamento actual sigue siendo válido."
 
-#: bal/gui/qt/dialogs.py:2883
+#: bal/gui/qt/dialogs.py:3039
 msgid "Auto-sign disabled — sign manually"
 msgstr "Firma automática desactivada — firma manualmente"
 
-#: bal/gui/qt/dialogs.py:2897
+#: bal/gui/qt/dialogs.py:3053
 msgid ""
 "The delivery date was automatically moved one day earlier so the updated will can correctly replace the previous one.\n"
 "Please sign (and broadcast) to confirm the change."
@@ -2530,172 +2590,172 @@ msgstr ""
 "La fecha de entrega se ha adelantado automáticamente un día para que el testamento actualizado pueda sustituir correctamente al anterior.\n"
 "Firma (y transmite) para confirmar el cambio."
 
-#: bal/gui/qt/dialogs.py:2917
+#: bal/gui/qt/dialogs.py:3073
 msgid "Sign your will"
 msgstr "Firma tu testamento"
 
-#: bal/gui/qt/dialogs.py:2941
+#: bal/gui/qt/dialogs.py:3097
 msgid "Finished"
 msgstr "Terminado"
 
-#: bal/gui/qt/dialogs.py:2961
+#: bal/gui/qt/dialogs.py:3117
 msgid "Calendar"
 msgstr "Calendario"
 
-#: bal/gui/qt/dialogs.py:2965 bal/gui/qt/lists.py:1793
+#: bal/gui/qt/dialogs.py:3121 bal/gui/qt/lists.py:1793
 msgid "Will report"
 msgstr "Informe"
 
-#: bal/gui/qt/dialogs.py:2968 bal/gui/qt/dialogs.py:3155
-#: bal/gui/qt/dialogs.py:3226 bal/gui/qt/dialogs.py:3599
-#: bal/gui/qt/dialogs.py:5103 bal/gui/qt/dialogs.py:5395
-#: bal/gui/qt/dialogs.py:6226 bal/gui/qt/offline_sign.py:776
+#: bal/gui/qt/dialogs.py:3124 bal/gui/qt/dialogs.py:3311
+#: bal/gui/qt/dialogs.py:3382 bal/gui/qt/dialogs.py:3755
+#: bal/gui/qt/dialogs.py:5267 bal/gui/qt/dialogs.py:5559
+#: bal/gui/qt/dialogs.py:6390 bal/gui/qt/offline_sign.py:776
 #: bal/gui/qt/trace_window.py:140
 msgid "Close"
 msgstr "Cerrar"
 
-#: bal/gui/qt/dialogs.py:3094
+#: bal/gui/qt/dialogs.py:3250
 #, python-brace-format
 msgid "\"{}\" is the only will-executor selected: it cannot be excluded. Choose another one in the Will-Executor tab."
 msgstr "\"{}\" es el único will-executor seleccionado: no se puede excluir. Elige otro en la pestaña Will-Executor."
 
-#: bal/gui/qt/dialogs.py:3106
+#: bal/gui/qt/dialogs.py:3262
 #, python-brace-format
 msgid "\"{}\" received your will, but did not answer the check."
 msgstr "\"{}\" ha recibido tu testamento, pero no ha respondido a la comprobación."
 
-#: bal/gui/qt/dialogs.py:3109
+#: bal/gui/qt/dialogs.py:3265
 msgid "If you exclude it, it is no longer checked and your next wills are no longer sent to it. The copies it already received stay with it. You can select it again in the Will-Executor tab."
 msgstr "Si lo excluyes, ya no se comprueba y tus próximos testamentos ya no se le envían. Las copias que ya ha recibido se quedan con él. Puedes volver a seleccionarlo en la pestaña Will-Executor."
 
-#: bal/gui/qt/dialogs.py:3113
+#: bal/gui/qt/dialogs.py:3269
 msgid "You can also press Retry later."
 msgstr "También puedes pulsar Reintentar más tarde."
 
-#: bal/gui/qt/dialogs.py:3115
+#: bal/gui/qt/dialogs.py:3271
 #, python-brace-format
 msgid "\"{}\" did not receive your will."
 msgstr "\"{}\" no ha recibido tu testamento."
 
-#: bal/gui/qt/dialogs.py:3118
+#: bal/gui/qt/dialogs.py:3274
 msgid "1 other will-executor has it."
 msgstr "Otro will-executor lo tiene."
 
-#: bal/gui/qt/dialogs.py:3120
+#: bal/gui/qt/dialogs.py:3276
 #, python-brace-format
 msgid "The other {} will-executors have it."
 msgstr "Los otros {} will-executors lo tienen."
 
-#: bal/gui/qt/dialogs.py:3123
+#: bal/gui/qt/dialogs.py:3279
 msgid "If you exclude it, your will is no longer sent to it and the check runs again without it. You can select it again in the Will-Executor tab."
 msgstr "Si lo excluyes, ya no se le enviará tu testamento y la comprobación se repite sin él. Podrás volver a seleccionarlo en la pestaña Will-Executor."
 
-#: bal/gui/qt/dialogs.py:3127
+#: bal/gui/qt/dialogs.py:3283
 msgid "Exclude it?"
 msgstr "¿Lo excluyes?"
 
-#: bal/gui/qt/dialogs.py:3151 bal/gui/qt/dialogs.py:3222
+#: bal/gui/qt/dialogs.py:3307 bal/gui/qt/dialogs.py:3378
 msgid "🔮 Wizard"
 msgstr "🔮 Asistente"
 
-#: bal/gui/qt/dialogs.py:3330 bal/gui/qt/widgets.py:1916
+#: bal/gui/qt/dialogs.py:3486 bal/gui/qt/widgets.py:1916
 #, python-brace-format
 msgid "(reminder {idx}/{total})"
 msgstr "(recordatorio {idx}/{total})"
 
-#: bal/gui/qt/dialogs.py:3437 bal/gui/qt/dialogs.py:3440
-#: bal/gui/qt/dialogs.py:3445 bal/gui/qt/dialogs.py:3452
-#: bal/gui/qt/dialogs.py:3457
+#: bal/gui/qt/dialogs.py:3593 bal/gui/qt/dialogs.py:3596
+#: bal/gui/qt/dialogs.py:3601 bal/gui/qt/dialogs.py:3608
+#: bal/gui/qt/dialogs.py:3613
 msgid "Not finished"
 msgstr "Sin terminar"
 
-#: bal/gui/qt/dialogs.py:3438
+#: bal/gui/qt/dialogs.py:3594
 msgid "Will not sent to the will-executors"
 msgstr "Testamento no enviado a los will-executors"
 
-#: bal/gui/qt/dialogs.py:3441
+#: bal/gui/qt/dialogs.py:3597
 msgid "Will not sent to every will-executor"
 msgstr "Testamento no enviado a todos los will-executors"
 
-#: bal/gui/qt/dialogs.py:3446
+#: bal/gui/qt/dialogs.py:3602
 msgid "Will not held by every will-executor"
 msgstr "Testamento no presente en todos los will-executors"
 
-#: bal/gui/qt/dialogs.py:3448
+#: bal/gui/qt/dialogs.py:3604
 msgid "All done"
 msgstr "Todo listo"
 
-#: bal/gui/qt/dialogs.py:3453
+#: bal/gui/qt/dialogs.py:3609
 msgid "Will partly signed: complete it with the missing signatures."
 msgstr "Testamento firmado en parte: complétalo con las firmas que faltan."
 
-#: bal/gui/qt/dialogs.py:3457
+#: bal/gui/qt/dialogs.py:3613
 msgid "Will still to sign"
 msgstr "Testamento aún por firmar"
 
-#: bal/gui/qt/dialogs.py:3502
+#: bal/gui/qt/dialogs.py:3658
 #, python-brace-format
 msgid "The will-executor {url} still holds a transaction from an older will with delivery date {old_date}, earlier than your current will ({current_date})."
 msgstr "El Will-Executor {url} todavía guarda una transacción de un testamento antiguo con fecha de entrega {old_date}, anterior a tu testamento actual ({current_date})."
 
-#: bal/gui/qt/dialogs.py:3510
+#: bal/gui/qt/dialogs.py:3666
 msgid "Warning: an older will is still active."
 msgstr "Atención: un testamento antiguo sigue activo."
 
-#: bal/gui/qt/dialogs.py:3512
+#: bal/gui/qt/dialogs.py:3668
 msgid "It could be used first. To cancel it, send your whole balance to one of your own addresses (Electrum Send tab, Max), then press Check again."
 msgstr "Podría usarse primero. Para anularla, envía todo tu saldo a una de tus propias direcciones (pestaña Enviar de Electrum, Max) y luego vuelve a pulsar Comprobar."
 
-#: bal/gui/qt/dialogs.py:3566
+#: bal/gui/qt/dialogs.py:3722
 msgid "Next steps (manual): press 'Sign' to sign your will, then 'Broadcast will' to send it to the will-executors."
 msgstr "Siguientes pasos (manual): pulsa 'Firmar' para firmar tu testamento y luego 'Enviar' para enviarlo a los Will-Executor."
 
-#: bal/gui/qt/dialogs.py:3571
+#: bal/gui/qt/dialogs.py:3727
 msgid "Next step (manual): press 'Sign' to sign your will."
 msgstr "Siguiente paso (manual): pulsa 'Firmar' para firmar tu testamento."
 
-#: bal/gui/qt/dialogs.py:3575 bal/gui/qt/window.py:2679
+#: bal/gui/qt/dialogs.py:3731 bal/gui/qt/window.py:2679
 msgid "Next step (manual): press 'Broadcast will' to send your will to the will-executors."
 msgstr "Siguiente paso (manual): pulsa 'Enviar' para enviar tu testamento a los Will-Executor."
 
-#: bal/gui/qt/dialogs.py:3606
+#: bal/gui/qt/dialogs.py:3762
 msgid "Open the table of the deliveries"
 msgstr "Abrir la tabla de las entregas"
 
-#: bal/gui/qt/dialogs.py:3758 bal/gui/qt/dialogs.py:4083
-#: bal/gui/qt/dialogs.py:4095
+#: bal/gui/qt/dialogs.py:3914 bal/gui/qt/dialogs.py:4239
+#: bal/gui/qt/dialogs.py:4251
 msgid "Invalidating old will"
 msgstr "Invalidando el antiguo testamento"
 
-#: bal/gui/qt/dialogs.py:3764 bal/gui/qt/dialogs.py:4084
-#: bal/gui/qt/dialogs.py:4098
+#: bal/gui/qt/dialogs.py:3920 bal/gui/qt/dialogs.py:4240
+#: bal/gui/qt/dialogs.py:4254
 msgid "Building your will"
 msgstr "Creando tu testamento"
 
-#: bal/gui/qt/dialogs.py:3770 bal/gui/qt/dialogs.py:4085
-#: bal/gui/qt/dialogs.py:4099
+#: bal/gui/qt/dialogs.py:3926 bal/gui/qt/dialogs.py:4241
+#: bal/gui/qt/dialogs.py:4255
 msgid "Signing your will"
 msgstr "Firmando tu testamento"
 
-#: bal/gui/qt/dialogs.py:3776 bal/gui/qt/dialogs.py:4086
-#: bal/gui/qt/dialogs.py:4100
+#: bal/gui/qt/dialogs.py:3932 bal/gui/qt/dialogs.py:4242
+#: bal/gui/qt/dialogs.py:4256
 msgid "Broadcasting your will to executors"
 msgstr "Transmitiendo tu testamento a los ejecutores"
 
-#: bal/gui/qt/dialogs.py:3783 bal/gui/qt/dialogs.py:4087
-#: bal/gui/qt/dialogs.py:4103
+#: bal/gui/qt/dialogs.py:3939 bal/gui/qt/dialogs.py:4243
+#: bal/gui/qt/dialogs.py:4259
 msgid "Verifying your will with the executors"
 msgstr "Verificando tu testamento con los ejecutores"
 
-#: bal/gui/qt/dialogs.py:3831 bal/gui/qt/dialogs.py:4128
+#: bal/gui/qt/dialogs.py:3987 bal/gui/qt/dialogs.py:4284
 msgid "Wait"
 msgstr "Espera"
 
-#: bal/gui/qt/dialogs.py:3936
+#: bal/gui/qt/dialogs.py:4092
 msgid "Details (log)"
 msgstr "Detalles (registro)"
 
-#: bal/gui/qt/dialogs.py:4081 bal/gui/qt/dialogs.py:4093
+#: bal/gui/qt/dialogs.py:4237 bal/gui/qt/dialogs.py:4249
 #: bal/gui/qt/flow_adapter.py:94 bal/gui/qt/flow_adapter.py:113
 #: bal/gui/qt/flow_adapter.py:116 bal/gui/qt/flow_adapter.py:119
 #: bal/gui/qt/flow_adapter.py:123 bal/gui/qt/flow_adapter.py:130
@@ -2703,150 +2763,154 @@ msgstr "Detalles (registro)"
 msgid "Checking variables"
 msgstr "Comprobando variables"
 
-#: bal/gui/qt/dialogs.py:4093 bal/gui/qt/dialogs.py:4094
+#: bal/gui/qt/dialogs.py:4249 bal/gui/qt/dialogs.py:4250
 msgid "Checking your will…"
 msgstr "Comprobando tu testamento…"
 
-#: bal/gui/qt/dialogs.py:4096
+#: bal/gui/qt/dialogs.py:4252
 msgid "Invalidating the old will on the blockchain…"
 msgstr "Invalidando el testamento anterior en la blockchain…"
 
-#: bal/gui/qt/dialogs.py:4098
+#: bal/gui/qt/dialogs.py:4254
 msgid "Preparing your will…"
 msgstr "Preparando tu testamento…"
 
-#: bal/gui/qt/dialogs.py:4099
+#: bal/gui/qt/dialogs.py:4255
 msgid "Signing your will…"
 msgstr "Firmando tu testamento…"
 
-#: bal/gui/qt/dialogs.py:4180 bal/gui/qt/dialogs.py:4186
+#: bal/gui/qt/dialogs.py:4336 bal/gui/qt/dialogs.py:4342
 #: bal/gui/qt/flow_adapter.py:130 bal/gui/qt/flow_adapter.py:135
 msgid "Stopped"
 msgstr "Detenido"
 
-#: bal/gui/qt/dialogs.py:4260
+#: bal/gui/qt/dialogs.py:4416
 msgid "to do"
 msgstr "pendiente"
 
-#: bal/gui/qt/dialogs.py:4315 bal/gui/qt/dialogs.py:4355
+#: bal/gui/qt/dialogs.py:4471
+msgid "Postponing: the old will stays in force until its invalidation is signed on the other computers and broadcast. Then press Check again: the will with the new date is prepared then."
+msgstr "Aplazamiento en curso: el testamento antiguo sigue en vigor hasta que su invalidación se firme en los otros ordenadores y se emita. Luego pulsa de nuevo Comprobar: entonces se prepara el testamento con la nueva fecha."
+
+#: bal/gui/qt/dialogs.py:4479 bal/gui/qt/dialogs.py:4519
 msgid "The new will was not prepared."
 msgstr "El nuevo testamento no se ha preparado."
 
-#: bal/gui/qt/dialogs.py:4316
+#: bal/gui/qt/dialogs.py:4480
 msgid "The new will was not signed."
 msgstr "El nuevo testamento no se ha firmado."
 
-#: bal/gui/qt/dialogs.py:4317
+#: bal/gui/qt/dialogs.py:4481
 msgid "The will was not sent to the will-executors."
 msgstr "El testamento no se ha enviado a los will-executors."
 
-#: bal/gui/qt/dialogs.py:4325
+#: bal/gui/qt/dialogs.py:4489
 #, python-brace-format
 msgid "Interrupted: the old will was not invalidated. Your later date ({chosen}) was not applied: the will in force needs an invalidation transaction on the blockchain first (your bitcoin stay yours, you only pay the normal network fee). When you are ready, choose it again."
 msgstr "Interrumpido: el testamento anterior no se ha invalidado. Tu fecha posterior ({chosen}) no se ha aplicado: primero el testamento en vigor necesita una transacción de invalidación en la blockchain (tus bitcoin siguen siendo tuyos, solo pagas la comisión normal de la red). Cuando estés listo, vuelve a elegirla."
 
-#: bal/gui/qt/dialogs.py:4336
+#: bal/gui/qt/dialogs.py:4500
 msgid "Interrupted: the will in several deliveries was not invalidated and stays in force. The next Check will ask again; to keep the deliveries instead, open the window \"Inheritance in several deliveries\" and save."
 msgstr "Interrumpido: el testamento en varias entregas no se invalidó y sigue en vigor. La próxima Comprobación lo pedirá de nuevo; para conservar las entregas, abre la ventana \"Herencia en varias entregas\" y guarda."
 
-#: bal/gui/qt/dialogs.py:4344
+#: bal/gui/qt/dialogs.py:4508
 msgid "Interrupted: the old will was not invalidated, nothing was changed."
 msgstr "Interrumpido: el testamento anterior no se ha invalidado, no ha cambiado nada."
 
-#: bal/gui/qt/dialogs.py:4350
+#: bal/gui/qt/dialogs.py:4514
 msgid "Interrupted: the new will was not signed."
 msgstr "Interrumpido: el nuevo testamento no se ha firmado."
 
-#: bal/gui/qt/dialogs.py:4497
+#: bal/gui/qt/dialogs.py:4661
 msgid "Will Details"
 msgstr "Detalles del testamento"
 
-#: bal/gui/qt/dialogs.py:4505
+#: bal/gui/qt/dialogs.py:4669
 msgid "Will plan view (technical details). The new graphic view is 'Future' in the Will tab."
 msgstr "Vista del plan sucesorio (detalles técnicos). La nueva vista gráfica es 'Futuro' en la pestaña Testamento."
 
-#: bal/gui/qt/dialogs.py:4515 bal/gui/qt/dialogs.py:6201
+#: bal/gui/qt/dialogs.py:4679 bal/gui/qt/dialogs.py:6365
 #: bal/gui/qt/lists.py:1718 bal/gui/qt/offline_sign.py:436
 #: bal/gui/qt/offline_sign.py:569 bal/gui/qt/offline_sign.py:600
 msgid "Sign"
 msgstr "Firmar"
 
-#: bal/gui/qt/dialogs.py:4520 bal/gui/qt/lists.py:1723
+#: bal/gui/qt/dialogs.py:4684 bal/gui/qt/lists.py:1723
 msgid "Broadcast will"
 msgstr "Enviar"
 
-#: bal/gui/qt/dialogs.py:4527 bal/gui/qt/lists.py:1725
+#: bal/gui/qt/dialogs.py:4691 bal/gui/qt/lists.py:1725
 msgid "Invalidate will"
 msgstr "Invalidar"
 
-#: bal/gui/qt/dialogs.py:4532 bal/gui/qt/lists.py:1732
+#: bal/gui/qt/dialogs.py:4696 bal/gui/qt/lists.py:1732
 msgid "Merge"
 msgstr "Combinar"
 
-#: bal/gui/qt/dialogs.py:4540
+#: bal/gui/qt/dialogs.py:4704
 #, python-brace-format
 msgid "Expiration date: {}"
 msgstr "Fecha de caducidad: {}"
 
-#: bal/gui/qt/dialogs.py:4546
+#: bal/gui/qt/dialogs.py:4710
 #, python-brace-format
 msgid "Valid Txs:{}"
 msgstr "Transacciones válidas: {}"
 
-#: bal/gui/qt/dialogs.py:4548
+#: bal/gui/qt/dialogs.py:4712
 #, python-brace-format
 msgid "Total Txs:{}"
 msgstr "Transacciones totales: {}"
 
-#: bal/gui/qt/dialogs.py:4628
+#: bal/gui/qt/dialogs.py:4792
 msgid "Will-Executor Service List"
 msgstr "Lista de servicios Will-Executor"
 
-#: bal/gui/qt/dialogs.py:4690
+#: bal/gui/qt/dialogs.py:4854
 msgid "New Heir"
 msgstr "Nuevo heredero"
 
-#: bal/gui/qt/dialogs.py:4732
+#: bal/gui/qt/dialogs.py:4896
 msgid "All"
 msgstr "Todo"
 
-#: bal/gui/qt/dialogs.py:4735
+#: bal/gui/qt/dialogs.py:4899
 msgid "Valid NC"
 msgstr "Válido NC"
 
-#: bal/gui/qt/dialogs.py:4873 bal/gui/qt/dialogs.py:4962
+#: bal/gui/qt/dialogs.py:5037 bal/gui/qt/dialogs.py:5126
 msgid "Auto"
 msgstr "Automático"
 
-#: bal/gui/qt/dialogs.py:4875
+#: bal/gui/qt/dialogs.py:5039
 msgid "Automatically advance through the QR codes."
 msgstr "Avanza automáticamente por los códigos QR."
 
-#: bal/gui/qt/dialogs.py:4879
+#: bal/gui/qt/dialogs.py:5043
 msgid "QR codes per second:"
 msgstr "Códigos QR por segundo:"
 
-#: bal/gui/qt/dialogs.py:4883
+#: bal/gui/qt/dialogs.py:5047
 msgid " /s"
 msgstr " /s"
 
-#: bal/gui/qt/dialogs.py:4885
+#: bal/gui/qt/dialogs.py:5049
 msgid "Loop"
 msgstr "Bucle"
 
-#: bal/gui/qt/dialogs.py:4888
+#: bal/gui/qt/dialogs.py:5052
 msgid "When the last QR code is reached, keep cycling from the first one instead of stopping."
 msgstr "Cuando se alcanza el último código QR, sigue repitiendo desde el primero en lugar de detenerse."
 
-#: bal/gui/qt/dialogs.py:4897
+#: bal/gui/qt/dialogs.py:5061
 msgid "QR code size:"
 msgstr "Tamaño del código QR:"
 
-#: bal/gui/qt/dialogs.py:4956
+#: bal/gui/qt/dialogs.py:5120
 msgid "Stop"
 msgstr "Detener"
 
-#: bal/gui/qt/dialogs.py:4978
+#: bal/gui/qt/dialogs.py:5142
 #, python-brace-format
 msgid ""
 "Scan the QR codes below with the will-opening device.\n"
@@ -2855,101 +2919,101 @@ msgstr ""
 "Escanea los códigos QR de abajo con el dispositivo que abre el testamento.\n"
 "{} códigos contienen la transferencia completa (sirve cualquier orden y se ignoran los duplicados)."
 
-#: bal/gui/qt/dialogs.py:4999
+#: bal/gui/qt/dialogs.py:5163
 #, python-brace-format
 msgid "Frame {} of {}"
 msgstr "Código {} de {}"
 
-#: bal/gui/qt/dialogs.py:5022
+#: bal/gui/qt/dialogs.py:5186
 msgid "Export will"
 msgstr "Exportar testamento"
 
-#: bal/gui/qt/dialogs.py:5037
+#: bal/gui/qt/dialogs.py:5201
 msgid "No will transaction to export."
 msgstr "No hay ninguna transacción del testamento que exportar."
 
-#: bal/gui/qt/dialogs.py:5044
+#: bal/gui/qt/dialogs.py:5208
 msgid "Export:"
 msgstr "Exportar:"
 
-#: bal/gui/qt/dialogs.py:5052
+#: bal/gui/qt/dialogs.py:5216
 msgid "Whole will"
 msgstr "Testamento completo"
 
-#: bal/gui/qt/dialogs.py:5056
+#: bal/gui/qt/dialogs.py:5220
 msgid "Export the full will items (all details/statuses) as JSON, or only the serialized transactions."
 msgstr "Exporta los elementos completos del testamento (todos los detalles y estados) en JSON, o solo las transacciones serializadas."
 
-#: bal/gui/qt/dialogs.py:5066
+#: bal/gui/qt/dialogs.py:5230
 msgid "Send as:"
 msgstr "Enviar como:"
 
-#: bal/gui/qt/dialogs.py:5068 bal/gui/qt/dialogs.py:5372
+#: bal/gui/qt/dialogs.py:5232 bal/gui/qt/dialogs.py:5536
 msgid "File"
 msgstr "Archivo"
 
-#: bal/gui/qt/dialogs.py:5069 bal/gui/qt/dialogs.py:5373
+#: bal/gui/qt/dialogs.py:5233 bal/gui/qt/dialogs.py:5537
 msgid "QR Code"
 msgstr "Código QR"
 
-#: bal/gui/qt/dialogs.py:5070 bal/gui/qt/dialogs.py:5374
+#: bal/gui/qt/dialogs.py:5234 bal/gui/qt/dialogs.py:5538
 msgid "Audio"
 msgstr "Audio"
 
-#: bal/gui/qt/dialogs.py:5087
+#: bal/gui/qt/dialogs.py:5251
 msgid "This will is too big for QR codes and audio: export it as a file. (The filter \"Valid\" makes it smaller.)"
 msgstr "Este testamento es demasiado grande para los códigos QR y el audio: expórtalo como archivo. (El filtro \"Válido\" lo hace más pequeño.)"
 
-#: bal/gui/qt/dialogs.py:5168
+#: bal/gui/qt/dialogs.py:5332
 msgid "Export the will as a JSON file. Uncheck \"Whole will\" above to export only the serialized transactions (comma-separated)."
 msgstr "Exporta el testamento como archivo JSON. Desmarca \"Testamento completo\" arriba para exportar solo las transacciones serializadas (separadas por comas)."
 
-#: bal/gui/qt/dialogs.py:5176
+#: bal/gui/qt/dialogs.py:5340
 msgid "Export…"
 msgstr "Exportar…"
 
-#: bal/gui/qt/dialogs.py:5194 bal/gui/qt/dialogs.py:5435
+#: bal/gui/qt/dialogs.py:5358 bal/gui/qt/dialogs.py:5599
 #: bal/gui/qt/window.py:3640 bal/gui/qt/window.py:3653
 msgid "Audio MODEM plugin is not available."
 msgstr "El plugin del MÓDEM de audio no está disponible."
 
-#: bal/gui/qt/dialogs.py:5198 bal/gui/qt/dialogs.py:5439
+#: bal/gui/qt/dialogs.py:5362 bal/gui/qt/dialogs.py:5603
 msgid "Speed (KB/sec):"
 msgstr "Velocidad (KB/s):"
 
-#: bal/gui/qt/dialogs.py:5262 bal/gui/qt/dialogs.py:5296
-#: bal/gui/qt/dialogs.py:5323
+#: bal/gui/qt/dialogs.py:5426 bal/gui/qt/dialogs.py:5460
+#: bal/gui/qt/dialogs.py:5487
 msgid "No will transaction matches the selected filter."
 msgstr "Ninguna transacción del testamento coincide con el filtro seleccionado."
 
-#: bal/gui/qt/dialogs.py:5285
+#: bal/gui/qt/dialogs.py:5449
 msgid "item(s)"
 msgstr "elemento(s)"
 
-#: bal/gui/qt/dialogs.py:5285
+#: bal/gui/qt/dialogs.py:5449
 msgid "transaction(s)"
 msgstr "transacción(es)"
 
-#: bal/gui/qt/dialogs.py:5287
+#: bal/gui/qt/dialogs.py:5451
 #, python-brace-format
 msgid "{} {} will be exported."
 msgstr "Se exportará: {} {}."
 
-#: bal/gui/qt/dialogs.py:5290
+#: bal/gui/qt/dialogs.py:5454
 #, python-brace-format
 msgid "{} {} will be sent."
 msgstr "Se enviará: {} {}."
 
-#: bal/gui/qt/dialogs.py:5316 bal/gui/qt/dialogs.py:5319
-#: bal/gui/qt/dialogs.py:5475 bal/gui/qt/dialogs.py:5478
+#: bal/gui/qt/dialogs.py:5480 bal/gui/qt/dialogs.py:5483
+#: bal/gui/qt/dialogs.py:5639 bal/gui/qt/dialogs.py:5642
 msgid "Invalid audio speed."
 msgstr "Velocidad de audio no válida."
 
-#: bal/gui/qt/dialogs.py:5355
+#: bal/gui/qt/dialogs.py:5519
 msgid "Import will"
 msgstr "Importar testamento"
 
-#: bal/gui/qt/dialogs.py:5362
+#: bal/gui/qt/dialogs.py:5526
 msgid ""
 "Choose how the will was exported: from a file, QR codes or audio.\n"
 "The import never touches the live will."
@@ -2957,59 +3021,59 @@ msgstr ""
 "Elige cómo se exportó el testamento: desde un archivo, códigos QR o audio.\n"
 "La importación nunca afecta al testamento activo."
 
-#: bal/gui/qt/dialogs.py:5370
+#: bal/gui/qt/dialogs.py:5534
 msgid "Import from:"
 msgstr "Importar desde:"
 
-#: bal/gui/qt/dialogs.py:5411
+#: bal/gui/qt/dialogs.py:5575
 msgid "Import the JSON will file written by the Export ▶ File option. The will opens in a read-only preview window."
 msgstr "Importa el archivo JSON del testamento creado con la opción Exportar ▶ Archivo. El testamento se abre en una ventana de vista previa de solo lectura."
 
-#: bal/gui/qt/dialogs.py:5417
+#: bal/gui/qt/dialogs.py:5581
 msgid "Choose will file…"
 msgstr "Elige el archivo del testamento…"
 
-#: bal/gui/qt/dialogs.py:5448
+#: bal/gui/qt/dialogs.py:5612
 msgid "Waiting for the audio transfer…"
 msgstr "Esperando la transferencia de audio…"
 
-#: bal/gui/qt/dialogs.py:5451
+#: bal/gui/qt/dialogs.py:5615
 msgid "Receive by audio…"
 msgstr "Recibir por audio…"
 
-#: bal/gui/qt/dialogs.py:5492
+#: bal/gui/qt/dialogs.py:5656
 msgid "Receiving…"
 msgstr "Recibiendo…"
 
-#: bal/gui/qt/dialogs.py:5512
+#: bal/gui/qt/dialogs.py:5676
 msgid "No transaction data received."
 msgstr "No se recibió ningún dato de transacción."
 
-#: bal/gui/qt/dialogs.py:5530
+#: bal/gui/qt/dialogs.py:5694
 #, python-brace-format
 msgid "Waiting for audio ({:.1f} kbps)…"
 msgstr "Esperando audio ({:.1f} kbps)…"
 
-#: bal/gui/qt/dialogs.py:5593
+#: bal/gui/qt/dialogs.py:5757
 #, python-brace-format
 msgid "Could not parse a transferred will item: {}"
 msgstr "No se pudo interpretar un elemento del testamento transferido: {}"
 
-#: bal/gui/qt/dialogs.py:5613
+#: bal/gui/qt/dialogs.py:5777
 #, python-brace-format
 msgid "Could not parse a transferred transaction: {}"
 msgstr "No se pudo interpretar una transacción transferida: {}"
 
-#: bal/gui/qt/dialogs.py:5625
+#: bal/gui/qt/dialogs.py:5789
 msgid "The imported will contains no valid transaction in this wallet."
 msgstr "El testamento importado no contiene ninguna transacción válida en esta cartera."
 
-#: bal/gui/qt/dialogs.py:5636
+#: bal/gui/qt/dialogs.py:5800
 #, python-brace-format
 msgid "{} imported transaction(s) are not valid in this wallet and were skipped."
 msgstr "{} transacción(es) importada(s) no son válidas en esta cartera y se omitieron."
 
-#: bal/gui/qt/dialogs.py:5736
+#: bal/gui/qt/dialogs.py:5900
 msgid ""
 "Show the will QR codes to the camera, one after another.\n"
 "After the first code, every new code is captured automatically.\n"
@@ -3019,114 +3083,114 @@ msgstr ""
 "Después del primer código, cada código nuevo se captura automáticamente.\n"
 "El primer código indica el número total de códigos; se ignoran los duplicados."
 
-#: bal/gui/qt/dialogs.py:5745 bal/gui/qt/dialogs.py:5923
+#: bal/gui/qt/dialogs.py:5909 bal/gui/qt/dialogs.py:6087
 msgid "Waiting for the first frame…"
 msgstr "Esperando el primer código…"
 
-#: bal/gui/qt/dialogs.py:5762
+#: bal/gui/qt/dialogs.py:5926
 msgid "…or paste/type the frame text here"
 msgstr "…o pega/escribe aquí el texto del código"
 
-#: bal/gui/qt/dialogs.py:5766
+#: bal/gui/qt/dialogs.py:5930
 msgid "Add frame"
 msgstr "Añadir código"
 
-#: bal/gui/qt/dialogs.py:5772 bal/gui/qt/dialogs.py:6015
+#: bal/gui/qt/dialogs.py:5936 bal/gui/qt/dialogs.py:6179
 msgid "Scan with camera…"
 msgstr "Escanear con la cámara…"
 
-#: bal/gui/qt/dialogs.py:5775
+#: bal/gui/qt/dialogs.py:5939
 msgid "Start the live camera. While it runs, every new QR code shown to the camera is captured automatically."
 msgstr "Inicia la cámara en vivo. Mientras esté en marcha, cada código QR nuevo que se muestre a la cámara se capturará automáticamente."
 
-#: bal/gui/qt/dialogs.py:5781
+#: bal/gui/qt/dialogs.py:5945
 msgid "Reset"
 msgstr "Reiniciar"
 
-#: bal/gui/qt/dialogs.py:5788
+#: bal/gui/qt/dialogs.py:5952
 msgid "Review and Sign…"
 msgstr "Revisar y firmar…"
 
-#: bal/gui/qt/dialogs.py:5808
+#: bal/gui/qt/dialogs.py:5972
 #, python-brace-format
 msgid "The scanned code belongs to a different transfer ({} frames, {}). The import was reset; scan the first code again."
 msgstr "El código escaneado pertenece a otra transferencia ({} códigos, {}). Se reinició la importación; escanea de nuevo el primer código."
 
-#: bal/gui/qt/dialogs.py:5898
+#: bal/gui/qt/dialogs.py:6062
 #, python-brace-format
 msgid "All {} frames stored."
 msgstr "Se guardaron los {} códigos."
 
-#: bal/gui/qt/dialogs.py:5904
+#: bal/gui/qt/dialogs.py:6068
 #, python-brace-format
 msgid "Stored {} of {} frames."
 msgstr "Guardados {} de {} códigos."
 
-#: bal/gui/qt/dialogs.py:5969
+#: bal/gui/qt/dialogs.py:6133
 msgid "Cannot start QR scanner, no usable camera found."
 msgstr "No se puede inciar scanner QR, no se encontró la camara."
 
-#: bal/gui/qt/dialogs.py:5974
+#: bal/gui/qt/dialogs.py:6138
 msgid "Stop scanning"
 msgstr "Detener escaneo"
 
-#: bal/gui/qt/dialogs.py:6021
+#: bal/gui/qt/dialogs.py:6185
 #, python-brace-format
 msgid "Camera error: {}"
 msgstr "Error de cámara: {}"
 
-#: bal/gui/qt/dialogs.py:6068
+#: bal/gui/qt/dialogs.py:6232
 #, python-brace-format
 msgid "The scanned code belongs to a different transfer ({} frames, {}). The import was reset; show the first code again."
 msgstr "El código escaneado pertenece a otra transferencia ({} códigos, {}). Se reinició la importación; muestra de nuevo el primer código."
 
-#: bal/gui/qt/dialogs.py:6111
+#: bal/gui/qt/dialogs.py:6275
 msgid "The transferred will contains no transactions."
 msgstr "El testamento transferido no contiene transacciones."
 
-#: bal/gui/qt/dialogs.py:6140
+#: bal/gui/qt/dialogs.py:6304
 msgid "Review and sign imported will"
 msgstr "Revisar y firmar el testamento importado"
 
-#: bal/gui/qt/dialogs.py:6158
+#: bal/gui/qt/dialogs.py:6322
 msgid "Enter your wallet password to sign the imported transactions."
 msgstr "Introduce la contraseña de tu cartera para firmar las transacciones importadas."
 
-#: bal/gui/qt/dialogs.py:6204
+#: bal/gui/qt/dialogs.py:6368
 msgid "Skip"
 msgstr "Omitir"
 
-#: bal/gui/qt/dialogs.py:6220
+#: bal/gui/qt/dialogs.py:6384
 msgid "Save signed file…"
 msgstr "Guardar archivo firmado…"
 
-#: bal/gui/qt/dialogs.py:6223
+#: bal/gui/qt/dialogs.py:6387
 msgid "Show signed QR…"
 msgstr "Mostrar QR firmado…"
 
-#: bal/gui/qt/dialogs.py:6247
+#: bal/gui/qt/dialogs.py:6411
 #, python-brace-format
 msgid "Transaction {} of {}"
 msgstr "Transacción {} de {}"
 
-#: bal/gui/qt/dialogs.py:6249
+#: bal/gui/qt/dialogs.py:6413
 #, python-brace-format
 msgid "TXID: {}"
 msgstr "TXID: {}"
 
-#: bal/gui/qt/dialogs.py:6252 bal/gui/qt/offline_sign.py:292
+#: bal/gui/qt/dialogs.py:6416 bal/gui/qt/offline_sign.py:292
 msgid "unknown"
 msgstr "desconocido"
 
-#: bal/gui/qt/dialogs.py:6258
+#: bal/gui/qt/dialogs.py:6422
 msgid "(no outputs)"
 msgstr "(sin salidas)"
 
-#: bal/gui/qt/dialogs.py:6272
+#: bal/gui/qt/dialogs.py:6436
 msgid "unknown (partial transaction)"
 msgstr "desconocida (transacción parcial)"
 
-#: bal/gui/qt/dialogs.py:6274
+#: bal/gui/qt/dialogs.py:6438
 #, python-brace-format
 msgid ""
 "Total outputs: {}\n"
@@ -3135,7 +3199,7 @@ msgstr ""
 "Salidas totales: {}\n"
 "Comisión: {}"
 
-#: bal/gui/qt/dialogs.py:6286
+#: bal/gui/qt/dialogs.py:6450
 #, python-brace-format
 msgid ""
 "Signed {} of {} transactions.\n"
@@ -3146,17 +3210,17 @@ msgstr ""
 "\n"
 "Guarda un archivo firmado para llevarlo al dispositivo de transmisión o muestra las transacciones firmadas como códigos QR."
 
-#: bal/gui/qt/dialogs.py:6309 bal/gui/qt/offline_sign.py:1190
+#: bal/gui/qt/dialogs.py:6473 bal/gui/qt/offline_sign.py:1190
 #: bal/gui/qt/window.py:3355
 #, python-brace-format
 msgid "Could not sign the transaction: {}"
 msgstr "No se pudo firmar la transacción: {}"
 
-#: bal/gui/qt/dialogs.py:6326
+#: bal/gui/qt/dialogs.py:6490
 msgid "Signed will saved."
 msgstr "Testamento firmado guardado."
 
-#: bal/gui/qt/dialogs.py:6337
+#: bal/gui/qt/dialogs.py:6501
 msgid "No signed transaction to show."
 msgstr "No hay ninguna transacción firmada que mostrar."
 
