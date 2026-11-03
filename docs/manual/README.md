@@ -38,7 +38,8 @@ the future the plugin will be placed directly on Electrum by default.
 
 The steps for installing the BAL plugin are very simple:
 
-1. Install the latest version of **Electrum** (Bitcoin wallet).
+1. Install **Electrum 4.8.3 or later** (Bitcoin wallet): an older Electrum
+   does not load Àncòra.
 2. Download the Àncòra ZIP from the
    [releases page](https://github.com/ManX-SAFE21/ancora-electrum-plugin/releases)
    and check its SHA‑256 against the one written there.
@@ -48,6 +49,11 @@ The steps for installing the BAL plugin are very simple:
 
 > **NB:** Àncòra and the original BAL plugin cannot be installed together:
 > both use the internal name `bal`.
+
+**Updating to a new version:** in **Tools → Plugins** add the new ZIP.
+Electrum sees it is the same plugin, replaces the old ZIP and asks you to
+restart. **Restart Electrum**: until then the old version keeps running.
+Your heirs, your will and your settings are kept.
 
 Now you are ready to leave your digital legacy to your heirs!
 

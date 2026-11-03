@@ -21,7 +21,8 @@ this document is updated to mark them as supported.
 
 ## Electrum version compatibility
 
-Àncòra runs on **Electrum 4.8.2 or later** (the tests run on Electrum 4.8.3).
+Àncòra runs on **Electrum 4.8.3 or later**. The plugin's manifest says so, so
+an older Electrum does not load it.
 See [`README.md`](README.md).
 
 ## QR wire-format compatibility

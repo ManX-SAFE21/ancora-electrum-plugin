@@ -204,8 +204,16 @@ same SHA-256.
 
 ## Install
 
+Requires **Electrum 4.8.3 or later**.
+
 In Electrum: Tools -> Plugins, add the ZIP, enable **Àncòra (Safe21)** and restart
 Electrum.
+
+## Update from an earlier version
+
+In Electrum: Tools -> Plugins, add the new ZIP. Electrum replaces the old one and asks
+to restart: restart Electrum (until then the old version keeps running). The heirs,
+the will and the settings are kept.
 EOF
 echo "  $NOTES"
 

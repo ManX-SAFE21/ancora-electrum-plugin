@@ -71,7 +71,8 @@ the future the plugin will be placed directly on Electrum by default.</p>
 <h2 id="installing-the-bal-plugin">Installing the BAL plugin</h2>
 <p>The steps for installing the BAL plugin are very simple:</p>
 <ol>
-<li>Install the latest version of <strong>Electrum</strong> (Bitcoin wallet).</li>
+<li>Install <strong>Electrum 4.8.3 or later</strong> (Bitcoin wallet): an older Electrum
+   does not load Àncòra.</li>
 <li>Download the Àncòra ZIP from the
    <a href="https://github.com/ManX-SAFE21/ancora-electrum-plugin/releases">releases page</a>
    and check its SHA‑256 against the one written there.</li>
@@ -83,6 +84,10 @@ the future the plugin will be placed directly on Electrum by default.</p>
 <p><strong>NB:</strong> Àncòra and the original BAL plugin cannot be installed together:
 both use the internal name <code>bal</code>.</p>
 </blockquote>
+<p><strong>Updating to a new version:</strong> in <strong>Tools → Plugins</strong> add the new ZIP.
+Electrum sees it is the same plugin, replaces the old ZIP and asks you to
+restart. <strong>Restart Electrum</strong>: until then the old version keeps running.
+Your heirs, your will and your settings are kept.</p>
 <p>Now you are ready to leave your digital legacy to your heirs!</p>
 <p><strong>Which wallets:</strong> the addresses of your wallet must start with <code>bc1q</code>. A wallet
 with Bitcoin addresses starting with <code>1</code> or <code>3</code> cannot build a will, and the plugin says
