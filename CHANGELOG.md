@@ -14787,3 +14787,28 @@ Tools > Invalidate opened the transaction to export.
   the copy button asked after that test are in 227g.
 
 **Outcome:** DONE
+
+## 228. Test: postponing a will in several deliveries, to the end
+
+**Why (audit 2026-10-31, item 33):** the postpone of a will in several deliveries (a
+Multiverse) was tested only up to the question "Invalidate now". The whole road was not
+covered: invalidation, the new copies, the sending, and the Check after the confirmation.
+
+**What changed:** only a new test, no plugin code.
+
+- `tests/test_multiverse_postpone.py` (new, 4 tests, with and without password): a will in
+  three deliveries (2030, 2033, 2036) signed, sent and verified by three fake will-executors,
+  each with its own fee address; every date one year later, one Check. It asks "Invalidate
+  now", broadcasts the invalidation once and, in the same Check, prepares the 39 copies of the
+  new dates, sends and verifies them; the old copies are invalidated; the first delivery
+  spends the coin the invalidation gave back; every copy pays heirs + will-executor + change +
+  one miner fee (#211). Once the invalidation is on the chain, a Check changes nothing, asks
+  nothing and sends nothing (#136).
+- Probed first on 2026-11-03 (#227): no fault found, so the test only keeps it so.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. The new test with the miner-fee and postpone tests
+  (Electrum 4.8.3): 59 passed in 49 s. No whole suite (test-only step; owner rule).
+
+**Outcome:** DONE
