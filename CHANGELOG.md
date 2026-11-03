@@ -14425,3 +14425,47 @@ reproducible, so several people can rebuild and check them.
 - `tests/external_zip_test.py`: the ZIP loads as Electrum loads it. `ruff check`: clean.
 
 **Outcome:** DONE
+
+## 220. Àncòra's own release script, with the SAFE21dev signature
+
+**Why (release list for 0.8.0, audit 2026-10-31 point 27):** `make-release.sh` was still
+BAL's: BAL's Gitea and repository, BAL's signing key, the `vX.Y.Z` tag pushed with
+`--force`, the ZIP name `bal_vX.Y.Z.zip`, a test list that skipped the Multiverse, engine
+and invalidation tests, and a version bump that was never committed. Àncòra 0.7.0 was
+released by hand. The owner chose Electrum as the model: reproducible files and a GPG
+signature.
+
+**What changed:**
+
+- `make-release.sh` rewritten. In order, stopping at the first problem:
+  - checks: a clean working tree, the tag `ancora-v<version>` not used yet (here and on
+    origin), Babel, ruff, gpg, the public key file. The version is read from
+    `bal/manifest.json`; the script never edits a tracked file;
+  - the whole test suite in the normal and in the reverse file order, and ruff;
+  - `dist/ancora_<version>.zip` built twice: the two must be identical (#219); then its
+    `.sha256` file;
+  - the owner signs the ZIP in PowerShell with the SAFE21dev key (the command is
+    printed; the private key never leaves Gpg4win). The script accepts only a good
+    signature made by the primary key `33E3393DFB10F4C45AE6F1E8206C20114CA96172`,
+    checked in an empty keyring holding only `SAFE21dev.asc`;
+  - asks whether the ZIP was tried in Electrum (ZIP first);
+  - creates the annotated tag (tagger ManX, as the commits) and pushes it only after
+    one more "yes", never with `--force`;
+  - writes `dist/RELEASE-NOTES-ancora-v<version>.md` with the SHA-256 and the commands
+    to verify. The owner creates the GitHub release on the website.
+- `SAFE21dev.asc`: the public signing key, in the repository (no secret part).
+- `.gitignore`: `dist/`. `README.md`: two lines on the reproducible ZIP and the script.
+
+**Verified (in a throwaway clone, with a throwaway key standing in for SAFE21dev, a few
+test files instead of the whole suite):**
+
+- a false signature is refused; a good one is accepted;
+- the two builds are identical; `sha256sum -c` passes on the `.sha256` file;
+- the tag is created and, answering "no", not pushed;
+- a second run stops on the existing tag; a changed file stops the run; a tag already
+  on origin stops the run;
+- the reverse order runs the same files; `bash -n` passes.
+- Found and fixed by the try: the tag needs a git identity, which the computer may not
+  have.
+
+**Outcome:** DONE
