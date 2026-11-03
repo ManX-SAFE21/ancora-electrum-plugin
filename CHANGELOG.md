@@ -14596,3 +14596,46 @@ window was wrong.
   sat, all 13.0. The same after reading the will back from the wallet file.
 
 **Outcome:** DONE
+
+## 224. "Merge" no longer takes from the file what only this computer knows
+
+**Why (limit written in #210, checked 2026-11-03):** "Merge" took from the will file the
+statuses sent / verified / in the mempool / confirmed (#158 rule). Probed on throw-away
+wallets (watch-only online, keys offline, three fake will-executors), a signed file that
+also said:
+
+- "sent" or "verified" (an old file, a damaged one, one altered by a hacked computer): the
+  first Check sent nothing and ended "All done: Ok" (the verification row red "Ko"); the
+  will-executors got the signed will only at the second Check;
+- "in the mempool" or "confirmed": the copies were no longer valid, the Check rebuilt them
+  and the signatures just brought back were lost ("Will still to sign").
+
+Nothing false reached the heirs, but the first Check said "Ok" while no will-executor had
+the signed will.
+
+**What changed:**
+
+- `bal/engine/merge.py`: `merge_items` never takes these four statuses from the file. A copy
+  already in the will keeps its own; a new copy is added without them and without the time
+  of its verification (`_drop_local_only`). The Check finds them: it sends, asks the
+  will-executors, reads the chain. A will-executor that already has a copy answers "already
+  present", counted as received (#213). The window, the offline signing window and
+  `bal_will_merge` use the same code.
+- `tests/test_merge_local_statuses.py` (new): every claim, watch-only with keys offline
+  (password), watch-only 2-of-3 with A and B offline, new copies into an empty will
+  (password), copies sent here keep their statuses, the command line. 8 of its 10 tests fail
+  on the code before this step.
+- `tests/test_import_will_details.py`: 4 tests now expect the statuses not taken.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. The merge, offline, Check and Future tests: 291 passed
+  (2 min 49 s). Whole suite, one order, Electrum 4.8.3: 3328 passed in 1 h 35 min 30 s.
+- Owner, test ZIP `ancora_0.8.0-TEST-224-merge-local-statuses.zip`, Electrum 4.8.3 on
+  Windows, testnet, watch-only wallet and its wallet with the keys, four will-executors:
+  Check (prepared, to sign offline), Tools > Sign the will offline, signed on the wallet
+  with the keys, brought back: "Will signed and sent"; then Check: verification 4/4, every
+  will-executor "received and verified", "All done: OK". A file with false statuses was
+  tried only in the tests (it needs editing the file by hand).
+
+**Outcome:** DONE

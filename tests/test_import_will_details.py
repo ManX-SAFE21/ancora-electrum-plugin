@@ -429,9 +429,9 @@ def test_merge_will_same_id_unsigned_live_substitutes_signed_imported():
     assert live_item.tx is imported_tx
     assert live_item.tx.is_complete()
     assert live_item.get_status("COMPLETE") is True
-    # Operational statuses were carried over.
-    assert live_item.get_status("PUSHED") is True
-    assert live_item.get_status("CHECKED") is True
+    # #224: sent / verified never come from the file (the Check finds them).
+    assert live_item.get_status("PUSHED") is False
+    assert live_item.get_status("CHECKED") is False
     # The will was saved and the GUI refreshed.
     assert wid in fake.will
     assert fake.will[wid]["COMPLETE"] is True
@@ -488,12 +488,14 @@ def test_merge_will_same_id_already_complete_never_touches_live_tx():
     assert live_item.tx.is_complete() is False
     assert live_item.tx.inputs()[0].script_sig is None
     assert live_item.get_status("COMPLETE") is True
-    assert live_item.get_status("PUSHED") is True
+    # #224: "sent" is not taken from the file.
+    assert live_item.get_status("PUSHED") is False
 
 
 def test_merge_will_statuses_are_monotonic():
     # Statuses that are True in the live item must never be cleared by a False
-    # value coming from the imported item.
+    # value coming from the imported item; #224: and the file's own
+    # mempool / confirmed are not taken.
     wid = "monotonic"
     live_tx = _make_partial_tx(locktime=1000, signed=True)
     live = {wid: _make_willitem_with_tx(live_tx, key=wid)}
@@ -509,7 +511,7 @@ def test_merge_will_statuses_are_monotonic():
     _merge_fake(fake, imported)
 
     assert live_item.get_status("CONFIRMED") is True
-    assert live_item.get_status("MEMPOOL") is True
+    assert live_item.get_status("MEMPOOL") is False
     assert live_item.get_status("COMPLETE") is True
 
 
@@ -528,7 +530,8 @@ def test_merge_will_new_ids_added_wholesale():
 
     assert len(live) == 2
     assert live[new_id] is imported[new_id]
-    assert live[new_id].get_status("PUSHED") is True
+    # #224: a new copy is added without the file's "sent".
+    assert live[new_id].get_status("PUSHED") is False
     assert new_id in fake.will
 
 
