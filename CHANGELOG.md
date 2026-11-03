@@ -14399,3 +14399,29 @@ and `lists.py`: the button and menu names) and in the multisig test report. No c
 no tests changed.
 
 **Outcome:** DONE
+
+## 219. The release ZIP is reproducible: the same sources give the same SHA-256
+
+**Why (release list for 0.8.0, audit 2026-10-31 point 28):** `build_zip.py` said the
+archive had a stable SHA-256, but every entry kept its file's modification time (and
+`z.write` its permissions and "made on" system). A fresh checkout, or a save without
+changes, gave another SHA-256 for the same plugin, so nobody could rebuild the ZIP and
+match the published one. Electrum works the same way: its release files are
+reproducible, so several people can rebuild and check them.
+
+**What changed:**
+
+- `build_zip.py`: every entry is written with the same fixed date (1980-01-01, the
+  earliest a ZIP can store), permissions (`rw-r--r--`), "made on" system (Unix) and
+  compression level. Only the paths and the contents of the files change the archive.
+- The files inside the ZIP and their bytes are the same as before.
+
+**Verified:**
+
+- Two builds, the second from a copy of the sources with other file times (one file
+  dated 2031): byte-identical ZIPs, same SHA-256.
+- A build with Windows Python gives the same SHA-256 as the one in WSL.
+- Against the ZIP built before the change: the same 95 names, the same bytes.
+- `tests/external_zip_test.py`: the ZIP loads as Electrum loads it. `ruff check`: clean.
+
+**Outcome:** DONE
