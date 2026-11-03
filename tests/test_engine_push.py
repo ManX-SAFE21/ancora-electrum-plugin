@@ -314,6 +314,8 @@ def test_check_writes_the_exclusion_row():
     # #222: the real rule of how the sending ended, on this fake dialog.
     dlg._sending_outcome = lambda result, selected, excluded: (
         BalBuildWillDialog._sending_outcome(dlg, result, selected, excluded))
+    # #225: no will-executor held the will before either.
+    dlg._held_somewhere = lambda: False
     dlg.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get.return_value = 500000
     with patch.object(dialogs_mod, "select_push",
                       return_value=({}, {WE1: EXCLUDED_FEE, WE2: EXCLUDED_INVALID})), \

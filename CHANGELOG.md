@@ -14639,3 +14639,58 @@ the signed will.
   tried only in the tests (it needs editing the file by hand).
 
 **Outcome:** DONE
+
+## 225. A will-executor that lost the will gets it again in the same Check
+
+**Why (seen at #224, probed 2026-11-03, owner: "fai test approfonditi"):** the Check's
+verification saw a will-executor that no longer held the will (its server emptied, or it
+held another transaction): "Verifying: Ko", the Check window "In force, but 1
+will-executor did not receive it", the executor "not received". But the copy was sent
+again only at the NEXT Check, weeks or months later, and the last row said "All done:
+Ok". Probed on test wallets with three fake will-executors: one, two or all three losing
+it, one holding an old copy, three deliveries (found the day after, #182), the Check at
+wallet close, the command line. Also: a failed resend to the one that lost it said "The
+will was not sent to the will-executors" while the other two held it.
+
+**What changed (`bal/gui/qt/dialogs.py`):**
+
+- `loop_verify` remembers the copies it found missing; the new `_resend_lost` sends them
+  again at once, to those will-executors only (`loop_push(only=...)`: one that did not
+  answer the sending is not waited for twice), and verifies only them again
+  (`loop_verify(only_ids=...)`). Once: a will-executor that takes the will and does not
+  keep it does not make the Check loop. The log says "Not held by {}: sent again". The
+  Check at wallet close does the same.
+- The last row: "Not finished: Will not held by every will-executor" when one still does
+  not hold it after that (`_not_held_everywhere`), "Will not sent to every
+  will-executor" when the resend failed; "All done: Ok" only when every will-executor
+  holds it.
+- `_sending_outcome`: "Not sent" only when no will-executor of the will holds it
+  (`_held_somewhere`).
+- Not changed: no answer to the verification (#147: still sent, warning, asked again at
+  the next Check); a will in several deliveries is verified once a day (#182); an
+  excluded will-executor (#178) is never sent anything; the command line's
+  `bal_will_check_transactions` only verifies, as before.
+- `bal/locale/`: the two new texts in Italian and Spanish.
+- `tests/test_check_resend_lost.py` (new, 12 tests): one, two or three losing it, an old
+  copy, three deliveries, wallet close, watch-only signed offline (no password), 2-of-3
+  multisig, the resend refused, nobody holding it, taken and not kept (one resend, no
+  loop), no answer left as before. 11 of them fail on the code before this step.
+  `tests/test_engine_push.py`: the fake Check of one test gets `_held_somewhere`.
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. The Check tests (404, 5 min). Whole suite, one order,
+  Electrum 4.8.3: 3340 passed in 1 h 50 min 34 s.
+- Real Electrum 4.8.3 windows, Italian, plugin from the test ZIP
+  `ancora_0.8.0-TEST-225-check-resend-lost.zip`, throw-away testnet wallet with
+  password, three fake will-executors, no network: Check; we1 loses the will, Check:
+  "Ko", "Not held by we1.test: sent again", verified again, "Your will is in force",
+  sending 3/3, verification 3/3, "All done: OK"; we1 loses it and refuses it, Check:
+  "In force, but 1 will-executor did not receive it", "Not finished: Will not sent to
+  every will-executor", verification "Ko". This try found that the second verification
+  asked all three again (and then said "Ok"): fixed before the whole suite.
+- Owner, same ZIP, Electrum 4.8.3 on Windows, testnet, real will-executors: a normal
+  Check, "Your will is in force", verification 2/2, and with one will-executor
+  deselected "excluded: has the will, no longer verified" (#178), as before.
+
+**Outcome:** DONE
