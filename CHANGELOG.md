@@ -14561,3 +14561,38 @@ Limits, on purpose:
   changed after this test (text only).
 
 **Outcome:** DONE
+
+## 223. The Details window shows the miner fee each copy really pays
+
+**Why (limit written in #212, checked 2026-11-03):** the "Transaction fees" row of the
+Details window (Will tab > Tools > Display, `WillWidget`) read the amount with
+`tx.input_value()`. A signed copy, and a later delivery read back from the wallet file,
+keep no amounts on their inputs, so it showed "-1 (-0.006 sats/vbyte)". For a multisig
+it also divided by Electrum's single-key guess of the size: a later copy of a 2-of-3
+read 184 vB against 220, 15.5 sat/vB for a chosen 13. The fee paid was right; only the
+window was wrong.
+
+**What changed:**
+
+- `bal/gui/qt/widgets.py`: new `copy_fee` (the amounts from the outputs the copy spends:
+  the copy before it, or the wallet's history), `copy_size` (the size with the wallet's
+  real scripts, also for an input that spends the change of the copy before) and
+  `fee_text`. "?" when something cannot be read, never "-1".
+- Owner: only the Details window changes. `Util.real_tx_size` and the code that builds,
+  signs and sends the will are not touched, so `copy_size` repeats its few lines.
+- `tests/test_details_fee_rate.py` (new): single key and 2-of-3, three deliveries, in
+  memory and after reopening; the unknown amount; the window itself.
+
+**Verified:**
+
+- `tests/test_details_fee_rate.py`: 6 passed. The tests that use `widgets.py` or the
+  Details window, plus `test_multisig_fee_size.py` and `test_engine_merge.py`: 642
+  passed (5 min). `ruff check bal/ tests/`: clean. The whole suite was not run: only the
+  window changed; it runs before the release.
+- Real Electrum 4.8.3 windows, Italian, plugin from the test ZIP
+  `ancora_0.8.0-TEST-223-details-fee-rate.zip`, throw-away testnet wallets, no network:
+  Tools > Display, three deliveries. Single key 2236 sat at 13.0 sat/vB on every
+  delivery (one copy 13.076: a signature one byte shorter); 2-of-3 2860, 2860 and 2704
+  sat, all 13.0. The same after reading the will back from the wallet file.
+
+**Outcome:** DONE
