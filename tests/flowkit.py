@@ -798,6 +798,12 @@ class FlowDialog(BalBuildWillDialog):
     # actions, final report) is the real one, copied line by line; only the
     # widgets are replaced by an event.
 
+    def _show_instructions(self, message):
+        """The message with "Copy the instructions" (#227): recorded as a
+        popup, like Electrum's message."""
+        self.bal_window.popups.append(["message", strip(message)])
+        self.events.append("instructions-message")
+
     def _add_close_button(self):
         """The Close / Calendar / Will report row (dialogs.py)."""
         if getattr(self, "_close_button", None) is not None:
