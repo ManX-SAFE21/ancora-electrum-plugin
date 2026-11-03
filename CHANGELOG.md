@@ -2467,7 +2467,7 @@ unchanged; the Qt plugin code is untouched.
 
 **Date:** 2026-07-22
 
-**Goal (Truman):** stop keeping the version in four places (`bal/VERSION`,
+**Goal (the BAL maintainer):** stop keeping the version in four places (`bal/VERSION`,
 `bal/manifest.json`, `bal/__init__.py`, `bal/core/plugin_base.py`) synced by a
 pre-commit hook. The version must be read at runtime from `manifest.json` only.
 
@@ -3552,7 +3552,7 @@ delivery; when it is not, the plugin raises an explicit error (see below).
 
 ---
 
-## 63. i18n review fixes (Truman's review of the translation PR)
+## 63. i18n review fixes (the BAL maintainer's review of the translation PR)
 
 **Date:** 2026-10-07
 
@@ -3612,7 +3612,7 @@ deselected executor) are not part of it and will be proposed separately.
   (`dialogs.py`, `test_core_animated_qr.py`, `test_core_qr_transfer.py`),
   none new.
 
-**Outcome:** DONE (pending Truman's review).
+**Outcome:** DONE (pending the BAL maintainer's review).
 
 ---
 
@@ -3785,7 +3785,7 @@ executor record (`selected` = True).
   protected when pushed/checked, protected backup tx) and new
   `tests/test_core_deselected_executor.py` (4).
 
-**Not changed (proposal for Truman, option "A"):** Check still does not treat
+**Not changed (proposal for the BAL maintainer, option "A"):** Check still does not treat
 a tx of a deselected executor as "not coherent" (no automatic rebuild).
 
 **Verification:** 483 passed, 1 failed (pre-existing missing `tests/karen7`);
@@ -3846,8 +3846,8 @@ config keys, wallet keys, data folder, CLI `bal_*` commands) do not.
 - Catalogs: `pybabel extract` + `pybabel update --no-fuzzy-matching` (new
   texts start empty instead of inheriting an old translation marked fuzzy;
   the catalogs carry no fuzzy entries). Italian: the 10 new texts
-  translated. Spanish: left untranslated (English shown) until Truman is
-  asked (decision D9). Most of the catalog diff is updated source line
+  translated. Spanish: left untranslated (English shown) until the BAL maintainer
+  is asked (decision D9). Most of the catalog diff is updated source line
   references.
 - Tests updated to the new defaults: `test_gui_will_flows.py` (history label
   of a rebuilt will), `test_group_c_settings.py` (calendar defaults).
@@ -3951,7 +3951,7 @@ tracked); all checks so far on a simulated wallet, not mainnet.
 **Date:** 2026-10-08
 
 **Why:** #68 left its 10 new texts untranslated in `es_ES` (English shown),
-waiting for Truman (decision D9). The owner then decided that Claude Code
+waiting for the BAL maintainer (decision D9). The owner then decided that Claude Code
 translates Spanish too (see #69).
 
 **What changed:** `bal/locale/es_ES/LC_MESSAGES/bal.po` only: the 10 texts
@@ -10732,7 +10732,7 @@ the coins a delivery needs.
   invalidation (F1); the multiverse option stays hidden. `change_input`,
   `new_input` and `normalize_will` stay for the one-date path (cleanup
   later). `WillChainError` is shown as raw English text (text step later).
-- `context/reports/multiverso-resoconto-per-truman-IT.md`: the bugs found
+- `context/reports/multiverso-resoconto-per-bal-IT.md`: the bugs found
   and the fix, in Italian, for BAL.
 
 **Tests:** `tests/test_multiverse_chain_rebuild.py` (new, three
@@ -14344,5 +14344,27 @@ were the fake coins without an address, fixed; those files, the new tests and th
 translations then 36 passed. Ruff clean. With three fake will-executors, with and without a
 password: `1` and `3` wallets build nothing and say why, a `bc1q` wallet builds one copy per
 will-executor as before. Not covered: Windows, a real network.
+
+**Outcome:** DONE
+
+## 217. The BAL maintainer's personal name out of the current files
+
+**Why (release list for 0.8.0):** the BAL maintainer wants to stay anonymous. Their personal
+name was still in 7 lines of `CHANGELOG.md` and 4 lines of `PLAN_I18N.md`.
+
+**What changed:**
+
+- `CHANGELOG.md` and `PLAN_I18N.md`: the name is now "the BAL maintainer". Nothing else
+  changes in those lines.
+- The CHANGELOG points to the renamed note `context/reports/multiverso-resoconto-per-bal-IT.md`
+  (outside the repository).
+
+Limits, on purpose:
+
+- The commits already published keep the old text: the owner decided not to rewrite the
+  history.
+
+**Verified:** text only. A search of the repository finds the name in no file. No code,
+no tests changed.
 
 **Outcome:** DONE
