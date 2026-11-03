@@ -8,6 +8,7 @@ depends on the wallet type in use.
 |-------------------------------------------------|-----------------------------|-------|
 | Standard wallet (single-signature, seed-based)  | ✅ Supported                | Primary, fully tested target |
 | Hardware wallets (Ledger, Trezor, Coldcard, BitBox02, Jade, KeepKey, etc.) | ✅ Supported | Any hardware wallet supported by Electrum itself |
+| Wallets with addresses starting with `1` or `3` | ❌ Not supported | The plugin says so and builds no will. Use a wallet with `bc1q` addresses. |
 | Multisig wallets                                | ❌ Not yet supported        | Known limitation identified 2026-07-18. Support is planned for a future plugin release. |
 | Electrum TrustedCoin (2FA) wallets              | ❓ Unknown / unsupported    | Known limitation identified 2026-07-18. It has not yet been determined whether or when this will be addressed. |
 

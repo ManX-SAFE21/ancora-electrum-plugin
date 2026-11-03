@@ -26,6 +26,7 @@ ELECTRUM_DIR = os.path.expanduser("~/devel/bal/electrum")
 if os.path.isdir(ELECTRUM_DIR):
     sys.path.insert(0, ELECTRUM_DIR)
 
+from electrum.bitcoin import hash_to_segwit_addr
 from regtest_wallet_data import wallet_data
 
 from bal.core.heirs import Heirs
@@ -58,6 +59,11 @@ class FakeUTXO:
 
     def value_sats(self):
         return self._value
+
+    @property
+    def address(self):
+        """A native segwit address of the current network (#216 reads it)."""
+        return hash_to_segwit_addr(bytes(20), witver=0)
 
 def build_utxos(data):
     utxos = []

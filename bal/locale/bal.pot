@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-02 19:00+0100\n"
+"POT-Creation-Date: 2026-11-03 10:43+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -871,7 +871,7 @@ msgstr ""
 msgid "The delivery date ({}) has already passed. Choose a future date, then press Check again."
 msgstr ""
 
-#: bal/core/messages.py:604 bal/core/messages.py:650 bal/core/messages.py:661
+#: bal/core/messages.py:604 bal/core/messages.py:656 bal/core/messages.py:667
 #: bal/gui/qt/dialogs.py:1307 bal/gui/qt/dialogs.py:3974
 msgid "Skipped"
 msgstr ""
@@ -909,10 +909,14 @@ msgid "The heirs' fixed amounts exceed the wallet balance left after the miner a
 msgstr ""
 
 #: bal/core/messages.py:643
+msgid "This type of wallet is not supported: the will needs a wallet whose addresses start with bc1q. Bitcoin addresses starting with 1 or 3 cannot be used."
+msgstr ""
+
+#: bal/core/messages.py:649
 msgid "An unexpected error stopped the transactions being prepared for a will-executor, so it was skipped. Try again, or select a different will-executor."
 msgstr ""
 
-#: bal/core/messages.py:654
+#: bal/core/messages.py:660
 msgid ""
 "Could not build the will, and the exact cause could not be determined. Please check that:\n"
 "- the wallet balance covers the miner and will-executor fees,\n"
@@ -921,49 +925,49 @@ msgid ""
 "- at least one will-executor is selected and reachable."
 msgstr ""
 
-#: bal/core/messages.py:685
+#: bal/core/messages.py:691
 msgid "There is already a message in the will: edit that one."
 msgstr ""
 
-#: bal/core/messages.py:688 bal/gui/qt/window.py:1792
+#: bal/core/messages.py:694 bal/gui/qt/window.py:1792
 msgid "Write a name for the heir."
 msgstr ""
 
-#: bal/core/messages.py:692
+#: bal/core/messages.py:698
 msgid "This is a PRIVATE key: never paste it anywhere. Use one address from Receive."
 msgstr ""
 
-#: bal/core/messages.py:695
+#: bal/core/messages.py:701
 msgid "This is an extended public key (xpub/zpub), not an address: in the heir's wallet open Receive and copy one address."
 msgstr ""
 
-#: bal/core/messages.py:702
+#: bal/core/messages.py:708
 #, python-brace-format
 msgid "Not a valid address for this network: {}"
 msgstr ""
 
-#: bal/core/messages.py:703
+#: bal/core/messages.py:709
 msgid "Check that you copied all of it, with no extra or missing characters."
 msgstr ""
 
-#: bal/core/messages.py:706
+#: bal/core/messages.py:712
 msgid "The OP_RETURN message is not valid: it must be written in hexadecimal."
 msgstr ""
 
-#: bal/core/messages.py:710
+#: bal/core/messages.py:716
 #, python-brace-format
 msgid "The OP_RETURN message is too long: {} bytes, at most 80."
 msgstr ""
 
-#: bal/core/messages.py:713
+#: bal/core/messages.py:719
 msgid "The date of this heir is already past."
 msgstr ""
 
-#: bal/core/messages.py:715
+#: bal/core/messages.py:721
 msgid "The date of this heir is not valid."
 msgstr ""
 
-#: bal/core/messages.py:717
+#: bal/core/messages.py:723
 msgid "The amount is not valid: write a number, or a percentage such as 25%."
 msgstr ""
 
@@ -1286,89 +1290,89 @@ msgstr ""
 msgid "Operation in progress: follow the window in front"
 msgstr ""
 
-#: bal/core/will.py:3397
+#: bal/core/will.py:3408
 #, python-brace-format
 msgid "NOT {}"
 msgstr ""
 
-#: bal/core/will.py:3421
+#: bal/core/will.py:3432
 msgid "Anticipated"
 msgstr ""
 
-#: bal/core/will.py:3422
+#: bal/core/will.py:3433
 msgid "Broadcasted"
 msgstr ""
 
-#: bal/core/will.py:3423
+#: bal/core/will.py:3434
 msgid "Checked"
 msgstr ""
 
-#: bal/core/will.py:3424
+#: bal/core/will.py:3435
 msgid "Check Failed"
 msgstr ""
 
-#: bal/core/will.py:3425
+#: bal/core/will.py:3436
 msgid "Signed"
 msgstr ""
 
-#: bal/core/will.py:3426
+#: bal/core/will.py:3437
 msgid "Confirmed"
 msgstr ""
 
-#: bal/core/will.py:3427 bal/gui/qt/lists.py:2545 bal/gui/qt/lists.py:2559
+#: bal/core/will.py:3438 bal/gui/qt/lists.py:2545 bal/gui/qt/lists.py:2559
 msgid "Error"
 msgstr ""
 
-#: bal/core/will.py:3428 bal/gui/qt/dialogs.py:1098
+#: bal/core/will.py:3439 bal/gui/qt/dialogs.py:1098
 #: bal/gui/qt/flow_adapter.py:119
 msgid "Expired"
 msgstr ""
 
-#: bal/core/will.py:3429
+#: bal/core/will.py:3440
 msgid "Exported"
 msgstr ""
 
-#: bal/core/will.py:3430
+#: bal/core/will.py:3441
 msgid "Imported"
 msgstr ""
 
-#: bal/core/will.py:3431 bal/gui/qt/theme.py:189
+#: bal/core/will.py:3442 bal/gui/qt/theme.py:189
 msgid "Invalidated"
 msgstr ""
 
-#: bal/core/will.py:3432 bal/gui/qt/lists.py:478 bal/gui/qt/lists.py:1456
+#: bal/core/will.py:3443 bal/gui/qt/lists.py:478 bal/gui/qt/lists.py:1456
 msgid "Mempool"
 msgstr ""
 
-#: bal/core/will.py:3433
+#: bal/core/will.py:3444
 msgid "Push failed"
 msgstr ""
 
-#: bal/core/will.py:3434
+#: bal/core/will.py:3445
 msgid "Pushed"
 msgstr ""
 
-#: bal/core/will.py:3435 bal/gui/qt/theme.py:190
+#: bal/core/will.py:3446 bal/gui/qt/theme.py:190
 msgid "Partially Signed"
 msgstr ""
 
-#: bal/core/will.py:3436 bal/gui/qt/theme.py:188
+#: bal/core/will.py:3447 bal/gui/qt/theme.py:188
 msgid "Replaced"
 msgstr ""
 
-#: bal/core/will.py:3437
+#: bal/core/will.py:3448
 msgid "Restored"
 msgstr ""
 
-#: bal/core/will.py:3438
+#: bal/core/will.py:3449
 msgid "Updated"
 msgstr ""
 
-#: bal/core/will.py:3439 bal/gui/qt/dialogs.py:4571
+#: bal/core/will.py:3450 bal/gui/qt/dialogs.py:4571
 msgid "Valid"
 msgstr ""
 
-#: bal/core/will.py:3445
+#: bal/core/will.py:3456
 msgid "New"
 msgstr ""
 
@@ -3285,27 +3289,27 @@ msgstr ""
 msgid "prepared, not sent"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:498
+#: bal/gui/qt/future_view.py:503
 msgid "NOT SENT TO THE WILL-EXECUTORS YET"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:499
+#: bal/gui/qt/future_view.py:504
 msgid "Until you send it, nothing happens on the date."
 msgstr ""
 
-#: bal/gui/qt/future_view.py:529
+#: bal/gui/qt/future_view.py:534
 msgid "Will signed, not sent yet"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:1515
+#: bal/gui/qt/future_view.py:1520
 msgid "List"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:1515
+#: bal/gui/qt/future_view.py:1520
 msgid "Future"
 msgstr ""
 
-#: bal/gui/qt/future_view.py:1517
+#: bal/gui/qt/future_view.py:1522
 msgid "Graph"
 msgstr ""
 

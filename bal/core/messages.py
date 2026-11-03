@@ -639,6 +639,12 @@ def build_failure_message(reason, date_passed):
             "The heirs' fixed amounts exceed the wallet balance left after "
             "the miner and will-executor fees: reduce the fixed amounts."
         ),
+        "WALLET_TYPE_NOT_SUPPORTED": _(
+            "This type of wallet is not supported: the will needs a wallet "
+            "whose addresses start with bc1q. Bitcoin addresses starting with 1 "
+            "or 3 "
+            "cannot be used."
+        ),
         "WILLEXECUTOR_TX_ERROR": _(
             "An unexpected error stopped the transactions being prepared "
             "for a will-executor, so it was skipped. Try again, or select "

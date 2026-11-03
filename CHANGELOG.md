@@ -14312,3 +14312,37 @@ three fake will-executors, with and without a password: all changed, one changed
 coin (the date does not move), second Check clean. Not covered: Windows, a real network.
 
 **Outcome:** DONE
+
+## 216. Wallets with addresses starting with 1 or 3: a clear "not supported"
+
+**Why (release list for 0.8.0, step agreed with the owner):** on a wallet whose addresses
+start with `1` or `3` the build stopped with a message about a will-executor. The real cause:
+an unsigned transaction on those coins has no transaction id, and the build needs it to link
+the copies. Owner's decision: these wallets stay out. Every copy of the will would also pay a
+higher miner fee, and a will with several deliveries has many copies.
+
+**What changed:**
+
+- `bal/core/heirs.py`: new `only_native_segwit(utxos)`. `buildTransactions` stops with the
+  new code `WALLET_TYPE_NOT_SUPPORTED` when one coin is not on a `bc1q` address. No copy is
+  built and nothing is sent.
+- `bal/core/messages.py`: the text for the new code. Catalogs refreshed, Italian and Spanish
+  translated, 0 fuzzy.
+- Software notes and manual: `README.md`, `COMPATIBILITY.md`, `docs/manual/README.md`,
+  `docs/manual/manual.html` say that the addresses must start with `bc1q`, and why.
+- `tests/test_old_wallet_types.py` (new). `tests/test_group_e_mock_karen7.py` and
+  `tests/test_reproduce_none_type.py`: their fake coins now have a `bc1q` address.
+
+Limits, on purpose or for later:
+
+- Not supported: wallets with addresses starting with `1` or `3`, also when only one coin is
+  on such an address (an imported wallet can mix them).
+- The command line shows only the code `WALLET_TYPE_NOT_SUPPORTED`, as for the other codes.
+
+**Verified:** whole suite 3302 passed, 2 failed, 1 h 28 min, Electrum 4.8.3: the two failures
+were the fake coins without an address, fixed; those files, the new tests and the
+translations then 36 passed. Ruff clean. With three fake will-executors, with and without a
+password: `1` and `3` wallets build nothing and say why, a `bc1q` wallet builds one copy per
+will-executor as before. Not covered: Windows, a real network.
+
+**Outcome:** DONE
