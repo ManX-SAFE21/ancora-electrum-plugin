@@ -14694,3 +14694,44 @@ will was not sent to the will-executors" while the other two held it.
   deselected "excluded: has the will, no longer verified" (#178), as before.
 
 **Outcome:** DONE
+
+## 226. The window "How BAL PROTOCOL works" shows the simple version (8 steps)
+
+**Why (owner, 2026-11-03):** the plugin's animation (#162) still told the first 17-step
+story, while the owner's green web pages had moved on (new titles that tell the story
+alone, the medals 1-2-3, the other copies waiting under the block, the delivery and the
+refusals in one step, "software" instead of "plugin"). The owner first asked for a
+simple and a detailed version, then chose: "teniamo solo la semplice". No voice and no
+music in the plugin (owner: with the voice they can go to the BAL or SAFE21 web site).
+
+**What changed:**
+
+- `bal/core/explainer.py`: the 8 steps of the green simple page
+  (`come-funziona-bal-protocol-semplice.html`): write the will; one copy for each
+  will-executor; each keeps it, with its fee; while you are here nothing is sent; the
+  delivery date arrives; the copies are sent (will-executor 2 first, then 1 and 3, each
+  with its medal); the block accepts the first one, the others wait under it; the
+  bitcoin to the heirs, the fee to will-executor 2, then the other two copies are torn.
+  The page's geometry (servers, heirs, transaction, notes) and its pace (3 words a
+  second plus 2.5 s, at least 9 s, halved). Gone: the amount and heirs changes, the
+  postponed date and its red copies, the question, "one is enough" and its note.
+- `bal/gui/qt/explainer.py`: draws the new scene (medals, gold stars and medal of the
+  will-executor that earned the fee, the torn copies with the red cross in the middle,
+  the screen fading from the sending signal to the fees); the window has 8 step numbers
+  and no note line.
+- `bal/locale/`: the 16 texts in Italian and Spanish, the same words as the web page;
+  the texts of the old steps removed.
+- `tests/test_gui_explainer.py`: rewritten for the 8 steps (titles, copies, fees,
+  medals, block, today reaching the date, coins, fee, joy, refusals only at the end,
+  pace, window controls, Italian).
+
+**Verified:**
+
+- `ruff check bal/ tests/`: clean. `tests/test_gui_explainer.py`,
+  `tests/test_check_button.py`, `tests/test_translations.py`,
+  `tests/test_gui_basic_wizard.py`: 63 passed in 17 s (Electrum 4.8.3). Look-only step:
+  no whole suite.
+- The real window in Italian, 11 screenshots (one or two per step), seen and approved
+  by the owner.
+
+**Outcome:** DONE
