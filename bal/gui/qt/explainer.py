@@ -1,6 +1,7 @@
-"""The window "How BAL PROTOCOL works": the animated explainer (CHANGELOG #162).
+"""The window "How BAL PROTOCOL works": the animated explainer (CHANGELOG #162, #226).
 
-The same 17-step animation the owner approved as a web page, drawn here
+The same 8-step animation the owner approved as a web page (the simple
+version, #226), drawn here
 with ``QPainter`` so it works offline (also on the computer with the keys)
 and in Electrum's language: the scene of :func:`bal.core.explainer.scene`
 (where every element is at a given second of a step) is painted about 30
@@ -27,7 +28,6 @@ from PyQt6.QtGui import (
     QFont,
     QFontMetricsF,
     QIcon,
-    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
@@ -66,10 +66,8 @@ DANGER = "#B42318"
 ORANGE = "#D97706"
 SRV_LINE = "#0B6B62"
 LED_ON = "#14B8A6"
-LED_OFF = "#EF4444"
 SCREEN = "#19B8A6"
 PAPER = "#FFF4DC"
-RED = "#C62828"
 COIN_TEXT = "#6B4500"
 
 #: Milliseconds between two frames while something moves.
@@ -210,8 +208,8 @@ def _person(p, x, y, w, h, color, alpha=1.0):
     p.drawPath(body)
 
 
-def _envelope(p, x, y, alpha, tip, bad):
-    """A copy of the will (48 x 34) with its fee coin and its red mark."""
+def _envelope(p, x, y, alpha, tip):
+    """A copy of the will (48 x 34) with its fee coin."""
     if alpha <= 0:
         return
     _rect(p, x + 1, y + 1, 46, 32, 3, fill=PAPER, stroke=ORANGE, width=1.8,
@@ -223,12 +221,6 @@ def _envelope(p, x, y, alpha, tip, bad):
     _circle(p, x + 24, y + 21, 3.2, fill=ORANGE, alpha=alpha)
     if tip > 0:
         _bitcoin_coin(p, x + 43, y + 5, 8, alpha * tip, size=10)
-    if bad > 0:
-        a = alpha * bad
-        _rect(p, x + 1, y + 1, 46, 32, 3, fill="#E5484D", alpha=a * 0.3)
-        _rect(p, x + 1, y + 1, 46, 32, 3, stroke=RED, width=2, alpha=a)
-        _circle(p, x + 6, y + 6, 7, fill=RED, alpha=a)
-        _cross(p, x + 6, y + 6, 3, "#FFFFFF", 2, a)
 
 
 def _tear(p, x, y, t, start):
@@ -251,8 +243,73 @@ def _tear(p, x, y, t, start):
         p.setPen(QPen(_color(ORANGE, alpha), 1.6))
         p.drawPolygon(poly)
         p.restore()
-    _circle(p, x + 24, y - 12, 11, fill=DANGER, alpha=alpha)
-    _cross(p, x + 24, y - 12, 5, "#FFFFFF", 3, alpha)
+    _circle(p, x + 24, y + 17, 11, fill=DANGER, alpha=alpha)
+    _cross(p, x + 24, y + 17, 5, "#FFFFFF", 3, alpha)
+
+
+#: The medals 1 / 2 / 3 of the order of sending: (fill, outline) of gold,
+#: silver and bronze, as on the web page.
+RANK_COLORS = (("#F5B323", "#D97706"), ("#B6C2D1", "#7C8BA0"), ("#D9954F", "#9A5F25"))
+GOLD = "#FBBF24"
+
+
+def _medal(p, x, y, rank, alpha):
+    """The medal ``rank`` + 1 (a ribbon and a disc) centred on (x, y)."""
+    if alpha <= 0:
+        return
+    ribbon = QPainterPath()
+    for pts in (((-9, -22), (-2, -22), (5, -3), (-2, -3)),
+                ((9, -22), (2, -22), (-5, -3), (2, -3))):
+        ribbon.addPolygon(QPolygonF([QPointF(x + a, y + b) for a, b in pts]))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(_color(TEAL, alpha)))
+    p.drawPath(ribbon)
+    fill, stroke = RANK_COLORS[rank]
+    _circle(p, x, y + 6, 15, fill=fill, stroke=stroke, width=2, alpha=alpha)
+    _circle(p, x, y + 6, 10.5, stroke="#FFFFFF", width=1.6, alpha=alpha * 0.75)
+    _text(p, x, y + 13, str(rank + 1), 20, "#3A2A12", alpha, "middle",
+          weight=QFont.Weight.ExtraBold)
+
+
+def _bob(t, delay):
+    """The little jump of the joy marks (up 5, 12 % larger and back, 1.1 s
+    each way, like the web page's ``bob``): (dy, scale)."""
+    u = ((t - delay) / 1.1) % 2.0
+    u = u if u <= 1.0 else 2.0 - u
+    e = 0.5 - 0.5 * math.cos(math.pi * u)
+    return -5.0 * e, 1.0 + 0.12 * e
+
+
+def _star(p, x, y, size, t, delay, alpha):
+    """A gold star centred on (x, y), bobbing."""
+    dy, k = _bob(t, delay)
+    pts = ((0, -11), (3.2, -3.6), (11, -3.4), (4.9, 1.6), (7, 9.4), (0, 5),
+           (-7, 9.4), (-4.9, 1.6), (-11, -3.4), (-3.2, -3.6))
+    poly = QPolygonF([QPointF(x + a * size * k, y + dy + b * size * k)
+                      for a, b in pts])
+    pen = QPen(_color(ORANGE, alpha), 1.6)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(QBrush(_color(GOLD, alpha)))
+    p.drawPolygon(poly)
+
+
+def _joy(p, t, row, alpha):
+    """The joy marks: gold stars over the heirs and a gold medal with a tick
+    on the will-executor ``row`` that earned the fee."""
+    if alpha <= 0:
+        return
+    for (x, y, size), delay in zip(((860, 152, 1.0), (901, 138, 1.25),
+                                    (942, 154, 1.0)), (0.0, 0.25, 0.5),
+                                   strict=True):
+        _star(p, x, y, size, t, delay, alpha)
+    dy, k = _bob(t, 0.0)
+    x, y = story.SX + 150, story.row_y(row) - 2 + dy
+    _circle(p, x, y, 14 * k, fill=GOLD, stroke=ORANGE, width=2, alpha=alpha)
+    tick = QPainterPath(QPointF(x - 6 * k, y))
+    tick.lineTo(x - 1.5 * k, y + 4.5 * k)
+    tick.lineTo(x + 6.5 * k, y - 4.5 * k)
+    _path(p, tick, COIN_TEXT, 3, alpha)
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +330,7 @@ def paint_scene(p, rect, s, texts, now=None):
     p.setClipRect(QRectF(1, 1, story.WIDTH - 2, story.HEIGHT - 2))
     T = texts.get  # noqa: N806 - short for "text of"
     t = s["t"]
-    y0, y1, y2 = texts["years"]
+    y0, y1 = texts["years"]
 
     # --- the blockchain: mined blocks | divider | next block + future ones
     nb = s["next_block_index"]
@@ -304,7 +361,7 @@ def paint_scene(p, rect, s, texts, now=None):
         _circle(p, x + 30, 62, 7, fill=ORANGE, alpha=a)
         _circle(p, x + 58, 22, 13, fill=TEAL, alpha=a)
         _check(p, x + 51, 22, "#FFFFFF", 3, a)
-        _text(p, x + 30, 106, T("accepted"), 16, TEAL, a, "middle", bold=True)
+        _text(p, x + 30, 95, T("accepted"), 14, TEAL, a, "middle", bold=True)
     _text(p, 20, 110, T("chain"), 17, CHAIN, 1, bold=True)
 
     # --- separators between you | will-executors | heirs
@@ -315,21 +372,16 @@ def paint_scene(p, rect, s, texts, now=None):
     for i in range(3):
         y = story.row_y(i)
         x = story.SX
-        off_ = i in s["off"]
-        a = 0.35 if off_ else 1.0
-        _rect(p, x, y, 150, 27, 3, fill=PANEL, stroke=SRV_LINE, width=2, alpha=a)
+        _rect(p, x, y, 150, 27, 3, fill=PANEL, stroke=SRV_LINE, width=2)
         for k in range(5):
             _line(p, x + 16 + k * 9, y + 7, x + 16 + k * 9, y + 20, SRV_LINE,
-                  2.2, 0.55 * a)
+                  2.2, 0.55)
         _text(p, x + 88, y + 18.5, "Umbrel" if i == 2 else "Server", 14,
-              SRV_LINE, a, "middle", bold=True)
-        _circle(p, x + 128, y + 13.5, 4, fill=LED_OFF if off_ else LED_ON,
-                alpha=a)
-        _rect(p, x - 4, y + 33, 158, 28, 6, fill=PANEL, alpha=a)
+              SRV_LINE, 1, "middle", bold=True)
+        _circle(p, x + 128, y + 13.5, 4, fill=LED_ON)
+        _rect(p, x - 4, y + 33, 158, 28, 6, fill=PANEL)
         _text(p, x + 75, y + 53, "Will-executor {}".format(i + 1), 16.5, INK,
-              a, "middle", weight=QFont.Weight.DemiBold)
-        if off_:
-            _text(p, 396, y + 19, T("off"), 16, DANGER, 1, "end", bold=True)
+              1, "middle", weight=QFont.Weight.DemiBold)
 
     # --- the time line (years of today .. today + 7)
     _line(p, 60, 466, 990, 466, LINE, 2)
@@ -346,24 +398,21 @@ def paint_scene(p, rect, s, texts, now=None):
     _rect(p, dx - 24, 416, 48, 42, 4, fill=PANEL, stroke=LINE, width=1)
     _rect(p, dx - 24, 416, 48, 13, 4, fill=ORANGE)
     _rect(p, dx - 24, 423, 48, 6, 0, fill=ORANGE)
-    _text(p, dx, 451, str(y2 if s["due_year"] == 2 else y1), 17, INK, 1,
-          "middle", bold=True)
+    _text(p, dx, 451, str(y1), 17, INK, 1, "middle", bold=True)
     _text(p, dx - 32, 448, T("delivery"), 16, MUTED, 1, "end")
-    if s["due_cross"] > 0:
-        _cross(p, dx, 437, 21, RED, 5, s["due_cross"])
 
     # --- the transaction to the heirs (dashed curve with an arrow)
     a = s["transaction"]
     if a > 0:
         curve = QPainterPath(QPointF(226, 372))
-        curve.cubicTo(430, 416, 590, 416, 796, 351)
+        curve.cubicTo(430, 416, 590, 400, 796, 325)
         pen = QPen(_color(CHAIN, a), 3)
         pen.setDashPattern([8 / 3, 7 / 3])
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawPath(curve)
-        ang = math.atan2(351 - 416, 796 - 590)
-        tip_x, tip_y = 796, 351
+        ang = math.atan2(325 - 400, 796 - 590)
+        tip_x, tip_y = 796, 325
         pts = [(tip_x, tip_y),
                (tip_x - 13 * math.cos(ang) + 7 * math.sin(ang),
                 tip_y - 13 * math.sin(ang) - 7 * math.cos(ang)),
@@ -378,92 +427,66 @@ def paint_scene(p, rect, s, texts, now=None):
     _rect(p, 40, 160, 152, 92, 2, fill=SCREEN)
     _line(p, 116, 262, 116, 280, SRV_LINE, 2.5, cap=Qt.PenCapStyle.FlatCap)
     _line(p, 80, 281, 152, 281, SRV_LINE, 2.5)
-    _paint_screen(p, s, texts)
+    for name, a in s["screens"]:
+        _paint_screen(p, name, a, t, texts)
     _text(p, 116, 312, T("you"), 19, INK, 1, "middle", weight=QFont.Weight.DemiBold)
     _rect(p, 20, 336, 206, 68, 6, fill=PANEL, stroke=TEAL, width=1.5)
     _text(p, 36, 362, T("your_address"), 16, MUTED)
     _text(p, 36, 388, story.ADDRESS_YOU, 15, INK, mono=True)
 
     # --- the heirs and their two addresses
-    _person(p, 854, 190, 44, 66, HEIR)
-    _person(p, 908, 200, 36, 56, HEIR, 0.8)
-    _text(p, 899, 276, T("heirs"), 19, INK, 1, "middle",
+    _person(p, 840, 166, 40, 60, HEIR)
+    _person(p, 884, 172, 34, 52, HEIR, 0.8)
+    _text(p, 899, 246, T("heirs"), 19, INK, 1, "middle",
           weight=QFont.Weight.DemiBold)
-    _rect(p, 796, 296, 206, 52, 6, fill=PANEL, stroke=HEIR, width=1.5)
-    _text(p, 812, 316, T("heir_address").format(1), 16, MUTED)
-    _text(p, 812, 338, story.ADDRESS_HEIR_1, 15, INK, mono=True)
-    flash = s["heir2_flash"]
-    _rect(p, 796, 354, 206, 52, 6, fill=PANEL, stroke=ORANGE if flash else HEIR,
-          width=3 if flash else 1.5)
-    _text(p, 812, 374, T("heir_address").format(2), 16, MUTED)
-    _text(p, 812, 396, story.ADDRESS_HEIR_2_NEW if s["heir2_new"]
-          else story.ADDRESS_HEIR_2_OLD, 15, INK, mono=True)
+    for j, (y, address) in enumerate(((256, story.ADDRESS_HEIR_1),
+                                      (304, story.ADDRESS_HEIR_2))):
+        _rect(p, 796, y, 206, 42, 6, fill=PANEL, stroke=HEIR, width=1.5)
+        _text(p, 812, y + 17, T("heir_address").format(j + 1), 16, MUTED)
+        _text(p, 812, y + 35, address, 15, INK, mono=True)
 
-    # --- notes near the blockchain and the will-executors
+    # --- the note of the refused copies, under the blockchain
     a = s["refused"]
     if a > 0:
-        _text(p, 1020, 152, T("refused"), 18, DANGER, a, "end", bold=True)
-        _text(p, 1020, 172, T("spent"), 16, MUTED, a, "end")
-    _text(p, 660, 206, T("invalidated"), 18, DANGER, s["invalidated"], "middle",
-          bold=True)
+        _text(p, 745, 198, T("refused"), 18, DANGER, a, "end", bold=True)
+        _text(p, 745, 217, T("spent"), 16, MUTED, a, "end")
 
-    # --- the copies (oldest layer first: the newest is on top) and the torn ones
+    # --- the copies and the torn ones
     for pos, start in s["tears"]:
         _tear(p, pos[0], pos[1], t, start)
-    for k in range(4):
-        for i in range(3):
-            e = s["envelopes"].get((k, i))
-            if e:
-                _envelope(p, e[0], e[1], e[2], s["tips"], e[3])
+    for i in range(3):
+        e = s["envelopes"].get(i)
+        if e:
+            _envelope(p, e[0], e[1], e[2], s["tips"])
 
     # --- the funds and the fee
     for cx, cy in s["coins"]:
         _bitcoin_coin(p, cx, cy, 17, 1.0, size=17)
     if s["fee"]:
         (fx, fy), fa = s["fee"]
-        _bitcoin_coin(p, fx, fy, 13, fa, size=13)
+        _bitcoin_coin(p, fx, fy, 10, fa, size=11)
+    _joy(p, t, story.WINNER, s["joy"])
+    for i, (rank, a) in s["medals"].items():
+        _medal(p, story.SX - 26, story.row_y(i) + 12, rank, a)
     row, fa = s["fee_tag"]
     if row is not None and fa > 0:
-        _text(p, story.SX - 14, story.row_y(row) + 18, T("fee"), 17, TEAL, fa,
-              "end", bold=True)
+        _text(p, story.SX + 75, story.row_y(row) - 3, T("fee"), 17, TEAL, fa,
+              "middle", bold=True)
 
-    # --- short notes of the steps
+    # --- the note of the fees, at the right of the copies
     if s["tip_note"] > 0:
         a = s["tip_note"]
         for j, line in enumerate(_wrap(T("tip_note_1"), 14)):
-            _text(p, 648, 172 + 16 * j, line, 14, TEAL, a, bold=True)
+            _text(p, 608, 172 + 16 * j, line, 14, TEAL, a, bold=True)
         for j, line in enumerate(_wrap(T("tip_note_2"), 15)):
-            _text(p, 648, 232 + 16 * j, line, 13, MUTED, a)
-    key, a = s["change_tag"]
-    if key and a > 0:
-        _text(p, 116, 138, T(key), 16, TEAL, a, "middle", bold=True)
-    key, a = s["day_tag"]
-    if key and a > 0:
-        _text(p, 451, 406, T(key), 15, TEAL, a, "middle", bold=True)
-
-    # --- the question card covers everything
-    a = s["question"]
-    if a > 0:
-        g = QLinearGradient(QPointF(0, 0), QPointF(story.WIDTH, story.HEIGHT))
-        g.setColorAt(0.0, _color("#0B6B62", a))
-        g.setColorAt(0.55, _color("#14B8A6", a))
-        g.setColorAt(1.0, _color("#7DE3D3", a))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(g))
-        p.drawRoundedRect(QRectF(0, 0, story.WIDTH, story.HEIGHT), 18, 18)
-        lines = _wrap(T("question"), 34)
-        top = story.HEIGHT / 2 - (len(lines) - 1) * 26
-        for j, line in enumerate(lines):
-            _text(p, story.WIDTH / 2, top + 52 * j + 14, line, 40, "#FFFFFF", a,
-                  "middle", weight=QFont.Weight.DemiBold)
+            _text(p, 608, 232 + 16 * j, line, 13, MUTED, a)
     p.restore()
 
 
-def _paint_screen(p, s, texts):
-    """The picture on the computer's screen, in line with each step."""
+def _paint_screen(p, name, a, t, texts):
+    """The picture ``name`` on the computer's screen, at opacity ``a``, at
+    second ``t`` of the step."""
     T = texts.get  # noqa: N806 - short for "text of"
-    name, a = s["screen"]
-    t = s["t"]
     white = "#FFFFFF"
     if a <= 0:
         return
@@ -505,7 +528,7 @@ def _paint_screen(p, s, texts):
         feather.cubicTo(qx + 36, qy - 38, qx + 26, qy - 20, qx + 10, qy - 6)
         feather.closeSubpath()
         _path(p, feather, "#8A7A66", 1, a, fill="#FFFFFF")
-    elif name in ("copies", "tips", "invalid"):
+    elif name in ("copies", "tips"):
         for j in range(3):
             y = 172 + 27 * j
             _rect(p, 56, y, 18, 22, 2, fill=white, alpha=a)
@@ -514,12 +537,8 @@ def _paint_screen(p, s, texts):
                 _circle(p, 164, y + 11, 9, fill="#0B6B62", stroke=white, width=1.6,
                         alpha=a)
                 _check(p, 159, y + 11, white, 2.2, a)
-            elif name == "tips":
-                _bitcoin_coin(p, 164, y + 11, 10, a, size=11)
             else:
-                _circle(p, 164, y + 11, 9, fill=RED, stroke=white, width=1.6,
-                        alpha=a)
-                _cross(p, 164, y + 11, 4, white, 2.2, a)
+                _bitcoin_coin(p, 164, y + 11, 10, a, size=11)
     elif name == "send":
         # the sending signal, pulsing
         for delay, kind in ((0.0, "dot"), (0.25, "small"), (0.5, "big")):
@@ -555,29 +574,6 @@ def _paint_screen(p, s, texts):
                 break
         _path(p, path, white, 3.5, a)
         _text(p, 116, 244, T("alive"), 13, white, a, "middle", bold=True)
-    elif name == "amount":
-        _text(p, 116, 187, T("amount"), 14, white, a, "middle", bold=True)
-        _rect(p, 58, 200, 116, 14, 7, fill=white, alpha=a * 0.3)
-        _rect(p, 58, 200, 116 * s["amount_bar"], 14, 7, fill=white, alpha=a)
-        b = a * s["screen_new"]
-        _rect(p, 66, 226, 14, 18, 2, fill=white, alpha=b)
-        _text(p, 88, 240, T("new_copy"), 13, white, b, bold=True)
-    elif name == "heirs":
-        _text(p, 116, 187, T("heirs_small"), 14, white, a, "middle", bold=True)
-        _person(p, 82, 194, 26, 38, white, a)
-        b = a * s["screen_new"]
-        _person(p, 118, 198, 22, 32, white, b * 0.85)
-        _text(p, 150, 220, "+", 20, white, b, bold=True)
-        _rect(p, 66, 234, 14, 16, 2, fill=white, alpha=b)
-        _text(p, 88, 247, T("new_copy"), 13, white, b, bold=True)
-    elif name == "calendar":
-        y1, y2 = texts["years"][1], texts["years"][2]
-        _rect(p, 86, 170, 60, 62, 5, fill=white, alpha=a)
-        _rect(p, 86, 170, 60, 16, 5, fill=ORANGE, alpha=a)
-        _rect(p, 86, 179, 60, 7, 0, fill=ORANGE, alpha=a)
-        _text(p, 116, 214, str(y2 if s["calendar_year"] == 2 else y1), 20, INK,
-              a, "middle", bold=True)
-        _text(p, 116, 248, T("due_date"), 12, white, a, "middle", bold=True)
     elif name == "flat":
         _line(p, 52, 206, 180, 206, white, 3.5, a)
         _text(p, 116, 238, T("no_beat"), 13, white, a, "middle", bold=True)
@@ -601,15 +597,10 @@ def translated_texts(now=None):
     return texts
 
 
-def step_texts(n, years=None):
-    """(title, text, note) of step ``n`` in Electrum's language; the new
-    delivery year is written into steps 9 and 10."""
-    title, text, note = story.STEPS[n]
-    years = years or story.years()
-    text = _(text)
-    if n in story.YEAR_STEPS:
-        text = text.format(years[2])
-    return _(title), text, _(note) if note else ""
+def step_texts(n):
+    """(title, text) of step ``n`` in Electrum's language."""
+    title, text = story.STEPS[n]
+    return _(title), _(text)
 
 
 # ---------------------------------------------------------------------------
@@ -647,7 +638,7 @@ class ExplainerCanvas(QWidget):
         from where they are now (also after a jump to any step)."""
         try:
             s = self.current_scene()
-            self.start_values = (s["chain_offset"], s["due_x"], s["today_x"])
+            self.start_values = (s["chain_offset"], s["today_x"])
         except Exception as e:   # never let a drawing problem stop the window
             _logger.error(f"explainer: {e!r}")
             self.start_values = story.step_targets(max(0, n - 1))
@@ -744,10 +735,7 @@ class ExplainerDialog(QDialog):
         self.text = QLabel()
         self.text.setWordWrap(True)
         self.text.setStyleSheet(f"color: {MUTED}; font-size: 16px;")
-        self.note = QLabel()
-        self.note.setWordWrap(True)
-        self.note.setStyleSheet(f"color: {MUTED}; font-size: 13px;")
-        for w in (self.eyebrow, self.title, self.text, self.note):
+        for w in (self.eyebrow, self.title, self.text):
             cl.addWidget(w)
         card.setMinimumHeight(150)
         layout.addWidget(card)
@@ -779,13 +767,10 @@ class ExplainerDialog(QDialog):
         if stop:
             self.pause()
         self.canvas.show_step(n)
-        title, text, note = step_texts(n)
-        self.eyebrow.setText(label("step_of").format(n + 1,
-                                                               story.STEP_COUNT))
+        title, text = step_texts(n)
+        self.eyebrow.setText(label("step_of").format(n + 1, story.STEP_COUNT))
         self.title.setText(title)
         self.text.setText(text)
-        self.note.setText(note)
-        self.note.setVisible(bool(note))
         for i, d in enumerate(self.dots):
             current = i == n
             done = i < n
@@ -813,8 +798,8 @@ class ExplainerDialog(QDialog):
     def _schedule(self):
         """Wait the reading time of the current step, then the next one."""
         n = self.canvas.step
-        title, text, _note = step_texts(n)
-        self.play_timer.start(int(story.step_seconds(title, text, n) * 1000))
+        title, text = step_texts(n)
+        self.play_timer.start(int(story.step_seconds(title, text) * 1000))
 
     def play(self):
         """Play from the step shown."""
