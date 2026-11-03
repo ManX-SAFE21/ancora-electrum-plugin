@@ -93,6 +93,18 @@ HEIR_REAL_AMOUNT = 3   # resolved amount once percentages are computed
 HEIR_DUST_AMOUNT = 4   # amount when below dust threshold (marked "DUST: ...")
 TRANSACTION_LABEL = "inheritance transaction"
 
+
+def only_native_segwit(utxos):
+    """True when every coin of ``utxos`` is on a ``bc1`` (native segwit) address.
+
+    #216: an unsigned transaction spending any other coin (addresses starting
+    with ``1`` or ``3``) has no txid before it is signed, and the build needs
+    it to link the copies. Owner's decision: these wallets stay out, they also
+    pay more for each copy.
+    """
+    return all(bitcoin.is_segwit_address(utxo.address or "") for utxo in utxos)
+
+
 OP_RETURN_PREFIX = "OP_RETURN:"
 
 
@@ -961,7 +973,8 @@ class Heirs(dict, Logger):
         #
         # Codes: NO_HEIRS, NO_UTXO, NO_WILLEXECUTOR_USABLE, NO_FUTURE_DATE,
         # WILLEXECUTOR_FEE, WILLEXECUTOR_FEE_TOO_HIGH, TX_BUILD_FAILED,
-        # WILLEXECUTOR_TX_ERROR, FIXED_EXCEEDS_BALANCE (#76).
+        # WILLEXECUTOR_TX_ERROR, FIXED_EXCEEDS_BALANCE (#76),
+        # WALLET_TYPE_NOT_SUPPORTED (#216).
         self.last_build_error = None
         _before = list(self.keys())
         Heirs._validate(self, persist=False)
@@ -996,6 +1009,10 @@ class Heirs(dict, Logger):
         if len_utxo_set == 0:
             self.last_build_error = "NO_UTXO"
             _logger.info("no usable utxos")
+            return
+        if not only_native_segwit(available_utxos):
+            self.last_build_error = "WALLET_TYPE_NOT_SUPPORTED"
+            _logger.info("coins on addresses that are not native segwit")
             return
         j = -2
         willexecutorsitems = list(willexecutors.items())

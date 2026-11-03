@@ -40,6 +40,10 @@ The steps for installing the BAL plugin are very simple:
 
 Now you are ready to leave your digital legacy to your heirs!
 
+**Which wallets:** the addresses of your wallet must start with `bc1q`. A wallet
+with Bitcoin addresses starting with `1` or `3` cannot build a will, and the plugin says
+so. Those addresses also cost more in miner fees, for every copy of the will.
+
 ---
 
 ## The BAL interface

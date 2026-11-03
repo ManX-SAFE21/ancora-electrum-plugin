@@ -34,6 +34,7 @@ import pytest  # pyright: ignore[reportMissingImports]
 # below the repo root that contains the ``bal`` package).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
+from electrum.bitcoin import hash_to_segwit_addr
 from regtest_wallet_data import wallet_data
 
 from bal.core.heirs import Heirs
@@ -550,6 +551,11 @@ def test_e5_build_with_real_wallet_heirs_and_utxos():
 
         def value_sats(self):
             return self._value
+
+        @property
+        def address(self):
+            """A native segwit address of the current network (#216 reads it)."""
+            return hash_to_segwit_addr(bytes(20), witver=0)
 
     # Build UTXOs from unspent txo entries.
     utxos = []

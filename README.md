@@ -83,6 +83,10 @@ tests/                   smoke + external-zip regression tests
 [`COMPATIBILITY.md`](COMPATIBILITY.md) for the full compatibility matrix and
 current status.
 
+The wallet's addresses must start with **`bc1q`** (native segwit). Wallets with Bitcoin
+addresses starting with `1` or `3` cannot build a will: an unsigned transaction on those
+coins has no transaction id, and every copy would pay a higher miner fee.
+
 ## Installation
 
 ### Build the distribution archive
