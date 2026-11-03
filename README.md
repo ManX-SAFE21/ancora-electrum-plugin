@@ -96,7 +96,13 @@ python3 build_zip.py
 
 The builder writes a `zipimport`-friendly archive (files only, standard
 DEFLATE, deterministic order) to avoid loader errors seen on some Electrum
-portable builds.
+portable builds. The archive is reproducible: the same sources give the same
+SHA-256 on any computer.
+
+Releases are prepared with `make-release.sh` (tests, the ZIP built twice, its
+SHA-256, the signature with the SAFE21dev key in
+[`SAFE21dev.asc`](SAFE21dev.asc), the `ancora-vX.Y.Z` tag): see the header of
+the script.
 
 ### Install as an external plugin (zip)
 
