@@ -256,14 +256,14 @@
    "Broadcasting your will to executors:\t<b>Broadcasting 1/2 (0s / 20s) — waiting for: we1.test</b>",
    "https://we1.test : <font color='#ff0000'><b>Timeout - no answer</b></font>",
    "Broadcasting your will to executors:\t<b>1/2 (0s)</b>",
-   "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Broadcasting your will to executors:\t<b><font color='#cfa808'><b>Not sent to every will-executor</b></font></b>",
    "Verifying your will with the executors:\t<b>Wait</b>",
    "Verifying your will with the executors:\t<b>Verifying 0/1 (0s / 20s) — waiting for: we0.test</b>",
    "checked https://we0.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
    "Verifying your will with the executors:\t<b>Verifying 1/1 (0s / 20s)</b>",
    "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "",
-   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will not sent to every will-executor</b></font>",
    "Finished"
   ],
   "items": [
@@ -340,7 +340,10 @@
      "The delivery date was automatically moved one day earlier so the updated will can correctly replace the previous one.\nPlease sign (and broadcast) to confirm the change."
     ],
     "problems": [],
-    "warnings": []
+    "warnings": [
+     "Not sent to every will-executor",
+     "Not finished:\tWill not sent to every will-executor"
+    ]
    },
    "changes": [
     [
@@ -407,7 +410,7 @@
     [
      "send",
      "warn",
-     "1/2"
+     "attention"
     ],
     [
      "verify",
@@ -430,13 +433,13 @@
    "Heir:\t<font color=#05ad05><b>alice</b></font>",
    "Heir:\t<font color=#05ad05><b>bob</b></font>",
    "Signing your will:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
-   "Broadcasting your will to executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
+   "Broadcasting your will to executors:\t<b><font color='#cfa808'><b>Not sent to every will-executor</b></font></b>",
    "https://we0.test : <font color='#05ad05'><b>Ok</b></font>",
    "https://we1.test : <font color='#ff0000'><b>Timeout - no answer</b></font>",
    "Verifying your will with the executors:\t<b><font color='#05ad05'><b>Ok</b></font></b>",
    "checked https://we0.test - T3 : <font color='#05ad05'><b>Ok</b></font>",
    "",
-   "All done:\t<font color='#05ad05'><b>Ok</b></font>",
+   "Not finished:\t<font color='#cfa808'><b>Will not sent to every will-executor</b></font>",
    "Finished"
   ],
   "settings": {

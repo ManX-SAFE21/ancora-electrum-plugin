@@ -88,6 +88,7 @@ from ...engine.push import (
     EXCLUDED_FEE,
     RECEIVED,
     TIMEOUT,
+    not_delivered,
     push_will,
     select_push,
 )
@@ -699,6 +700,15 @@ _WAIT_LINE_STYLE = {
     "note": '<span style="color:#666666;">{}</span>',
     "busy": '<span style="color:#b26a00;">{}</span>',
 }
+
+#: #222: how the Check's sending ended (``BalBuildWillDialog._send_outcome``).
+#: ALL: every copy reached its will-executor; SOME: at least one did not;
+#: NONE: no will-executor received the will; ERROR: the sending itself
+#: failed (its row already shows the error).
+SEND_ALL = "all"
+SEND_SOME = "some"
+SEND_NONE = "none"
+SEND_ERROR = "error"
 
 
 def check_wait_lines(answered, total, elapsed, deadline, busy, now):
@@ -1843,7 +1853,7 @@ class BalBuildWillDialog(BalDialog):
 
             summary_done = {"done": False}
             self.bal_plugin = self.bal_window.bal_plugin
-            push_will(
+            result = push_will(
                 self.bal_window.willitems,
                 selected,
                 on_result=on_result,
@@ -1855,6 +1865,7 @@ class BalBuildWillDialog(BalDialog):
                 on_check_tick=_checks_progress,
                 on_busy=on_busy,
             )
+            self._send_outcome = self._sending_outcome(result, selected, excluded)
             if not summary_done["done"]:
                 # Final summary line with the total elapsed time.
                 self.msg_set_pushing(
@@ -1870,10 +1881,49 @@ class BalBuildWillDialog(BalDialog):
         except Exception as e:
             # Only genuine, unexpected errors reach here now (not the old
             # "retry" signal). Report the error; do not loop.
+            # #222: remembered, so the row keeps the error (it was then
+            # overwritten by "Ok").
+            self._send_outcome = SEND_ERROR
             self.msg_set_pushing(self.msg_error(e))
             self.wait(10)
             if not self._stopping:
                 pass
+
+    def _sending_outcome(self, result, selected, excluded):
+        """How the sending ended: ``SEND_ALL``, ``SEND_SOME`` or ``SEND_NONE``.
+
+        *result* is the :class:`~bal.engine.push.PushResult`, *selected* and
+        *excluded* come from ``select_push``. WHY the rule of Tools > Send
+        (:func:`bal.engine.push.not_delivered`, #213): the Check and the menu
+        must call the same sending complete. An excluded will-executor did not
+        get its copy either, so it makes the sending incomplete.
+        """
+        reached = [url for url, outcome in result.outcomes.items()
+                   if outcome in (RECEIVED, ALREADY_PRESENT)]
+        if not reached:
+            return SEND_NONE
+        if excluded or not_delivered(self.bal_window.willitems, selected,
+                                     self.bal_window.willexecutors):
+            return SEND_SOME
+        return SEND_ALL
+
+    def _show_sending_outcome(self):
+        """The final value of the sending row (#222, audit item 20).
+
+        Before, the row said "Ok" after every sending, also when no
+        will-executor received the will, and it covered the error of a
+        failed sending.
+        """
+        outcome = getattr(self, "_send_outcome", None)
+        if outcome == SEND_ERROR:
+            return  # the row already shows the error
+        if outcome == SEND_NONE:
+            self.msg_set_pushing(self.msg_error(_("Not sent")))
+        elif outcome == SEND_SOME:
+            self.msg_set_pushing(
+                self.msg_warning(_("Not sent to every will-executor")))
+        else:
+            self.msg_set_pushing(self.msg_ok())
 
     def loop_verify(self):
         """The Verification step: do the will-executors hold the will? (#84b-2)
@@ -3237,6 +3287,8 @@ class BalBuildWillDialog(BalDialog):
                 self.msg_set_signing(self.msg_error(e))
 
         self.msg_set_pushing()
+        # #222: set by loop_push; None when nothing was sent.
+        self._send_outcome = None
         have_to_push = False
         # #178: only the copies of the will-executors selected now: the
         # sending skips the others (``Willexecutors.get_willexecutor_
@@ -3254,10 +3306,11 @@ class BalBuildWillDialog(BalDialog):
         else:
             try:
                 self.loop_push()
-                self.msg_set_pushing(self.msg_ok())
+                self._show_sending_outcome()
 
             except Exception as e:
                 # td = traceback.format_exc()
+                self._send_outcome = SEND_ERROR
                 self.msg_set_pushing(self.msg_error(e))
         # CHANGELOG #84b-2: verify here what the will-executors hold (it
         # used to run after this dialog, in a separate window, and not at
@@ -3281,8 +3334,18 @@ class BalBuildWillDialog(BalDialog):
         # wallet or a multisig waiting for another signer still has to sign.
         # #196 (owner): then the label is "Not finished", not "All done":
         # "All done: Will still to sign" read as a contradiction.
+        # #222: a signed will that did not reach every will-executor is not
+        # finished either (before: "All done: Ok" after a failed sending).
+        # Owner: when none received it, "not sent to every" read as if some
+        # had; then the row says so plainly.
         left = self._signing_left()
-        if left is None:
+        if left is None and self._send_outcome == SEND_NONE:
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
+                _("Will not sent to the will-executors"))))
+        elif left is None and self._send_outcome in (SEND_SOME, SEND_ERROR):
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
+                _("Will not sent to every will-executor"))))
+        elif left is None:
             self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_ok()))
         elif left.partial:
             # Owner: a multisig signed here ("1 of 2") is partly signed, not

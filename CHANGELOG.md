@@ -14510,3 +14510,54 @@ Limits, on purpose:
   the new version." -> after the restart Àncòra works.
 
 **Outcome:** DONE
+
+## 222. The Check says "Ok" for the sending only when the will reached them all
+
+**Why (audit 2026-10-31, item 20):** after the sending, the Check's row "Broadcasting
+your will to executors" always said "Ok" (`task_phase2` wrote it after `loop_push`
+whatever happened), also when no will-executor received the will, and it covered the
+error of a failed sending. The last row "All done: Ok" looked only at the signing. The
+golden files of the Check recorded it: "1/2", then "Ok", then "All done: Ok".
+
+**What changed:**
+
+- `bal/gui/qt/dialogs.py`: `loop_push` keeps how the sending ended
+  (`_sending_outcome`: `SEND_ALL`, `SEND_SOME`, `SEND_NONE`; `SEND_ERROR` when the
+  sending itself failed). The rule is the one of Tools > Send
+  (`bal.engine.push.not_delivered`, #213); an excluded will-executor makes the sending
+  incomplete too. The sending row says "Ok" (all), "Not sent to every will-executor"
+  in orange (some), "Not sent" in red (none), or keeps the error.
+- The last row: a signed will that did not reach every will-executor is "Not finished:
+  Will not sent to every will-executor", or "Will not sent to the will-executors" when
+  none received it (owner: "to every" read as if some had). As for the signing (#196),
+  the line also shows in the window's "Attention" box.
+- Italian and Spanish translations of the four new texts.
+- `tests/flowkit.py`: `World.refused`, will-executors that answer with an error.
+- `tests/test_check_send_outcome.py` (new, three fake will-executors): all received,
+  one without answer, one refusing, none, and the silent one back at the next Check.
+- `tests/test_engine_push.py`: the fake dialog gets the real `_sending_outcome`; both
+  will-executors excluded gives `SEND_NONE`.
+- Golden files `executor_down`, `retry_after_down`, `exclude_down`: the sending row,
+  the last row, the "Attention" box and the sending step ("attention" instead of
+  "1/2"). Nothing else changed in them.
+
+Limits, on purpose:
+
+- The command line is unchanged: when no will-executor receives the will it already
+  answers `rebuilt_not_sent`.
+
+**Verified:**
+
+- Whole suite, normal order, Electrum 4.8.3: 3311 passed, 1 failed (1 h 46 min). The
+  failure was `test_check_writes_the_exclusion_row`, whose fake dialog lacked the new
+  method; fixed as above. Then the affected tests (`test_engine_push.py`,
+  `test_check_send_outcome.py`, `test_check_signing_honest.py`,
+  `test_translations.py`, `test_5e_char_check.py`, `test_5e_char_copies.py`): 120
+  passed. `ruff check bal/ tests/`: clean.
+- Owner, Electrum 4.8.3, testnet4, test ZIP `ancora_0.8.0-TEST-222-check-send-outcome.zip`:
+  delivery date moved earlier with internet off -> "Not sent" in red, "Not finished",
+  the Will tab says no will-executor received the will; internet on, Check -> sending
+  2/2, verification 2/2, "Your will is in force". The last-row text for "none" was
+  changed after this test (text only).
+
+**Outcome:** DONE
