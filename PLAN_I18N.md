@@ -80,7 +80,7 @@
 
 ## 3. Branch and workflow for this task
 
-The owner decided, on Truman's suggestion, to do this work on a **separate branch on Gitea**, not on `main`.
+The owner decided, on the BAL maintainer's suggestion, to do this work on a **separate branch on Gitea**, not on `main`.
 
 - **Branch:** `feature/i18n` (proposed name, see D6), created from `main`.
 - **Never** commit or push to `main` during this task.
@@ -94,7 +94,7 @@ The owner decided, on Truman's suggestion, to do this work on a **separate branc
   - `CHANGELOG.md`: both sides append at the end, so keep both entries and renumber.
 - **ZIP-FIRST for every phase:**
   1. build the ZIP;
-  2. the owner (and Truman) test it;
+  2. the owner (and the BAL maintainer) test it;
   3. only after the owner's explicit OK, commit on `feature/i18n` and push to `origin/feature/i18n` (who does this: see D3).
 - Add one numbered `CHANGELOG.md` entry per phase, in English.
 - Run ruff and the tests before every ZIP (HANDOFF.md). The known pre-existing test failures are listed in HANDOFF.md, section 7, step 3.
@@ -175,7 +175,7 @@ pybabel compile -d bal/locale -D bal --statistics
 
 ## 5. Phases
 
-Each phase follows HANDOFF.md: DISCOVER → PLAN (owner's "OK") → EXECUTE → VERIFY → ZIP → test by the owner and Truman → commit on `feature/i18n`.
+Each phase follows HANDOFF.md: DISCOVER → PLAN (owner's "OK") → EXECUTE → VERIFY → ZIP → test by the owner and the BAL maintainer → commit on `feature/i18n`.
 Phases 1 and 2 change nothing visible, so they may be delivered as a single ZIP/test cycle (see D5).
 
 ### Phase 1 — Infrastructure (no visible change)
@@ -255,7 +255,7 @@ Phases 1 and 2 change nothing visible, so they may be delivered as a single ZIP/
 
 ### Phase 4 — Final test and merge
 
-- The owner and Truman test the final branch ZIP.
+- The owner and the BAL maintainer test the final branch ZIP.
 - Merge `origin/main` into the branch one last time and test again.
 - Open the Pull Request `feature/i18n` → `main` on Gitea. After the merge, follow the normal release flow from `main`.
 
