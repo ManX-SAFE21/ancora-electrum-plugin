@@ -1635,8 +1635,12 @@ class BalBuildWillDialog(BalDialog):
         except BestEffortRequestFailed as e:
             self.msg_set_invalidating(self.msg_error(e))
 
-    def loop_push(self):
+    def loop_push(self, only=None):
         """The Check's "Sending" step: send the will to its will-executors.
+
+        #225: *only* (a set of URLs) limits the sending to those
+        will-executors: the resend of :meth:`_resend_lost`, so that one
+        that did not answer before is not waited for a second time.
 
         Broadcast is "one-shot" (Group B / B2 follow-up): each selected
         will-executor is contacted ONCE. Transactions that are broadcast
@@ -1666,6 +1670,9 @@ class BalBuildWillDialog(BalDialog):
                 max_fee=self.bal_window.bal_plugin.MAX_WILLEXECUTOR_FEE.get(),
                 dust=self.bal_window.window.wallet.dust_threshold(),
             )
+            if only is not None:
+                selected = {u: r for u, r in selected.items() if u in only}
+                excluded = {u: r for u, r in excluded.items() if u in only}
             for url, reason in excluded.items():
                 self.msg_set_status(
                     _("Will-Executor excluded"),
@@ -1897,15 +1904,31 @@ class BalBuildWillDialog(BalDialog):
         (:func:`bal.engine.push.not_delivered`, #213): the Check and the menu
         must call the same sending complete. An excluded will-executor did not
         get its copy either, so it makes the sending incomplete.
+
+        #225: ``SEND_NONE`` only when no will-executor of the will holds it.
+        Before, a resend to the one will-executor that had lost the will,
+        failing, said "The will was not sent to the will-executors" while
+        the other two held it.
         """
         reached = [url for url, outcome in result.outcomes.items()
                    if outcome in (RECEIVED, ALREADY_PRESENT)]
-        if not reached:
+        if not reached and not self._held_somewhere():
             return SEND_NONE
-        if excluded or not_delivered(self.bal_window.willitems, selected,
-                                     self.bal_window.willexecutors):
+        if not reached or excluded or not_delivered(
+                self.bal_window.willitems, selected, self.bal_window.willexecutors):
             return SEND_SOME
         return SEND_ALL
+
+    def _held_somewhere(self):
+        """True when a will-executor holds a copy of the will in force (#225).
+
+        A VALID copy with a will-executor, sent (PUSHED): received, or
+        verified, at this Check or before.
+        """
+        return any(
+            w.get_status("VALID") and w.we and w.get_status("PUSHED")
+            for w in self.bal_window.willitems.values()
+        )
 
     def _show_sending_outcome(self):
         """The final value of the sending row (#222, audit item 20).
@@ -1925,8 +1948,13 @@ class BalBuildWillDialog(BalDialog):
         else:
             self.msg_set_pushing(self.msg_ok())
 
-    def loop_verify(self):
+    def loop_verify(self, only_ids=None):
         """The Verification step: do the will-executors hold the will? (#84b-2)
+
+        #225: *only_ids* limits it to those copies: after the resend of
+        :meth:`_resend_lost`, only the copies sent again are asked (the
+        others were just verified), and a copy that could not be sent again
+        is not asked, so the row keeps its "Ko".
 
         Every VALID item that was sent and is not verified yet
         (``Will.needs_server_check``, the items the Check button verified)
@@ -1947,11 +1975,15 @@ class BalBuildWillDialog(BalDialog):
         awaited, then "received and verified" or "not received". It only
         reads from the executors; nothing is sent to them.
         """
+        # #225: the copies this verification finds missing (for _resend_lost).
+        self._verify_lost = set()
         if self._stopping:
             return
         # #178: the will-executors not selected (Exclude) are not asked.
         targets, _skipped = verify_targets(
             self.bal_window.willitems, selected=self._selected_willexecutors())
+        if only_ids is not None:
+            targets = [(wid, url) for wid, url in targets if wid in only_ids]
         items = {wid: self.bal_window.willitems[wid] for wid, _url in targets}
         if not items:
             # Nothing sent that is not verified yet: the step then shows what
@@ -2060,6 +2092,12 @@ class BalBuildWillDialog(BalDialog):
             on_answer=_answered, on_tick=on_tick, on_busy=on_busy,
             deadline=deadline,
         )
+        # #225: a copy the will-executor does not hold (another one, or none)
+        # is no longer sent (set_check_willexecutor): _resend_lost sends it.
+        self._verify_lost = {
+            wid for wid, w in items.items()
+            if w.get_status("CHECK_FAIL") and not w.get_status("PUSHED")
+        }
         # The final word under the step is counted over every will-executor
         # of the will in _finish_report.
         if failed:
@@ -2068,6 +2106,60 @@ class BalBuildWillDialog(BalDialog):
             self.msg_set_verifying(self.msg_warning(_("Timeout - no answer")))
         else:
             self.msg_set_verifying(self.msg_ok())
+
+    def _resend_lost(self):
+        """Send again, in the same Check, the copies the verification found missing (#225).
+
+        Owner (#225): a will-executor that had lost the will (its server
+        emptied, or it holds another transaction) was seen by the
+        verification ("Ko", "did not receive it"), but the copy was sent
+        again only at the NEXT Check, weeks or months later, and the last
+        row said "All done: Ok". Now it is sent at once, to those
+        will-executors only, and verified again. WHY once: a will-executor
+        that takes the will and does not keep it must not make the Check
+        loop; the last row then says the will is not held everywhere.
+        """
+        lost = getattr(self, "_verify_lost", set())
+        if self._stopping or not lost:
+            return
+        items = self.bal_window.willitems
+        urls = {items[wid].we["url"] for wid in lost if wid in items and items[wid].we}
+        if not urls:
+            return
+        hosts = sorted(urlparse(u).hostname or u for u in urls)
+        self._log_only(_("Not held by {}: sent again").format(", ".join(hosts)))
+        first = self._send_outcome
+        try:
+            self.loop_push(only=urls)
+        except Exception as e:
+            self._send_outcome = SEND_ERROR
+            self.msg_set_pushing(self.msg_error(e))
+        second = self._send_outcome
+        # WHY: the row tells the whole Check, both sendings.
+        if SEND_ERROR in (first, second):
+            self._send_outcome = SEND_ERROR
+        elif second == SEND_NONE:
+            self._send_outcome = SEND_NONE
+        elif SEND_SOME in (first, second) or first == SEND_NONE:
+            self._send_outcome = SEND_SOME
+        else:
+            self._send_outcome = SEND_ALL
+        self._show_sending_outcome()
+        self.loop_verify(only_ids=lost)
+
+    def _not_held_everywhere(self):
+        """True when a will-executor of the will does not hold its copy (#225).
+
+        A VALID copy of a will-executor selected now that the verification
+        found missing (CHECK_FAIL, not verified), also after the resend.
+        """
+        selected = self._selected_willexecutors()
+        return any(
+            w.get_status("VALID") and w.we and w.get_status("CHECK_FAIL")
+            and not w.get_status("CHECKED")
+            and (selected is None or w.we.get("url") in selected)
+            for w in self.bal_window.willitems.values()
+        )
 
     def invalidate_task(self, password, bal_window, tx):
         if self._stopping:
@@ -3319,6 +3411,8 @@ class BalBuildWillDialog(BalDialog):
             if not self._stopping:
                 self._merge_executors_and_send_note()
             self.loop_verify()
+            # #225: a will-executor that lost the will gets it again now.
+            self._resend_lost()
         except Exception as e:
             _logger.error(f"verification failed: {e!r}")
             self.msg_set_verifying(self.msg_error(e))
@@ -3345,6 +3439,11 @@ class BalBuildWillDialog(BalDialog):
         elif left is None and self._send_outcome in (SEND_SOME, SEND_ERROR):
             self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
                 _("Will not sent to every will-executor"))))
+        elif left is None and self._not_held_everywhere():
+            # #225: sent, but a will-executor still does not hold it (before:
+            # "All done: Ok" under "Verifying: Ko").
+            self.msg_edit_row("{}:\t{}".format(_("Not finished"), self.msg_warning(
+                _("Will not held by every will-executor"))))
         elif left is None:
             self.msg_edit_row("{}:\t{}".format(_("All done"), self.msg_ok()))
         elif left.partial:
