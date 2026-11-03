@@ -70,16 +70,14 @@ tests/                   smoke + external-zip regression tests
 
 ## Requirements
 
-- **Electrum 4.7.2 or 4.8.0** — the plugin detects which wallet-DB
-  registration API is available (`json_db.register_dict` on 4.7.2,
-  `stored_dict.register_name` on 4.8.0) and adapts automatically.
+- **Electrum 4.8.2 or later** (the tests run on Electrum 4.8.3).
 - **PyQt6** (bundled with the Electrum desktop GUI).
 
 ## Wallet compatibility
 
-Àncòra currently supports **standard (single-signature) wallets** and
-**hardware wallets** supported by Electrum. **Multisig wallets** and
-**Electrum TrustedCoin (2FA) wallets** are **not yet supported** — see
+Àncòra supports **standard (single-signature) wallets** and **multisig
+wallets**. **Hardware wallets** have not been tested with Àncòra yet, and
+**Electrum TrustedCoin (2FA) wallets** are not known to work — see
 [`COMPATIBILITY.md`](COMPATIBILITY.md) for the full compatibility matrix and
 current status.
 
@@ -334,22 +332,15 @@ The plugin handles the cases as follows (triggered when you press
   (postponed) inheritance. Postponing a will that was *never* signed/sent just
   rebuilds it (no on-chain fee).
 
-## Transaction list: the "Server" column
+## Transaction list: the "Status" column
 
-The will transaction list shows a dedicated **Server** column so you always
-know whether each inheritance transaction is actually stored on the
-will-executor servers, independently of the row colour:
-
-| Label | Meaning |
-| --- | --- |
-| `Confirmed on server` | the will-executor confirmed it stored the transaction |
-| `Sent (not checked)` | pushed to the will-executor, not yet re-checked |
-| `Send failed` / `Not on server` | push failed or the server no longer has it |
-| `Signed (not sent)` | signed locally, not sent to any will-executor |
-| `Not sent` | not signed/sent yet |
-
-Hovering the cell shows a tooltip with the will-executor URL and the current
-state.
+The Will tab lists the will by versions, with one row per will-executor's
+copy under each version. There is no separate "Server" column any more
+(CHANGELOG #83): the **Status** column of each copy says where that
+will-executor stands, for example whether it confirmed it holds the
+transaction. Hovering the cell shows a tooltip with the details. The
+statuses and their colours are explained in the
+[user manual](docs/manual/README.md#will-tab-the-will-by-versions).
 
 ## Testing
 
