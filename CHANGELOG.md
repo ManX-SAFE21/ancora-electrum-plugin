@@ -14469,3 +14469,44 @@ test files instead of the whole suite):**
   have.
 
 **Outcome:** DONE
+
+## 221. Electrum 4.8.3 or later, and how to update the plugin
+
+**Why (owner, 2026-11-03):** on Electrum 4.8.1 the owner added a newer plugin ZIP with
+another file name while the old one was installed, and loading broke ("Error pre-loading
+electrum_external_plugins.bal: AttributeError("'NoneType' object has no attribute
+'loader'")"). Up to 4.8.2 Electrum copies the new ZIP next to the old one, so the
+plugins folder holds two copies of the plugin `bal`. Electrum 4.8.3 (2026-10-23) added
+"allow external plugin upgrades": it replaces the old ZIP and asks for a restart. The
+tests run on 4.8.3 only, and 4.8.3 is a security update. The owner chose 4.8.3 as the
+minimum.
+
+**What changed:**
+
+- `bal/manifest.json`: `"min_electrum_version": "4.8.3"`. Electrum 4.8.0 and later read
+  this field; an older Electrum skips the plugin ("version mismatch" in its log)
+  instead of loading it.
+- `README.md`, `COMPATIBILITY.md`, the manual (`docs/manual/README.md`, `manual.html`)
+  and the release notes written by `make-release.sh`: Electrum 4.8.3 or later, and a
+  short "Update to a new version" part (add the new ZIP in Tools -> Plugins, restart
+  Electrum; the heirs, the will and the settings are kept).
+- `tests/test_manifest_min_electrum.py` (new): reads the manifest with Electrum's own
+  `PluginMetadata`; 4.8.3 and later accept the plugin, 4.8.2 and older skip it.
+
+Limits, on purpose:
+
+- The code that still lets the plugin run on older Electrum versions stays (CLAUDE.md:
+  it is removed only in a step of its own).
+
+**Verified:**
+
+- `tests/test_manifest_min_electrum.py`, `tests/test_version_source.py`,
+  `tests/test_brand.py`: 16 passed. `ruff check bal/ tests/`: clean. `bash -n
+  make-release.sh`: OK.
+- The test ZIP read with Electrum's `Plugins.read_manifest`: loaded on 4.8.3, skipped
+  as 4.8.2. `tests/external_zip_test.py`: the ZIP loads.
+- Owner, Electrum 4.8.3, with Àncòra installed: Tools -> Plugins -> Add the test ZIP
+  `ancora_0.8.0-TEST-221-electrum-483-minimum.zip` -> "Please restart Electrum to use
+  the new version." -> after the restart Àncòra works.
+
+**Outcome:** DONE

@@ -70,7 +70,10 @@ tests/                   smoke + external-zip regression tests
 
 ## Requirements
 
-- **Electrum 4.8.2 or later** (the tests run on Electrum 4.8.3).
+- **Electrum 4.8.3 or later** (the manifest says so: an older Electrum does
+  not load the plugin). From 4.8.3 Electrum updates a plugin ZIP in place;
+  before, adding a newer ZIP with another file name left two copies of the
+  plugin and loading failed.
 - **PyQt6** (bundled with the Electrum desktop GUI).
 
 ## Wallet compatibility
@@ -108,8 +111,18 @@ the script.
 
 1. Electrum → **Tools → Plugins** → install from file → pick the built zip.
 2. Enable **Àncòra (Safe21)** and restart Electrum.
-3. (Recommended) verify the downloaded zip's SHA-256 matches the value printed
-   by `build_zip.py`.
+3. (Recommended) verify the downloaded zip's SHA-256 (and, for a release, its
+   signature) against the values published with it.
+
+### Update to a new version
+
+1. Electrum → **Tools → Plugins** → install from file → pick the new zip.
+   Electrum sees it is the same plugin, replaces the old zip and asks to
+   restart.
+2. **Restart Electrum.** Until then the old version keeps running.
+
+The heirs, the will and the settings stay in the wallet and in Electrum's
+configuration: an update does not touch them.
 
 ### Install as an internal plugin
 
