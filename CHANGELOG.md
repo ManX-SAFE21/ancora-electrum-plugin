@@ -14812,3 +14812,30 @@ covered: invalidation, the new copies, the sending, and the Check after the conf
   (Electrum 4.8.3): 59 passed in 49 s. No whole suite (test-only step; owner rule).
 
 **Outcome:** DONE
+
+## 229. Electrum 4.8.4: checked, documents say "tested up to 4.8.4"
+
+**Date:** 2026-11-09
+
+**Goal:** Electrum 4.8.4 (security update, 2026-11-06) came out. Check that the plugin still
+works and say so in the documents, without promising anything for versions not tested yet.
+
+**What was checked:**
+
+- Read the whole diff 4.8.3 -> 4.8.4 (68 commits, 54 files). The plugin machinery (loading,
+  manifest check, stored dict registration, hooks) is untouched. The plugin uses only
+  `wallet.set_label` and `wallet.clear_tx_parents_cache`: both still exist; `set_label` now
+  also fires a `label_changed` callback, harmless for the plugin.
+- Whole test suite on Electrum 4.8.4 (main 5595cda): 3353 passed in 18 min 47 s.
+- Not run: the scenario harness and a manual GUI session (nothing in the 4.8.4 diff touches
+  those parts).
+
+**What changed:** only documents, no plugin code.
+
+- `README.md`: "Tested up to Electrum 4.8.4".
+- `COMPATIBILITY.md`: same, plus the test result and the note that a newer Electrum is not
+  blocked but is not covered until it has been tested.
+
+**Verified:** no code changed, so no ZIP.
+
+**Outcome:** DONE
