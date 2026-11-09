@@ -71,7 +71,7 @@ tests/                   smoke + external-zip regression tests
 ## Requirements
 
 - **Electrum 4.8.3 or later** (the manifest says so: an older Electrum does
-  not load the plugin). From 4.8.3 Electrum updates a plugin ZIP in place;
+  not load the plugin). Tested up to Electrum 4.8.4. From 4.8.3 Electrum updates a plugin ZIP in place;
   before, adding a newer ZIP with another file name left two copies of the
   plugin and loading failed.
 - **PyQt6** (bundled with the Electrum desktop GUI).
