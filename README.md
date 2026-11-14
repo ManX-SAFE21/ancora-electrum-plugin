@@ -213,6 +213,7 @@ electrum bal_delivery_set --date 2029-08-29     # YYYY-MM-DD means 00:00 UTC
 electrum bal_delivery_set --fee 20              # sat/vByte, 1 or more
 electrum bal_delivery_form period --months 36   # renewable period, N months
 electrum bal_delivery_set --months 24           # a new N (period form only)
+electrum bal_delivery_set --check_alive_days 30  # Check Alive: 30 days before delivery
 electrum bal_delivery_form fixed --date 2029-08-29
 
 # Inheritance in several deliveries (ADVANCED): 2 or 3 delivery dates, shares of the whole estate
@@ -251,6 +252,13 @@ with a will in force the new N is used at the next renewal (no fee now);
 `period_start` (the day the period started) and `locked` (a will in force:
 the form cannot change). The period form is not available with a table
 of the deliveries.
+
+`bal_delivery_set --check_alive_days N` sets the Check Alive: the day,
+N days before the delivery date (1 to 3650), from which the plugin asks you
+to renew. It is stored as `threshold` `-Nd` (shown by `bal_delivery_show`).
+It works with both delivery forms and with a will in force: it moves only
+the reminder day, never the delivery date, so nothing is invalidated. Out
+of the range it is refused and nothing is written.
 
 Inheritance in several deliveries (ADVANCED mode, fixed delivery date):
 the heirs receive in 2 or 3 deliveries, on the same dates for every heir, at least

@@ -400,6 +400,34 @@ def _as_fee(value):
     return number
 
 
+def _as_check_alive_days(value):
+    """The ``--check_alive_days`` value of ``bal_delivery_set``, as an int.
+
+    The Check Alive ("are you still here?") is stored as ``"-Nd"``: N days
+    BEFORE the delivery date (CHANGELOG #80). The command takes N, a whole
+    number of days from 1 to :data:`bal.core.checkalive.CHECK_ALIVE_MAX_DAYS`
+    (ten years): an int, or a text holding one. A bool, a fraction, zero, a
+    negative number or anything above the range is refused with a message
+    (nothing is written).
+    """
+    days = None
+    if isinstance(value, int) and not isinstance(value, bool):
+        days = value
+    elif isinstance(value, str):
+        try:
+            days = int(value.strip())
+        except ValueError:
+            days = None
+    if days is None or not 1 <= days <= checkalive.CHECK_ALIVE_MAX_DAYS:
+        raise UserFacingException(
+            _(
+                "Not a Check Alive: {} (whole days before the delivery date, "
+                "from 1 to {})."
+            ).format(value, checkalive.CHECK_ALIVE_MAX_DAYS)
+        )
+    return days
+
+
 class BalSettingsController:
     """Plugin settings (``bal_*`` config keys) for the command line.
 
@@ -1641,7 +1669,7 @@ class BalController(BalSettingsController):
         return out
 
     def delivery_set(self, date=None, fee=None, keep=None, confirm_earlier=None,
-                     months=None):
+                     months=None, check_alive_days=None):
         """``bal_delivery_set``: change this wallet's delivery date or fee rate.
 
         ``date``: ``YYYY-MM-DD`` (00:00 UTC) or a UNIX timestamp, read by
@@ -1662,6 +1690,12 @@ class BalController(BalSettingsController):
         refused there (see ``bal_delivery_form``). With a table of the
         deliveries (#169) the date is delivery 1's: at least 28 days before
         delivery 2 (:meth:`_check_table_gap`).
+        ``check_alive_days`` (#230, "when to remind you"): the Check Alive
+        as N days before the delivery date, 1..3650 (:func:`_as_check_alive_days`),
+        stored as the ``threshold`` ``"-Nd"`` through the same validated
+        write. It works with both delivery forms and with a will in force:
+        it moves only the day the renewal is asked, never the delivery date,
+        so the will in force stays valid (nothing to invalidate).
 
         Everything is checked before anything is written (through
         :func:`bal.engine.context.set_will_setting`), then the wallet file
@@ -1674,11 +1708,12 @@ class BalController(BalSettingsController):
             raise UserFacingException(
                 _delivery_hold_message(delivery.DeliverySettingsUnavailable())
             )
-        if date is None and fee is None and not keep and months is None:
+        if (date is None and fee is None and not keep and months is None
+                and check_alive_days is None):
             raise UserFacingException(
                 _(
                     "Nothing to change: give --date YYYY-MM-DD, --fee N, "
-                    "--months N or --keep true."
+                    "--months N, --check_alive_days N or --keep true."
                 )
             )
         if keep and date is not None:
@@ -1740,6 +1775,8 @@ class BalController(BalSettingsController):
             changes["locktime"] = new_date
         if fee is not None:
             changes["baltx_fees"] = _as_fee(fee)
+        if check_alive_days is not None:
+            changes["threshold"] = "-{}d".format(_as_check_alive_days(check_alive_days))
         try:
             delivery.validate_values(changes)
         except ValueError as e:
@@ -1774,6 +1811,12 @@ class BalController(BalSettingsController):
                         "applies at the next renewal (no fee now)."
                     ).format(_months_words(result["period_months"]))
                 )
+        if "threshold" in changes:
+            messages.append(
+                _("Check Alive: {} days before the delivery date.").format(
+                    changes["threshold"][1:-1]
+                )
+            )
         if changes:
             messages.append(_("Stored."))
             # #192: a fee below 20 sat/vB is stored, with the warning.

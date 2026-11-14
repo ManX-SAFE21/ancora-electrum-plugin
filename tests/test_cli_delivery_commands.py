@@ -486,7 +486,7 @@ def test_delivery_commands_are_registered_and_parsed():
                 assert arg in cmd.arg_descriptions, (name, arg)
     assert known_commands["bal_delivery_set"].arg_types == {
         "date": "str", "fee": "int", "keep": "bool", "confirm_earlier": "bool",
-        "months": "int"}
+        "months": "int", "check_alive_days": "int"}
     args = get_parser().parse_args(
         ["bal_delivery_set", "--date", "2040-01-01", "--fee", "17", "--keep",
          "true", "--confirm_earlier", "false"])
