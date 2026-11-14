@@ -14839,3 +14839,37 @@ works and say so in the documents, without promising anything for versions not t
 **Verified:** no code changed, so no ZIP.
 
 **Outcome:** DONE
+
+## 230. Command line: `bal_delivery_set --check_alive_days N`
+
+**Date:** 2026-11-14
+
+**Goal:** until now the Check Alive (the day from which the plugin asks the owner to renew)
+could be set only from the Qt window. The Android copy of the plugin needs to set it through a
+`bal_` command, so the option is added here too and the two copies match again.
+
+**What changed:**
+
+- `bal/cli/controller.py`: new `_as_check_alive_days` (a whole number of days, 1 to 3650,
+  `checkalive.CHECK_ALIVE_MAX_DAYS`; an int or a text holding one; a bool, a fraction, zero,
+  a negative number or a larger value is refused with "Not a Check Alive: ..."). `delivery_set`
+  takes `check_alive_days` and stores the `threshold` `-Nd` through the same validated write as
+  the date and the fee (`context.set_will_setting`): everything is checked before anything is
+  written. The answer adds "Check Alive: N days before the delivery date." The "Nothing to
+  change" message lists the new option. It works with both delivery forms and with a will in
+  force: the threshold is not part of the signed transactions, so nothing is invalidated.
+- `bal/cli/commands.py`: `bal_delivery_set` declares `arg:int:check_alive_days`.
+- `tests/test_cli_check_alive_days.py` (new, 21 tests); `tests/test_cli_delivery_commands.py`:
+  the pinned option types include `check_alive_days`.
+- `README.md`: the option in the command examples and a short paragraph.
+- No new translation: the command line stays English (`babel.cfg` ignores `bal/cli/**`).
+
+**Verified (Electrum 4.8.3):**
+
+- `ruff check bal/ tests/`: clean.
+- The CLI, Check Alive, engine context and delivery settings tests: 505 passed in 64 s.
+- Whole suite: 3374 passed in 1 h 33 min (run from the Windows folder in WSL, slower than usual).
+- Not done: the scenario harness (the change is in the command line only; the Qt window and
+  the will building are untouched) and the owner ZIP test.
+
+**Outcome:** DONE
