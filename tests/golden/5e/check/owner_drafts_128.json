@@ -54,7 +54,7 @@
    {
     "executor": "https://we0.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -67,7 +67,7 @@
    {
     "executor": "https://we1.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -80,7 +80,7 @@
    {
     "executor": "https://we2.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -92,9 +92,9 @@
    }
   ],
   "labels": {
-   "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction"
+   "T1": "Àncòra – copia di riserva dell'eredità",
+   "T2": "Àncòra – copia di riserva dell'eredità",
+   "T3": "Àncòra – copia di riserva dell'eredità"
   },
   "popups": [],
   "pushed": [
@@ -309,7 +309,7 @@
    {
     "executor": "https://we0.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -322,7 +322,7 @@
    {
     "executor": "https://we1.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -335,7 +335,7 @@
    {
     "executor": "https://we2.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -377,9 +377,9 @@
    }
   ],
   "labels": {
-   "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction",
+   "T1": "Àncòra – copia di riserva dell'eredità",
+   "T2": "Àncòra – copia di riserva dell'eredità",
+   "T3": "Àncòra – copia di riserva dell'eredità",
    "T4": "BitcoinAfterLife inheritance transaction - https://we0.test",
    "T5": "BitcoinAfterLife inheritance transaction - https://we1.test",
    "T6": "BitcoinAfterLife inheritance transaction - https://we2.test"
@@ -583,7 +583,7 @@
    {
     "executor": "https://we0.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -596,7 +596,7 @@
    {
     "executor": "https://we1.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -609,7 +609,7 @@
    {
     "executor": "https://we2.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -621,9 +621,9 @@
    }
   ],
   "labels": {
-   "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction"
+   "T1": "Àncòra – copia di riserva dell'eredità",
+   "T2": "Àncòra – copia di riserva dell'eredità",
+   "T3": "Àncòra – copia di riserva dell'eredità"
   },
   "popups": [],
   "pushed": [],
@@ -807,7 +807,7 @@
    {
     "executor": "https://we0.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -820,7 +820,7 @@
    {
     "executor": "https://we1.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -833,7 +833,7 @@
    {
     "executor": "https://we2.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -845,9 +845,9 @@
    }
   ],
   "labels": {
-   "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction"
+   "T1": "Àncòra – copia di riserva dell'eredità",
+   "T2": "Àncòra – copia di riserva dell'eredità",
+   "T3": "Àncòra – copia di riserva dell'eredità"
   },
   "popups": [],
   "pushed": [],
@@ -1030,7 +1030,7 @@
    {
     "executor": "https://we0.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -1043,7 +1043,7 @@
    {
     "executor": "https://we1.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -1056,7 +1056,7 @@
    {
     "executor": "https://we2.test",
     "fee": 21,
-    "label": "Safe21 Heartbeat backup transaction",
+    "label": "Àncòra – copia di riserva dell'eredità",
     "locktime": "2027-02-27",
     "statuses": [
      "CHECKED",
@@ -1068,9 +1068,9 @@
    }
   ],
   "labels": {
-   "T1": "Safe21 Heartbeat backup transaction",
-   "T2": "Safe21 Heartbeat backup transaction",
-   "T3": "Safe21 Heartbeat backup transaction"
+   "T1": "Àncòra – copia di riserva dell'eredità",
+   "T2": "Àncòra – copia di riserva dell'eredità",
+   "T3": "Àncòra – copia di riserva dell'eredità"
   },
   "popups": [],
   "pushed": [],

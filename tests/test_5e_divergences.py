@@ -408,7 +408,7 @@ def test_d14():
 def test_d15():
     """Labels on the rebuilt will: Check sets them, the automatic rebuild does not."""
     c = step("check/new_coin", "check", 1)
-    assert c["labels"]["T3"] == "Safe21 Heartbeat backup transaction"
+    assert c["labels"]["T3"] == "Àncòra – copia di riserva dell'eredità"  # #232
     a = step("copies/auto_new_coin", "gui automatic")
     assert a["labels"]["T3"] == ""
 

@@ -109,7 +109,14 @@ _EXECUTOR_HEIR = 'w!ll3x3c"'
 # The history label the plugin writes on its invalidation transactions
 # (``window.py``, ``dialogs.py``, ``cli/controller.py``, all through
 # ``bal.engine.invalidate`` since #152). Stored data, never translated.
-INVALIDATION_LABEL = "Safe21 Heartbeat invalidation"
+# #232 (owner, 2026-11-17): Italian, as Àncòra is for the Italian market
+# (Electrum shows a stored label as it is, it cannot be translated).
+INVALIDATION_LABEL = "Àncòra – annullamento eredità"
+#: The labels written by earlier versions (Àncòra 0.8.0 is published with
+#: this one): still recognised, because wallets keep them.
+OLD_INVALIDATION_LABELS = ("Safe21 Heartbeat invalidation",)
+#: Every label that marks a transaction as the plugin's invalidation.
+INVALIDATION_LABELS = (INVALIDATION_LABEL,) + OLD_INVALIDATION_LABELS
 
 VERSION_DRAFT = "draft"
 VERSION_IN_FORCE = "in_force"
@@ -693,7 +700,7 @@ def _describe_spender(wallet, txid):
             label = wallet.get_label_for_txid(txid)
         except Exception:
             label = None
-        labelled = label == INVALIDATION_LABEL
+        labelled = label in INVALIDATION_LABELS  # #232: also the old label
         if not labelled:
             tx = wallet.adb.get_transaction(txid)
             outputs = tx.outputs() if tx is not None else []

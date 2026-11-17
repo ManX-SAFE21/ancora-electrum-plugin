@@ -6,7 +6,7 @@ places:
 * building the will items from the heirs: ``BalWindow.build_will`` (used by
   the Check dialog, the Prepare menu and the automatic rebuild) and
   ``BalController.build_will`` (command line);
-* labelling the rebuilt transactions "Safe21 Heartbeat backup transaction"
+* labelling the rebuilt transactions with ``BACKUP_LABEL``
   in the wallet: the Check dialog, the Prepare menu and the command line;
 * moving the stored delivery date to the rebuilt will's date (CHANGELOG
   #107 / #110): the Check dialog, the automatic rebuild and the command line.
@@ -42,9 +42,13 @@ from . import context, instalments
 
 _logger = get_logger(__name__)
 
-# The History label of the rebuilt transactions. Stored text: always English,
-# never translated.
-BACKUP_LABEL = "Safe21 Heartbeat backup transaction"
+# The History label of the rebuilt transactions. Stored text, never
+# translated. #232 (owner, 2026-11-17): Italian, as Àncòra is for the Italian
+# market (Electrum shows a stored label as it is).
+BACKUP_LABEL = "Àncòra – copia di riserva dell'eredità"
+#: The label written by earlier versions, still found in wallets. Kept for
+#: the record only: nothing reads a backup label back.
+OLD_BACKUP_LABELS = ("Safe21 Heartbeat backup transaction",)
 
 
 def build_will(host, *, with_creation_date):

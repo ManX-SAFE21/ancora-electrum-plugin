@@ -246,10 +246,10 @@ def test_label_text_written_once():
     for path in _python_files():
         rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
         for line in _code_lines(path):
-            if '"Safe21 Heartbeat invalidation"' in line:
+            if '"Àncòra – annullamento eredità"' in line:
                 found.append(rel)
     assert found == ["core/will_versions.py"], found
-    assert invalidate.INVALIDATION_LABEL == "Safe21 Heartbeat invalidation"
+    assert invalidate.INVALIDATION_LABEL == "Àncòra – annullamento eredità"  # #232
 
 
 if __name__ == "__main__":

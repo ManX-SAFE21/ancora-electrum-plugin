@@ -14921,3 +14921,45 @@ the Android copy of the plugin.
   now, the ZIP is tested before the release).
 
 **Outcome:** DONE
+
+## 232. Italian labels on the invalidation and backup transactions
+
+**Date:** 2026-11-17
+
+**Goal (owner decision, 2026-11-17):** the labels the plugin writes in the wallet History still
+said "Safe21 Heartbeat", the project's name before Àncòra. They are stored text, shown by
+Electrum as they are (never translated). Àncòra is for the Italian market (the international
+product is the original Bitcoin After Life plugin), so the new labels are Italian. The same
+change was made in the Android copy of the plugin.
+
+**What changed:**
+
+- `bal/core/will_versions.py`: `INVALIDATION_LABEL = "Àncòra – annullamento eredità"`. New
+  `OLD_INVALIDATION_LABELS = ("Safe21 Heartbeat invalidation",)` and `INVALIDATION_LABELS`
+  (the new one first). The paid-invalidation row of the will history (`_describe_spender`)
+  accepts every label in `INVALIDATION_LABELS`: Àncòra 0.8.0 is published with the old label
+  and wallets keep it.
+- `bal/engine/build.py`: `BACKUP_LABEL = "Àncòra – copia di riserva dell'eredità"`, plus
+  `OLD_BACKUP_LABELS` for the record (nothing reads a backup label back).
+- `bal/gui/qt/dialogs.py`, `bal/engine/build.py`: comments name the constants instead of the
+  old text.
+- Not changed: the envelope label `HISTORY_LABEL` ("BitcoinAfterLife inheritance transaction -
+  {willexecutor}"), a user setting also used to recognise the plugin's local copies (owner,
+  2026-11-17: it always stays the same). Labels already written in wallets are not rewritten.
+- Tests: new `test_the_new_and_the_old_invalidation_label_are_recognised`
+  (`test_core_will_versions.py`); expected labels in `test_engine_invalidate.py`,
+  `test_engine_build.py`, `test_gui_will_flows.py`, `test_5e_divergences.py`. Golden files
+  regenerated with `BAL_GOLDEN_UPDATE=1` (66 files): only the backup label changes (672 lines).
+- Notes outside the repository: `context/TECHNICAL-NOTES.md` (the invalidation labels).
+
+**Verified (Electrum 4.8.3):**
+
+- `ruff check bal/ tests/`: clean.
+- The label tests: 130 passed; the golden and divergence tests: 152 passed.
+- Whole suite: 3375 passed, 0 failed in 1 h 55 min (run from the Windows folder in WSL).
+- Test ZIP `ancora_0.8.0-TEST-232-scritte-italiano.zip` built; through zipimport it has the
+  new labels, the old invalidation label in `INVALIDATION_LABELS`, and the fee 50 of #231.
+- Not done: the scenario harness, and the owner ZIP test (the ZIPs are tested before the
+  release, owner 2026-11-17).
+
+**Outcome:** DONE
