@@ -241,7 +241,7 @@ def test_label_scopes():
     """"valid" labels the VALID items, "all" every item; English text."""
     host, labels = _label_host()
     build.label_rebuilt(host, scope="valid")
-    assert labels == [("v", "Safe21 Heartbeat backup transaction")]
+    assert labels == [("v", "Àncòra – copia di riserva dell'eredità")]  # #232
     labels.clear()
     build.label_rebuilt(host, scope="all")
     assert [w for w, _t in labels] == ["v", "r", "i"]

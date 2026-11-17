@@ -576,6 +576,30 @@ def test_a_spender_that_is_not_an_invalidation_has_no_row():
     assert (inv.labelled, inv.fee, inv.confirmed) == (False, 310, True)
 
 
+def test_the_new_and_the_old_invalidation_label_are_recognised():
+    """#232: the Italian label is written now; the label of Àncòra 0.8.0
+    ("Safe21 Heartbeat invalidation") is still in wallets and still marks
+    the paid invalidation, even with an output to someone else."""
+    assert wv.INVALIDATION_LABEL == "Àncòra – annullamento eredità"
+    assert wv.OLD_INVALIDATION_LABELS == ("Safe21 Heartbeat invalidation",)
+    assert wv.INVALIDATION_LABELS == (
+        wv.INVALIDATION_LABEL, "Safe21 Heartbeat invalidation")
+    paid = _hex(96)
+    for label in wv.INVALIDATION_LABELS:
+        wallet = FakeWallet(spenders={_hex(1) + ":0": paid},
+                            labels={paid: label},
+                            outputs={paid: [("their-address", 5000)]},
+                            fees={paid: 420}, heights={paid: 130})
+        (inv,) = wv.build_history(_will(_invalidated(73, 1.0)), wallet).invalidations
+        assert (inv.labelled, inv.fee) == (True, 420), label
+    # Any other label is not the plugin's: with an output to someone else,
+    # no invalidation row.
+    wallet = FakeWallet(spenders={_hex(1) + ":0": paid},
+                        labels={paid: "Safe21 Heartbeat backup transaction"},
+                        outputs={paid: [("their-address", 5000)]})
+    assert wv.build_history(_will(_invalidated(73, 1.0)), wallet).invalidations == []
+
+
 def test_wallet_errors_never_fail_the_list():
     will = _will(_invalidated(71, 1.0), FakeItem(_hex(72), t=2.0, inputs=[(_hex(3), 0)]))
     history = wv.build_history(will, FakeWallet(broken=True))

@@ -1089,7 +1089,7 @@ class BalBuildWillDialog(BalDialog):
             # The will is already expired (e.g. the CHECK button is pressed on an
             # expired will). Previously this returned (None, invalidate_tx),
             # which routed to the automatic invalidate path (password prompt +
-            # auto-broadcast) that did NOT set the "Safe21 Heartbeat invalidation"
+            # auto-broadcast) that did NOT set the ``INVALIDATION_LABEL``
             # history label.
             #
             # We now return the SAME "invalidate_classic" signal used elsewhere,
@@ -1248,7 +1248,7 @@ class BalBuildWillDialog(BalDialog):
                 # invalidation tx is not yet visible in the mempool, so the will
                 # is still detected as expired and the user is asked to
                 # invalidate again and again (infinite loop). It also never sets
-                # the "Safe21 Heartbeat invalidation" history label.
+                # the ``INVALIDATION_LABEL`` history label.
                 #
                 # Instead we reproduce EXACTLY what the "Tools -> invalidate"
                 # menu does (BalWalletWindow.invalidate_will): open Electrum's
@@ -2886,7 +2886,7 @@ class BalBuildWillDialog(BalDialog):
         # before the invalidation tx reaches the mempool and loop forever), we
         # behave exactly like the "Tools -> invalidate" menu: open Electrum's
         # classic transaction dialog so the user signs and broadcasts the
-        # invalidation manually, with the "Safe21 Heartbeat invalidation" label.
+        # invalidation manually, with the ``INVALIDATION_LABEL`` label.
         # This runs in the GUI thread (on_success callback), so opening windows
         # is safe. We then stop and close the wizard.
         if self.have_to_sign == "invalidate_classic":
@@ -2902,7 +2902,7 @@ class BalBuildWillDialog(BalDialog):
             #   2. AUTOMATICALLY open Electrum's classic transaction dialog via
             #      BalWalletWindow.invalidate_will() (the same code used by the
             #      Tools -> Invalidate menu). That path already sets the
-            #      "Safe21 Heartbeat invalidation" history label - which fixes
+            #      ``INVALIDATION_LABEL`` history label - which fixes
             #      task #03 (the label was previously missing on the automatic
             #      path).
             #
