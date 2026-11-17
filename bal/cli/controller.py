@@ -1819,7 +1819,7 @@ class BalController(BalSettingsController):
             )
         if changes:
             messages.append(_("Stored."))
-            # #192: a fee below 20 sat/vB is stored, with the warning.
+            # #192: a fee below 50 sat/vB (LOW_FEE_LIMIT) is stored, with the warning.
             warning = low_fee_warning(changes.get("baltx_fees"))
             if warning:
                 messages.append(warning)

@@ -208,7 +208,7 @@ def test_default_will_settings_relative():
 
 def test_default_will_settings():
     settings = BalPlugin.default_will_settings()
-    assert settings["baltx_fees"] == 20
+    assert settings["baltx_fees"] == 50  # #231 (was 20)
     assert "threshold" in settings
     assert "locktime" in settings
     # The locktime is an absolute timestamp; since CHANGELOG #80 the Check
@@ -231,7 +231,7 @@ def test_validate_will_settings():
     # Note: passing None triggers `will_settings = []` which then fails
     # on .get(). This is a latent bug — test passing a dict directly
     result = BalPlugin.validate_will_settings(None, {"baltx_fees": 0})
-    assert result["baltx_fees"] == 20
+    assert result["baltx_fees"] == 50
 
     # normal settings unchanged
     input_settings = {"baltx_fees": 50, "threshold": 1700000000, "locktime": 1800000000}

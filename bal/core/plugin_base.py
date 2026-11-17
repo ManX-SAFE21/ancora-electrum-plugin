@@ -530,8 +530,13 @@ class BalPlugin(BasePlugin):
         Since CHANGELOG #80 the Check Alive is never a fixed date (owner
         decision D14): a fixed date does not follow the delivery when it
         moves. Default: 180 days (about six months) before the delivery.
+        The fee rate is ``delivery.DEFAULT_FEE`` (50 sat/vB since #231).
         """
-        will_settings: dict[str, float | str] = {"baltx_fees": 20}
+        # Local import, as in warning_months: one source for
+        # the default fee (#231), no import cycle at module load.
+        from .delivery import DEFAULT_FEE
+
+        will_settings: dict[str, float | str] = {"baltx_fees": DEFAULT_FEE}
         will_settings.update(BalPlugin.default_will_settings_absolute())
         will_settings["threshold"] = BalPlugin.default_will_settings_relative()[
             "threshold"

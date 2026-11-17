@@ -123,7 +123,7 @@ def test_constants():
     assert dv.WALLET_KEY == "will_settings"
     assert dv.SCHEMA_VERSION == 2                       # #127: the form
     assert dv.FIRST_SCHEMA_VERSION == 1
-    assert dv.DEFAULT_FEE == 20
+    assert dv.DEFAULT_FEE == 50                         # #231 (was 20)
     assert dv.DEFAULT_MONTHS == 24                      # #127 (was 12)
     assert dv.DEFAULT_THRESHOLD == "-180d"
     assert dv.LEGACY_DROP == ("tx_fees", "real_threshold", "real_locktime")
@@ -389,7 +389,7 @@ def test_default_values():
     assert values == {
         "settings_version": 2,
         "locktime": ts(2028, 10, 11),
-        "baltx_fees": 20,
+        "baltx_fees": 50,
         "threshold": "-180d",
         "form": "fixed",
     }
@@ -637,12 +637,12 @@ def test_legacy_wallet_value_only():
 
 
 def test_no_usable_source_gives_the_default():
-    """Plugin data but nothing usable: today + 24 months, fee 20."""
+    """Plugin data but nothing usable: today + 24 months, fee 50."""
     out = dv.migration_values([], {"locktime": "0d"}, {"locktime": "abc"}, True, NOW)
     assert (out["locktime"], out["migrated_from"], out["baltx_fees"]) == (
         ts(2028, 10, 11),
         "default",
-        20,
+        50,
     )
 
 
@@ -655,7 +655,7 @@ def test_new_wallet_never_inherits_the_shared_value():
         "settings_version": 2,
         "form": "fixed",
         "locktime": ts(2028, 10, 11),
-        "baltx_fees": 20,
+        "baltx_fees": 50,
         "threshold": "-365d",
         "migrated_from": "default",
         "migrated_at": NOW,
@@ -693,7 +693,7 @@ def test_fee_zero_is_never_used():
     out = dv.migration_values(items, OWNER_GLOBAL, None, True, NOW)
     assert out["baltx_fees"] == 20
     out = dv.migration_values(items, {"locktime": "1054d"}, None, True, NOW)
-    assert out["baltx_fees"] == 20
+    assert out["baltx_fees"] == 50
     mixed = signed_will(OWNER, fee=0, tag="z") + signed_will(OWNER, fee=13)
     assert dv.migration_values(mixed, OWNER_GLOBAL, None, True, NOW)["baltx_fees"] == 13
 
@@ -712,13 +712,13 @@ def test_fee_is_kept_exactly():
 
 
 def test_disagreeing_item_fees_use_the_old_settings():
-    """Two fees in the will: the old fee (baltx_fees, then tx_fees), else 20."""
+    """Two fees in the will: the old fee (baltx_fees, then tx_fees), else 50."""
     items = signed_will(OWNER, fee=13, tag="a") + signed_will(OWNER, fee=15, tag="b")
     assert dv.migration_values(items, {"baltx_fees": 9}, None, True, NOW)["baltx_fees"] == 9
     assert dv.migration_values(items, {"tx_fees": 8}, None, True, NOW)["baltx_fees"] == 8
     assert dv.migration_values(items, None, {"tx_fees": 7}, True, NOW)["baltx_fees"] == 7
-    assert dv.migration_values(items, {"baltx_fees": "9"}, None, True, NOW)["baltx_fees"] == 20
-    assert dv.migration_values(items, {"baltx_fees": 9}, None, False, NOW)["baltx_fees"] == 20
+    assert dv.migration_values(items, {"baltx_fees": "9"}, None, True, NOW)["baltx_fees"] == 50
+    assert dv.migration_values(items, {"baltx_fees": 9}, None, False, NOW)["baltx_fees"] == 50
 
 
 def test_check_alive_bridge():
@@ -944,9 +944,9 @@ def test_display_only_values():
     assert out == {"locktime": OWNER, "baltx_fees": 13, "threshold": "-180d"}
     assert not dv.is_current(out)
     out = dv.display_only_values([], NOW)
-    assert out == {"locktime": ts(2028, 10, 11), "baltx_fees": 20, "threshold": "-180d"}
+    assert out == {"locktime": ts(2028, 10, 11), "baltx_fees": 50, "threshold": "-180d"}
     out = dv.display_only_values(will(800_000, VALID=True, fee=0), NOW)
-    assert out["locktime"] == ts(2028, 10, 11) and out["baltx_fees"] == 20
+    assert out["locktime"] == ts(2028, 10, 11) and out["baltx_fees"] == 50
 
 
 # ------------------------------------------------------------------ anchor

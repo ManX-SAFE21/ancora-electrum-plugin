@@ -224,7 +224,7 @@ async def settings_set(self, key, value, plugin=None):
     """Set a BAL configuration option (booleans, integers, strings, JSON).
 
     The delivery date and the fee rate of a wallet are not plugin options:
-    change them with ``bal_delivery_set`` (e.g. ``--fee 20``).
+    change them with ``bal_delivery_set`` (e.g. ``--fee 50``).
 
     arg:str:key:The configuration key (e.g. ``bal_user_type``).
     arg:str:value:The new value; JSON for object-typed keys.

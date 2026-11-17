@@ -159,8 +159,8 @@ def deliveries_not_funded_message(e):
 
 
 #: #192: under this miner fee rate (sat/vB) the plugin warns; the default
-#: fee of a new will (owner, multiverse plan section 4: a warning, never a
-#: block, for every will).
+#: fee of a new will, 50 since #231 (owner, multiverse plan section 4: a
+#: warning, never a block, for every will).
 LOW_FEE_LIMIT = DEFAULT_FEE
 
 

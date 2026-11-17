@@ -90,7 +90,16 @@ WALLET_KEY = "will_settings"
 SCHEMA_VERSION = 2
 #: The lowest ``settings_version`` that :func:`is_current` accepts (#123).
 FIRST_SCHEMA_VERSION = 1
-DEFAULT_FEE = 20
+#: The miner fee rate (sat/vB) of a new will's pre-signed transactions
+#: (#231, owner decision 2026-11-17: 50; it was 20). Why 50: they are
+#: broadcast years later, on the delivery date, at whatever fee level the
+#: network has then, and nobody can bump them (the will-executors do no
+#: CPFP). In the mempool history since 2019, a 50 sat/vB transaction was
+#: mined within 7 days in 98% of the cases, worst case 32 days; at 20 sat/vB
+#: the worst case was 99 days. The fee is paid only on the delivery date.
+#: Wills already made keep their stored ``baltx_fees``. The low-fee warning
+#: (#192, ``messages.LOW_FEE_LIMIT``) follows this value.
+DEFAULT_FEE = 50
 #: The delivery date of a wallet with nothing to migrate from, in calendar
 #: months after today (owner decision 6 of #127, 2026-10-12: 24; it was 12).
 DEFAULT_MONTHS = 24

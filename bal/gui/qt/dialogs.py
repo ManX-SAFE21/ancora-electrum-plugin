@@ -4433,7 +4433,7 @@ class BalBuildWillDialog(BalDialog):
             # #190: the excluded will-executors that still hold a copy.
             held = engine_context.excluded_holders(bw, selected)
             report.set_held(held)
-            # #192: a miner fee below 20 sat/vB (a warning, never a block).
+            # #192: a miner fee below 50 sat/vB (a warning, never a block).
             report.set_low_fee(low_fee_warning((bw.will_settings or {}).get("baltx_fees")))
             summary = will_summary(
                 bw.willitems,

@@ -172,7 +172,7 @@ class BalTxFeesWidget(QWidget):
         button.setStyleSheet("QPushButton{font-size: 16px;}")
         layout.addWidget(button)
         layout.addWidget(self.txfee_widget)
-        # #192: an orange sign next to a fee below 20 sat/vB, the owner's
+        # #192: an orange sign next to a fee below 50 sat/vB, the owner's
         # explanation in its tooltip. A sign, not a message box: the arrows
         # step one by one and a box at each step would be in the way.
         self.warning = QLabel("⚠", self)
@@ -189,7 +189,7 @@ class BalTxFeesWidget(QWidget):
         pass
 
     def _show_warning(self):
-        """Show the #192 sign when the fee shown is below 20 sat/vB (also
+        """Show the #192 sign when the fee shown is below 50 sat/vB (also
         a fee stored before #192), hide it otherwise."""
         warning = getattr(self, "warning", None)
         if warning is None:         # set_value during __init__, before it

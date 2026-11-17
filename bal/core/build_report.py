@@ -160,7 +160,7 @@ class BuildReport:
             self._invalidation = None
             # #190: the excluded will-executors that hold a copy (URLs).
             self._held = []
-            # #192: the low-fee warning ("" when the fee is 20 sat/vB or more).
+            # #192: the low-fee warning ("" when the fee is 50 sat/vB or more).
             self._low_fee = ""
 
     # ---- updates (any thread) ---------------------------------------- #
@@ -261,7 +261,7 @@ class BuildReport:
             self._held = list(urls or [])
 
     def set_low_fee(self, text):
-        """The #192 warning of a miner fee below 20 sat/vB
+        """The #192 warning of a miner fee below LOW_FEE_LIMIT
         (``bal.core.messages.low_fee_warning``), "" for none."""
         with self._lock:
             self._low_fee = text or ""
