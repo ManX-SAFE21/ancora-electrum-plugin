@@ -1,4 +1,4 @@
-"""The warning for a miner fee below 20 sat/vB (#192).
+"""The warning for a miner fee below 50 sat/vB (#192; 20 until #231).
 
 Owner decision (multiverse plan, section 4; text of 2026-10-26): lowering
 the miner fee is the user's choice; years later, on the delivery date, a
@@ -40,9 +40,9 @@ _APP = QApplication.instance() or QApplication(sys.argv)
 TEST_PASSWORD = "flowkit-test"
 
 WARNING = (
-    "Miner fee below 20 sat/vB: it is your choice. On the delivery date of "
+    "Miner fee below 50 sat/vB: it is your choice. On the delivery date of "
     "your will the Bitcoin network may be very busy, and the nodes may not "
-    "accept a transaction with a low fee. With 20 sat/vB or more this risk "
+    "accept a transaction with a low fee. With 50 sat/vB or more this risk "
     "is much smaller and the inheritance is more likely to be executed on "
     "time, without delays."
 )
@@ -78,22 +78,23 @@ def returned(result):
 # ------------------------------------------------------------ the rule
 
 def test_the_rule_and_the_text():
-    """Below 20: the owner's text; 20 or more, or not a number: nothing."""
-    assert LOW_FEE_LIMIT == 20
-    assert low_fee_warning(19) == WARNING
-    assert low_fee_warning(19.5) == WARNING
+    """Below 50: the owner's text; 50 or more, or not a number: nothing."""
+    assert LOW_FEE_LIMIT == 50                  # #231 (was 20)
+    assert low_fee_warning(49) == WARNING
+    assert low_fee_warning(49.5) == WARNING
     assert low_fee_warning("1") == WARNING
-    assert low_fee_warning(20) == ""
-    assert low_fee_warning("21") == ""
+    assert low_fee_warning(20) == WARNING          # the old default warns now
+    assert low_fee_warning(50) == ""
+    assert low_fee_warning("51") == ""
     assert low_fee_warning(None) == ""
     assert low_fee_warning("abc") == ""
 
 
 # ------------------------------------------------------------ the field
 
-def test_the_fee_field_shows_the_sign_below_20(make, monkeypatch):
+def test_the_fee_field_shows_the_sign_below_50(make, monkeypatch):
     """A fee stored before (13): the sign in both toolbars, the text in its
-    tooltip; 20 typed: gone; 19 typed: back, and the 19 is stored (never
+    tooltip; 50 typed: gone; 49 typed: back, and the 49 is stored (never
     refused)."""
     s = make(13)
     bw = real_window(s, monkeypatch)
@@ -102,11 +103,11 @@ def test_the_fee_field_shows_the_sign_below_20(make, monkeypatch):
         assert not fee.warning.isHidden()
         assert fee.warning.toolTip() == WARNING
     fee = toolbars(bw)[1].widgets["baltx_fees"]
-    fee.txfee_widget.setValue(20)
+    fee.txfee_widget.setValue(50)
     assert fee.warning.isHidden() and fee.warning.toolTip() == ""
-    fee.txfee_widget.setValue(19)
+    fee.txfee_widget.setValue(49)
     assert not fee.warning.isHidden()
-    assert bw.will_settings["baltx_fees"] == 19
+    assert bw.will_settings["baltx_fees"] == 49
 
 
 def test_the_wizard_page_shows_it_too(make, monkeypatch):
@@ -121,12 +122,12 @@ def test_the_wizard_page_shows_it_too(make, monkeypatch):
 
 def test_the_check_window_warns_and_the_will_is_made(make):
     """Fee 13: the Check window has the warning, and the will is signed and
-    sent to the three will-executors all the same; fee 20: no warning."""
+    sent to the three will-executors all the same; fee 50: no warning."""
     s = make(13)
     snap = s.check()._report().snapshot()
     assert snap["low_fee"] == WARNING
     assert {u for u, _w, _r in s.world.pushed} == set(s.world.executors)
-    context.set_will_setting(s.bw, "baltx_fees", 20)
+    context.set_will_setting(s.bw, "baltx_fees", 50)
     snap = s.check()._report().snapshot()
     assert "low_fee" not in snap
 
@@ -134,12 +135,12 @@ def test_the_check_window_warns_and_the_will_is_made(make):
 # ------------------------------------------------------------ the command line
 
 def test_the_command_line_stores_the_fee_and_warns(make):
-    """``bal_delivery_set --fee 19``: stored, with the warning; 20: no
+    """``bal_delivery_set --fee 49``: stored, with the warning; 50: no
     warning."""
-    s = make(20)
-    out = returned(s.cli("delivery_set", fee=19))
-    assert out["baltx_fees"] == 19
+    s = make(50)
+    out = returned(s.cli("delivery_set", fee=49))
+    assert out["baltx_fees"] == 49
     assert WARNING in out["message"]
-    out = returned(s.cli("delivery_set", fee=20))
-    assert out["baltx_fees"] == 20
+    out = returned(s.cli("delivery_set", fee=50))
+    assert out["baltx_fees"] == 50
     assert WARNING not in out["message"]

@@ -301,7 +301,7 @@ def test_prepare_will_builds_and_persists():
     settings = ctl.wallet.db.get_dict("will_settings")
     assert ctl.will_settings is settings
     assert item.tx.locktime == settings["locktime"]
-    assert item.tx_fees == settings["baltx_fees"] == 20
+    assert item.tx_fees == settings["baltx_fees"] == 50  # #231 default (was 20)
     assert ctl.bal_plugin.config.get("bal_will_settings") is None
 
     # Will item metadata mirrors the funded heir.

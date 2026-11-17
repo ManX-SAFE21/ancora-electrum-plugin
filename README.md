@@ -210,7 +210,7 @@ electrum bal_willexecutors_ping --urls '["https://we.example.com"]'
 # Delivery date and fee rate of the loaded wallet
 electrum bal_delivery_show
 electrum bal_delivery_set --date 2029-08-29     # YYYY-MM-DD means 00:00 UTC
-electrum bal_delivery_set --fee 20              # sat/vByte, 1 or more
+electrum bal_delivery_set --fee 50              # sat/vByte, 1 or more
 electrum bal_delivery_form period --months 36   # renewable period, N months
 electrum bal_delivery_set --months 24           # a new N (period form only)
 electrum bal_delivery_set --check_alive_days 30  # Check Alive: 30 days before delivery

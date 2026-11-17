@@ -14873,3 +14873,51 @@ could be set only from the Qt window. The Android copy of the plugin needs to se
   the will building are untouched) and the owner ZIP test.
 
 **Outcome:** DONE
+
+## 231. A new will's miner fee: 50 sat/vB (was 20)
+
+**Date:** 2026-11-17
+
+**Goal (owner decision, 2026-11-17):** the pre-signed transactions of a will are broadcast
+years later, on the delivery date, at whatever fee level the network has then, and nobody can
+bump them (the will-executors do no CPFP). In the mempool history since 2019, a 50 sat/vB
+transaction was mined within 7 days in 98% of the cases, worst case 32 days; at 20 sat/vB the
+worst case was 99 days. The fee is paid only on the delivery date. The same change was made in
+the Android copy of the plugin.
+
+**What changed:**
+
+- `bal/core/delivery.py`: `DEFAULT_FEE = 50` (was 20), with a comment on why.
+- `bal/core/plugin_base.py`: `default_will_settings` uses `delivery.DEFAULT_FEE` (local
+  import) instead of a hand-written 20: one source for the default fee.
+- The low-fee warning (#192) follows: `messages.LOW_FEE_LIMIT = DEFAULT_FEE`, so it now shows
+  below 50 sat/vB (owner OK, 2026-11-17). Its text has `{limit}`: no translation changes.
+- Comments that said "20 sat/vB" (`cli/controller.py`, `core/build_report.py`,
+  `core/messages.py`, `gui/qt/dialogs.py`, `gui/qt/widgets.py`) and the `--fee` example in
+  `cli/commands.py` and `README.md`: 50.
+- Not changed: wills already made keep their stored `baltx_fees` (50 is only the default of a
+  new will; the owner can change the fee in the settings). The invalidation and renewal fee
+  (the network estimate for 2 blocks) does not use this value.
+- Tests: `test_core_delivery_settings.py` (11 expected values), `test_core_plugin_base.py`
+  (2), `test_gui_will_flows.py` (1), `test_per_wallet_settings_flow.py` (1),
+  `test_low_fee_warning.py` (limit 50; 20 now warns). Golden files regenerated with
+  `BAL_GOLDEN_UPDATE=1` (69 files): only the warning text changes from 20 to 50, and in
+  `owner_drafts_128` (fees 20 and 21) the warning now appears (5 lines). Nothing else changed.
+- Owner manual (outside the repository, `manuale/guide/cli.html`): "avvisa sotto i 50 sat/vB"
+  and the `--fee` example.
+
+**Verified (Electrum 4.8.3):**
+
+- `ruff check bal/ tests/`: clean.
+- The three changed test files: 209 passed; the golden tests: 116 passed.
+- Whole suite: 3372 passed, 2 failed in 2 h 2 min (run from the Windows folder in WSL). The
+  two failures were tests that still expected the old default 20
+  (`test_gui_will_flows.py::test_prepare_will_builds_and_persists`,
+  `test_per_wallet_settings_flow.py::test_two_wallets_keep_their_own_dates_and_a_new_wallet_gets_the_default`);
+  fixed to 50, those two files: 53 passed.
+- Test ZIP `ancora_0.8.0-TEST-231-commissione-50.zip` built; its modules load through
+  zipimport with `DEFAULT_FEE`, `LOW_FEE_LIMIT` and the default settings at 50.
+- Not done: the scenario harness, and the owner ZIP test (owner, 2026-11-17: commit and push
+  now, the ZIP is tested before the release).
+
+**Outcome:** DONE
