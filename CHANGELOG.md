@@ -14963,3 +14963,37 @@ change was made in the Android copy of the plugin.
   release, owner 2026-11-17).
 
 **Outcome:** DONE
+
+## 233. Version 0.8.1
+
+**Date:** 2026-11-21
+
+**Goal (owner decision, 2026-11-21):** publish the four steps made after Àncòra 0.8.0
+(#229-#232) as version 0.8.1. Before the version change they were analysed again (owner:
+"with the greatest care, no hurry"): the default fee lives in one place
+(`delivery.DEFAULT_FEE`, followed by the settings, the low-fee warning and the command line);
+no hand-written 20 is left in the plugin's code (only the unused `default_fees` of BAL's old
+stand-alone `wallet_util/bal_wallet_utils.py`, left as it is); the old invalidation label is
+still recognised; `--check_alive_days` moves only the reminder day.
+
+**What changed:**
+
+- `bal/manifest.json`: `"version": "0.8.1"` (was 0.8.0).
+
+**For the release notes (owner, 2026-11-21):** a will made before 0.8.1 keeps its stored fee
+(20 sat/vB by default) and from 0.8.1 shows the low-fee warning. To move it to 50: change the
+fee in the settings and run a Check; the will is rebuilt with the date one day earlier (the
+usual anticipation, nothing to pay now), signed and sent again.
+
+**Verified:**
+
+- Test ZIP `ancora_0.8.1-TEST-233-versione.zip` (version 0.8.1, `DEFAULT_FEE = 50`): installed
+  and tried by the owner in Electrum, works.
+- testnet4, new passwordless wallet: default fee 50; at fee 20 the low-fee warning appears;
+  will at fee 20 prepared, signed and sent to `we.safe21.io`; real invalidation broadcast, its
+  history label is "Àncòra – annullamento eredità"; the Check afterwards finds no valid will.
+- Whole suite on Electrum 4.8.4: 3375 passed (1 h 33 min). The release script runs the suite in
+  both orders on Electrum 4.8.3.
+
+**Outcome:** DONE (version raised to 0.8.1; signed release follows with `make-release.sh`)
+
