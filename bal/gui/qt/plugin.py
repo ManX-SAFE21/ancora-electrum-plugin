@@ -54,6 +54,7 @@ from .common import (
 )
 from .dialogs import BalDialog
 from .offline_sign import SigningWarningDialog
+from .theme import link_colour
 from .widgets import BalCheckBox, BalLineEdit, BalSpinBox, BalTextEdit
 from .window import BalWindow
 
@@ -1056,8 +1057,11 @@ class Plugin(BalPlugin, EventListener):
 
         # Group C / C4c: clickable support link to the project website.
         # Rich text, or Electrum 4.8.3 shows the tags and no link (#198).
+        # The link colour is set: the default dark blue is unreadable on
+        # the dark theme.
         lbl_support = rich_text(QLabel(
-            '<a href="https://safe21.io"><b>safe21.io</b></a>'
+            '<a href="https://safe21.io" style="color:{};"><b>safe21.io</b></a>'
+            .format(link_colour(d))
         ))
         lbl_support.setToolTip(_("Open the Safe21 support website"))
         # Open the link in the user's browser via Electrum's helper instead of

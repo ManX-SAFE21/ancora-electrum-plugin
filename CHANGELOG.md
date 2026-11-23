@@ -14997,3 +14997,47 @@ usual anticipation, nothing to pay now), signed and sent again.
 
 **Outcome:** DONE (version raised to 0.8.1; signed release follows with `make-release.sh`)
 
+## 234. Dark theme: readable texts and links
+
+**Date:** 2026-11-23
+
+**Goal (owner request, 2026-11-23):** check the plugin with Electrum's dark theme. Screenshots
+of the real Electrum 4.8.3 (dark and light) showed texts that were hard or impossible to read.
+Look only: no logic that builds, signs, sends, invalidates, dates or converts was touched. The
+plugin's fixed light boxes stay light (owner, 2026-11-23); only the texts that did not follow
+them, and the texts on the window background, change.
+
+**What changed:**
+
+- `bal/gui/qt/theme.py`: `is_dark_theme()` (Electrum's `ColorScheme.dark_scheme` first: its
+  dark theme is a style sheet and the palette can stay light; the palette is the fallback),
+  `link_colour()` (`#1F6FB2` light, `#6CB6FF` dark) and `on_window()`, which makes the
+  light-theme greys and blues lighter on the dark theme and changes nothing on the light one.
+- `bal/gui/qt/offline_sign.py`: the "Do not sign" warning of the check is in a pale red box
+  (it was dark red on the dark window); the links "See the plan" / "Choose another file" use
+  `link_colour()`; the grey addresses of the check go through `on_window()`.
+- `bal/gui/qt/dialogs.py`: the "Details (log)" link of the Check window uses `link_colour()`.
+- `bal/gui/qt/explainer.py`: the step texts under the animation have a transparent
+  background (the dark theme drew them as dark strips on the light card).
+- `bal/gui/qt/future_view.py`: the fade of a will no will-executor received is 0.7 (was
+  0.48): "Today" and the dates were too pale on both themes.
+- `bal/gui/qt/lists.py`: `FRAMED_BUTTON_STYLE` sets its text colour, plus a grey when
+  disabled: on the dark theme "Next" and "Create the will" had white text on light blue and
+  looked switched off while they were not.
+- `bal/gui/qt/basic_wizard.py`: the grey notes, the step bar and the time-zone line go through
+  `on_window()`; the texts inside the light summary box are unchanged.
+- `bal/gui/qt/graph_view.py`: "100%", the explanation line and "Show replaced versions" go
+  through `on_window()`.
+- `bal/gui/qt/plugin.py`: the "safe21.io" link of the settings uses `link_colour()`.
+
+**Verified (Electrum 4.8.3):**
+
+- `ruff check bal/ tests/`: clean.
+- The tests of the touched parts (32 files): 629 passed, 0 failed (8 min 24 s). Whole suite
+  not run: look-only step (owner rule, 2026-10-12/14).
+- Real Electrum offscreen, dark and light theme: 15 main screens and 36 windows, no errors.
+  Before: `safe21-ancora/previews/tema-scuro`; after: `previews/tema-scuro-dopo` (outside the
+  repository). The light theme looks as before.
+- Not done: the scenario harness and the owner ZIP test (look only).
+
+**Outcome:** DONE

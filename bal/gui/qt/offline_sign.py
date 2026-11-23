@@ -100,6 +100,7 @@ from .common import (
 )
 from .dialogs import BalDialog, decode_will_payload
 from .lists import MAIN_BUTTON_STYLE
+from .theme import link_colour, on_window
 
 #: The plugin's colours (``brand/BRAND.md``): the Safe21 teal and the dark
 #: navy of the wordmark; the orange of the will summary's "something to do".
@@ -319,10 +320,13 @@ def _least(amount, line, info=""):
 
 def _output_rows(amount, name, line, info=""):
     """Two rows of a table: the name and the amount, then the full address."""
-    return ("<tr><td><b>{}</b></td><td>&nbsp;{}</td></tr>"
-            "<tr><td colspan='2' style='color:#555555;'><tt>{}</tt></td></tr>"
-            ).format(html.escape(name), _least(amount, line, info),
-                     html.escape(line.address))
+    # on_window: the check is shown on the window background, so the grey
+    # of the address must be lighter on the dark theme.
+    return on_window(
+        "<tr><td><b>{}</b></td><td>&nbsp;{}</td></tr>"
+        "<tr><td colspan='2' style='color:#555555;'><tt>{}</tt></td></tr>"
+    ).format(html.escape(name), _least(amount, line, info),
+             html.escape(line.address))
 
 
 def _delivery_html(amount, delivery, info):
@@ -384,7 +388,12 @@ def check_html(summary, amount, info=""):
 
     parts = []
     if summary.problems:
-        parts.append("<p style='color:#B00020;'><b>{}</b><br>{}</p>".format(
+        # A box with its own pale background: dark red text alone is not
+        # readable on the dark theme (the warning must always be seen).
+        parts.append(
+            "<table width='100%' cellpadding='6'><tr>"
+            "<td style='background-color:#FDECEC; color:#B00020;'>"
+            "<b>{}</b><br>{}</td></tr></table>".format(
             esc(_("Do not sign: a signature in this file cannot be trusted.")
                 if engine.only_signatures(summary.problems)
                 else _("Do not sign: the will's money does not go where it should.")),
@@ -761,8 +770,8 @@ class _GuidedDialog(BalDialog):
         self.link = QPushButton()
         self.link.setFlat(True)
         self.link.setStyleSheet(
-            "QPushButton{color:#1F6FB2; border:none; text-decoration:underline;"
-            " padding:2px;}")
+            "QPushButton{color:%s; border:none; text-decoration:underline;"
+            " padding:2px;}" % link_colour(self))
         self.link.clicked.connect(lambda: self._link_slot and self._link_slot())
         self._link_slot = None
         self.link.hide()
