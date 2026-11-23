@@ -13,6 +13,8 @@ The status flags themselves are computed by the core layer
 status into a colour for the transaction list / detail views.
 """
 
+import re
+
 from ...i18n import N_
 
 # Status -> hex colour.  The first matching status (checked in priority order)
@@ -28,6 +30,64 @@ _STATUS_COLOR_PRIORITY = (
     ("CONFIRMED", "#bfbfbf"),    # grey    - already mined
     ("MEMPOOL", "#ffce30"),      # yellow  - seen in the Electrum mempool
 )
+
+# Colour of a clickable text link (a flat button that looks like a link).
+# The light-theme blue is unreadable on the dark theme, so the dark one is
+# lighter. Colours only, no logic depends on it.
+LINK_COLOR_LIGHT = "#1F6FB2"
+LINK_COLOR_DARK = "#6CB6FF"
+
+
+def is_dark_theme(widget=None):
+    """True when *widget* is drawn on a dark window (Electrum's dark theme).
+
+    Electrum's own flag (``ColorScheme.dark_scheme``) comes first: its dark
+    theme is a style sheet, so the widget's palette can still be light.
+    The palette is only the fallback.
+    """
+    try:
+        from electrum.gui.qt.util import ColorScheme
+        if ColorScheme.dark_scheme:
+            return True
+    except Exception:  # Electrum Qt not importable (tests, CLI): palette only
+        pass
+    if widget is None:
+        from PyQt6.QtWidgets import QApplication
+        palette = QApplication.palette()
+    else:
+        palette = widget.palette()
+    return palette.window().color().lightness() < 128
+
+
+def link_colour(widget=None):
+    """The colour of a link-like button on *widget*, readable on both themes."""
+    return LINK_COLOR_DARK if is_dark_theme(widget) else LINK_COLOR_LIGHT
+
+
+# The dark text colours of the light theme -> lighter ones for the dark
+# theme. Only for text drawn on the window's own background: the plugin's
+# fixed light boxes keep their dark text, so they never go through this.
+_DARK_THEME_TEXT = {
+    "#6A737D": "#A9B4BE",
+    "#4A5560": "#B8C2CC",
+    "#555555": "#B0B8C0",
+    "#333333": "#D5DBE1",
+    "#0D47A1": "#8AB4F8",
+}
+
+
+def on_window(text, widget=None):
+    """*text* (a style sheet or rich text) readable on the window background.
+
+    On the light theme it is returned unchanged; on the dark theme the
+    light-theme greys and blues of :data:`_DARK_THEME_TEXT` become lighter.
+    """
+    if not is_dark_theme(widget):
+        return text
+    for light, dark in _DARK_THEME_TEXT.items():
+        text = re.sub(re.escape(light), dark, text, flags=re.IGNORECASE)
+    return text
+
 
 # Default colour used when no status in the priority list matches.
 _DEFAULT_COLOR = "#ffffff"

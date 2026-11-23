@@ -98,6 +98,7 @@ from .lists import (
     extra_messages_text,
     same_address_text,
 )
+from .theme import on_window
 from .widgets import LockTimeWidget, what_changes_box
 
 if TYPE_CHECKING:
@@ -552,7 +553,7 @@ class StepBar(QWidget):
                 css = "color:#555555; border-bottom:3px solid #8FB6EA;"
             else:
                 css = "color:#8A9099; border-bottom:3px solid #DDE1E6;"
-            lab.setStyleSheet("QLabel{padding:4px; %s}" % css)
+            lab.setStyleSheet(on_window("QLabel{padding:4px; %s}" % css))
             h.addWidget(lab, 1)
             self.labels.append(lab)
 
@@ -656,7 +657,7 @@ class _StepPage(BalWizardWidget):
             (self.bal_window.will_settings or {}).get("locktime"))
         text = datetext.utc_text(locktime) if locktime is not None else "-"
         return _label(_("Delivery to the heirs: <b>{}</b>").format(text),
-                      "QLabel{color:#4A5560;}")
+                      on_window("QLabel{color:#4A5560;}"))
 
 
 class WhenPage(_StepPage):
@@ -699,7 +700,7 @@ class WhenPage(_StepPage):
         self._build_chips(layout)
         # Owner (ZIP test): a fixed reference under the choices while a will
         # is in force: its date next to the chosen one.
-        self.compare_label = _label("", "QLabel{color:#4A5560;}", wrap=True)
+        self.compare_label = _label("", on_window("QLabel{color:#4A5560;}"), wrap=True)
         layout.addWidget(self.compare_label)
         layout.addSpacing(10)
         self._build_boxes(layout)
@@ -771,7 +772,7 @@ class WhenPage(_StepPage):
             g.addWidget(_label("<b>{}</b>".format(_(text))), 0, c)
             g.addWidget(box, 1, c)
             box.valueChanged.connect(self._on_box)
-        g.addWidget(_label(_("your computer's time"), MUTED_STYLE), 1, 4)
+        g.addWidget(_label(_("your computer's time"), on_window(MUTED_STYLE)), 1, 4)
         help_btn = help_button(_(NEW_DELIVERY_HELP))
         # The hover text of the old delivery field (same meaning).
         help_btn.setToolTip(_(LockTimeWidget.tooltip_text))
@@ -784,7 +785,7 @@ class WhenPage(_StepPage):
         time left on its right in brackets (owner, p1d)."""
         row = QHBoxLayout()
         self.big_date = _scaled(QLabel(""), 1.6, bold=True)
-        self.time_left = _scaled(_label("", MUTED_STYLE), 1.25)
+        self.time_left = _scaled(_label("", on_window(MUTED_STYLE)), 1.25)
         row.addWidget(self.big_date)
         row.addWidget(self.time_left, 0, Qt.AlignmentFlag.AlignBottom)
         row.addStretch(1)
@@ -796,7 +797,7 @@ class WhenPage(_StepPage):
     def _build_dates(self, layout):
         """The big date, the two times and the day-change line."""
         self._add_big_date(layout)
-        self.keep_note = _label("", MUTED_STYLE)
+        self.keep_note = _label("", on_window(MUTED_STYLE))
         layout.addWidget(self.keep_note)
         layout.addSpacing(8)
         grid = QGridLayout()
@@ -806,7 +807,7 @@ class WhenPage(_StepPage):
         self.utc_value = _scaled(_label(""), 1.2)
         for r, (text, value) in enumerate(((N_("In your time zone:"), self.local_value),
                                            (N_("In the will:"), self.utc_value))):
-            grid.addWidget(_label(_(text), "QLabel{color:#4A5560;}"), r, 0)
+            grid.addWidget(_label(_(text), on_window("QLabel{color:#4A5560;}")), r, 0)
             grid.addWidget(value, r, 1)
         grid.setColumnStretch(2, 1)
         layout.addLayout(grid)
@@ -886,8 +887,10 @@ class WhenPage(_StepPage):
             return
         self.big_date.setText(datetext.utc_day(ts))
         self.time_left.setText(time_left_text(ts, self.now) if ok else "")
-        self.local_value.setText("<b>{}</b> <span style='color:#6A737D'>({})</span>".format(
-            datetext.local_text(ts, self.zone), wizard_date.offset_text(ts, self.zone)))
+        self.local_value.setText(on_window(
+            "<b>{}</b> <span style='color:#6A737D'>({})</span>".format(
+                datetext.local_text(ts, self.zone),
+                wizard_date.offset_text(ts, self.zone))))
         self.utc_value.setText(datetext.utc_text(ts))
         shift = wizard_date.day_shift(ts, self.zone)
         if shift < 0:
@@ -1010,7 +1013,7 @@ class HeirsPage(_StepPage):
             row.addWidget(button)
         row.addStretch(1)
         layout.addLayout(row)
-        self.total_label = _label("", MUTED_STYLE, wrap=True)
+        self.total_label = _label("", on_window(MUTED_STYLE), wrap=True)
         layout.addWidget(self.total_label)
         # #135: heirs sharing an address (an old wallet): shown, not changed.
         self.same_address_label = _label("", NOTE_STYLE, wrap=True)
@@ -1247,11 +1250,11 @@ class SummaryPage(_StepPage):
         else:
             layout.addWidget(_label(
                 _("«Create the will» prepares it, asks for the password to sign it "
-                  "and sends it to the will-executors."), MUTED_STYLE, wrap=True))
+                  "and sends it to the will-executors."), on_window(MUTED_STYLE), wrap=True))
         layout.addSpacing(4)
         layout.addWidget(_label(
             _("After it is created you can put the dates in your calendar with "
-              "the 📅 button of the Will tab."), MUTED_STYLE, wrap=True))
+              "the 📅 button of the Will tab."), on_window(MUTED_STYLE), wrap=True))
 
 
     @staticmethod

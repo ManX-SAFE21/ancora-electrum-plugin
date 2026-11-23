@@ -43,6 +43,7 @@ from ...core.summary import selected_urls
 from ...core.willexecutors import Willexecutors
 from ...i18n import _
 from .common import _logger
+from .theme import on_window
 
 # state -> (text and border colour, background, symbol): the Check window's
 # step colours (widgets.BuildReportView._STEP_STYLE).
@@ -648,13 +649,14 @@ class GraphPanel(QWidget):
         self.expand_button = self._button(_("Expand all"), self.view.expand_all)
         self.collapse_button = self._button(_("Collapse all"), self.view.collapse_all)
         self.replaced_box = QCheckBox(_("Show the replaced versions"))
-        self.replaced_box.setStyleSheet("QCheckBox{font-weight:bold;color:#0d47a1;}")
+        self.replaced_box.setStyleSheet(
+            on_window("QCheckBox{font-weight:bold;color:#0d47a1;}"))
         self.replaced_box.toggled.connect(self._show_replaced)
         self.zoom_out = self._button("−", lambda: self._zoom_by(-ZOOM_STEP))
         self.zoom_label = QLabel("100%")
         self.zoom_label.setMinimumWidth(44)
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.zoom_label.setStyleSheet("font-weight:bold;color:#333333;")
+        self.zoom_label.setStyleSheet(on_window("font-weight:bold;color:#333333;"))
         self.zoom_in = self._button("+", lambda: self._zoom_by(ZOOM_STEP))
         self.fit_button = self._button(_("Fit"), self.fit)
         for widget in (self.expand_button, self.collapse_button, self.replaced_box):
@@ -667,7 +669,7 @@ class GraphPanel(QWidget):
         # #184 (owner): what a row means, over the graph.
         self.explanation = QLabel()
         self.explanation.setWordWrap(True)
-        self.explanation.setStyleSheet("color:#555555;padding:2px 8px;")
+        self.explanation.setStyleSheet(on_window("color:#555555;padding:2px 8px;"))
         column.addWidget(self.explanation)
         self.area = QScrollArea()
         self.area.setWidgetResizable(True)

@@ -171,6 +171,7 @@ from .common import (
 )
 from .flow_adapter import DialogFlowUI, DialogRun
 from .report_actions import report_menu
+from .theme import link_colour
 from .widgets import (
     BuildReportView,
     WillSettingsWidget,
@@ -927,7 +928,8 @@ class BalBuildWillDialog(BalDialog):
         self.log_toggle.setCheckable(True)
         self.log_toggle.setFlat(True)
         self.log_toggle.setStyleSheet(
-            "QPushButton{color:#1565c0;text-align:left;border:none;padding:0;}"
+            "QPushButton{color:%s;text-align:left;border:none;padding:0;}"
+            % link_colour(self)
         )
         self.log_toggle.toggled.connect(self._on_log_toggled)
         self._set_log_toggle_text()

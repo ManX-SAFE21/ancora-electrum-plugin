@@ -727,14 +727,18 @@ class ExplainerDialog(QDialog):
         cl.setContentsMargins(20, 16, 20, 18)
         cl.setSpacing(6)
         self.eyebrow = QLabel()
+        # "background: transparent": the dark theme paints every QLabel dark,
+        # which turned these texts into dark strips on the light card.
         self.eyebrow.setStyleSheet(f"color: {TEAL}; font-weight: 600; "
-                                   "letter-spacing: 1px;")
+                                   "letter-spacing: 1px; background: transparent;")
         self.title = QLabel()
         self.title.setWordWrap(True)
-        self.title.setStyleSheet(f"color: {INK}; font-size: 22px; font-weight: 600;")
+        self.title.setStyleSheet(f"color: {INK}; font-size: 22px; font-weight: 600; "
+                                 "background: transparent;")
         self.text = QLabel()
         self.text.setWordWrap(True)
-        self.text.setStyleSheet(f"color: {MUTED}; font-size: 16px;")
+        self.text.setStyleSheet(f"color: {MUTED}; font-size: 16px; "
+                                "background: transparent;")
         for w in (self.eyebrow, self.title, self.text):
             cl.addWidget(w)
         card.setMinimumHeight(150)

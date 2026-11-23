@@ -464,7 +464,7 @@ def _grey_colours(scene):
 
 
 #: The opacity of a Future view whose will no will-executor received (#134).
-_FADED_OPACITY = 0.48
+_FADED_OPACITY = 0.7
 
 #: The marks of a will-executor that holds the will (#214): it accepted the
 #: copy, whether or not a check has confirmed it since.

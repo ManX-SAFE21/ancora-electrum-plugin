@@ -707,11 +707,14 @@ BIG_BUTTON_STYLE = "QPushButton{font-weight:bold;}"
 #: background with a thin light blue border instead. Setting a border drops
 #: Qt's native button look, so the padding, the rounded corners and the
 #: hover / pressed shades are given here too.
+# The text colour is set: without it the dark theme draws white text on
+# this light blue, and "Next" looked switched off while it was not.
 FRAMED_BUTTON_STYLE = (
-    "QPushButton{font-weight:bold; background-color:#EAF3FD;"
+    "QPushButton{font-weight:bold; color:#1F2328; background-color:#EAF3FD;"
     " border:1px solid #9EC3EE; border-radius:6px; padding:4px 12px;}"
     "QPushButton:hover{background-color:#DCEBFB;}"
     "QPushButton:pressed{background-color:#CDE2F8;}"
+    "QPushButton:disabled{color:#8A939C;}"
 )
 
 #: "Build / Edit Your Will" since the owner's ZIP test of #134: it looks
